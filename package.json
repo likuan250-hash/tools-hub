@@ -6,8 +6,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --dir",
-    "dist": "electron-builder --win nsis"
+    "build": "node scripts/prepare-build.js && electron-builder --dir",
+    "dist": "node scripts/prepare-build.js && electron-builder --win nsis"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -36,6 +36,10 @@
         "from": "netdisk-hub",
         "to": "netdisk-hub",
         "filter": ["**/*", "!node_modules/**/.cache", "!**/*.log"]
+      },
+      {
+        "from": "resources/node",
+        "to": "node"
       },
       {
         "from": "resources/bin",

@@ -3,3 +3,6 @@ dist/
 .git-submodule-*/
 *.log
 .DS_Store
+# 构建期准备的运行时资源（含 node.exe 与 bl/bailian 私有依赖），不进 git
+resources/node/
+resources/bin/node_modules/

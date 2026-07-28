@@ -40,6 +40,28 @@ jobs:
         working-directory: netdisk-hub
         run: echo "${{ secrets.NETDISK_ENV }}" > .env
 
+      - name: Prepare bundled Node runtime
+        run: |
+          $nodeDir = "resources/node"
+          New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
+          $nodeBin = (Get-Command node).Source
+          Copy-Item $nodeBin (Join-Path $nodeDir "node.exe")
+          Write-Host "copied node runtime: $nodeBin"
+
+      # 可选：打包 bl（bailian-cli）资源，使 kdocs 介绍/大小/封面功能完整。
+      # 其运行依赖三个内部包（bailian-cli-commands/-core/-runtime），CI 默认无法获取，
+      # 故默认不出 bl（kdocs 自动降级，仅介绍/大小/封面缺失）。
+      # 如需 CI 自动含 bl：配置 secrets.NPMRC（私有 registry 凭据），取消下方注释：
+      # - name: Setup npmrc (optional)
+      #   if: ${{ secrets.NPMRC != '' }}
+      #   run: echo "${{ secrets.NPMRC }}" > .npmrc
+      # - name: Install bailian-cli (optional)
+      #   if: ${{ secrets.NPMRC != '' }}
+      #   run: |
+      #     npm install -g bailian-cli
+      #     Copy-Item (Join-Path (npm root -g) "bailian-cli") "resources/bin/node_modules/bailian-cli" -Recurse -Force
+      # 本地出完整包：直接把本机 bl 资源复制到 resources/bin/ 后 npm run dist 即可。
+
       - name: Build NSIS installer
         env:
           PLAYWRIGHT_BROWSERS_PATH: "0"

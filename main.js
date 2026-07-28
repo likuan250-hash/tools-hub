@@ -8,7 +8,20 @@ const fs = require("fs");
 const RES = process.resourcesPath; // 开发时=项目根，打包后=resources 目录
 const KDOCS_DIR = path.join(RES, "kdocs-tool");
 const NETDISK_DIR = path.join(RES, "netdisk-hub");
-const BL_BIN = path.join(RES, "bin", "bl.exe");
+
+// Node 运行时：打包后自带 resources/node/node.exe；开发时回退系统 PATH 的 node
+const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
+  ? path.join(RES, "node", "node.exe")
+  : "node";
+
+// bl CLI：打包后用自带的 resources/bin/bl.cmd（由 NODE_BIN 运行 bailian.mjs）；
+// 否则回退 BL_BIN_PATH 环境变量或 PATH 中的 bl（开发 / 独立运行）
+function resolveBlBin() {
+  const bundled = path.join(RES, "bin", "bl.cmd");
+  if (fs.existsSync(bundled)) return bundled;
+  return process.env.BL_BIN_PATH || "bl";
+}
+const BL_BIN = resolveBlBin();
 
 // 子进程注册表
 const CHILDREN = {
@@ -64,6 +77,7 @@ function startChild(cfg) {
   const proc = fork(cfg.script, [], {
     cwd: cfg.cwd,
     env: cfg.env,
+    execPath: NODE_BIN, // 用打包内置 node 或系统 node 运行子进程，避免依赖 electron 当 node
     silent: false, // 子进程 stdout/stderr 直接继承到主进程日志
   });
   cfg.proc = proc;

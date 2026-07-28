@@ -36,9 +36,12 @@ jobs:
         run: npx playwright install chromium
 
       - name: Write netdisk .env from secrets (optional)
-        if: ${{ secrets.NETDISK_ENV != '' }}
+        # 注意：GitHub Actions 的 if 条件不能直接用 secrets 上下文，所以通过 env 注入。
+        # 若未设置 NETDISK_ENV secret，会写入空 .env 文件，不影响打包。
+        env:
+          NETDISK_ENV: ${{ secrets.NETDISK_ENV }}
         working-directory: netdisk-hub
-        run: echo "${{ secrets.NETDISK_ENV }}" > .env
+        run: echo "$env:NETDISK_ENV" > .env
 
       - name: Prepare bundled Node runtime
         run: |

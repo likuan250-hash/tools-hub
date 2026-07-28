@@ -1,0 +1,264 @@
+﻿// netdisk-hub: API 路由(账号/转存/任务/目录/版本/更新/健康)
+// 从 server.js 提取，由 server.js require 并调用。
+"use strict";
+
+// 注册所有 API 路由到 app
+// ctx: { store, logger, baidu, quark, xunlei,
+//        doTransfer, mapLimit, extractSurl, isValidShareLink,
+//        refreshPings, pingCache, getServerState, PORT,
+//        getVersion, gitShort, findConnect, run, spawn, execFileSync,
+//        process, path, fs, __dirname }
+module.exports = function registerApiRoutes(app, ctx) {
+  const {
+    store, logger, baidu, quark, xunlei,
+    doTransfer, mapLimit, extractSurl, isValidShareLink,
+    refreshPings, pingCache, getServerState, PORT,
+    getVersion, gitShort, findConnect, run, spawn, execFileSync,
+    process, path, fs, __dirname: projectDir,
+  } = ctx;
+
+  // ── 账号状态 ─────────────────────────────────────────
+  app.get("/api/accounts", (req, res) => {
+    const baiduAcc = store.getAccount("baidu");
+    const quarkAcc = store.getAccount("quark");
+    const xunleiAcc = store.getAccount("xunlei");
+
+    const hasBaiduCookie = !!(baiduAcc && baiduAcc.cookie);
+    const hasQuarkCred = !!(quarkAcc && quarkAcc.connected && quarkAcc.cookie);
+    const hasXunleiCred = !!(xunleiAcc && xunleiAcc.connected);
+
+    const bDetail = baiduAcc ? (baidu.getLastCheckError ? baidu.getLastCheckError() : "") : "no_cookie_saved";
+    const bDir = store.getDir("baidu");
+    const qDir = store.getDir("quark");
+    const xDir = store.getDir("xunlei");
+    const bDefault = baidu.getConfig().appDir;
+    const qDefault = quark.FOLDER_NAME;
+
+    refreshPings();
+
+    res.json({
+      baidu: {
+        connected: hasBaiduCookie, pingOK: pingCache.baidu,
+        hasToken: !!(baiduAcc && baiduAcc.accessToken),
+        hasCookie: hasBaiduCookie, detail: bDetail,
+        expiresAt: baiduAcc ? baiduAcc.expiresAt : null,
+        dir: { effective: (bDir && bDir.id) || bDefault, userSet: !!bDir, name: (bDir && bDir.name) || bDefault },
+      },
+      quark: {
+        connected: hasQuarkCred, pingOK: pingCache.quark,
+        dir: {
+          effective: (qDir && qDir.id === "0") ? "/" : "/" + ((qDir && qDir.name) || qDefault),
+          userSet: !!qDir, name: (qDir && qDir.name) || qDefault,
+        },
+      },
+      xunlei: {
+        connected: hasXunleiCred, pingOK: pingCache.xunlei,
+        dir: {
+          effective: (xDir && !xDir.id) ? "/" : "/" + ((xDir && xDir.name) || "游戏"),
+          userSet: !!xDir, name: (xDir && xDir.name) || "游戏",
+        },
+      },
+    });
+  });
+
+  // ── 各网盘「转存目录」选择:读取/浏览/保存 ────────────────
+  app.get("/api/dirs/:provider", (req, res) => {
+    const p = req.params.provider;
+    const map = { baidu: "baidu", quark: "quark", xunlei: "xunlei" };
+    if (!map[p]) return res.status(400).json({ error: "未知网盘" });
+    const d = store.getDir(p);
+    const fallback = p === "baidu" ? baidu.getConfig().appDir : p === "quark" ? quark.FOLDER_NAME : "游戏";
+    res.json({ selected: d, fallback, fallbackName: fallback });
+  });
+
+  app.get("/api/dirs/:provider/browse", async (req, res) => {
+    const p = req.params.provider;
+    const parent = req.query.parent;
+    try {
+      let folders = [];
+      if (p === "baidu") {
+        const cookie = baidu.getCookie();
+        if (!cookie) return res.status(401).json({ error: "百度未授权,请先授权" });
+        folders = await baidu.listSubfolders(parent || "/");
+      } else if (p === "quark") {
+        const cookie = quark.getValidCookie();
+        if (!cookie) return res.status(401).json({ error: "夸克未授权,请先授权" });
+        folders = await quark.listSubfolders(cookie, parent || "0");
+      } else if (p === "xunlei") {
+        if (!xunlei.isConnected()) return res.status(401).json({ error: "迅雷未授权,请先授权" });
+        folders = await xunlei.listSubfolders(parent || "");
+      } else {
+        return res.status(400).json({ error: "未知网盘" });
+      }
+      res.json({ folders });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/dirs/:provider", (req, res) => {
+    const p = req.params.provider;
+    const map = { baidu: "baidu", quark: "quark", xunlei: "xunlei" };
+    if (!map[p]) return res.status(400).json({ error: "未知网盘" });
+    const { id, name } = req.body || {};
+    if (!id || !name) return res.status(400).json({ error: "缺少 id 或 name" });
+    const saved = store.setDir(p, { id: String(id), name: String(name) });
+    logger.info("保存转存目录:", { provider: p, id: saved.id, name: saved.name });
+    res.json({ ok: true, dir: saved });
+  });
+
+  // ── 单条转存 ─────────────────────────────────────────
+  app.post("/api/transfer", async (req, res) => {
+    try {
+      const r = await doTransfer(req.body);
+      if (!r.ok) {
+        const code = /未授权/.test(r.error) ? 401 : 400;
+        return res.status(code).json({ ok: false, error: r.error });
+      }
+      res.json({ ok: true, ...r });
+    } catch (e) {
+      logger.error("单条转存异常:", e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── 批量转存 ─────────────────────────────────────────
+  app.post("/api/transfer/batch", async (req, res) => {
+    try {
+      const { jobs, makeShare, sharePassword, force } = req.body;
+      if (!Array.isArray(jobs) || !jobs.length) return res.status(400).json({ ok: false, error: "缺少任务" });
+      logger.info("收到批量转存请求: " + jobs.length + " 个任务, makeShare=" + !!makeShare + ", force=" + !!force);
+      const results = await mapLimit(jobs, 3, async (job) => {
+        for (let attempt = 0; attempt <= 1; attempt++) {
+          const r = await doTransfer({ ...job, makeShare, sharePeriod: 0, sharePassword, force, title: (req.body.title || "").trim() });
+          if (r.ok || attempt > 0) return r;
+          logger.warn("[batch] transfer failed, retrying:", { provider: job.provider, error: r.error });
+          await new Promise(rs => setTimeout(rs, 1000));
+        }
+      });
+      const okCount = results.filter((r) => r && r.ok).length;
+      logger.info("批量转存完成: 成功 " + okCount + "/" + results.length);
+      res.json({ ok: true, results });
+    } catch (e) {
+      logger.error("批量转存异常:", e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // ── 任务历史 ─────────────────────────────────────────
+  app.get("/api/tasks", (req, res) => {
+    res.json(store.getTasks());
+  });
+
+  // ── 版本与更新 ───────────────────────────────────────
+  app.get("/api/version", (req, res) => {
+    res.json({
+      version: getVersion(),
+      commit: gitShort(),
+      env: process.env.NODE_ENV || "production",
+    });
+  });
+
+  app.get("/api/check-update", async (req, res) => {
+    try {
+      const localVersion = getVersion();
+      const localCommit = (await run("git", ["rev-parse", "HEAD"])).trim();
+      await run("git", ["fetch", "origin", "main"]);
+      const remoteCommit = (await run("git", ["rev-parse", "origin/main"])).trim();
+      const behind = localCommit !== remoteCommit;
+      let remoteVersion = "";
+      if (behind) {
+        try {
+          remoteVersion = (await run("git", ["show", "origin/main:VERSION"])).trim();
+        } catch (e) { remoteVersion = ""; }
+      }
+      res.json({ ok: true, behind, localVersion, localCommit: localCommit.slice(0, 7), remoteCommit: remoteCommit.slice(0, 7), remoteVersion });
+    } catch (e) {
+      logger.error("检查更新失败:", e.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  app.post("/api/update", async (req, res) => {
+    try {
+      const before = (await run("git", ["rev-parse", "HEAD"])).trim();
+      let pull = "";
+      try {
+        pull = await run("git", ["pull", "origin", "main"]);
+      } catch (e) {
+        logger.error("git pull 失败:", e.message);
+        return res.status(200).json({ ok: false, error: "git pull 失败: " + e.message, updated: false });
+      }
+      const after = (await run("git", ["rev-parse", "HEAD"])).trim();
+      const changed = await run("git", ["diff", "--name-only", before, after]).catch(() => "");
+      const needsNpmInstall = /package\.json/.test(changed);
+      if (needsNpmInstall) {
+        try {
+          fs.mkdirSync(path.join(projectDir, "data"), { recursive: true });
+          fs.writeFileSync(path.join(projectDir, "data", ".needs-npm-install"), after);
+        } catch (e) {}
+      }
+      const updated = before !== after;
+      res.json({ ok: true, updated, needsRestart: updated, needsNpmInstall, output: pull });
+    } catch (e) {
+      logger.error("更新失败:", e.message);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // 重启服务
+  app.post("/api/restart", (req, res) => {
+    res.json({ ok: true });
+    setTimeout(() => {
+      const child = spawn(process.execPath, [path.join(projectDir, "server.js")], {
+        cwd: projectDir, detached: true, stdio: "ignore", env: process.env, windowsHide: true,
+      });
+      child.unref();
+      process.exit(0);
+    }, 600);
+  });
+
+  // ── 健康检查 ─────────────────────────────────────────
+  app.get("/api/live", (req, res) => {
+    res.json({ ok: true, ts: Date.now(), uptime: process.uptime() });
+  });
+
+  function readiness(req, res) {
+    const baiduAcc = store.getAccount("baidu");
+    const quarkAcc = store.getAccount("quark");
+    const xunleiAcc = store.getAccount("xunlei");
+    const hasBaidu = !!(baiduAcc && baiduAcc.cookie);
+    const hasQuark = !!(quarkAcc && quarkAcc.connected && quarkAcc.cookie);
+    const hasXunlei = !!(xunleiAcc && xunleiAcc.connected);
+    refreshPings();
+    const state = getServerState();
+    const body = {
+      ok: true, healthy: state.healthy, degraded: !state.healthy,
+      fatalCount: state.fatalCount, ts: Date.now(), uptime: process.uptime(),
+      port: PORT, bind: "127.0.0.1",
+      accounts: {
+        baidu: { configured: hasBaidu, sessionValid: pingCache.baidu === undefined ? null : pingCache.baidu },
+        quark: { configured: hasQuark, sessionValid: pingCache.quark === undefined ? null : pingCache.quark },
+        xunlei: { configured: hasXunlei, sessionValid: pingCache.xunlei === undefined ? null : pingCache.xunlei },
+      },
+    };
+    const hasAnyConfigured = body.accounts.baidu.configured || body.accounts.quark.configured || body.accounts.xunlei.configured;
+    const trulyHealthy = state.healthy && (hasAnyConfigured || state.fatalCount === 0);
+    res.status(trulyHealthy ? 200 : 503).json(body);
+  }
+
+  app.get("/api/health", readiness);
+  app.get("/api/ready", readiness);
+
+  // ── 清空失败记录 ─────────────────────────────────────
+  app.delete("/api/tasks/failed", (req, res) => {
+    try {
+      const { removed } = store.backupAndRemoveFailed();
+      logger.info("清空失败记录: 删除 " + removed + " 条(已备份到 data/store-trash-*.json)");
+      res.json({ ok: true, removed });
+    } catch (e) {
+      logger.error("清空失败记录出错:", e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+};

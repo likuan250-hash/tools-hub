@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>工具箱 ToolsHub</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">🧰</span>
+        <span class="title">工具箱 ToolsHub</span>
+      </div>
+      <button id="themeBtn" class="icon-btn" title="切换主题">🌗</button>
+    </header>
+
+    <p class="hint">应用启动时已自动拉起以下两个服务，点击「打开」在窗口内使用。</p>
+
+    <main id="cards" class="cards"><!-- 卡片由 app.js 注入 --></main>
+
+    <footer class="foot">
+      <span id="aggStatus" class="agg">初始化中…</span>
+    </footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

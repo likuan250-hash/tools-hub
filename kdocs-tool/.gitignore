@@ -1,0 +1,41 @@
+# 依赖（另一台电脑用 npm install 安装，靠 package-lock.json 锁定版本）
+node_modules/
+
+# 运行日志与临时产物
+logs/
+*.log
+panel.log
+server.log
+server.err.log
+node-out.log
+_test_args.json
+
+# 运行时 IPC 中转文件（node <-> 控制面板）
+data/browse_req.json
+data/browse_res.json
+
+# 冗余打包（已有解压后的 kdocs-cli-bin/，自包含 CLI）
+kdocs.zip
+kdocs-cli.zip
+
+# 快捷方式含本机绝对路径，另一台电脑需重新运行 create-shortcut.vbs 生成
+启动面板.lnk
+*.lnk
+
+# Python
+__pycache__/
+*.pyc
+
+# 环境变量 / 密钥（如有）
+.env
+.env.*
+!.env.example
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Windows 保留设备名伪文件（bat 中 2>nul 重定向误生成，不可入库）
+nul

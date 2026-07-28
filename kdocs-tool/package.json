@@ -1,0 +1,15 @@
+﻿{
+  "name": "kdocs-tool",
+  "version": "1.0.25",
+  "description": "金山文档多维表自动录入工具",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "test:unit": "node --test test/parser.test.js test/ai.test.js test/executor.test.js test/update.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

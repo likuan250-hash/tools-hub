@@ -1,0 +1,54 @@
+name: Build Windows Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install app deps (electron + electron-builder)
+        run: npm install --no-audit --no-fund
+
+      - name: Install kdocs-tool deps
+        working-directory: kdocs-tool
+        run: npm install --no-audit --no-fund
+
+      - name: Install netdisk-hub deps
+        working-directory: netdisk-hub
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium (bundled into node_modules)
+        working-directory: netdisk-hub
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: "0"
+        run: npx playwright install chromium
+
+      - name: Write netdisk .env from secrets (optional)
+        if: ${{ secrets.NETDISK_ENV != '' }}
+        working-directory: netdisk-hub
+        run: echo "${{ secrets.NETDISK_ENV }}" > .env
+
+      - name: Build NSIS installer
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: "0"
+          # 不签名（无证书），安装时会有“未知发布者”提示，属正常
+        run: npm run dist
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToolsHub-Setup
+          path: dist/*.exe
+          if-no-files-found: error

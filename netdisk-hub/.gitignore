@@ -1,0 +1,9 @@
+node_modules/
+.env
+data/
+*.log
+overview.md
+__pycache__/
+*.pyc
+.webview_cache/
+*.lnk

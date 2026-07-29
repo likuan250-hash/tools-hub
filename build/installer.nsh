@@ -1,11 +1,10 @@
-; NSIS 自定义脚本：安装/升级前强制关闭旧版 tools-hub 主进程
-; 主应用窗口有自定义关闭确认框，安装器发送的 WM_CLOSE 会被拦截，导致无法覆盖安装。
-; KillProcDLL 是 electron-builder 自带 NSIS 的插件（DLL 形式，无需 !include 头文件），
-; 直接调用 KillProcDLL::KillProc 结束旧进程即可。
+; 升级/覆盖安装前强制结束旧版主进程，避免“无法关闭”弹窗。
+; 注意：electron-builder 默认 NSIS(3.0.4.1) 不含 nsProcess / KillProcDLL 等插件，
+; 故不使用任何插件，直接用 NSIS 内置 ExecWait 调用系统 taskkill.exe 强杀旧进程。
+; 进程镜像名 = executableName(缺省=package.name) = "tools-hub.exe"（productName 中文只是显示名，非进程名）。
 
 !macro customInit
   DetailPrint "正在关闭旧版 工具箱 ToolsHub..."
-  KillProcDLL::KillProc "工具箱 ToolsHub.exe"
-  ; 等待进程真正退出，避免后续文件覆盖仍被占用
+  ExecWait 'taskkill /F /IM tools-hub.exe'
   Sleep 2000
 !macroend

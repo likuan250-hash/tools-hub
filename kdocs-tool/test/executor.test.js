@@ -24,7 +24,9 @@ function baseDeps(over = {}) {
     calls,
     checkKdocsReady: () => true,
     searchSteamAppId: async () => null,
-    aiDescribe: () => ({ intro: "Hazelight 开发的双人合作冒险游戏。", size: "30.7G", coverUrl: "https://cdn.x.com/a.jpg" }),
+    aiDescribe: () => ({ intro: "Hazelight 开发的双人合作冒险游戏。", size: "30.7G" }),
+    aiCoverSearch: async () => "https://cdn.x.com/a.jpg", // 默认 bl 能搜到封面（中英文双搜）
+    getTotalSize: async () => null, // 默认无夸克大小（有 quarkUrl 时也不报错）
     downloadCover: async () => { downloadCoverCount++; return "/fake/steam.jpg"; },
     downloadCoverFromUrl: async () => { downloadFromUrlCount++; return "/fake/cover.jpg"; },
     fileBase64: () => "base64data",
@@ -90,12 +92,17 @@ test("大小缺失时不再提示手动填写，直接不写入游戏大小字�
   assert.strictEqual(res.success, true, "大小缺失不应导致失败");
 });
 
-test("封面优先级：bl 推荐优先，Steam 兜底不被调用", async () => {
-  const deps = baseDeps({ searchSteamAppId: async () => "12345" });
+test("封面优先级：Steam 优先，命中后 aiCoverSearch 不被调用", async () => {
+  let aiCoverSearchCalled = false;
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    aiCoverSearch: async () => { aiCoverSearchCalled = true; return "https://cdn.x.com/a.jpg"; },
+  });
   await autoExecute(baseParsed(), "12345", "/tmp", { deps });
   const { downloadCoverCount, downloadFromUrlCount } = deps._state();
-  assert.strictEqual(downloadFromUrlCount, 1, "bl 推荐封面应被下载");
-  assert.strictEqual(downloadCoverCount, 0, "已有 bl 封面时不应再走 Steam 兜底");
+  assert.strictEqual(downloadCoverCount, 1, "有 appid 应走 Steam 官方封面");
+  assert.strictEqual(downloadFromUrlCount, 0, "Steam 命中后不应再下载其他封面");
+  assert.strictEqual(aiCoverSearchCalled, false, "Steam 已覆盖则不应调 aiCoverSearch");
 });
 
 test("需求：先查重（list_records）再创建记录，且顺序正确", async () => {
@@ -161,7 +168,7 @@ test("onStep 实时回调：每步 emit step（带 index），结束 emit done",
 });
 
 test("需求GAP：封面所有源失败 → 当前仍判 success 且不含作品展示（待确认）", async () => {
-  const deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "10G", coverUrl: "" }) });
+  const deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "10G" }), aiCoverSearch: async () => "" });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const coverSteps = res.steps.filter(s => s.name.includes("封面"));
   assert.ok(coverSteps.length >= 1 && coverSteps.every(s => s.status === "跳过"), "封面应全部跳过");

@@ -12,10 +12,8 @@ function buildPrompt(parsed, steamAppId, manualCoverUrl) {
   const gameSize = (parsed.size || "").trim();
   const sizeLine = gameSize || "【从夸克分享页抓取，如 30.7G】";
 
-  // 封面图：统一由 bl 联网搜索封面直链并下载；Steam 也可用 cloudflare CDN；非 Steam 也必须让 bl 去搜官方封面
-  const coverLine = steamAppId
-    ? `封面由 bl 联网获取直链下载；Steam 也可直接用 cdn.cloudflare.steamstatic.com/steam/apps/${steamAppId}/library_600x900_2x.jpg（cloudflare 源最稳，fastly 直链实测404勿用）`
-    : `封面必须由 bl 联网搜索官方封面/宣传图直链下载（搜索 "${parsed.raw} 封面"、"${parsed.raw} 官网" 等），不允许跳过；若实在找不到，才在工具「封面链接」输入框粘贴图片 URL：${manualCoverUrl || "（未提供）"}`;
+  // 封面图：已由上位逻辑（executor）自动下载到本地目录，bl 只需读取并上传，不要自行联网搜索封面直链
+  const coverLine = `封面图已由工具自动下载到本地目录 E:\\游戏网站建设\\（文件名形如 ${parsed.raw}_cover.jpg/.png/.webp），请直接读取该目录下的封面图片文件并 upload_attachment 上传，不要自行联网搜索封面直链。`;
 
   const steamLine = steamAppId
     ? `Steam AppID：${steamAppId}`

@@ -140,11 +140,45 @@ function formatSize(bytes) {
   return s + units[u];
 }
 
+// ── 版本号选择：分享根目录含「游戏v1/ v2/ v3/」时，仅取最高版本求和 ──
+// 取名称里最后一个 v?\d+(\.\d+)* 段，转整数元组便于比较
+function parseVersion(name) {
+  const m = (name || "").match(/v?\d+(?:\.\d+)*/gi);
+  if (!m || m.length === 0) return null;
+  const last = m[m.length - 1];
+  return last.replace(/^v/i, "").split(".").map(Number);
+}
+
+function cmpVersion(a, b) {
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a[i] || 0, y = b[i] || 0;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+
+// 选出版本号最高的顶层条目（同版本分卷一起返回）；若所有条目都无版本号 → 返回空数组
+function pickLatestVersion(list) {
+  let best = null;
+  let items = [];
+  for (const it of list) {
+    const v = parseVersion(it.file_name);
+    if (!v) continue;
+    if (!best) { best = v; items = [it]; continue; } // 首个带版本的设为基础
+    const c = cmpVersion(v, best);
+    if (c > 0) { best = v; items = [it]; }       // 更高版本 → 替换
+    else if (c === 0) { items.push(it); }          // 同版本多个（如分卷 part1/part2）一起算
+  }
+  return items;
+}
+
 /**
  * 抓取夸克分享页总大小。
  * @param {string} link 夸克分享链接
  * @returns {Promise<{bytes:number,text:string,files:number}|null>}
  *   成功返回 {bytes,text(如 "30.7GB"),files}；无 Cookie / 失败 / 分享为空返回 null
+ *   版本感知：根目录含多个版本文件夹时，仅对最高版本递归求和（扁平结构：根=版本）。
  */
 async function getTotalSize(link) {
   const cookie = getCookie();
@@ -154,9 +188,16 @@ async function getTotalSize(link) {
   // 整体预算上限 60s：超大分享(上千文件夹)递归求和也能在时限内结束，避免流程卡死
   const work = (async () => {
     const stoken = await getStoken(cookie, pwdId, passcode);
+    // 先取顶层列表，按版本号选最新版；无版本号（如扁平无版本或嵌套）则回退全部
+    const top = await fetchDetail(cookie, pwdId, stoken, "0");
+    let targets = pickLatestVersion(top);
+    if (targets.length === 0) targets = top;
     const acc = { bytes: 0, files: 0 };
     const seen = new Set();
-    await walk(cookie, pwdId, stoken, "0", seen, acc);
+    for (const t of targets) {
+      if (t.dir) await walk(cookie, pwdId, stoken, t.fid, seen, acc);
+      else { acc.bytes += t.size || 0; acc.files += 1; }
+    }
     return { bytes: acc.bytes, text: formatSize(acc.bytes), files: acc.files };
   })();
   const timeout = new Promise((_, reject) =>
@@ -164,4 +205,4 @@ async function getTotalSize(link) {
   return Promise.race([work, timeout]);
 }
 
-module.exports = { getTotalSize, getCookie, parseLink, formatSize, BASE };
+module.exports = { getTotalSize, getCookie, parseLink, formatSize, BASE, parseVersion, pickLatestVersion };

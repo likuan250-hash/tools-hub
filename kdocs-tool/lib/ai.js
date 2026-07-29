@@ -81,46 +81,31 @@ const SIZE_EMPTY = /^(无|未知|none|null|未抓取到)?$/i;
 
 function isBadIntro(s) { return !s || INTRO_BLACKLIST.test(s) || s.length < 10; }
 function isBadSize(s) { return !s || SIZE_EMPTY.test(s.trim()); }
-function isBadCover(s) { return !s || !/^https?:\/\//i.test(s); }
 
-/** 构建主 prompt（提取为函数，便于测试断言内容不含免责声明诱导） */
+/**
+ * 构建简介 prompt（只做介绍+可选大小）。
+ * 封面已拆分到 aiCoverSearch、大小抓取已拆分到夸克接口，避免一次塞三件事互相稀释质量。
+ */
 function buildPrompt(gameName, opts = {}) {
-  const quarkUrl = opts.quarkUrl || "";
-  const baiduUrl = opts.baiduUrl || "";
-  let prompt = `请完成三项任务。用户已提供该游戏的网盘资源，因此该游戏必然真实存在，请直接客观描述，不要质疑、不要写免责声明。\n`;
+  let prompt = `请完成以下任务。用户已提供该游戏的网盘资源，因此该游戏必然真实存在，请直接客观描述，不要质疑、不要写免责声明。\n`;
   prompt += `1. 联网搜索游戏"${gameName}"（英文原名：${opts.englishName || "无"}）的客观公开资料，用50-80字中文介绍其开发商/发行商、游戏类型与核心玩法。严禁返回"疑似虚构""无法确认""经核实无真实公开资料""请勿轻信""非官方渠道"等免责声明，否则视为错误输出。\n`;
-  if (quarkUrl || baiduUrl || opts.xunleiUrl) {
-    prompt += `2. 必须从以下网盘分享链接页面抓取该游戏安装包总大小（如"30.7G""2.3TB""512MB"）。请打开链接读取页面中的文件大小字段，不要猜测。${quarkUrl ? "\n夸克：" + quarkUrl : ""}${baiduUrl ? "\n百度：" + baiduUrl : ""}${opts.xunleiUrl ? "\n迅雷：" + opts.xunleiUrl : ""}\n`;
-  } else {
-    prompt += `2. 若你了解该游戏安装包大致大小（如"30.7G"）请一并给出，不确定则写"未抓取到"。\n`;
-  }
-  prompt += `3. 必须联网搜索该游戏的封面宣传图直链（可直接下载的图片 URL），不得留空：\n`;
-  prompt += `   - 优先尝试识别 Steam AppID，若能确定则返回 Steam 商店封面 CDN 直链，例如 https://cdn.cloudflare.steamstatic.com/steam/apps/<AppID>/library_600x900_2x.jpg 或 https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/<AppID>/library_600x900_2x.jpg\n`;
-  prompt += `   - 若非 Steam（任天堂/PS/Epic/Xbox/国产/手游等），通过搜索 "${gameName} 封面"、"${gameName} 官方宣传图"、"${gameName} 官网" 找到官方商城、厂商页面或新闻媒体的封面图直链\n`;
-  prompt += `   - 只返回一张横版或竖版封面图的直链 URL，确保 URL 以 .jpg/.jpeg/.png/.webp 结尾且可直接下载\n`;
-  prompt += `严格按以下格式单行输出，不要多余内容：\n介绍：<50-80字真实介绍>\n大小：<如 30.7G，未抓取到则写"未抓取到">\n封面：<封面图直链URL，必须返回>`;
+  prompt += `2. 若你了解该游戏安装包大致大小（如"30.7G"）请一并给出，不确定则写"未抓取到"（不要尝试打开网盘链接读取，以你的已知公开信息为准）。\n`;
+  prompt += `严格按以下格式单行输出，不要多余内容：\n介绍：<50-80字真实介绍>\n大小：<如 30.7G，未抓取到则写"未抓取到">`;
   return prompt;
 }
 
-/** 解析 bl 一次输出的纯函数（可单测）。返回解析结果与质量标志。 */
+/** 解析 bl 一次输出的纯函数（可单测）。返回解析结果与质量标志。封面/大小已拆分，这里只处理介绍+大小文本。 */
 function parseSingle(content, { gameName, rawLine, opts = {} } = {}) {
   const introM = content.match(/介绍[:：]\s*([^\n]*)/);
   const sizeM = content.match(/大小[:：][ \t]*([^\n]*)/);
-  const coverM = content.match(/封面[:：]\s*([^\n]*)/);
-  let coverUrl = "";
-  if (coverM) {
-    const urlM = coverM[1].match(/https?:\/\/[^\s）)]+/);
-    coverUrl = urlM ? urlM[0] : "";
-  }
   let intro = (introM?.[1] || "").replace(/[\n\r]+/g, " ").trim().slice(0, 200);
   if (isBadIntro(intro)) intro = "";
   const rawSize = (sizeM?.[1] || "").trim();
   let size = isBadSize(rawSize) ? "" : rawSize;
   return {
-    intro, size, coverUrl,
+    intro, size,
     badIntro: isBadIntro(intro),
     badSize: isBadSize(size) && !!(opts.quarkUrl || opts.baiduUrl || opts.xunleiUrl),
-    badCover: isBadCover(coverUrl),
   };
 }
 
@@ -134,11 +119,9 @@ function extractContent(out) {
   return content;
 }
 
-/** 用 bl 生成游戏介绍、抓取大小、并联网搜索封面图直链（bl 即内置 agent：介绍+大小+封面三件事都交给 bl） */
+/** 用 bl 生成游戏介绍（封面已拆分到 aiCoverSearch，大小抓取已拆分到夸克接口，避免任务互相稀释） */
 async function aiDescribe(gameName, rawLine, opts = {}) {
   const run = opts.runCmd || runCmd;
-  const quarkUrl = opts.quarkUrl || "";
-  const baiduUrl = opts.baiduUrl || "";
   try {
     const out = await run([
       "text", "chat",
@@ -148,40 +131,53 @@ async function aiDescribe(gameName, rawLine, opts = {}) {
     ], { timeout: 60000 });
     const content = extractContent(out);
     const r1 = parseSingle(content, { gameName, rawLine, opts });
-    let { intro, size, coverUrl } = r1;
+    let { intro, size } = r1;
 
-    // 强制重试：首次输出质量不合格时，分项再追一次
-    if (r1.badIntro || r1.badSize || r1.badCover) {
-      let retryPrompt = `请为游戏"${gameName}"（英文：${opts.englishName || "无"}）补全以下信息，不要编造、不要写免责声明。\n`;
-      if (r1.badIntro) retryPrompt += `1. 联网搜索该游戏开发商/类型/核心玩法，输出50-80字中文客观介绍。\n`;
-      if (r1.badSize) retryPrompt += `2. 打开网盘链接读取安装包总大小：${quarkUrl || baiduUrl || opts.xunleiUrl}\n`;
-      if (r1.badCover) retryPrompt += `3. 联网搜索一张官方封面/宣传图直链（.jpg/.jpeg/.png/.webp）。\n`;
-      retryPrompt += "严格按格式输出（缺失项可写 无）:\n";
-      if (r1.badIntro) retryPrompt += "介绍：<客观介绍>\n";
-      if (r1.badSize) retryPrompt += "大小：<如 30.7G>\n";
-      if (r1.badCover) retryPrompt += "封面：<URL>\n";
+    // 强制重试：首次介绍不合格时，单独再追一次（封面/大小已走独立路径，这里只补介绍；若首次没拿到大小则一并采用二次的大小）
+    if (r1.badIntro) {
+      const retryPrompt = `请为游戏"${gameName}"（英文：${opts.englishName || "无"}）联网搜索其开发商/类型/核心玩法，输出50-80字中文客观介绍，不要编造、不要写免责声明。严格按格式输出：\n介绍：<客观介绍>`;
       try {
         const out2 = await run([
           "text", "chat",
           "--message", retryPrompt,
-          "--max-tokens", r1.badIntro ? "600" : "300",
+          "--max-tokens", "600",
           "--output", "json",
         ], { timeout: 45000 });
-        const content2 = extractContent(out2);
-        const r2 = parseSingle(content2, { gameName, rawLine, opts });
-        if (r1.badIntro && !r2.badIntro) intro = r2.intro;
-        if (r1.badSize && !r2.badSize) size = r2.size;
-        if (r1.badCover && !r2.badCover) coverUrl = r2.coverUrl;
+        const r2 = parseSingle(extractContent(out2), { gameName, rawLine, opts });
+        if (!r2.badIntro) {
+          intro = r2.intro;
+          if (!r1.size && r2.size) size = r2.size; // 首次未拿到大小则采用二次
+        }
       } catch { /* 忽略二次失败 */ }
     }
 
     // 最终保底：若仍无介绍，用原始文本兜底（至少不是免责声明）
     if (!intro) intro = rawLine;
-    return { intro, size, coverUrl };
+    return { intro, size, coverUrl: "" };
   } catch { return { intro: rawLine || "", size: "", coverUrl: "" }; }
 }
 
+/**
+ * 联网搜索游戏封面真实直链：中英文名各搜一次，返回第一个可提取的图片 URL。
+ * 不做下载校验（由调用方 downloadCoverFromUrl 用 HTTP 200 + Content-Type 图片校验，防破图）。
+ * @returns {Promise<string>} 图片 URL，未搜到返回 ""
+ */
+async function aiCoverSearch(gameName, englishName, opts = {}) {
+  const run = opts.runCmd || runCmd;
+  const names = [gameName, englishName].filter(Boolean);
+  for (const name of names) {
+    const prompt = `联网搜索游戏"${name}"的官方封面或宣传图直链（可直接下载的图片 URL，必须以 .jpg/.jpeg/.png/.webp 结尾）。只返回图片 URL 本身，不要任何解释文字、不要 Markdown 代码块。`;
+    try {
+      const out = await run(["text", "chat", "--message", prompt, "--max-tokens", "200", "--output", "json"], { timeout: 45000 });
+      const content = extractContent(out);
+      const m = content.match(/https?:\/\/[^\s）)]+\.(?:jpg|jpeg|png|webp)/i);
+      if (m) return m[0];
+    } catch { /* 该名称搜索失败，尝试下一个 */ }
+  }
+  return "";
+}
+
 module.exports = {
-  checkBlAvailable, aiDescribe, parseSingle, buildPrompt,
-  INTRO_BLACKLIST, isBadIntro, isBadSize, isBadCover,
+  checkBlAvailable, aiDescribe, aiCoverSearch, parseSingle, buildPrompt,
+  INTRO_BLACKLIST, isBadIntro, isBadSize,
 };

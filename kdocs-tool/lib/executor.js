@@ -16,6 +16,7 @@ const DEFAULT_DEPS = {
   checkKdocsReady: kdocs.checkKdocsReady,
   fileBase64: kdocs.fileBase64,
   aiDescribe: ai.aiDescribe,
+  aiCoverSearch: ai.aiCoverSearch,
   getTotalSize: quark.getTotalSize,
 };
 
@@ -130,11 +131,12 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     return result;
   }
 
-  // 2. 搜索 Steam AppID
+  // 2. 搜索 Steam AppID（中英文名各搜一次，提高命中率）
   let appid = manualAppId || null;
   if (!appid) {
     doing({ name: "搜索 Steam AppID" });
     appid = await deps.searchSteamAppId(parsed.gameName);
+    if (!appid && parsed.englishName) appid = await deps.searchSteamAppId(parsed.englishName);
     if (appid) ok({ name: "Steam AppID", appid });
     else skip({ name: "Steam AppID", reason: "未找到（非 Steam 或名称无匹配）" });
   } else {
@@ -155,24 +157,32 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   else skip({ name: "游戏介绍生成", reason: "bl 未返回有效介绍或含免责声明" });
   if (!desc) desc = parsed.raw;
 
-  // 4. 下载封面：bl 推荐的封面直链优先，其次 Steam AppID 多源兜底，再次用户手填链接兜底
+  // 4. 下载封面（优先级：Steam 官方 CDN → bl 联网搜真实封面(中英文双搜+下载校验) → 手动链接 → 留空）
   let coverPath = null;
-  if (aiRes.coverUrl) {
-    doing({ name: "下载 bl 推荐封面" });
-    try {
-      coverPath = await deps.downloadCoverFromUrl(parsed.gameName, aiRes.coverUrl, coverDir);
-      const s = deps.fs.statSync(coverPath);
-      ok({ name: "封面下载（bl 推荐）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
-    } catch (e) { skip({ name: "封面下载（bl 推荐）", reason: e.message }); }
-  }
+  // 4.1 Steam 官方 CDN（已有 appid 时）
   if (!coverPath && appid) {
     doing({ name: "下载 Steam 封面" });
     try {
       coverPath = await deps.downloadCover(parsed.gameName, appid, coverDir);
       const s = deps.fs.statSync(coverPath);
-      ok({ name: "封面下载（Steam 兜底）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
-    } catch (e) { skip({ name: "封面下载（Steam 兜底）", reason: e.message }); }
+      ok({ name: "封面下载（Steam 官方）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
+    } catch (e) { skip({ name: "封面下载（Steam 官方）", reason: e.message }); }
   }
+  // 4.2 bl 联网搜真实封面（中英文名各搜一次，downloadCoverFromUrl 做真实下载校验防破图）
+  if (!coverPath && deps.aiCoverSearch) {
+    doing({ name: "bl 联网搜索封面（中英文）" });
+    try {
+      const url = await deps.aiCoverSearch(parsed.gameName, parsed.englishName);
+      if (url) {
+        coverPath = await deps.downloadCoverFromUrl(parsed.gameName, url, coverDir);
+        const s = deps.fs.statSync(coverPath);
+        ok({ name: "封面下载（bl 联网搜索）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
+      } else {
+        skip({ name: "封面下载（bl 联网搜索）", reason: "未搜到可用封面直链" });
+      }
+    } catch (e) { skip({ name: "封面下载（bl 联网搜索）", reason: e.message }); }
+  }
+  // 4.3 手动链接兜底
   if (!coverPath && manualCoverUrl) {
     doing({ name: "下载手动封面" });
     try {
@@ -181,7 +191,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       ok({ name: "封面下载（手动链接）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
     } catch (e) { skip({ name: "封面下载（手动链接）", reason: e.message }); }
   }
-  if (!coverPath) { doing({ name: "封面下载" }); skip({ name: "封面下载", reason: "bl 未找到封面且非 Steam 且无手动链接" }); }
+  if (!coverPath) { doing({ name: "封面下载" }); skip({ name: "封面下载", reason: "Steam 无匹配、bl 未搜到、且无手动链接，留空" }); }
 
   // 5. 上传附件
   let objectId = null;
@@ -203,9 +213,9 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     } catch (e) { fail({ name: "附件上传", error: e.message }); }
   }
 
-  // 5.5 夸克分享页总大小：bl 读不到网盘页、文本也无大小时，直接调夸克接口递归求和
+  // 5.5 夸克分享页总大小（真实字节求和，按版本号取最新版）：有夸克链接即优先抓取，失败才回退文本/留空
   let quarkSize = "";
-  if (parsed.quarkUrl && !aiRes.size && !parsed.size) {
+  if (parsed.quarkUrl) {
     doing({ name: "夸克分享页大小抓取" });
     try {
       const r = await deps.getTotalSize(parsed.quarkUrl);
@@ -228,8 +238,8 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     游戏信息: parsed.tags,
     更新日期: new Date().toISOString().split("T")[0].replace(/-/g, "/"),
   };
-  // 游戏大小：bl 抓取的权威优先，其次文本识别，再次夸克分享页直抓
-  const gameSize = aiRes.size || parsed.size || quarkSize;
+  // 游戏大小：夸克真实求和优先（准确），其次 bl 简介附带，再次文本识别
+  const gameSize = quarkSize || aiRes.size || parsed.size;
   if (gameSize) fields["游戏大小"] = gameSize;
   if (parsed.baiduUrl) fields["百度网盘"] = [{ address: parsed.baiduUrl, displayText: parsed.baiduUrl }];
   if (parsed.quarkUrl) fields["夸克网盘"] = [{ address: parsed.quarkUrl, displayText: parsed.quarkUrl }];

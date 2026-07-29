@@ -46,6 +46,7 @@
         "to": "bin"
       }
     ],
+    "publish": null,
     "win": {
       "target": [
         {

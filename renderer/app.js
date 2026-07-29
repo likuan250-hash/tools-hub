@@ -116,6 +116,13 @@
       if (e.errorCode === -3) return;
       console.warn("webview 加载失败", key, e.errorDescription);
     });
+    // DOM 准备好后触发一次 resize，确保 webview 内部内容正确撑满容器
+    wv.addEventListener("dom-ready", () => {
+      if (wv.classList.contains("active")) {
+        resizeWebview(wv);
+        setTimeout(() => resizeWebview(wv), 60);
+      }
+    });
     stageEl.appendChild(wv);
 
     renderTabs();
@@ -137,13 +144,19 @@
     }
   }
 
+  function resizeWebview(wv) {
+    // webview 在显示/窗口大小变化后需要触发 resize 才能正确重绘内部尺寸
+    if (!wv || !wv.resize) return;
+    try { wv.resize(); } catch (e) {}
+  }
+
   function switchTab(key) {
     activeKey = key;
     tabsEl.style.display = "flex";
     renderTabs();
     if (key === HOME_KEY) {
       // 入口页：显示 landing，隐藏所有工具 webview（不销毁，保留后台状态）
-      landingEl.style.display = "flex";
+      landingEl.classList.remove("hidden");
       openTabs.forEach((x) => {
         if (x.key === HOME_KEY) return;
         const wv = document.getElementById("wv-" + x.key);
@@ -151,19 +164,32 @@
       });
       return;
     }
-    landingEl.style.display = "none";
+    // 工具页：隐藏 landing，显示对应 webview
+    landingEl.classList.add("hidden");
     openTabs.forEach((x) => {
       if (x.key === HOME_KEY) return; // 跳过入口页，它不走 webview
       const wv = document.getElementById("wv-" + x.key);
       if (!wv) return;
       const active = x.key === key;
+      const wasActive = wv.classList.contains("active");
       wv.classList.toggle("active", active);
-      // webview 从隐藏切到显示后需要触发一次 resize 才能正确重绘
-      if (active && wv.resize) {
-        try { wv.resize(); } catch (e) {}
+      if (active) {
+        // visibility 改变后内部布局需要一帧才能稳定，延迟 resize
+        requestAnimationFrame(() => {
+          resizeWebview(wv);
+          // 再补一次，兼容某些情况下首帧未生效
+          setTimeout(() => resizeWebview(wv), 60);
+        });
       }
     });
   }
+
+  // 窗口大小变化时，给当前活动 webview 触发 resize
+  window.addEventListener("resize", () => {
+    if (activeKey && activeKey !== HOME_KEY) {
+      resizeWebview(document.getElementById("wv-" + activeKey));
+    }
+  });
 
   function renderTabs() {
     tabsEl.innerHTML = "";

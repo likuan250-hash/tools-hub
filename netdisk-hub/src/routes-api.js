@@ -155,7 +155,8 @@ module.exports = function registerApiRoutes(app, ctx) {
     const hubVer = process.env.TOOLSHUB_VERSION;
     const version = hubVer || getVersion();
     const source = hubVer ? "tools-hub" : "standalone";
-    res.json({ version, source, updatable: false });
+    // bootToken：工具箱注入的随机令牌，供主进程校验"占用本端口的确实是我们的服务"(端口防抢占检测)
+    res.json({ version, source, updatable: false, bootToken: process.env.BOOT_TOKEN || null });
   });
 
   // ── 健康检查 ─────────────────────────────────────────

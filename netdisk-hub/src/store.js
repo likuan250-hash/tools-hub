@@ -1,5 +1,6 @@
 ﻿const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // 数据目录：优先用工具箱注入的 NETDISK_DATA_DIR(指向 userData 真实目录，升级不丢)；
 // 独立运行时回退到安装目录下的 data/。❌ 不再用 junction(NSIS 升级会误删)。
@@ -8,9 +9,51 @@ const DATA_DIR = process.env.NETDISK_DATA_DIR
   : path.join(__dirname, '..', 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
 
+// ── 凭证落盘加密(AES-256-GCM) ──
+// store.json 含网盘登录态(BDUSS 等)，明文落盘风险高。此处用 AES-256-GCM 加密：
+// 主密钥存于 userData/.masterkey（与数据同目录、受 OS 用户 ACL 保护），
+// 密钥+密文同时泄露才会暴露凭证——相比纯明文已显著增强。
+// 注：真正的「每机器绑定」需 Windows DPAPI(需原生模块，CI 不便)，此处为务实方案，
+// 后续可平滑替换为 electron.safeStorage(主进程) 或 win-dpapi。
+const KEY_FILE = path.resolve(DATA_DIR, '..', '..', '.masterkey'); // → userData/.masterkey
+let _key = null;
+function getKey() {
+  if (_key) return _key;
+  try {
+    if (fs.existsSync(KEY_FILE)) {
+      _key = Buffer.from(fs.readFileSync(KEY_FILE, 'utf8').trim(), 'hex');
+    } else {
+      _key = crypto.randomBytes(32);
+      fs.writeFileSync(KEY_FILE, _key.toString('hex'), { mode: 0o600 });
+      try { fs.chmodSync(KEY_FILE, 0o600); } catch (_) { /* Windows 忽略 */ }
+    }
+  } catch (e) {
+    // 极端兜底：进程内随机密钥(重启后无法解密旧数据)，仅防崩溃
+    _key = crypto.randomBytes(32);
+  }
+  return _key;
+}
+function encryptObj(obj) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getKey(), iv);
+  const enc = Buffer.concat([cipher.update(JSON.stringify(obj), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return { v: 1, k: iv.toString('hex'), t: tag.toString('hex'), d: enc.toString('hex') };
+}
+function decryptObj(blob) {
+  const iv = Buffer.from(blob.k, 'hex');
+  const tag = Buffer.from(blob.t, 'hex');
+  const dec = Buffer.from(blob.d, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', getKey(), iv);
+  decipher.setAuthTag(tag);
+  const json = Buffer.concat([decipher.update(dec), decipher.final()]).toString('utf8');
+  return JSON.parse(json);
+}
+
 // 历史硬上限:仅保留最近 N 条,防止 store.json 无限膨胀。
 const MAX_TASKS = Number(process.env.MAX_TASKS) || 1000;
 const TRASH_RETENTION_DAYS = Number(process.env.TRASH_RETENTION_DAYS) || 30;
+const TRASH_KEEP = 10; // store-trash 最多保留最近 10 个，超出删除(防备份无限堆积)
 let lastTrashCleanup = 0;
 
 // ── 内存缓存 + 串行写队列 ──
@@ -26,21 +69,51 @@ function cleanOldTrash() {
   lastTrashCleanup = now;
   try {
     const maxAge = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-    for (const name of fs.readdirSync(DATA_DIR)) {
-      if (!/^store-trash-.*\.json$/.test(name)) continue;
-      const file = path.join(DATA_DIR, name);
-      if (now - fs.statSync(file).mtimeMs > maxAge) fs.unlinkSync(file);
-    }
+    const files = fs.readdirSync(DATA_DIR)
+      .filter((n) => /^store-trash-.*\.json$/.test(n))
+      .map((n) => {
+        const p = path.join(DATA_DIR, n);
+        let m = 0;
+        try { m = fs.statSync(p).mtimeMs; } catch (_) {}
+        return { n, p, m };
+      })
+      .sort((a, b) => b.m - a.m);
+    files.forEach((f, i) => {
+      const tooOld = now - f.m > maxAge;
+      const overCap = i >= TRASH_KEEP;
+      if (tooOld || overCap) {
+        try { fs.unlinkSync(f.p); } catch (e) {}
+      }
+    });
   } catch (e) { /* 清理失败不影响读写 */ }
+}
+
+function loadDecrypted() {
+  try {
+    const raw = fs.readFileSync(STORE_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.v === 1) return decryptObj(parsed);
+    // 旧版明文兼容：当作明文对象返回，下次写入时自动加密
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (e) {
+    try { console.error('[store] 读取失败,重建空结构:', e.message); } catch (_) {}
+  }
+  return { accounts: {}, tasks: [] };
+}
+
+function writeEncrypted(obj) {
+  const tmp = STORE_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(encryptObj(obj)));
+  fs.renameSync(tmp, STORE_FILE);
 }
 
 function ensure() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(STORE_FILE)) {
-    fs.writeFileSync(STORE_FILE, JSON.stringify({ accounts: {}, tasks: [] }, null, 2));
+    writeEncrypted({ accounts: {}, tasks: [] }); // 首次写加密空结构
   }
   if (!cache) {
-    cache = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    cache = loadDecrypted();
   }
   cleanOldTrash();
 }
@@ -50,12 +123,11 @@ function read() {
   return cache;
 }
 
-// 原子刷盘：tmp + rename
+// 原子刷盘：加密后 tmp + rename
 function flushWrite() {
   if (!cache) return;
-  const tmp = STORE_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(cache, null, 2));
-  fs.renameSync(tmp, STORE_FILE);
+  try { writeEncrypted(cache); }
+  catch (e) { try { console.error('[store] write failed:', e.message); } catch (_) {} }
 }
 
 // 串行写队列：多次调用合并为一次刷盘
@@ -64,8 +136,7 @@ function scheduleWrite() {
   writeScheduled = true;
   writeQueue = writeQueue.then(() => {
     writeScheduled = false;
-    try { flushWrite(); }
-    catch (e) { try { console.error('[store] write failed:', e.message); } catch (_) {} }
+    flushWrite();
   });
 }
 
@@ -137,6 +208,3 @@ function getTasks() {
 }
 
 module.exports = { getAccount, saveAccount, addTask, getTasks, getDir, setDir, read, write, flushWrite, backupAndRemoveFailed };
-
-
-

@@ -42,6 +42,26 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// ── 同源校验：阻断恶意网页对 127.0.0.1 的跨站 CSRF 写请求 ──
+// 合法调用来自本工具内嵌 webview（同源，Origin=http://127.0.0.1:PORT）；
+// 跨站网页发来的请求会带攻击者 Origin → 拒绝。
+// 外网 OAuth 回调为顶级导航(无 Origin) → 放行；同源 fetch/XHR 带 localhost Origin → 放行。
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    try {
+      const host = new URL(origin).hostname;
+      if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
+        return res.status(403).json({ error: 'forbidden: cross-origin request blocked' });
+      }
+    } catch {
+      return res.status(403).json({ error: 'forbidden: invalid origin' });
+    }
+  }
+  next();
+});
+
 registerAuthRoutes(app, { store, logger, baidu, baiduAuth, quark, quarkAuth, xunlei, xunleiAuth });
 // 静态资源防缓存: 每次都重新验证, 避免浏览器长期使用旧 app.js(曾导致「改了代码仍看到旧行为」)
 app.use(express.static(path.join(__dirname, 'public'), {

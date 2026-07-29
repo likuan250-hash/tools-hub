@@ -6,6 +6,8 @@ const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { fork } = require("child_process");
 const fs = require("fs");
+const crypto = require("crypto");
+const http = require("http");
 
 const RES = process.resourcesPath; // 开发时=项目根，打包后=resources 目录
 const KDOCS_DIR = path.join(RES, "kdocs-tool");
@@ -24,6 +26,10 @@ function resolveBlBin() {
   return process.env.BL_BIN_PATH || "bl";
 }
 const BL_BIN = resolveBlBin();
+
+// 启动令牌：随机生成，注入子进程环境变量；子服务在 /api/version 回显。
+// 主进程据此校验"占用本端口的确实是我们自己的服务"，可检测端口被其他进程抢占/伪造(本地安全)。
+const BOOT_TOKEN = crypto.randomBytes(16).toString("hex");
 
 // webview 内嵌页面用的 preload（提供 pickFolder 等有限原生能力）
 const WEBVIEW_PRELOAD = path.join(__dirname, "webview-preload.js");
@@ -141,8 +147,72 @@ if (!gotLock) {
   process.exit(0);
 }
 
+// ── 日志：同时输出到控制台与 userData/tools-hub.log（带滚动）──
+// 打包后 stdout 无落盘，用户机器出问题时这边完全没日志可查；现改为持久化。
+let _logFile = null;
+function getLogFile() {
+  if (_logFile === null) {
+    try { _logFile = path.join(app.getPath("userData"), "tools-hub.log"); }
+    catch (e) { _logFile = false; }
+  }
+  return _logFile || null;
+}
+function safeStr(a) {
+  if (a instanceof Error) return a.stack || a.message;
+  if (typeof a === "string") return a;
+  try { return JSON.stringify(a); } catch (e) { return String(a); }
+}
 function log(...args) {
+  const line = "[" + new Date().toISOString() + "] [tools-hub] " + args.map(safeStr).join(" ");
   console.log("[tools-hub]", ...args);
+  const f = getLogFile();
+  if (!f) return;
+  try {
+    try {
+      const st = fs.statSync(f);
+      if (st.size > 5 * 1024 * 1024) { // >5MB 滚动：保留一份 .1 备份
+        fs.copyFileSync(f, f + ".1");
+        fs.writeFileSync(f, "");
+      }
+    } catch (e) { /* 首次写入 */ }
+    fs.appendFileSync(f, line + "\n");
+  } catch (e) { /* 日志失败不影响主流程 */ }
+}
+
+// 启动后清理 userData/netdisk-hub 下残留的过期备份目录(如 *.backup-*)，防止长期堆积占盘
+function cleanupStaleBackups() {
+  try {
+    const dir = path.join(app.getPath("userData"), "netdisk-hub");
+    if (!fs.existsSync(dir)) return;
+    const now = Date.now();
+    const maxAge = 7 * 24 * 60 * 60 * 1000;
+    for (const n of fs.readdirSync(dir)) {
+      if (!/\.backup-/.test(n)) continue;
+      const p = path.join(dir, n);
+      try { if (now - fs.statSync(p).mtimeMs > maxAge) fs.rmSync(p, { recursive: true, force: true }); }
+      catch (e) {}
+    }
+  } catch (e) { log("cleanupStaleBackups error:", e.message); }
+}
+
+// 端口防抢占检测：拉取子服务 /api/version，校验 bootToken 是否匹配我们注入的令牌。
+// 不匹配说明 127.0.0.1:PORT 被其他进程抢占/伪造(本地恶意进程场景)，记录安全告警。
+function verifyChildBoot(cfg) {
+  const req = http.get(cfg.url + "/api/version", (res) => {
+    let d = "";
+    res.on("data", (c) => (d += c));
+    res.on("end", () => {
+      try {
+        const j = JSON.parse(d);
+        if (j.bootToken && j.bootToken !== BOOT_TOKEN) {
+          log("⚠️ 安全警告：" + cfg.key + " 端口 " + cfg.url +
+            " 返回的 bootToken 不匹配，疑似端口被其他进程抢占/伪造，请检查本机是否有可疑进程。");
+        }
+      } catch (e) { /* 响应非 JSON，忽略 */ }
+    });
+  });
+  req.on("error", () => { /* 子进程未起/暂不可达，不判违规 */ });
+  req.setTimeout(3000, () => req.destroy());
 }
 
 function startChild(cfg) {
@@ -159,7 +229,7 @@ function startChild(cfg) {
   } : {};
   const proc = fork(cfg.script, [], {
     cwd: cfg.cwd,
-    env: Object.assign({}, cfg.env, dataEnv),
+    env: Object.assign({}, cfg.env, dataEnv, { BOOT_TOKEN: BOOT_TOKEN }),
     execPath: NODE_BIN, // 用打包内置 node 或系统 node 运行子进程，避免依赖 electron 当 node
     silent: false, // 子进程 stdout/stderr 直接继承到主进程日志
     windowsHide: true, // 打包/开发都隐藏子进程控制台窗口，避免两个黑框
@@ -188,6 +258,8 @@ function startChild(cfg) {
   proc.on("error", (e) => {
     log(`子进程 ${cfg.key} error:`, e.message);
   });
+  // 子进程起来后校验端口归属(端口防抢占检测)
+  setTimeout(() => verifyChildBoot(cfg), 3000);
   pushStatus();
 }
 
@@ -340,6 +412,7 @@ app.whenReady().then(() => {
   createMainWindow();
   startChild(CHILDREN.kdocs);
   relocateNetdiskData();
+  cleanupStaleBackups();
   startChild(CHILDREN.netdisk);
   setupAutoUpdater();
   // 子进程启动需要一点时间，稍后推一次状态

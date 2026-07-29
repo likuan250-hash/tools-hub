@@ -2,41 +2,76 @@
 // 关键修复：原先用 execSync（同步阻塞）调用 bl，单次最长 60s+45s，
 // 期间 Node 事件循环被卡死，/api/ready 无法响应 → 控制面板看门狗连续
 // 3 次健康检查失败(~15-24s) → taskkill 掉 node → SSE 流断裂 = 用户看到的「流程卡住」。
-// 改为非阻塞 exec + 超时，事件循环始终空闲，看门狗不会误杀。
-const { exec } = require("child_process");
+// 后改为非阻塞 + 超时；并进一步改为 spawn 数组传参(shell:false)——
+// 用户粘贴的游戏名/网盘链接不再拼进 shell 命令字符串，消除命令注入且特殊字符不再导致调用失败。
+const { spawn } = require("child_process");
+const path = require("path");
 
-// bl CLI 可执行文件路径：Electron 打包时由主进程注入 BL_BIN_PATH（指向 resources/bin/bl.exe），
-// 普通独立运行时回退到 PATH 中的 bl。其余环境变量（如 BL 的鉴权 token）仍由调用方环境提供。
-const BL_BIN = process.env.BL_BIN_PATH || "bl";
+// bl CLI 调用方式解析：
+// 打包/开发态 BL_BIN_PATH 指向 resources/bin/bl.cmd，内部用 resources/node/node.exe 跑
+// node_modules/bailian-cli/dist/bailian.mjs。为彻底避免把用户输入拼进 shell，这里拆出
+// node + mjs 入口，用 spawn 数组传参(shell:false) 调用（无 shell 解析 → 无注入）。
+// 仅当 BL_BIN_PATH 是裸 "bl"(独立运行且走全局安装)时回退 shell:true（自机自用，风险可控）。
+let _blSpawn = null;
+function resolveBlSpawn() {
+  if (_blSpawn) return _blSpawn;
+  const bin = process.env.BL_BIN_PATH || "bl";
+  if (/\.cmd$/i.test(bin)) {
+    const dir = path.dirname(bin);
+    const nodeExe = path.join(dir, "..", "node", "node.exe");
+    const mjs = path.join(dir, "node_modules", "bailian-cli", "dist", "bailian.mjs");
+    _blSpawn = { command: nodeExe, argsPrefix: [mjs], shell: false };
+  } else if (/\.(mjs|js)$/i.test(bin)) {
+    _blSpawn = { command: process.execPath, argsPrefix: [bin], shell: false };
+  } else {
+    _blSpawn = { command: bin, argsPrefix: [], shell: true };
+  }
+  return _blSpawn;
+}
 
-function runCmd(cmd, opts = {}) {
+// 用 spawn 数组传参(shell:false) 调用 bl，杜绝命令注入。
+// subArgs: bl 子命令参数数组（如 ["text","chat","--message", prompt, ...]）；
+// 实际执行的命令 = [nodeExe, mjs, ...subArgs]（打包/开发态）或 [bl, ...subArgs]（独立态 shell）。
+function runCmd(subArgs, opts = {}) {
   return new Promise((resolve, reject) => {
     const timeoutMs = opts.timeout || 60000;
+    const { command, argsPrefix, shell } = resolveBlSpawn();
+    const argv = [...argsPrefix, ...subArgs];
     let settled = false;
-    let child;
+    let stdout = "";
+    let stderr = "";
+    const child = spawn(command, argv, {
+      windowsHide: true,
+      shell: !!shell,
+      env: process.env,
+    });
+    child.stdout.on("data", (d) => { stdout += d.toString(); });
+    child.stderr.on("data", (d) => { stderr += d.toString(); });
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
       try { child.kill("SIGTERM"); } catch (_) { /* 已退出 */ }
       reject(new Error("bl 调用超时（" + Math.round(timeoutMs / 1000) + "s），已终止"));
     }, timeoutMs);
-    child = exec(cmd, {
-      encoding: "utf-8",
-      maxBuffer: 10 * 1024 * 1024,
-      windowsHide: true,
-    }, (err, stdout, stderr) => {
+    child.on("error", (err) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (err) reject(new Error(stderr || stdout || err.message));
-      else resolve(stdout);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code === 0) resolve(stdout);
+      else reject(new Error((stderr || stdout || ("bl 进程退出码 " + code)).trim()));
     });
   });
 }
 
 /** 检测 bl CLI 是否可用 */
 async function checkBlAvailable() {
-  try { await runCmd(`${BL_BIN} --version 2>&1`, { timeout: 3000 }); return true; }
+  try { await runCmd(["--version"], { timeout: 3000 }); return true; }
   catch { return false; }
 }
 
@@ -105,7 +140,12 @@ async function aiDescribe(gameName, rawLine, opts = {}) {
   const quarkUrl = opts.quarkUrl || "";
   const baiduUrl = opts.baiduUrl || "";
   try {
-    const out = await run(`${BL_BIN} text chat --message ${JSON.stringify(buildPrompt(gameName, opts))} --max-tokens 600 --output json 2>&1`, { timeout: 60000 });
+    const out = await run([
+      "text", "chat",
+      "--message", buildPrompt(gameName, opts),
+      "--max-tokens", "600",
+      "--output", "json",
+    ], { timeout: 60000 });
     const content = extractContent(out);
     const r1 = parseSingle(content, { gameName, rawLine, opts });
     let { intro, size, coverUrl } = r1;
@@ -121,7 +161,12 @@ async function aiDescribe(gameName, rawLine, opts = {}) {
       if (r1.badSize) retryPrompt += "大小：<如 30.7G>\n";
       if (r1.badCover) retryPrompt += "封面：<URL>\n";
       try {
-        const out2 = await run(`${BL_BIN} text chat --message ${JSON.stringify(retryPrompt)} --max-tokens ${r1.badIntro ? 600 : 300} --output json 2>&1`, { timeout: 45000 });
+        const out2 = await run([
+          "text", "chat",
+          "--message", retryPrompt,
+          "--max-tokens", r1.badIntro ? "600" : "300",
+          "--output", "json",
+        ], { timeout: 45000 });
         const content2 = extractContent(out2);
         const r2 = parseSingle(content2, { gameName, rawLine, opts });
         if (r1.badIntro && !r2.badIntro) intro = r2.intro;

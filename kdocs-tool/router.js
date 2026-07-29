@@ -19,6 +19,23 @@ const { autoExecute, findExistingRecord } = require("./lib/executor");
 // 提供静态文件（当独立运行时也保持兼容）
 router.use(express.static(path.join(__dirname, "public")));
 
+// ── 同源校验：阻断跨站 CSRF（逻辑同 netdisk server.js）──
+// 允许 localhost(含被 tools-hub 挂载在 3000 下的情况)；拒绝非本机 Origin。
+router.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    try {
+      const host = new URL(origin).hostname;
+      if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
+        return res.status(403).json({ error: "forbidden: cross-origin request blocked" });
+      }
+    } catch {
+      return res.status(403).json({ error: "forbidden: invalid origin" });
+    }
+  }
+  next();
+});
+
 router.get("/api/check", async (req, res) => {
   res.json({ kdocsReady: await checkKdocsReady(), blAvailable: await checkBlAvailable() });
 });
@@ -37,7 +54,7 @@ router.get("/api/version", (req, res) => {
   const hubVer = process.env.TOOLSHUB_VERSION;
   const version = hubVer || getVersion();
   const source = hubVer ? "tools-hub" : "standalone";
-  res.json({ version, source, updatable: false });
+  res.json({ version, source, updatable: false, bootToken: process.env.BOOT_TOKEN || null });
 });
 
 router.post("/api/parse", (req, res) => {

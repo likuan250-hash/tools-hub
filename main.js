@@ -60,6 +60,8 @@ const CHILDREN = {
 const MAX_RESTART = 5;
 let mainWindow = null;
 let quitting = false;
+let allowClose = false;     // 更新安装等场景直接关闭，跳过确认
+let confirmedClose = false; // 用户已在确认框点了“确认关闭”
 
 // ── 打包后把 netdisk 可变数据(.env / data/)重定向到 userData，升级不丢 ──
 // resources/ 在 NSIS 升级时会被覆盖，而 app.getPath('userData') 跨版本保留。
@@ -196,6 +198,7 @@ function createMainWindow() {
     minWidth: 1280,
     minHeight: 720,
     title: "工具箱 ToolsHub",
+    frame: false, // 方案A：去掉系统标题栏，改用自定义标题栏（含最小化/最大化/关闭）
     show: false, // 等页面 ready 后再显示，减少启动黑屏
     backgroundColor: "#0f1115",
     webPreferences: {
@@ -208,6 +211,24 @@ function createMainWindow() {
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
+  });
+  // ── 关闭前确认（方案A：总是确认，避免误关）──
+  mainWindow.on("close", (e) => {
+    if (allowClose || confirmedClose) return;
+    e.preventDefault();
+    dialog.showMessageBox(mainWindow, {
+      type: "question",
+      title: "退出确认",
+      message: "退出后工具箱将关闭，后台服务也会停止，是否继续？",
+      buttons: ["确认关闭", "取消"],
+      defaultId: 1, // 默认“取消”，回车/ESC 不会误关
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0) {
+        confirmedClose = true;
+        mainWindow.close();
+      }
+    });
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -270,7 +291,18 @@ ipcMain.handle("check-update", async () => {
   }
 });
 ipcMain.handle("install-update", () => {
+  allowClose = true; // 更新安装时跳过关闭确认
   autoUpdater.quitAndInstall(false, true);
+});
+// ── 自定义标题栏的窗口控制 ──
+ipcMain.handle("window-control", (event, action) => {
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  if (!win) return;
+  if (action === "minimize") win.minimize();
+  else if (action === "maximize") {
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  } else if (action === "close") win.close(); // 触发 close 事件→确认框
 });
 
 app.whenReady().then(() => {

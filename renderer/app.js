@@ -13,6 +13,9 @@
   const themeBtn = document.getElementById("themeBtn");
   const updateBtn = document.getElementById("updateBtn");
   const updateStatusEl = document.getElementById("updateStatus");
+  const winMin = document.getElementById("winMin");
+  const winMax = document.getElementById("winMax");
+  const winClose = document.getElementById("winClose");
 
   // ── 主题 ──
   function applyTheme(t) {
@@ -25,7 +28,19 @@
   themeBtn.onclick = () => {
     theme = theme === "dark" ? "light" : "dark";
     applyTheme(theme);
+    syncThemeToWebviews(theme); // 工具箱切换 → 内嵌项目同步切换
   };
+
+  // 把当前工具箱主题同步到所有已打开的内嵌 webview（kdocs/netdisk）
+  function syncThemeToWebviews(t) {
+    openTabs.forEach((x) => {
+      if (x.key === HOME_KEY) return;
+      const wv = document.getElementById("wv-" + x.key);
+      if (wv && wv.send) {
+        try { wv.send("sync-theme", t); } catch (e) {}
+      }
+    });
+  }
 
   // ── 版本 ──
   if (api && api.getVersion) {
@@ -118,6 +133,7 @@
     });
     // DOM 准备好后触发一次 resize，确保 webview 内部内容正确撑满容器
     wv.addEventListener("dom-ready", () => {
+      try { wv.send("sync-theme", theme); } catch (e) {} // 加载完成后同步工具箱主题
       if (wv.classList.contains("active")) {
         resizeWebview(wv);
         setTimeout(() => resizeWebview(wv), 60);
@@ -261,6 +277,16 @@
       api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + (e.message || ""), false));
     }
   };
+
+  // ── 自定义标题栏窗口控制 ──
+  if (api && api.windowControl) {
+    winMin.onclick = () => api.windowControl("minimize");
+    winMax.onclick = () => api.windowControl("maximize");
+    winClose.onclick = () => api.windowControl("close");
+    // 双击标题区（品牌）最大化/还原
+    const brandEl = document.querySelector(".brand");
+    if (brandEl) brandEl.addEventListener("dblclick", () => api.windowControl("maximize"));
+  }
 
   // 初始化：默认显示入口页标签
   switchTab(HOME_KEY);

@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onUpdateStatus: (cb) => {
     ipcRenderer.on("update-status", (_event, payload) => cb(payload));
   },
+  // 自定义标题栏的窗口控制（最小化/最大化/关闭）
+  windowControl: (action) => ipcRenderer.invoke("window-control", action),
 });

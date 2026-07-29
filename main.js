@@ -143,10 +143,10 @@ function pushStatus() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1080,
-    height: 760,
-    minWidth: 760,
-    minHeight: 520,
+    width: 1920,
+    height: 1080,
+    minWidth: 1280,
+    minHeight: 720,
     title: "工具箱 ToolsHub",
     backgroundColor: "#0f1115",
     webPreferences: {

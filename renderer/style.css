@@ -80,8 +80,8 @@ body {
 }
 .tab-close:hover { background: rgba(248,113,113,.18); color: var(--bad); }
 
-.stage { flex: 1; position: relative; overflow: hidden; min-height: 0; }
-.wv { width: 100%; height: 100%; border: none; background: var(--bg2); display: block; }
+.stage { flex: 1 1 auto; position: relative; overflow: hidden; min-height: 0; display: flex; }
+.wv { flex: 1; width: 100%; height: 100%; border: none; background: var(--bg2); display: block; }
 
 /* ── 入口页 ── */
 .landing {

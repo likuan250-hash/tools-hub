@@ -1,6 +1,6 @@
 {
   "name": "tools-hub",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "工具统一桌面应用：集成 kdocs-tool 与 netdisk-hub，单启动器、单安装包",
   "main": "main.js",
   "private": true,
@@ -39,7 +39,7 @@
       {
         "from": "netdisk-hub",
         "to": "netdisk-hub",
-        "filter": ["**/*", "!node_modules/**/.cache", "!**/*.log", "!data/**", "!logs/**"]
+        "filter": ["**/*", "!node_modules/**/.cache", "!**/*.log", "!data/**", "!logs/**", "!**/.env"]
       },
       {
         "from": "resources/node",

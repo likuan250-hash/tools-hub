@@ -1,7 +1,7 @@
 // tools-hub 主进程（Electron）
 // 职责：单实例锁、fork 两个 node 子进程(kdocs/netdisk)、原生文件对话框、状态推送、看门狗、自动更新。
 // 启动后渲染进程显示入口页；点击卡片后在同一窗口内以 <webview> 标签打开工具。
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { fork } = require("child_process");
@@ -226,6 +226,8 @@ ipcMain.handle("install-update", () => {
 });
 
 app.whenReady().then(() => {
+  // 去掉 Electron 默认菜单栏，避免顶部出现 File/Edit/View 等系统菜单，保持工具壳体风格统一
+  Menu.setApplicationMenu(null);
   createMainWindow();
   startChild(CHILDREN.kdocs);
   startChild(CHILDREN.netdisk);

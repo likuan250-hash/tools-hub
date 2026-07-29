@@ -79,6 +79,7 @@ function startChild(cfg) {
     env: cfg.env,
     execPath: NODE_BIN, // 用打包内置 node 或系统 node 运行子进程，避免依赖 electron 当 node
     silent: false, // 子进程 stdout/stderr 直接继承到主进程日志
+    windowsHide: true, // 打包/开发都隐藏子进程控制台窗口，避免两个黑框
   });
   cfg.proc = proc;
   cfg.running = true;

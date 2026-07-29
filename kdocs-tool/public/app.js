@@ -3,8 +3,8 @@ const gameInput = $("gameInput"), coverUrl = $("coverUrl");
 const autoBtn = $("autoBtn"), coverDir = $("coverDir"), browseDirBtn = $("browseDirBtn");
 const clearBtn = $("clearBtn");
 const preview = $("preview"), previewContent = $("previewContent");
-const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $("autoSummary"), autoLog = $("autoLog");
-const toast = $("toast"), chipKdocs = $("chipKdocs"), chipBl = $("chipBl");
+const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $("autoSummary"), autoLog = $("autoLog"), kdocsViewBtn = $("kdocsViewBtn");
+const toast = $("toast"), chipKdocs = $("chipKdocs"), chipBl = $("chipBl"), kdocsBtn = $("kdocsBtn");
 
 let currentParsed = null;
 
@@ -17,6 +17,19 @@ themeBtn.onclick = () => {
   document.documentElement.setAttribute("data-theme", next);
   localStorage.setItem("theme", next);
 };
+
+// ── 金山文档入口：顶栏常驻 + 成功后「在金山文档查看」，系统浏览器打开多维表 ──
+const KDOCS_VIEW_URL = "https://www.kdocs.cn/l/h9aREMoyL1MMMeDCHLWa1xsikoTpExj2o"; // 与 lib/config.js FILE_ID 对应
+function openKdocsView() {
+  const url = KDOCS_VIEW_URL;
+  if (window.electronAPI && typeof window.electronAPI.openExternal === "function") {
+    window.electronAPI.openExternal(url); // 桌面壳内：用系统默认浏览器打开
+  } else {
+    window.open(url, "_blank"); // 独立运行时：新标签打开
+  }
+}
+kdocsBtn.onclick = openKdocsView;
+kdocsViewBtn.onclick = openKdocsView;
 
 // ── Toast ──
 function toastMsg(msg, type) {
@@ -220,6 +233,7 @@ async function runAuto(text, opts = {}) {
   autoSteps.innerHTML = "";
   autoLog.innerHTML = "";
   autoSummary.textContent = "";
+  kdocsViewBtn.style.display = "none";
   stepEls.length = 0;
 
   autoResult.classList.add("show");
@@ -282,6 +296,8 @@ async function runAuto(text, opts = {}) {
             autoSummary.textContent = "✅ 全部完成！记录 ID: " + (d.recordId || "—");
             addLog("ok", d.recordId ? "🎉 记录 " + d.recordId + " 创建成功！" : "🎉 全部完成！");
           }
+          // 成功后显示「在金山文档查看」按钮（创建/更新/跳过均视为有记录可查）
+          kdocsViewBtn.style.display = d.success ? "block" : "none";
         }
       }
     }

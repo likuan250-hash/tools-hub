@@ -1,7 +1,7 @@
 // tools-hub 主进程（Electron）
 // 职责：单实例锁、fork 两个 node 子进程(kdocs/netdisk)、原生文件对话框、状态推送、看门狗、自动更新。
 // 启动后渲染进程显示入口页；点击卡片后在同一窗口内以 <webview> 标签打开工具。
-const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { fork } = require("child_process");
@@ -353,6 +353,12 @@ ipcMain.handle("window-control", (event, action) => {
     if (win.isMaximized()) win.unmaximize();
     else win.maximize();
   } else if (action === "close") win.close(); // 触发 close 事件→确认框
+});
+// ── 系统默认浏览器打开外部链接（金山文档入口等）──
+ipcMain.handle("open-external", (_e, url) => {
+  if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+    shell.openExternal(url);
+  }
 });
 
 app.whenReady().then(() => {

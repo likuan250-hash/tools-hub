@@ -17,6 +17,8 @@ ipcRenderer.on("sync-theme", (_e, t) => applyTheme(t));
 contextBridge.exposeInMainWorld("electronAPI", {
   // 原生文件夹选择（kdocs 封面目录按钮调用）
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  // 系统默认浏览器打开外部链接（金山文档入口等）
+  openExternal: (url) => ipcRenderer.invoke("open-external", url),
   // 状态（预留）
   getStatus: () => ipcRenderer.invoke("get-status"),
   onStatus: (cb) => ipcRenderer.on("status", (_e, p) => cb(p)),

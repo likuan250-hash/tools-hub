@@ -61,6 +61,54 @@ const MAX_RESTART = 5;
 let mainWindow = null;
 let quitting = false;
 
+// ── 打包后把 netdisk 可变数据(.env / data/)重定向到 userData，升级不丢 ──
+// resources/ 在 NSIS 升级时会被覆盖，而 app.getPath('userData') 跨版本保留。
+// 方案：.env 每次启动从 userData 恢复回 resources；data/ 用目录 junction 指向 userData。
+function copyDir(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, e.name);
+    const d = path.join(dest, e.name);
+    if (e.isDirectory()) copyDir(s, d);
+    else fs.copyFileSync(s, d);
+  }
+}
+
+function ensureJunction(target, linkPath) {
+  // 已是正确 junction 则跳过
+  try {
+    if (fs.lstatSync(linkPath).isSymbolicLink() &&
+        fs.realpathSync(linkPath) === fs.realpathSync(target)) return;
+  } catch (e) { /* 不存在 */ }
+  // 若 linkPath 是真实目录，先迁移内容再删除
+  let isRealDir = false;
+  try {
+    isRealDir = fs.statSync(linkPath).isDirectory() &&
+                !fs.lstatSync(linkPath).isSymbolicLink();
+  } catch (e) {}
+  if (isRealDir) {
+    copyDir(linkPath, target);
+    fs.rmSync(linkPath, { recursive: true, force: true });
+  }
+  fs.symlinkSync(target, linkPath, "junction");
+}
+
+function relocateNetdiskData() {
+  if (!app.isPackaged) return; // 仅打包后生效，开发模式不动源码目录
+  const userDir = path.join(app.getPath("userData"), "netdisk-hub");
+  fs.mkdirSync(path.join(userDir, "data"), { recursive: true });
+
+  // .env：首次从 resources 迁到 userData；之后每次启动从 userData 恢复回 resources（防升级覆盖丢失）
+  const srcEnv = path.join(NETDISK_DIR, ".env");
+  const dstEnv = path.join(userDir, ".env");
+  if (fs.existsSync(srcEnv) && !fs.existsSync(dstEnv)) fs.copyFileSync(srcEnv, dstEnv);
+  if (fs.existsSync(dstEnv)) fs.copyFileSync(dstEnv, srcEnv);
+
+  // data/：junction 指向 userData，登录态(store.json)/历史跨升级保留
+  ensureJunction(path.join(userDir, "data"), path.join(NETDISK_DIR, "data"));
+  log("netdisk 数据已重定向到 userData:", userDir);
+}
+
 // ── 单实例锁（替代原 Tkinter 单实例锁）──
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -230,6 +278,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   createMainWindow();
   startChild(CHILDREN.kdocs);
+  relocateNetdiskData();
   startChild(CHILDREN.netdisk);
   setupAutoUpdater();
   // 子进程启动需要一点时间，稍后推一次状态

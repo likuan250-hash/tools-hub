@@ -164,7 +164,7 @@ cp netdisk-hub/.env.example netdisk-hub/.env
 | 启动后出现黑框 | 已修复（`fork` 加 `windowsHide:true`，v0.1.0 之后无黑框） |
 | 工具页只显示顶部一小块 | 早期版本 webview 用 `display` 切换导致尺寸异常；v0.1.5 起改用 `visibility` + `resize()` 根治 |
 | 点「检测更新」卡在"正在下载" | v0.1.4 之前 `update-available` 未真正调用下载；升级到 v0.1.4+ 即可正常下载 |
-| 百度网盘连接异常 | 检查安装目录 `resources/netdisk-hub/.env` 是否存在（升级会覆盖 resources，需重新放置） |
+| 百度网盘连接异常 / 升级后登录态丢失 | v0.1.7 起 `.env` 与 `data/` 已重定向到 `userData`（应用数据目录），升级自动保留，无需重新放置；若异常可检查 `userData/netdisk-hub/.env` |
 | kdocs 显示「AI 不可用」 | 内置 bl CLI 缺失；v0.1.1+ 安装包已内置，开发模式需 `npm install bailian-cli` |
 
 ---

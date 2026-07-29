@@ -52,8 +52,9 @@
 
   let serviceStatus = {};
   let webviewPreload = "";
-  const openTabs = []; // { key, name }
-  let activeKey = null;
+  const HOME_KEY = "__home__";
+  const openTabs = [{ key: HOME_KEY, name: "入口" }]; // 入口页常驻、不可关闭
+  let activeKey = HOME_KEY;
 
   // ── 入口卡片 ──
   function renderCards() {
@@ -122,6 +123,7 @@
   }
 
   function closeTab(key, event) {
+    if (key === HOME_KEY) return; // 入口页不可关闭
     if (event) event.stopPropagation();
     const idx = openTabs.findIndex((x) => x.key === key);
     if (idx === -1) return;
@@ -130,21 +132,28 @@
     if (wv) wv.remove();
     renderTabs();
     if (activeKey === key) {
-      if (openTabs.length) {
-        switchTab(openTabs[Math.min(idx, openTabs.length - 1)].key);
-      } else {
-        activeKey = null;
-        showLanding();
-      }
+      const tools = openTabs.filter((x) => x.key !== HOME_KEY);
+      switchTab(tools.length ? tools[tools.length - 1].key : HOME_KEY);
     }
   }
 
   function switchTab(key) {
     activeKey = key;
-    landingEl.style.display = "none";
     tabsEl.style.display = "flex";
     renderTabs();
+    if (key === HOME_KEY) {
+      // 入口页：显示 landing，隐藏所有工具 webview（不销毁，保留后台状态）
+      landingEl.style.display = "flex";
+      openTabs.forEach((x) => {
+        if (x.key === HOME_KEY) return;
+        const wv = document.getElementById("wv-" + x.key);
+        if (wv) wv.classList.remove("active");
+      });
+      return;
+    }
+    landingEl.style.display = "none";
     openTabs.forEach((x) => {
+      if (x.key === HOME_KEY) return; // 跳过入口页，它不走 webview
       const wv = document.getElementById("wv-" + x.key);
       if (!wv) return;
       const active = x.key === key;
@@ -156,26 +165,19 @@
     });
   }
 
-  function showLanding() {
-    activeKey = null;
-    landingEl.style.display = "flex";
-    tabsEl.style.display = "none";
-    openTabs.forEach((x) => {
-      const wv = document.getElementById("wv-" + x.key);
-      if (wv) wv.classList.remove("active");
-    });
-  }
-
   function renderTabs() {
     tabsEl.innerHTML = "";
     if (!openTabs.length) return;
     openTabs.forEach((x) => {
+      const isHome = x.key === HOME_KEY;
       const b = document.createElement("button");
-      b.className = "tab" + (x.key === activeKey ? " active" : "");
+      b.className = "tab" + (isHome ? " tab-home" : "") + (x.key === activeKey ? " active" : "");
       b.dataset.key = x.key;
-      b.innerHTML = `<span>${x.name}</span><span class="tab-close">×</span>`;
+      b.innerHTML = `<span>${x.name}</span>` + (isHome ? "" : `<span class="tab-close">×</span>`);
       b.onclick = () => switchTab(x.key);
-      b.querySelector(".tab-close").onclick = (e) => closeTab(x.key, e);
+      if (!isHome) {
+        b.querySelector(".tab-close").onclick = (e) => closeTab(x.key, e);
+      }
       tabsEl.appendChild(b);
     });
   }
@@ -233,4 +235,7 @@
       api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + (e.message || ""), false));
     }
   };
+
+  // 初始化：默认显示入口页标签
+  switchTab(HOME_KEY);
 })();

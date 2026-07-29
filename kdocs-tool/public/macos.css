@@ -1,0 +1,41 @@
+/* macOS 风格补充层（与内联玻璃拟态主题叠加，仅新增/微调，不破坏原布局）。
+   由 tools-hub 统一引入，使多维表智能录入呈现 macOS 观感。 */
+:root {
+  --mac-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+              "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+body { font-family: var(--mac-font); }
+
+/* ── macOS 红黄绿交通灯（webview 内为视觉装饰；壳内可控制窗口）── */
+.mac-ctl { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.mac-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  transition: filter .15s ease;
+}
+.mac-dot::before { font-size: 10px; line-height: 1; font-weight: 700; color: transparent; }
+.mac-close { background: #ff5f57; }
+.mac-close::before { content: "\00D7"; }   /* × */
+.mac-min   { background: #febc2e; }
+.mac-min::before { content: "\2212"; }      /* − */
+.mac-max   { background: #28c840; }
+.mac-max::before { content: "\FF0B"; }      /* ＋ */
+.mac-ctl:hover .mac-dot::before { color: rgba(0, 0, 0, .55); }
+.mac-dot:active { filter: brightness(.92); }
+
+/* ── 更 macOS 的滚动条 ── */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 160, .35); border-radius: 10px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(140, 140, 160, .55); background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ── 更 macOS 的输入框圆角（与原玻璃拟态叠加）── */
+input[type="text"], textarea {
+  border-radius: 10px;
+}
+.btn, .theme-btn, .ver-badge, .clear-corner {
+  border-radius: 10px;
+}

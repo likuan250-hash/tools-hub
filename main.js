@@ -65,8 +65,13 @@ let allowClose = false;     // 更新安装等场景直接关闭，跳过确认
 let confirmedClose = false; // 用户已在确认框点了“确认关闭”
 
 // ── 打包后把 netdisk 可变数据(.env / data/)重定向到 userData，升级不丢 ──
-// resources/ 在 NSIS 升级时会被覆盖，而 app.getPath('userData') 跨版本保留。
-// 方案：.env 每次启动从 userData 恢复回 resources；data/ 用目录 junction 指向 userData。
+// resources/ 在 NSIS 升级时会被清空重装，而 app.getPath('userData') 跨版本保留。
+// 方案(已弃用 junction)：曾经用目录 junction 把 resources/netdisk-hub/data 指向 userData，
+//   但 NSIS 升级清理安装目录时会删除 junction 重解析点，连带真实数据被误清 —— 这就是
+//   「升级后网盘全变未连接」反复修不好的根因。
+// 现方案：主进程在 fork 子进程时经环境变量 NETDISK_DATA_DIR / KDOCS_DATA_DIR 注入
+//   userData 下的真实目录，netdisk 直接读写该目录（见 src/store.js / src/xunlei*.js），
+//   resources 下不再留任何 data 引用，升级清理安装目录时数据毫发无损。
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const e of fs.readdirSync(src, { withFileTypes: true })) {
@@ -77,62 +82,29 @@ function copyDir(src, dest) {
   }
 }
 
-function backupDirIfNeeded(dir) {
-  try {
-    if (!fs.existsSync(dir)) return;
-    const hasContent = fs.readdirSync(dir).some((n) => {
-      const p = path.join(dir, n);
-      const st = fs.statSync(p);
-      return st.isDirectory() || st.size > 10;
-    });
-    if (!hasContent) return;
-    const backupDir = `${dir}.backup-${Date.now()}`;
-    copyDir(dir, backupDir);
-    log("已创建数据备份:", backupDir);
-  } catch (e) {
-    log("备份失败:", e.message);
-  }
-}
-
-function ensureJunction(target, linkPath) {
-  // 已是正确 junction 则跳过
-  try {
-    if (fs.lstatSync(linkPath).isSymbolicLink() &&
-        fs.realpathSync(linkPath) === fs.realpathSync(target)) return;
-  } catch (e) { /* 不存在 */ }
-
-  // target(用户数据目录/AppData) 必须优先保留，绝不能用安装包里的旧数据覆盖它
-  let targetHasData = false;
-  try {
-    targetHasData = fs.existsSync(target) &&
-      fs.readdirSync(target).some((n) => {
-        const p = path.join(target, n);
-        const st = fs.statSync(p);
-        return st.isDirectory() || st.size > 10; // 忽略空文件/占位
-      });
-  } catch (e) {}
-
-  // 若 linkPath 是真实目录（例如升级时安装包把 data 解压成了真实目录）
-  let isRealDir = false;
-  try {
-    isRealDir = fs.statSync(linkPath).isDirectory() &&
-                !fs.lstatSync(linkPath).isSymbolicLink();
-  } catch (e) {}
-  if (isRealDir) {
-    if (!targetHasData) {
-      // target 为空：把 linkPath 内容迁过去（首次安装场景）
-      copyDir(linkPath, target);
-    }
-    // target 有数据：直接丢弃 linkPath（它是安装包带来的旧数据/错误数据），避免覆盖用户登录态
-    fs.rmSync(linkPath, { recursive: true, force: true });
-  }
-  fs.symlinkSync(target, linkPath, "junction");
-}
-
 function relocateNetdiskData() {
   if (!app.isPackaged) return; // 仅打包后生效，开发模式不动源码目录
   const userDir = path.join(app.getPath("userData"), "netdisk-hub");
-  fs.mkdirSync(path.join(userDir, "data"), { recursive: true });
+  const userDataDir = path.join(userDir, "data");
+  fs.mkdirSync(userDataDir, { recursive: true });
+
+  // 兜底迁移：userData 数据为空、且安装目录残留真实 data（非 junction）时，一次性拷过去。
+  // 正常升级路径下数据已在 userData，本分支不触发；仅防极端情况下数据落在安装目录。
+  const srcData = path.join(NETDISK_DIR, "data");
+  const userHasData = fs.readdirSync(userDataDir).some((n) => {
+    const p = path.join(userDataDir, n);
+    const st = fs.statSync(p);
+    return st.isDirectory() || st.size > 10;
+  });
+  if (!userHasData &&
+      fs.existsSync(srcData) &&
+      fs.statSync(srcData).isDirectory() &&
+      !fs.lstatSync(srcData).isSymbolicLink()) {
+    try { copyDir(srcData, userDataDir); log("已从安装目录迁移 netdisk 数据到 userData:", userDataDir); }
+    catch (e) { log("迁移失败:", e.message); }
+  } else {
+    log("netdisk 数据目录:", userDataDir);
+  }
 
   // .env：以 userData 为准；首次安装时若 userData 没有则从 resources 迁移
   const srcEnv = path.join(NETDISK_DIR, ".env");
@@ -144,12 +116,6 @@ function relocateNetdiskData() {
   if (fs.existsSync(dstEnv) && fs.statSync(dstEnv).size > 0) {
     fs.copyFileSync(dstEnv, srcEnv);
   }
-
-  // data/：junction 指向 userData，登录态(store.json)/历史跨升级保留
-  // 操作前先备份 userData 现有数据，防止任何意外覆盖
-  backupDirIfNeeded(path.join(userDir, "data"));
-  ensureJunction(path.join(userDir, "data"), path.join(NETDISK_DIR, "data"));
-  log("netdisk 数据已重定向到 userData:", userDir);
 }
 
 // 退出前把运行时可能修改过的 resources/.env 同步回 userData，确保下次启动不丢
@@ -185,9 +151,15 @@ function startChild(cfg) {
     return;
   }
   log(`启动子进程 ${cfg.key} -> ${cfg.script}`);
+  // 数据目录 env：仅打包后注入。netdisk 读 NETDISK_DATA_DIR，kdocs 读 NETDISK_DATA_DIR(夸克 cookie) + KDOCS_DATA_DIR(browse IPC)。
+  // 开发模式不注入，子进程回退到各自的安装目录 data/，保持开发兼容。
+  const dataEnv = app.isPackaged ? {
+    NETDISK_DATA_DIR: path.join(app.getPath("userData"), "netdisk-hub", "data"),
+    KDOCS_DATA_DIR: path.join(app.getPath("userData"), "kdocs-tool", "data"),
+  } : {};
   const proc = fork(cfg.script, [], {
     cwd: cfg.cwd,
-    env: cfg.env,
+    env: Object.assign({}, cfg.env, dataEnv),
     execPath: NODE_BIN, // 用打包内置 node 或系统 node 运行子进程，避免依赖 electron 当 node
     silent: false, // 子进程 stdout/stderr 直接继承到主进程日志
     windowsHide: true, // 打包/开发都隐藏子进程控制台窗口，避免两个黑框

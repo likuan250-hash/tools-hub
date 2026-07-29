@@ -70,7 +70,7 @@ npx playwright install chromium
 2. **双击 `setup.bat`**:自动检测 Node、装依赖、装 Chromium 内核、生成 `.env`、启动服务
 3. 各自在自己的 `.env` 填**自己的**百度凭证(申请方法见上方「申请百度应用」)
 4. 浏览器打开 http://localhost:3000,各自扫码授权各自的账号
-5. 数据(账号 token、转存历史)存在本机 `data/store.json`,各机完全独立
+5. 数据(账号 token、转存历史)存于本地：独立运行在 `data/store.json`；经工具箱打包后自动重定向到用户数据目录(userData/netdisk-hub)，升级不丢、各机完全独立
 
 > 进阶(可选):后续可用 `pkg` 打包成单个 `.exe`,那台电脑连 Node 都不用装,双击即用。
 

@@ -1,7 +1,11 @@
 ﻿const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// 数据目录：优先用工具箱注入的 NETDISK_DATA_DIR(指向 userData 真实目录，升级不丢)；
+// 独立运行时回退到安装目录下的 data/。❌ 不再用 junction(NSIS 升级会误删)。
+const DATA_DIR = process.env.NETDISK_DATA_DIR
+  ? path.resolve(process.env.NETDISK_DATA_DIR)
+  : path.join(__dirname, '..', 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
 
 // 历史硬上限:仅保留最近 N 条,防止 store.json 无限膨胀。

@@ -8,7 +8,11 @@ const { chromium } = require('playwright');
 const path = require('path');
 const store = require('./store');
 
-const STORAGE_DIR = path.join(__dirname, '..', 'data', 'xunlei_profile');
+// 登录态目录：同 store.js，优先 NETDISK_DATA_DIR(升级不丢)，否则回退安装目录 data/。
+const STORAGE_DIR = path.join(
+  process.env.NETDISK_DATA_DIR || path.join(__dirname, '..', 'data'),
+  'xunlei_profile'
+);
 let state = { status: 'idle', message: '', ts: 0 };
 
 function setState(s, m) {

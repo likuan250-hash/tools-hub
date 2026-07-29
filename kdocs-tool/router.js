@@ -60,7 +60,9 @@ router.get("/api/search-steam", async (req, res) => {
 // 即本项目的 Tkinter 控制面板。Node 仅通过 data/browse_req.json / browse_res.json 与面板做中转。
 router.post("/api/browse-dir", async (req, res) => {
   const initial = (req.body && req.body.initial) || "";
-  const dataDir = path.join(__dirname, "data");
+  const dataDir = process.env.KDOCS_DATA_DIR
+    ? path.resolve(process.env.KDOCS_DATA_DIR)
+    : path.join(__dirname, "data");
   try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
   const reqPath = path.join(dataDir, "browse_req.json");
   const resPath = path.join(dataDir, "browse_res.json");

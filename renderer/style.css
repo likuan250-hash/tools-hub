@@ -39,10 +39,12 @@ body {
   position: relative;
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 18px; border-bottom: 1px solid var(--card-border);
-  background: var(--bg2);
+  background: color-mix(in srgb, var(--bg2) 78%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
   -webkit-app-region: drag; /* 自定义标题栏：此区域可拖动窗口 */
 }
-.top-left { width: 1px; }
+.top-left { display: inline-flex; align-items: center; }
 .top-center {
   position: absolute; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px;

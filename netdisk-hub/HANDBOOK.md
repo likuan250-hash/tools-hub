@@ -11,7 +11,7 @@
 
 - 纯**本地**服务（127.0.0.1:3000��，没有云服务器
 - 三��已全部接入：百度 / 夸克 / 迅雷
-- 没有数据库，用本地 JSON 文件 `data/store.json` 存账号和任务历史
+- 没有数据库，用本地 JSON 文件存账号和任务历史：独立运行在 `data/store.json`；经工具箱打包后数据目录经 `NETDISK_DATA_DIR` 重定向到用户数据目录(userData)，升级不丢
 - GitHub 私有仓库：`github.com/likuan250-hash/netdisk-hub`（多机同步用）
 
 ---

@@ -198,13 +198,19 @@
 
     @media (max-width: 680px) { .input-row { grid-template-columns: 1fr; } .input-row .browse { justify-self: start; } }
   </style>
+  <link rel="stylesheet" href="/macos.css" />
 </head>
 <body>
 <div class="wrap">
 
   <header>
-    <div class="brand">
-      <div class="logo">📊</div>
+      <div class="brand">
+        <div class="mac-ctl" aria-hidden="true">
+          <span class="mac-dot mac-close"></span>
+          <span class="mac-dot mac-min"></span>
+          <span class="mac-dot mac-max"></span>
+        </div>
+        <div class="logo">📊</div>
       <div>
         <h1>多维表智能录入</h1>
         <div class="sub">粘贴游戏信息 → 自动解析 → 🤖 AI 介绍 + 🖼️ 封面 + 📋 多维表</div>

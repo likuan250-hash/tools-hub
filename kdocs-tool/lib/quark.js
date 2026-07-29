@@ -59,8 +59,9 @@ function getCookie() {
   const envCookie = (process.env.QUARK_COOKIE || "").trim();
   if (envCookie) return envCookie;
   try {
-    const hubDir = process.env.NETDISK_HUB_DIR || "E:\\工作空间\\netdisk-hub";
-    const storePath = path.join(hubDir, "data", "store.json");
+    const dataDir = process.env.NETDISK_DATA_DIR
+      || (() => { const h = process.env.NETDISK_HUB_DIR || "E:\\工作空间\\netdisk-hub"; return path.join(h, "data"); })();
+    const storePath = path.join(dataDir, "store.json");
     if (fs.existsSync(storePath)) {
       const d = JSON.parse(fs.readFileSync(storePath, "utf8"));
       const acc = d.accounts && d.accounts.quark;

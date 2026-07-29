@@ -22,7 +22,11 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-const STORAGE_DIR = path.join(__dirname, '..', 'data', 'xunlei_profile');
+// 登录态目录：同 store.js，优先 NETDISK_DATA_DIR(升级不丢)，否则回退安装目录 data/。
+const STORAGE_DIR = path.join(
+  process.env.NETDISK_DATA_DIR || path.join(__dirname, '..', 'data'),
+  'xunlei_profile'
+);
 const CLIENT_ID = 'Xqp0kJBXWhwaTpB6';
 const API_BASE = 'https://api-pan.xunlei.com/drive/v1';
 const AUTH_BASE = 'https://xluser-ssl.xunlei.com';

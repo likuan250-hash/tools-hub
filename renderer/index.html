@@ -13,16 +13,18 @@
         <span class="logo">🧰</span>
         <span class="title">工具箱 ToolsHub</span>
       </div>
-      <button id="themeBtn" class="icon-btn" title="切换主题">🌗</button>
+      <div class="top-right">
+        <span id="aggStatus" class="agg">初始化中…</span>
+        <button id="themeBtn" class="icon-btn" title="切换主题">🌗</button>
+      </div>
     </header>
 
-    <p class="hint">应用启动时已自动拉起以下两个服务，点击「打开」在窗口内使用。</p>
+    <nav id="tabs" class="tabs">
+      <button class="tab active" data-key="kdocs">金山文档录入</button>
+      <button class="tab" data-key="netdisk">网盘转存中转</button>
+    </nav>
 
-    <main id="cards" class="cards"><!-- 卡片由 app.js 注入 --></main>
-
-    <footer class="foot">
-      <span id="aggStatus" class="agg">初始化中…</span>
-    </footer>
+    <main id="stage" class="stage"><!-- 内嵌工具 webview 由 app.js 注入 --></main>
   </div>
   <script src="app.js"></script>
 </body>

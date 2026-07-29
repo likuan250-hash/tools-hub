@@ -1,5 +1,6 @@
 // tools-hub 主进程（Electron）
 // 职责：单实例锁、fork 两个 node 子进程(kdocs/netdisk)、原生文件对话框、状态推送、看门狗。
+// 所有工具页面都内嵌在唯一主窗口的 <webview> 中（多标签切换，不弹新窗口）。
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const { fork } = require("child_process");
@@ -22,6 +23,9 @@ function resolveBlBin() {
   return process.env.BL_BIN_PATH || "bl";
 }
 const BL_BIN = resolveBlBin();
+
+// webview 内嵌页面用的 preload（提供 pickFolder 等有限原生能力）
+const WEBVIEW_PRELOAD = path.join(__dirname, "webview-preload.js");
 
 // 子进程注册表
 const CHILDREN = {
@@ -53,7 +57,6 @@ const CHILDREN = {
 };
 
 const MAX_RESTART = 5;
-const toolWindows = {}; // key -> BrowserWindow
 let mainWindow = null;
 let quitting = false;
 
@@ -139,16 +142,17 @@ function pushStatus() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 880,
-    height: 600,
-    minWidth: 640,
-    minHeight: 480,
+    width: 1080,
+    height: 760,
+    minWidth: 760,
+    minHeight: 520,
     title: "工具箱 ToolsHub",
     backgroundColor: "#0f1115",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true, // 允许在壳体内使用 <webview> 内嵌工具页面
     },
   });
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
@@ -157,38 +161,11 @@ function createMainWindow() {
   });
 }
 
-// 在工具窗口内加载对应工具（带 preload，使其能用原生对话框）
-function openTool(key) {
-  const cfg = CHILDREN[key];
-  if (!cfg) return;
-  if (toolWindows[key] && !toolWindows[key].isDestroyed()) {
-    toolWindows[key].focus();
-    return;
-  }
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    title: cfg.name,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  win.loadURL(cfg.url);
-  toolWindows[key] = win;
-  win.on("closed", () => {
-    toolWindows[key] = null;
-  });
-}
-
 // ── IPC ──
 ipcMain.handle("get-status", () => statusPayload());
 
-ipcMain.handle("open-tool", (e, key) => {
-  openTool(key);
-  return { ok: true };
-});
+// 渲染进程用来为内嵌 webview 设置 preload 的绝对路径
+ipcMain.handle("get-webview-preload", () => WEBVIEW_PRELOAD);
 
 ipcMain.handle("pick-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -199,11 +176,6 @@ ipcMain.handle("pick-folder", async () => {
     return { dir: "" };
   }
   return { dir: result.filePaths[0] };
-});
-
-// 工具页(fork 出的 server 由 web 调)也可直接请求 picker —— 走同一通道
-ipcMain.handle("pick-folder-for", async () => {
-  return ipcMain.handlers ? await ipcMain.handlers["pick-folder"]() : { dir: "" };
 });
 
 app.whenReady().then(() => {

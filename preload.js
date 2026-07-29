@@ -8,8 +8,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onStatus: (cb) => {
     ipcRenderer.on("status", (_event, payload) => cb(payload));
   },
-  // 在工具窗口内打开对应服务
-  openTool: (key) => ipcRenderer.invoke("open-tool", key),
+  // 获取 webview 的 preload 绝对路径（渲染进程用来创建内嵌 webview）
+  getWebviewPreload: () => ipcRenderer.invoke("get-webview-preload"),
   // 原生文件夹选择（替代 Tkinter IPC）
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
 });

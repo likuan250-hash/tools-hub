@@ -24,6 +24,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "webview-preload.js",
       "renderer/**/*"
     ],
     "extraResources": [

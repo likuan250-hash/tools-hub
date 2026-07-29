@@ -12,19 +12,28 @@
       <div class="brand">
         <span class="logo">🧰</span>
         <span class="title">工具箱 ToolsHub</span>
+        <span id="version" class="version">v0.0.0</span>
       </div>
       <div class="top-right">
         <span id="aggStatus" class="agg">初始化中…</span>
+        <span id="updateStatus" class="update-status"></span>
+        <button id="updateBtn" class="update-btn" title="检测更新">🔄 检测更新</button>
         <button id="themeBtn" class="icon-btn" title="切换主题">🌗</button>
       </div>
     </header>
 
-    <nav id="tabs" class="tabs">
-      <button class="tab active" data-key="kdocs">金山文档录入</button>
-      <button class="tab" data-key="netdisk">网盘转存中转</button>
+    <nav id="tabs" class="tabs" style="display:none">
+      <!-- 动态标签 -->
     </nav>
 
-    <main id="stage" class="stage"><!-- 内嵌工具 webview 由 app.js 注入 --></main>
+    <main id="stage" class="stage">
+      <!-- 入口页 -->
+      <div id="landing" class="landing">
+        <div class="landing-title">工具统一入口</div>
+        <div class="landing-sub">点击下方卡片打开对应工具，所有页面都在此窗口内运行</div>
+        <div id="toolCards" class="cards"><!-- 动态生成 --></div>
+      </div>
+    </main>
   </div>
   <script src="app.js"></script>
 </body>

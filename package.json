@@ -7,7 +7,10 @@
   "scripts": {
     "start": "electron .",
     "build": "node scripts/prepare-build.js && electron-builder --dir",
-    "dist": "node scripts/prepare-build.js && electron-builder --win nsis"
+    "dist": "node scripts/prepare-build.js && electron-builder --win nsis -p always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.0"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -47,7 +50,12 @@
         "to": "bin"
       }
     ],
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "likuan250-hash",
+      "repo": "tools-hub",
+      "releaseType": "release"
+    },
     "win": {
       "target": [
         {
@@ -64,7 +72,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "工具箱 ToolsHub",
-      "artifactName": "ToolsHub-Setup-${version}.${ext}"
+      "artifactName": "ToolsHub-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
     }
   }
 }

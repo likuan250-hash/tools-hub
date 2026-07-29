@@ -6,6 +6,7 @@
   --text: #e8ecf3;
   --muted: #9aa4b2;
   --accent: #5b8cff;
+  --accent-bg: rgba(91, 140, 255, 0.12);
   --ok: #34d399;
   --bad: #f87171;
 }
@@ -17,6 +18,7 @@
   --text: #1b2330;
   --muted: #5b6675;
   --accent: #3b6cf6;
+  --accent-bg: rgba(59, 108, 246, 0.1);
   --ok: #10b981;
   --bad: #ef4444;
 }
@@ -41,17 +43,29 @@ body {
 .brand { display: flex; align-items: center; gap: 10px; }
 .logo { font-size: 24px; }
 .title { font-size: 18px; font-weight: 700; letter-spacing: .5px; }
-.top-right { display: flex; align-items: center; gap: 12px; }
-.icon-btn {
-  background: var(--card); border: 1px solid var(--card-border); color: var(--text);
-  width: 36px; height: 36px; border-radius: 10px; cursor: pointer; font-size: 17px;
+.version {
+  font-size: 12px; color: var(--muted);
+  background: var(--card); padding: 2px 8px; border-radius: 12px;
+  border: 1px solid var(--card-border);
 }
-.icon-btn:hover { border-color: var(--accent); }
-.agg { color: var(--muted); font-size: 13px; }
+.top-right { display: flex; align-items: center; gap: 12px; }
+.icon-btn, .update-btn {
+  background: var(--card); border: 1px solid var(--card-border); color: var(--text);
+  height: 36px; border-radius: 10px; cursor: pointer; font-size: 14px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.icon-btn { width: 36px; }
+.update-btn { padding: 0 14px; }
+.icon-btn:hover, .update-btn:hover:not(:disabled) { border-color: var(--accent); }
+.update-btn:disabled { opacity: .6; cursor: not-allowed; }
+.agg, .update-status { color: var(--muted); font-size: 13px; }
+.update-status.ok { color: var(--ok); }
+.update-status.bad { color: var(--bad); }
 
-.tabs { display: flex; gap: 6px; padding: 10px 16px 0; }
+.tabs { display: flex; gap: 6px; padding: 10px 16px 0; background: var(--bg2); }
 .tab {
-  padding: 9px 16px; border: 1px solid transparent; border-bottom: none;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 12px 9px 16px; border: 1px solid transparent; border-bottom: none;
   border-radius: 10px 10px 0 0; background: transparent; color: var(--muted);
   cursor: pointer; font-size: 14px; font-weight: 600;
 }
@@ -59,6 +73,55 @@ body {
 .tab.active {
   background: var(--card); border-color: var(--card-border); color: var(--text);
 }
+.tab-close {
+  width: 18px; height: 18px; border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px; line-height: 1; color: var(--muted);
+}
+.tab-close:hover { background: rgba(248,113,113,.18); color: var(--bad); }
 
 .stage { flex: 1; position: relative; overflow: hidden; min-height: 0; }
 .wv { width: 100%; height: 100%; border: none; background: var(--bg2); display: block; }
+
+/* ── 入口页 ── */
+.landing {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 24px; overflow-y: auto;
+}
+.landing-title {
+  font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: 1px;
+}
+.landing-sub {
+  color: var(--muted); font-size: 14px; margin-bottom: 32px; text-align: center;
+}
+.cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px; width: 100%; max-width: 760px;
+}
+.card {
+  display: flex; align-items: center; gap: 16px;
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 18px; padding: 20px;
+  transition: transform .1s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  transform: translateY(-2px);
+}
+.card-icon { font-size: 40px; line-height: 1; }
+.card-body { flex: 1; min-width: 0; }
+.card-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.card-desc { font-size: 13px; color: var(--muted); margin-bottom: 10px; line-height: 1.45; }
+.card-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.card-port { margin-left: auto; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.dot.bad { background: var(--bad); }
+.card-open {
+  background: var(--accent); color: #fff; border: none;
+  padding: 10px 20px; border-radius: 10px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: opacity .2s ease;
+}
+.card-open:hover { opacity: .88; }

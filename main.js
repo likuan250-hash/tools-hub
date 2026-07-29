@@ -1,7 +1,8 @@
 // tools-hub 主进程（Electron）
-// 职责：单实例锁、fork 两个 node 子进程(kdocs/netdisk)、原生文件对话框、状态推送、看门狗。
-// 所有工具页面都内嵌在唯一主窗口的 <webview> 中（多标签切换，不弹新窗口）。
+// 职责：单实例锁、fork 两个 node 子进程(kdocs/netdisk)、原生文件对话框、状态推送、看门狗、自动更新。
+// 启动后渲染进程显示入口页；点击卡片后在同一窗口内以 <webview> 标签打开工具。
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { fork } = require("child_process");
 const fs = require("fs");
@@ -161,12 +162,34 @@ function createMainWindow() {
   });
 }
 
+// ── 自动更新状态推送给渲染进程 ──
+function sendUpdate(state, extra = {}) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("update-status", { state, ...extra });
+  }
+}
+
+function setupAutoUpdater() {
+  // 默认不自动下载，等用户点击"检测更新"再开始
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on("checking-for-update", () => sendUpdate("checking"));
+  autoUpdater.on("update-available", (info) => sendUpdate("available", { version: info.version }));
+  autoUpdater.on("update-not-available", () => sendUpdate("not-available"));
+  autoUpdater.on("download-progress", (p) =>
+    sendUpdate("progress", { percent: p.percent, bytesPerSecond: p.bytesPerSecond })
+  );
+  autoUpdater.on("update-downloaded", (info) =>
+    sendUpdate("downloaded", { version: info.version })
+  );
+  autoUpdater.on("error", (err) => sendUpdate("error", { message: err.message }));
+}
+
 // ── IPC ──
+ipcMain.handle("get-version", () => app.getVersion());
 ipcMain.handle("get-status", () => statusPayload());
-
-// 渲染进程用来为内嵌 webview 设置 preload 的绝对路径
 ipcMain.handle("get-webview-preload", () => WEBVIEW_PRELOAD);
-
 ipcMain.handle("pick-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "选择封面图片存放目录",
@@ -177,11 +200,24 @@ ipcMain.handle("pick-folder", async () => {
   }
   return { dir: result.filePaths[0] };
 });
+ipcMain.handle("check-update", async () => {
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (e) {
+    log("check-update error", e.message);
+    sendUpdate("error", { message: e.message });
+    throw e;
+  }
+});
+ipcMain.handle("install-update", () => {
+  autoUpdater.quitAndInstall(false, true);
+});
 
 app.whenReady().then(() => {
   createMainWindow();
   startChild(CHILDREN.kdocs);
   startChild(CHILDREN.netdisk);
+  setupAutoUpdater();
   // 子进程启动需要一点时间，稍后推一次状态
   setTimeout(pushStatus, 1500);
 });

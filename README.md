@@ -48,7 +48,7 @@
 | `resources/node/` | 打包内置的 Node 运行时（不进 git） |
 | `resources/bin/` | 打包内置的 bl CLI / bailian 依赖（不进 git） |
 
-> 子项目 `kdocs-tool`、`netdisk-hub` 本身是独立可运行的服务，本应用只是把它们"包进桌面壳"统一启动与呈现。
+> 子项目 `kdocs-tool`、`netdisk-hub` 本身仍是独立可运行的服务，但**源码已统一维护在 tools-hub 内**（见第十三节），本应用只是把它们"包进桌面壳"统一启动与呈现。
 
 ---
 
@@ -196,3 +196,31 @@ cp netdisk-hub/.env.example netdisk-hub/.env
 
 - 含凭证的 `.env` 不入库（`.gitignore` 已忽略）。
 - 自动更新走 GitHub Release 官方通道，安装包含完整运行时，分发他人前请确认其中不含你的私有凭证。
+
+---
+
+## 十三、统一维护（源码唯一来源）
+
+两个子项目的**唯一源码位置就是本仓库内的 `kdocs-tool/` 与 `netdisk-hub/` 目录**。不再有各自独立的开发副本，所有改动直接在此提交、打包。
+
+### 为什么这样
+
+早期 `E:\kdocs-tool`、`E:\工作空间\netdisk-hub` 是独立 git 仓库，与 tools-hub 内嵌目录形成双份维护、容易分叉。现已统一：tools-hub 既当"桌面壳"也当"源码仓库"，改一处即可。
+
+### 目录约定
+
+| 路径 | 性质 | 说明 |
+|---|---|---|
+| `tools-hub/kdocs-tool/` | **源码（唯一）** | 直接在此编辑、提交 |
+| `tools-hub/netdisk-hub/` | **源码（唯一）** | 直接在此编辑、提交 |
+| `E:\kdocs-tool` | NTFS 目录联接 | 指向 `tools-hub/kdocs-tool`，旧快捷方式 / 启动面板仍可打开，但解析到同一份源码 |
+| `E:\工作空间\netdisk-hub` | NTFS 目录联接 | 指向 `tools-hub/netdisk-hub`，同上 |
+| `E:\kdocs-tool.gitbak` / `E:\工作空间\netdisk-hub.gitbak` | 备份 | 统一前的独立仓库原件（含各自 git 历史、node_modules、登录态），可保留或后续删除 |
+
+> ⚠️ 联接只是"视图"，改 `E:\kdocs-tool` 实际改的是 `tools-hub/kdocs-tool`。现在已经不可能再两份各改各的、产生分叉。
+> `node_modules/` 与运行时 `data/`、`.env` 均为本地依赖 / 隐私数据，已被 `.gitignore` 忽略，不会进仓库；仓库内的 `node_modules` 为本地开发 / 独立运行准备，重新克隆后需各自 `npm install`。
+
+### 版本号
+
+- 桌面壳版本：`tools-hub/package.json` 的 `version`。
+- 子项目版本：`kdocs-tool/package.json`、`netdisk-hub/package.json` 各自的 `version`，改动子项目时同步 bump 并打 `vX.Y.Z` tag（CI 自动出包）。

@@ -343,91 +343,18 @@ function addLog(type, msg) {
   autoLog.scrollTop = autoLog.scrollHeight;
 }
 
-// ── 右上角版本徽章 / 检测更新 ──
+// ── 右上角版本徽章（只读，更新由工具箱统一管理）──
 const verBadge = $("verBadge");
-let _checking = false, _hasUpdate = false, _remoteVer = "";
-
-function badgeState(state, text) {
-  verBadge.classList.remove("checking", "has-update", "latest");
-  if (state) verBadge.classList.add(state);
-  verBadge.textContent = text;
-}
-
 async function loadVersion() {
   try {
     const r = await fetch("/api/version");
     const d = await r.json();
-    verBadge.textContent = "v" + d.version;
-    verBadge.title = "点击检查更新" + (d.commit ? " (" + d.commit + ")" : "");
+    const prefix = d.source === "tools-hub" ? "工具箱 " : "独立 ";
+    verBadge.textContent = prefix + "v" + d.version;
+    verBadge.title = d.source === "tools-hub"
+      ? "由工具箱统一管理，更新请通过工具箱"
+      : "独立运行模式";
+    verBadge.classList.add("readonly");
   } catch { verBadge.textContent = "v?"; }
 }
-
-async function doUpdate() {
-  badgeState("checking", "更新中…");
-  try {
-    const r = await fetch("/api/update", { method: "POST" });
-    const d = await r.json();
-    if (!d.ok) {
-      badgeState(_hasUpdate ? "has-update" : null, _hasUpdate ? "⬆ v" + _remoteVer : "v?");
-      toastMsg("更新失败: " + (d.error || ""), "err");
-      return;
-    }
-    if (!d.updated) {
-      badgeState("latest", "✓ 已最新");
-      verBadge.title = "已是最新版本";
-      setTimeout(loadVersion, 1500);
-      return;
-    }
-    if (d.needsNpmInstall) {
-      badgeState("has-update", "⬆ 需重启");
-      toastMsg("代码已更新（含依赖变更），请通过「控制面板」点击「重启」生效", "err");
-      return;
-    }
-    toastMsg("✅ 已更新，正在重启…");
-    setTimeout(async () => {
-      try { await fetch("/api/restart", { method: "POST" }); } catch { /* 旧进程即将退出 */ }
-      setTimeout(() => location.reload(), 2600);
-    }, 800);
-  } catch (e) {
-    badgeState(_hasUpdate ? "has-update" : null, _hasUpdate ? "⬆ v" + _remoteVer : "v?");
-    toastMsg("更新失败: " + e.message, "err");
-  }
-}
-
-verBadge.onclick = async () => {
-  if (_checking) return;
-  if (_hasUpdate) {
-    if (!confirm("确定更新到最新版本并重启服务?")) return;
-    await doUpdate();
-    return;
-  }
-  _checking = true;
-  badgeState("checking", "检测中…");
-  try {
-    const r = await fetch("/api/check-update");
-    const d = await r.json();
-    if (!d.ok) {
-      badgeState(null, "检测失败");
-      toastMsg("检测失败: " + (d.error || ""), "err");
-      setTimeout(loadVersion, 1500);
-      return;
-    }
-    if (d.hasUpdate) {
-      _hasUpdate = true; _remoteVer = d.remoteCommit;
-      badgeState("has-update", "⬆ " + d.remoteCommit);
-      verBadge.title = "发现新版本 " + d.remoteCommit + "，点击更新";
-      toastMsg("🔔 发现新版本，点击徽章更新");
-    } else {
-      badgeState("latest", "✓ 已最新");
-      verBadge.title = "已是最新版本";
-      setTimeout(loadVersion, 1800);
-    }
-  } catch (e) {
-    badgeState(null, "检测失败");
-    setTimeout(loadVersion, 1500);
-  } finally {
-    _checking = false;
-  }
-};
-
 loadVersion();

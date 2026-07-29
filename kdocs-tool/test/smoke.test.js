@@ -43,12 +43,13 @@ before(async () => {
 
 after(() => { if (server) server.kill(); });
 
-test("GET /api/version 返回版本与 commit", async () => {
+test("GET /api/version 返回版本与来源（只读，不自更新）", async () => {
   const r = await req("GET", "/api/version");
   assert.strictEqual(r.status, 200);
   const j = JSON.parse(r.body);
   assert.ok(j.version, "应有 version 字段");
-  assert.ok(j.commit, "应有 commit 字段");
+  assert.ok(["tools-hub", "standalone"].includes(j.source), "source 应为 tools-hub 或 standalone");
+  assert.strictEqual(j.updatable, false, "updatable 应为 false");
 });
 
 test("POST /api/parse 解析游戏名与网盘链接", async () => {

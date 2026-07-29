@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { execFile, spawn, execFileSync } = require('child_process');
 const baidu = require('./src/baidu');
 const baiduAuth = require('./src/baidu.auth');
 const quark = require('./src/quark');
@@ -166,9 +165,7 @@ registerApiRoutes(app, {
   doTransfer, mapLimit, extractSurl, isValidShareLink,
   refreshPings, pingCache, PORT,
   getServerState: () => ({ healthy: serverHealthy, fatalCount }),
-  getVersion, gitShort, findConnect, run,
-  spawn: require('child_process').spawn,
-  execFileSync: require('child_process').execFileSync,
+  getVersion,
   process, path, fs, __dirname,
 });
 
@@ -341,48 +338,8 @@ function getVersion() {
   try { return fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim(); }
   catch { return 'unknown'; }
 }
-function gitShort() {
-  try { return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: __dirname, windowsHide: true }).toString().trim(); }
-  catch { return ''; }
-}
-// 探测 Git for Windows 自带的 connect 程序(用于 SSH 走本地 HTTP 代理)
-function findConnect() {
-  const candidates = [
-    'C:\\Program Files\\Git\\mingw64\\bin\\connect.exe',
-    'C:\\Program Files\\Git\\usr\\bin\\connect.exe',
-    'C:\\Program Files (x86)\\Git\\mingw64\\bin\\connect.exe',
-    'C:\\Program Files (x86)\\Git\\usr\\bin\\connect.exe',
-  ];
-  for (const c of candidates) {
-    try { if (fs.existsSync(c)) return c; } catch (e) {}
-  }
-  return null;
-}
-
-// 简易命令执行封装(Promise 化),用于 git / npm
-function run(cmd, args, opts = {}) {
-  const env = { ...process.env };
-  if (cmd === 'git') {
-    const connect = findConnect();
-    if (connect) {
-      // SSH 不读 HTTP_PROXY,必须用 ProxyCommand 走本地代理(127.0.0.1:7990)。
-      // 用 forward-slash 路径 + 单引号包裹,兼容 Git bash 的 ssh 解析(路径含空格)。
-      const cc = connect.replace(/\\/g, '/');
-      env.GIT_SSH_COMMAND = `ssh -o StrictHostKeyChecking=no -o ProxyCommand="'${cc}' -H 127.0.0.1:7990 %h %p"`;
-    }
-    // 兜底:若 git 走 https remote,带上 HTTP 代理即可直连
-    if (!env.HTTP_PROXY && !env.http_proxy) env.HTTP_PROXY = 'http://127.0.0.1:7990';
-    if (!env.HTTPS_PROXY && !env.https_proxy) env.HTTPS_PROXY = 'http://127.0.0.1:7990';
-  }
-  return new Promise((resolve, reject) => {
-    // windowsHide: 在 Windows 上隐藏子进程(git/npm)的控制台黑窗,
-    // 否则每次点击版本号检查更新会连弹多个黑框(每个 git 子命令一个)。
-    execFile(cmd, args, { cwd: __dirname, ...opts, env, windowsHide: true }, (err, stdout, stderr) => {
-      if (err) { err.stderr = stderr || ''; return reject(err); }
-      resolve(stdout.toString());
-    });
-  });
-}
+// (自更新机制已移除:gitShort/findConnect/run 等 git 相关函数随 /api/update 一并删除,
+//  更新统一由工具箱 tools-hub 负责)
 
 let fatalCount = 0;
 let lastFatalTs = 0;

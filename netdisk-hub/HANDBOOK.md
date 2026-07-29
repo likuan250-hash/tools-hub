@@ -34,7 +34,7 @@ node server.js                     # 打开 http://localhost:3000
 
 | 文件 | 职责 | 关键导出/路由 |
 |------|------|--------------|
-| **server.js** | Express 主入口（~990行）��所有路由、转存编排、更新/重启/健康接口。 | `/api/transfer`, `/api/accounts`, `doTransfer()`, `/api/update` |
+| **server.js** | Express 主入口（~990行）��所有路由、转存编排、更新/重启/健康接口。 | `/api/transfer`, `/api/accounts`, `doTransfer()`, `/api/version`(只读) |
 | **src/baidu.js** | 百度网盘接口封装。BDUSS cookie 鉴权，转存与分享。 | `getShareList`, `transfer`, `createShare`, `checkSession` |
 | **src/quark.js** | 夸克网盘逆向接口封装。Cookie 鉴权。 | `transfer`, `listSubfolders`, `checkSession` |
 | **src/xunlei.js** | 迅雷网盘逆向接口封装。Bearer token + captcha 鉴权。 | `transfer`, `pingSession`, `listSubfolders` |
@@ -125,12 +125,11 @@ JSON 文件完整 read → modify → write（atomic tmp+rename）。性能足�
 - 已修复：后台异步预热 + 5min 探测缓存 + 窗口外置参数（`--window-position=-10000,-10000`）隐藏
 - 不要改回同步/阻塞方式
 
-### 5.6 `/api/update` 安全策略
+### 5.6 更新统一由工具箱负责
 
-- 只 `git pull`，**不在运行进程上直接 `npm install`**（避免运行时换依赖）
-- `package.json` 变动时写哨兵 `data/.needs-npm-install`
-- 控制面���重启时读取哨兵，用独立进程装依赖再起 node
-- 前端无依赖变更时自动重启；有依赖变更时提示去控制面板
+- netdisk-hub 已**移除** `/api/check-update`、`/api/version`(只读)、`/api/restart` 三个自更新接口（自 tools-hub v0.1.13 起）。
+- 所有更新（含本服务）统一由桌面壳 tools-hub 的检测更新 / 自动升级完成，用户无需在本服务内手动 `git pull`。
+- 独立运行（脱离工具箱）时，`/api/version` 返回 `source: "standalone"`、`updatable: false`，仅作展示。
 
 ### 5.7 onFatal 不再自杀
 
@@ -150,7 +149,7 @@ JSON 文件完整 read → modify → write（atomic tmp+rename）。性能足�
 | GET | `/api/ready` | 就绪检查（发生未捕获异常后返回 503，供控制面板看门狗使用） |
 | GET | `/api/version` | 版本号 + commit |
 | GET | `/api/check-update` | 检测更新（git fetch + diff） |
-| POST | `/api/update` | 执行 git pull（安全，不自动装依赖） |
+| POST | `/api/version`(只读) | 执行 git pull（安全，不自动装依赖） |
 | POST | `/api/restart` | 重启（spawn 新进程 → 旧进程退出） |
 | POST | `/api/transfer` | 单条转存 |
 | POST | `/api/transfer/batch` | 批量转存（mapLimit=3） |

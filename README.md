@@ -220,7 +220,9 @@ cp netdisk-hub/.env.example netdisk-hub/.env
 > ⚠️ 联接只是"视图"，改 `E:\kdocs-tool` 实际改的是 `tools-hub/kdocs-tool`。现在已经不可能再两份各改各的、产生分叉。
 > `node_modules/` 与运行时 `data/`、`.env` 均为本地依赖 / 隐私数据，已被 `.gitignore` 忽略，不会进仓库；仓库内的 `node_modules` 为本地开发 / 独立运行准备，重新克隆后需各自 `npm install`。
 
-### 版本号
+### 版本号与更新
 
-- 桌面壳版本：`tools-hub/package.json` 的 `version`。
-- 子项目版本：`kdocs-tool/package.json`、`netdisk-hub/package.json` 各自的 `version`，改动子项目时同步 bump 并打 `vX.Y.Z` tag（CI 自动出包）。
+- **唯一版本来源 = 桌面壳 `tools-hub/package.json` 的 `version`**。用户装了什么、该升级到哪一版，只看 tools-hub。
+- 子项目 `kdocs-tool/package.json`、`netdisk-hub/package.json` 的 `version` 现在**仅作功能代号展示**（运行在工具箱内时徽章显示的是 tools-hub 版本），不再驱动任何更新，无需单独打 tag。
+- **自更新已移除**：两个子项目原有的 `/api/check-update`、`/api/update`、`/api/restart` 接口与对应前端按钮均已删除（自 v0.1.13 起）。更新只走工具箱的检测更新 / 自动升级，不会出现"子项目各自 git pull"再次分叉的情况。
+- 工具箱启动子进程时会注入 `TOOLSHUB_VERSION` 环境变量，子项目据此在徽章上显示"工具箱 vX.Y.Z"或"独立运行"。

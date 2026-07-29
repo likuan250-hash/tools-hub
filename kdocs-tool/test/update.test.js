@@ -1,4 +1,6 @@
-// update.test.js — 检测更新相关接口功能测试（起真实服务探 HTTP 接口）
+// update.test.js — 版本接口契约测试（起真实服务探 HTTP 接口）
+// 注意：自 v0.1.13 起，kdocs-tool 不再有自更新能力（/api/check-update、/api/update、
+// /api/restart 已移除），所有更新统一由工具箱 tools-hub 负责。本测试只验证版本接口。
 const { test, before, after } = require("node:test");
 const assert = require("node:assert");
 const { spawn } = require("child_process");
@@ -42,19 +44,11 @@ before(async () => {
 
 after(() => { if (server) server.kill(); });
 
-test("/api/version 返回版本号与 commit", async () => {
+test("/api/version 返回版本与来源（只读，不自更新）", async () => {
   const r = await req("GET", "/api/version");
   assert.strictEqual(r.status, 200);
   const j = JSON.parse(r.body);
-  assert.ok(j.version && /^\d+\.\d+\.\d+$/.test(j.version), "version 应为 x.y.z");
-  assert.ok(j.commit && /^[0-9a-f]{7,40}$/i.test(j.commit), "commit 应为 hash");
-});
-
-test("/api/check-update 返回更新状态结构", async () => {
-  const r = await req("GET", "/api/check-update");
-  assert.strictEqual(r.status, 200);
-  const j = JSON.parse(r.body);
-  assert.strictEqual(typeof j.hasUpdate, "boolean", "hasUpdate 应为布尔");
-  assert.ok(j.localCommit, "应有 localCommit");
-  assert.ok(j.remoteCommit, "应有 remoteCommit");
+  assert.ok(j.version, "version 应为非空");
+  assert.ok(["tools-hub", "standalone"].includes(j.source), "source 应为 tools-hub 或 standalone");
+  assert.strictEqual(j.updatable, false, "updatable 应为 false");
 });

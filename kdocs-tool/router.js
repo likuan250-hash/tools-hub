@@ -9,7 +9,6 @@ const router = express.Router();
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { execFileSync, spawn } = require("child_process");
 
 const { parseInput } = require("./lib/parser");
 const { searchSteamAppId } = require("./lib/steam");
@@ -29,92 +28,16 @@ router.get("/api/ready", (req, res) => {
   res.json({ ok: true, ts: Date.now(), port: 3599, bind: "127.0.0.1" });
 });
 
-// ── 版本与更新（检测本地是否落后于 GitHub main）──
-function gitSync(args, timeoutMs = 20000) {
-  try {
-    return execFileSync("git", args, {
-      cwd: __dirname, windowsHide: true, encoding: "utf8", timeout: timeoutMs,
-    }).trim();
-  } catch (e) {
-    return null;
-  }
-}
-// 与 gitSync 类似, 但失败时返回真实 stderr, 便于前端展示确切原因(SSH 凭证/网络/代理等)
-function gitSyncDetail(args, timeoutMs = 20000) {
-  try {
-    const out = execFileSync("git", args, {
-      cwd: __dirname, windowsHide: true, encoding: "utf8", timeout: timeoutMs,
-    });
-    return { ok: true, out: (out || "").trim(), err: "" };
-  } catch (e) {
-    const raw = (e && (e.stderr || e.stdout)) || (e && e.message) || "未知错误";
-    const err = raw.toString().trim() || "未知错误";
-    return { ok: false, out: "", err };
-  }
-}
+// ── 版本（只读；更新由工具箱 tools-hub 统一管理，不再自更新）──
 function getVersion() {
   try { return require("./package.json").version; } catch (e) { return "?"; }
 }
-function gitShort() {
-  return gitSync(["rev-parse", "--short", "HEAD"], 8000) || "";
-}
 
 router.get("/api/version", (req, res) => {
-  res.json({ version: getVersion(), commit: gitShort(), env: process.env.NODE_ENV || "production" });
-});
-
-router.get("/api/check-update", (req, res) => {
-  const localCommit = gitSync(["rev-parse", "HEAD"], 8000);
-  const fetched = gitSyncDetail(["fetch", "origin", "main"], 25000);
-  if (!fetched.ok) {
-    return res.status(500).json({ ok: false, error: "git fetch 失败：" + fetched.err });
-  }
-  const remoteCommit = gitSync(["rev-parse", "origin/main"], 8000) || gitSync(["rev-parse", "FETCH_HEAD"], 8000);
-  if (!localCommit || !remoteCommit) {
-    return res.status(500).json({ ok: false, error: "无法读取本地/远程 commit" });
-  }
-  const hasUpdate = localCommit !== remoteCommit;
-  res.json({
-    ok: true, hasUpdate, version: getVersion(),
-    localCommit: localCommit.slice(0, 7), remoteCommit: remoteCommit.slice(0, 7),
-  });
-});
-
-router.post("/api/update", (req, res) => {
-  const before = gitSync(["rev-parse", "HEAD"], 8000);
-  const pull = gitSyncDetail(["pull", "origin", "main"], 60000);
-  if (!pull.ok) {
-    return res.status(200).json({ ok: false, error: "git pull 失败：" + pull.err, updated: false });
-  }
-  const after = gitSync(["rev-parse", "HEAD"], 8000);
-  const updated = !!(before && after && before !== after);
-  let needsNpmInstall = false;
-  if (updated) {
-    const changed = gitSync(["diff", "--name-only", before, after], 8000) || "";
-    needsNpmInstall = /package\.json/.test(changed);
-    if (needsNpmInstall) {
-      try {
-        const fs = require("fs");
-        const dataDir = path.join(__dirname, "data");
-        fs.mkdirSync(dataDir, { recursive: true });
-        fs.writeFileSync(path.join(dataDir, ".needs-npm-install"), after);
-      } catch (e) { /* 哨兵写入失败不阻断更新 */ }
-    }
-  }
-  res.json({ ok: true, updated, needsRestart: updated, needsNpmInstall, output: pull.out });
-});
-
-router.post("/api/restart", (req, res) => {
-  res.json({ ok: true });
-  setTimeout(() => {
-    try {
-      const child = spawn(process.execPath, [path.join(__dirname, "server.js")], {
-        cwd: __dirname, detached: true, stdio: "ignore", env: process.env, windowsHide: true,
-      });
-      child.unref();
-    } catch (e) { /* 重启失败不应抛到请求里 */ }
-    process.exit(0);
-  }, 600);
+  const hubVer = process.env.TOOLSHUB_VERSION;
+  const version = hubVer || getVersion();
+  const source = hubVer ? "tools-hub" : "standalone";
+  res.json({ version, source, updatable: false });
 });
 
 router.post("/api/parse", (req, res) => {

@@ -560,99 +560,20 @@ document.getElementById('clearFailed').addEventListener('click', async () => {
   } catch (e) { /* ignore */ }
 });
 
-// ── 右上角版本徽章 / 更新 ──────────────────────────────
+// ── 右上角版本徽章（只读，更新由工具箱统一管理）──
 const verBadge = document.getElementById('verBadge');
-let checking = false;
-let hasUpdate = false;
-let remoteVer = '';
-let remoteCommit = '';
-
-function badgeState(state, text) {
-  verBadge.classList.remove('checking', 'has-update', 'latest');
-  if (state) verBadge.classList.add(state);
-  verBadge.textContent = text;
-}
-
 async function loadVersion() {
   try {
     const r = await fetch('/api/version');
     const d = await r.json();
-    verBadge.textContent = 'v' + d.version;
-    verBadge.title = '点击检查更新' + (d.commit ? ' (' + d.commit + ')' : '');
+    const prefix = d.source === 'tools-hub' ? '工具箱 ' : '独立 ';
+    verBadge.textContent = prefix + 'v' + d.version;
+    verBadge.title = d.source === 'tools-hub'
+      ? '由工具箱统一管理，更新请通过工具箱'
+      : '独立运行模式';
+    verBadge.classList.add('readonly');
   } catch (e) { verBadge.textContent = 'v?'; }
 }
-
-async function doUpdate() {
-  badgeState('checking', '更新中…');
-  verBadge.disabled = true;
-  try {
-    const r = await fetch('/api/update', { method: 'POST' });
-    const d = await r.json();
-    if (!d.ok) {
-      badgeState('has-update', '⬆ v' + remoteVer);
-      verBadge.disabled = false;
-      alert('更新失败: ' + (d.error || ''));
-      return;
-    }
-    if (!d.updated) {
-      // 远程无新提交: 无需重启
-      badgeState('latest', '✓ 已最新');
-      verBadge.disabled = false;
-      verBadge.title = '已是最新版本';
-      setTimeout(loadVersion, 1500);
-      return;
-    }
-    if (d.needsNpmInstall) {
-      // 含依赖变更: 不在本进程自动装依赖, 交由控制面板重启时安装(独立进程更安全)
-      badgeState('has-update', '⬆ 需重启');
-      verBadge.disabled = false;
-      alert('代码已更新（含依赖变更）。\n\n请通过「控制面板」点击「重启」以安装依赖并生效；\n当前仍在运行旧版本，转存功能不受影响。');
-      return;
-    }
-    // 仅代码更新(无依赖变更): 自动重启生效
-    setTimeout(async () => {
-      try { await fetch('/api/restart', { method: 'POST' }); } catch (e) { /* 旧进程即将退出,忽略 */ }
-      setTimeout(() => location.reload(), 2600);
-    }, 800);
-  } catch (e) {
-    badgeState('has-update', '⬆ v' + remoteVer);
-    verBadge.disabled = false;
-    alert('更新失败: ' + e.message);
-  }
-}
-
-verBadge.onclick = async () => {
-  if (checking) return;
-  // 已检测到有更新 → 再点即确认更新
-  if (hasUpdate) {
-    if (!confirm('确定更新到最新版本 v' + remoteVer + ' 并重启服务?')) return;
-    await doUpdate();
-    return;
-  }
-  // 否则 → 检测更新
-  checking = true;
-  verBadge.disabled = true;
-  badgeState('checking', '检测中…');
-  try {
-    const r = await fetch('/api/check-update');
-    const d = await r.json();
-    if (!d.ok) { badgeState(null, '检测失败'); setTimeout(loadVersion, 1500); return; }
-    if (d.hasUpdate) {
-      hasUpdate = true; remoteVer = d.remoteVersion; remoteCommit = d.remoteCommit;
-      badgeState('has-update', '⬆ v' + d.remoteVersion);
-      verBadge.title = '发现新版本 v' + d.remoteVersion + '，点击更新';
-    } else {
-      badgeState('latest', '✓ 已最新');
-      verBadge.title = '已是最新版本';
-      setTimeout(loadVersion, 1800);
-    }
-  } catch (e) {
-    badgeState(null, '检测失败');
-    setTimeout(loadVersion, 1500);
-  } finally {
-    checking = false; verBadge.disabled = false;
-  }
-};
 
 // ── 转存目录选择(网页选目录,选完持久化,下次不再选) ──
 let dirCtx = { provider: '', stack: [], folders: [], loading: false };

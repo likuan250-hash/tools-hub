@@ -6,14 +6,14 @@
 // ctx: { store, logger, baidu, quark, xunlei,
 //        doTransfer, mapLimit, extractSurl, isValidShareLink,
 //        refreshPings, pingCache, getServerState, PORT,
-//        getVersion, gitShort, findConnect, run, spawn, execFileSync,
+//        getVersion,
 //        process, path, fs, __dirname }
 module.exports = function registerApiRoutes(app, ctx) {
   const {
     store, logger, baidu, quark, xunlei,
     doTransfer, mapLimit, extractSurl, isValidShareLink,
     refreshPings, pingCache, getServerState, PORT,
-    getVersion, gitShort, findConnect, run, spawn, execFileSync,
+    getVersion,
     process, path, fs, __dirname: projectDir,
   } = ctx;
 
@@ -150,72 +150,12 @@ module.exports = function registerApiRoutes(app, ctx) {
     res.json(store.getTasks());
   });
 
-  // ── 版本与更新 ───────────────────────────────────────
+  // ── 版本（只读；更新由工具箱 tools-hub 统一管理）──
   app.get("/api/version", (req, res) => {
-    res.json({
-      version: getVersion(),
-      commit: gitShort(),
-      env: process.env.NODE_ENV || "production",
-    });
-  });
-
-  app.get("/api/check-update", async (req, res) => {
-    try {
-      const localVersion = getVersion();
-      const localCommit = (await run("git", ["rev-parse", "HEAD"])).trim();
-      await run("git", ["fetch", "origin", "main"]);
-      const remoteCommit = (await run("git", ["rev-parse", "origin/main"])).trim();
-      const behind = localCommit !== remoteCommit;
-      let remoteVersion = "";
-      if (behind) {
-        try {
-          remoteVersion = (await run("git", ["show", "origin/main:VERSION"])).trim();
-        } catch (e) { remoteVersion = ""; }
-      }
-      res.json({ ok: true, behind, localVersion, localCommit: localCommit.slice(0, 7), remoteCommit: remoteCommit.slice(0, 7), remoteVersion });
-    } catch (e) {
-      logger.error("检查更新失败:", e.message);
-      res.status(500).json({ ok: false, error: e.message });
-    }
-  });
-
-  app.post("/api/update", async (req, res) => {
-    try {
-      const before = (await run("git", ["rev-parse", "HEAD"])).trim();
-      let pull = "";
-      try {
-        pull = await run("git", ["pull", "origin", "main"]);
-      } catch (e) {
-        logger.error("git pull 失败:", e.message);
-        return res.status(200).json({ ok: false, error: "git pull 失败: " + e.message, updated: false });
-      }
-      const after = (await run("git", ["rev-parse", "HEAD"])).trim();
-      const changed = await run("git", ["diff", "--name-only", before, after]).catch(() => "");
-      const needsNpmInstall = /package\.json/.test(changed);
-      if (needsNpmInstall) {
-        try {
-          fs.mkdirSync(path.join(projectDir, "data"), { recursive: true });
-          fs.writeFileSync(path.join(projectDir, "data", ".needs-npm-install"), after);
-        } catch (e) {}
-      }
-      const updated = before !== after;
-      res.json({ ok: true, updated, needsRestart: updated, needsNpmInstall, output: pull });
-    } catch (e) {
-      logger.error("更新失败:", e.message);
-      res.status(500).json({ ok: false, error: e.message });
-    }
-  });
-
-  // 重启服务
-  app.post("/api/restart", (req, res) => {
-    res.json({ ok: true });
-    setTimeout(() => {
-      const child = spawn(process.execPath, [path.join(projectDir, "server.js")], {
-        cwd: projectDir, detached: true, stdio: "ignore", env: process.env, windowsHide: true,
-      });
-      child.unref();
-      process.exit(0);
-    }, 600);
+    const hubVer = process.env.TOOLSHUB_VERSION;
+    const version = hubVer || getVersion();
+    const source = hubVer ? "tools-hub" : "standalone";
+    res.json({ version, source, updatable: false });
   });
 
   // ── 健康检查 ─────────────────────────────────────────

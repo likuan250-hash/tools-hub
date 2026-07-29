@@ -37,6 +37,7 @@ const CHILDREN = {
     cwd: KDOCS_DIR,
     url: "http://localhost:3599",
     env: Object.assign({}, process.env, {
+      TOOLSHUB_VERSION: app.getVersion(),
       KDOCS_PORT: "3599",
       BL_BIN_PATH: BL_BIN, // 注入 bl 二进制绝对路径，kdocs 优先使用
     }),
@@ -50,7 +51,7 @@ const CHILDREN = {
     script: path.join(NETDISK_DIR, "server.js"),
     cwd: NETDISK_DIR,
     url: "http://localhost:3000",
-    env: Object.assign({}, process.env, { PORT: "3000", PLAYWRIGHT_BROWSERS_PATH: "0" }),
+    env: Object.assign({}, process.env, { TOOLSHUB_VERSION: app.getVersion(), PORT: "3000", PLAYWRIGHT_BROWSERS_PATH: "0" }),
     proc: null,
     running: false,
     attempts: 0,

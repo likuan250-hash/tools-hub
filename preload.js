@@ -22,4 +22,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   // 自定义标题栏的窗口控制（最小化/最大化/关闭）
   windowControl: (action) => ipcRenderer.invoke("window-control", action),
+  // 退出确认弹窗：主进程请求显示自定义确认框 / 用户确认后真正关闭
+  onRequestQuit: (cb) => {
+    ipcRenderer.on("request-quit-confirm", () => cb());
+  },
+  confirmQuit: () => ipcRenderer.invoke("confirm-quit"),
 });

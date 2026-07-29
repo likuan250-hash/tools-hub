@@ -9,7 +9,8 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand">
+      <div class="top-left"></div>
+      <div class="top-center">
         <span class="logo">🧰</span>
         <span class="title">工具箱 ToolsHub</span>
         <span id="version" class="version">v0.0.0</span>
@@ -20,9 +21,9 @@
         <button id="updateBtn" class="update-btn" title="检测更新">🔄 检测更新</button>
         <button id="themeBtn" class="icon-btn" title="切换主题">🌗</button>
         <span class="win-ctl">
-          <button id="winMin" class="win-btn" title="最小化">—</button>
-          <button id="winMax" class="win-btn" title="最大化">□</button>
-          <button id="winClose" class="win-btn win-close" title="关闭">✕</button>
+          <button id="winMin" class="win-dot win-min" title="最小化" aria-label="最小化"></button>
+          <button id="winMax" class="win-dot win-max" title="最大化/还原" aria-label="最大化/还原"></button>
+          <button id="winClose" class="win-dot win-close" title="关闭" aria-label="关闭"></button>
         </span>
       </div>
     </header>
@@ -40,6 +41,19 @@
       </div>
     </main>
   </div>
+
+  <!-- 退出确认弹窗（自定义玻璃拟态，替代系统原生对话框） -->
+  <div id="quitModal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="quitTitle">
+      <div class="modal-title" id="quitTitle">退出确认</div>
+      <div class="modal-msg">退出后工具箱将关闭，后台服务也会停止，是否继续？</div>
+      <div class="modal-actions">
+        <button id="quitCancel" class="btn-secondary" type="button">取消</button>
+        <button id="quitConfirm" class="btn-danger" type="button">确认关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

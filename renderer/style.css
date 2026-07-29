@@ -36,14 +36,20 @@ body {
 }
 
 .topbar {
+  position: relative;
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 18px; border-bottom: 1px solid var(--card-border);
   background: var(--bg2);
   -webkit-app-region: drag; /* 自定义标题栏：此区域可拖动窗口 */
 }
-.brand { display: flex; align-items: center; gap: 10px; }
-.logo { font-size: 24px; }
-.title { font-size: 18px; font-weight: 700; letter-spacing: .5px; }
+.top-left { width: 1px; }
+.top-center {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  -webkit-app-region: drag;
+}
+.logo { font-size: 22px; }
+.title { font-size: 16px; font-weight: 600; letter-spacing: .5px; }
 .version {
   font-size: 12px; color: var(--muted);
   background: var(--card); padding: 2px 8px; border-radius: 12px;
@@ -59,20 +65,54 @@ body {
 .update-btn { padding: 0 14px; }
 .icon-btn:hover, .update-btn:hover:not(:disabled) { border-color: var(--accent); }
 .update-btn:disabled { opacity: .6; cursor: not-allowed; }
-
-/* ── 自定义窗口控制按钮（替代系统标题栏的最小化/最大化/关闭）── */
-.win-ctl { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
-.win-btn {
-  width: 34px; height: 34px; border-radius: 9px; cursor: pointer;
-  background: var(--card); border: 1px solid var(--card-border); color: var(--text);
-  font-size: 15px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
-  transition: background .15s ease, border-color .15s ease, color .15s ease;
-}
-.win-btn:hover { border-color: var(--accent); }
-.win-close:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
 .agg, .update-status { color: var(--muted); font-size: 13px; }
 .update-status.ok { color: var(--ok); }
 .update-status.bad { color: var(--bad); }
+
+/* ── 自定义窗口控制：macOS 红绿灯圆点（关闭=红/最小化=黄/最大化=绿）── */
+.win-ctl { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; -webkit-app-region: no-drag; }
+.win-dot {
+  width: 13px; height: 13px; border-radius: 50%; padding: 0; border: none;
+  position: relative; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: transparent; transition: filter .15s ease;
+}
+.win-dot::before { font-size: 11px; line-height: 1; font-weight: 700; }
+.win-min { background: #febc2e; }
+.win-min::before { content: "\2212"; }      /* − */
+.win-max { background: #28c840; }
+.win-max::before { content: "\FF0B"; }       /* ＋ */
+.win-close { background: #ff5f57; }
+.win-close::before { content: "\00D7"; }     /* × */
+/* 默认纯色圆点；悬停整组才显示内部符号（macOS 经典行为） */
+.win-ctl:hover .win-dot::before { color: rgba(0, 0, 0, .55); }
+.win-dot:active { filter: brightness(.92); }
+
+/* ── 退出确认弹窗（自定义玻璃拟态，替代系统原生对话框）── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .45);
+  -webkit-app-region: no-drag;
+}
+.modal-overlay[hidden] { display: none; }
+.modal {
+  width: 360px; max-width: 90vw;
+  background: var(--card); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border: 1px solid var(--card-border); border-radius: 16px;
+  padding: 22px; box-shadow: 0 24px 60px rgba(0, 0, 0, .4);
+}
+.modal-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+.modal-msg { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 20px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.modal-actions button {
+  height: 38px; padding: 0 18px; border-radius: 10px; cursor: pointer; font-size: 14px;
+  border: 1px solid var(--card-border); background: var(--bg2); color: var(--text);
+  transition: border-color .15s ease, filter .15s ease;
+}
+.modal-actions .btn-secondary:hover { border-color: var(--accent); }
+.modal-actions .btn-danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+.modal-actions .btn-danger:hover { filter: brightness(1.06); }
 
 .tabs { display: flex; gap: 6px; padding: 10px 16px 0; background: var(--bg2); }
 .tab {

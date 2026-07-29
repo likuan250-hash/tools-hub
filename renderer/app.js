@@ -16,6 +16,9 @@
   const winMin = document.getElementById("winMin");
   const winMax = document.getElementById("winMax");
   const winClose = document.getElementById("winClose");
+  const quitModal = document.getElementById("quitModal");
+  const quitCancel = document.getElementById("quitCancel");
+  const quitConfirm = document.getElementById("quitConfirm");
 
   // ── 主题 ──
   function applyTheme(t) {
@@ -283,9 +286,25 @@
     winMin.onclick = () => api.windowControl("minimize");
     winMax.onclick = () => api.windowControl("maximize");
     winClose.onclick = () => api.windowControl("close");
-    // 双击标题区（品牌）最大化/还原
-    const brandEl = document.querySelector(".brand");
-    if (brandEl) brandEl.addEventListener("dblclick", () => api.windowControl("maximize"));
+    // 双击标题区（居中标题）最大化/还原
+    const titleEl = document.querySelector(".top-center");
+    if (titleEl) titleEl.addEventListener("dblclick", () => api.windowControl("maximize"));
+  }
+
+  // ── 退出确认弹窗（自定义玻璃拟态，替代系统原生对话框）──
+  if (api && api.onRequestQuit) {
+    api.onRequestQuit(() => {
+      if (quitModal) quitModal.hidden = false;
+    });
+  }
+  if (quitCancel) {
+    quitCancel.onclick = () => { if (quitModal) quitModal.hidden = true; };
+  }
+  if (quitConfirm) {
+    quitConfirm.onclick = () => {
+      if (quitModal) quitModal.hidden = true;
+      if (api && api.confirmQuit) api.confirmQuit();
+    };
   }
 
   // 初始化：默认显示入口页标签

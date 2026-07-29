@@ -268,23 +268,12 @@ function createMainWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });
-  // ── 关闭前确认（方案A：总是确认，避免误关）──
+  // ── 关闭前确认：用自定义 HTML 弹窗（玻璃拟态），不用系统原生对话框 ──
   mainWindow.on("close", (e) => {
     if (allowClose || confirmedClose) return;
     e.preventDefault();
-    dialog.showMessageBox(mainWindow, {
-      type: "question",
-      title: "退出确认",
-      message: "退出后工具箱将关闭，后台服务也会停止，是否继续？",
-      buttons: ["确认关闭", "取消"],
-      defaultId: 1, // 默认“取消”，回车/ESC 不会误关
-      cancelId: 1,
-    }).then(({ response }) => {
-      if (response === 0) {
-        confirmedClose = true;
-        mainWindow.close();
-      }
-    });
+    // 通知渲染进程弹出自定义确认框；用户点“确认关闭”会经 confirm-quit IPC 真正关闭
+    mainWindow.webContents.send("request-quit-confirm");
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -349,6 +338,11 @@ ipcMain.handle("check-update", async () => {
 ipcMain.handle("install-update", () => {
   allowClose = true; // 更新安装时跳过关闭确认
   autoUpdater.quitAndInstall(false, true);
+});
+// ── 退出确认：渲染进程自定义弹窗点“确认关闭”后调用，真正关闭窗口 ──
+ipcMain.handle("confirm-quit", () => {
+  confirmedClose = true;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
 });
 // ── 自定义标题栏的窗口控制 ──
 ipcMain.handle("window-control", (event, action) => {

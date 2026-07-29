@@ -111,7 +111,6 @@
     wv.setAttribute("allowpopups", "true"); // 授权页等弹窗需要
     wv.className = "wv";
     wv.id = "wv-" + key;
-    wv.style.display = "none";
     wv.addEventListener("did-fail-load", (e) => {
       if (e.errorCode === -3) return;
       console.warn("webview 加载失败", key, e.errorDescription);
@@ -147,7 +146,13 @@
     renderTabs();
     openTabs.forEach((x) => {
       const wv = document.getElementById("wv-" + x.key);
-      if (wv) wv.style.display = x.key === key ? "block" : "none";
+      if (!wv) return;
+      const active = x.key === key;
+      wv.classList.toggle("active", active);
+      // webview 从隐藏切到显示后需要触发一次 resize 才能正确重绘
+      if (active && wv.resize) {
+        try { wv.resize(); } catch (e) {}
+      }
     });
   }
 
@@ -157,7 +162,7 @@
     tabsEl.style.display = "none";
     openTabs.forEach((x) => {
       const wv = document.getElementById("wv-" + x.key);
-      if (wv) wv.style.display = "none";
+      if (wv) wv.classList.remove("active");
     });
   }
 

@@ -148,6 +148,7 @@ function createMainWindow() {
     minWidth: 1280,
     minHeight: 720,
     title: "工具箱 ToolsHub",
+    show: false, // 等页面 ready 后再显示，减少启动黑屏
     backgroundColor: "#0f1115",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -157,6 +158,9 @@ function createMainWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });

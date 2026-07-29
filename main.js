@@ -76,20 +76,53 @@ function copyDir(src, dest) {
   }
 }
 
+function backupDirIfNeeded(dir) {
+  try {
+    if (!fs.existsSync(dir)) return;
+    const hasContent = fs.readdirSync(dir).some((n) => {
+      const p = path.join(dir, n);
+      const st = fs.statSync(p);
+      return st.isDirectory() || st.size > 10;
+    });
+    if (!hasContent) return;
+    const backupDir = `${dir}.backup-${Date.now()}`;
+    copyDir(dir, backupDir);
+    log("已创建数据备份:", backupDir);
+  } catch (e) {
+    log("备份失败:", e.message);
+  }
+}
+
 function ensureJunction(target, linkPath) {
   // 已是正确 junction 则跳过
   try {
     if (fs.lstatSync(linkPath).isSymbolicLink() &&
         fs.realpathSync(linkPath) === fs.realpathSync(target)) return;
   } catch (e) { /* 不存在 */ }
-  // 若 linkPath 是真实目录，先迁移内容再删除
+
+  // target(用户数据目录/AppData) 必须优先保留，绝不能用安装包里的旧数据覆盖它
+  let targetHasData = false;
+  try {
+    targetHasData = fs.existsSync(target) &&
+      fs.readdirSync(target).some((n) => {
+        const p = path.join(target, n);
+        const st = fs.statSync(p);
+        return st.isDirectory() || st.size > 10; // 忽略空文件/占位
+      });
+  } catch (e) {}
+
+  // 若 linkPath 是真实目录（例如升级时安装包把 data 解压成了真实目录）
   let isRealDir = false;
   try {
     isRealDir = fs.statSync(linkPath).isDirectory() &&
                 !fs.lstatSync(linkPath).isSymbolicLink();
   } catch (e) {}
   if (isRealDir) {
-    copyDir(linkPath, target);
+    if (!targetHasData) {
+      // target 为空：把 linkPath 内容迁过去（首次安装场景）
+      copyDir(linkPath, target);
+    }
+    // target 有数据：直接丢弃 linkPath（它是安装包带来的旧数据/错误数据），避免覆盖用户登录态
     fs.rmSync(linkPath, { recursive: true, force: true });
   }
   fs.symlinkSync(target, linkPath, "junction");
@@ -100,15 +133,38 @@ function relocateNetdiskData() {
   const userDir = path.join(app.getPath("userData"), "netdisk-hub");
   fs.mkdirSync(path.join(userDir, "data"), { recursive: true });
 
-  // .env：首次从 resources 迁到 userData；之后每次启动从 userData 恢复回 resources（防升级覆盖丢失）
+  // .env：以 userData 为准；首次安装时若 userData 没有则从 resources 迁移
   const srcEnv = path.join(NETDISK_DIR, ".env");
   const dstEnv = path.join(userDir, ".env");
-  if (fs.existsSync(srcEnv) && !fs.existsSync(dstEnv)) fs.copyFileSync(srcEnv, dstEnv);
-  if (fs.existsSync(dstEnv)) fs.copyFileSync(dstEnv, srcEnv);
+  if (!fs.existsSync(dstEnv) && fs.existsSync(srcEnv) && fs.statSync(srcEnv).size > 0) {
+    fs.copyFileSync(srcEnv, dstEnv);
+  }
+  // 启动时把 userData/.env 同步回 resources（NSIS 升级可能覆盖 resources/.env）
+  if (fs.existsSync(dstEnv) && fs.statSync(dstEnv).size > 0) {
+    fs.copyFileSync(dstEnv, srcEnv);
+  }
 
   // data/：junction 指向 userData，登录态(store.json)/历史跨升级保留
+  // 操作前先备份 userData 现有数据，防止任何意外覆盖
+  backupDirIfNeeded(path.join(userDir, "data"));
   ensureJunction(path.join(userDir, "data"), path.join(NETDISK_DIR, "data"));
   log("netdisk 数据已重定向到 userData:", userDir);
+}
+
+// 退出前把运行时可能修改过的 resources/.env 同步回 userData，确保下次启动不丢
+function syncNetdiskEnvBack() {
+  if (!app.isPackaged) return;
+  const srcEnv = path.join(NETDISK_DIR, ".env");
+  const dstEnv = path.join(app.getPath("userData"), "netdisk-hub", ".env");
+  try {
+    if (fs.existsSync(srcEnv) && fs.statSync(srcEnv).size > 0) {
+      fs.mkdirSync(path.dirname(dstEnv), { recursive: true });
+      fs.copyFileSync(srcEnv, dstEnv);
+      log("netdisk .env 已同步回 userData");
+    }
+  } catch (e) {
+    log("sync .env back failed:", e.message);
+  }
 }
 
 // ── 单实例锁（替代原 Tkinter 单实例锁）──
@@ -332,6 +388,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  syncNetdiskEnvBack();
   stopAllChildren();
 });
 

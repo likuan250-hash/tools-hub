@@ -179,7 +179,15 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on("checking-for-update", () => sendUpdate("checking"));
-  autoUpdater.on("update-available", (info) => sendUpdate("available", { version: info.version }));
+  autoUpdater.on("update-available", (info) => {
+    sendUpdate("available", { version: info.version });
+    // autoDownload=false 避免启动时静默下载；用户点击"检测更新"就是希望下载，
+    // 所以发现新版本后立即手动开始下载。
+    autoUpdater.downloadUpdate().catch((e) => {
+      log("download-update error", e.message);
+      sendUpdate("error", { message: e.message });
+    });
+  });
   autoUpdater.on("update-not-available", () => sendUpdate("not-available"));
   autoUpdater.on("download-progress", (p) =>
     sendUpdate("progress", { percent: p.percent, bytesPerSecond: p.bytesPerSecond })

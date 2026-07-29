@@ -72,14 +72,14 @@ body {
 .update-status.bad { color: var(--bad); }
 
 /* ── 自定义窗口控制：macOS 红绿灯圆点（关闭=红/最小化=黄/最大化=绿）── */
-.win-ctl { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; -webkit-app-region: no-drag; }
+.win-ctl { display: inline-flex; align-items: center; gap: 10px; margin-left: 6px; -webkit-app-region: no-drag; }
 .win-dot {
-  width: 13px; height: 13px; border-radius: 50%; padding: 0; border: none;
+  width: 17px; height: 17px; border-radius: 50%; padding: 0; border: none;
   position: relative; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
   color: transparent; transition: filter .15s ease;
 }
-.win-dot::before { font-size: 11px; line-height: 1; font-weight: 700; }
+.win-dot::before { font-size: 13px; line-height: 1; font-weight: 700; }
 .win-min { background: #febc2e; }
 .win-min::before { content: "\2212"; }      /* − */
 .win-max { background: #28c840; }

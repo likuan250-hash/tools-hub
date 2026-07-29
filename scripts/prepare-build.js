@@ -6,6 +6,8 @@
 const fs = require("fs");
 const path = require("path");
 
+const ROOT = path.resolve(__dirname, "..");
+
 for (const d of ["resources/node", "resources/bin"]) {
   fs.mkdirSync(path.join(__dirname, d), { recursive: true });
 }
@@ -33,6 +35,33 @@ if (!fs.existsSync(NODE_DEST) && NODE_SRC) {
 } else {
   console.log("[prepare-build] no node.exe source found, fork will fall back to system node");
 }
+
+// 复制 netdisk-hub/.env（百度/夸克/迅雷凭证与目标目录配置），使其被 extraResources 打包进
+// resources/netdisk-hub/.env。CI 包也可由 build.yml 的 secrets.NETDISK_ENV 步骤写入（二者二选一）。
+// 注意：netdisk-hub/.gitignore 已忽略 .env，本地副本不会进 git（凭证安全）。
+function copyNetdiskEnv() {
+  const dest = path.join(ROOT, "netdisk-hub", ".env");
+  if (fs.existsSync(dest) && fs.statSync(dest).size > 0) {
+    console.log("[prepare-build] netdisk-hub/.env already present, skip");
+    return;
+  }
+  const candidates = [
+    process.env.NETDISK_ENV_SRC,
+    path.join(ROOT, "netdisk-hub", ".env"),
+    path.join(ROOT, "..", "netdisk-hub", ".env"),
+  ].filter(Boolean);
+  for (const src of candidates) {
+    if (fs.existsSync(src) && fs.statSync(src).size > 0) {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+      console.log("[prepare-build] copied netdisk-hub/.env <- " + src);
+      return;
+    }
+  }
+  console.log("[prepare-build] no netdisk-hub/.env source; CI 请配 secrets.NETDISK_ENV, 或本地放 .env 后 build");
+}
+
+copyNetdiskEnv();
 
 require("./prune-bailian");
 console.log("[prepare-build] done");

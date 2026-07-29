@@ -57,7 +57,7 @@ body {
   background: var(--card); padding: 2px 8px; border-radius: 12px;
   border: 1px solid var(--card-border);
 }
-.top-right { display: flex; align-items: center; gap: 12px; -webkit-app-region: no-drag; }
+.top-right { display: flex; align-items: center; gap: 12px; margin-left: auto; -webkit-app-region: no-drag; }
 .icon-btn, .update-btn {
   background: var(--card); border: 1px solid var(--card-border); color: var(--text);
   height: 36px; border-radius: 10px; cursor: pointer; font-size: 14px;

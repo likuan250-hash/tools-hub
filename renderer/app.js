@@ -21,7 +21,27 @@
   const quitModal = document.getElementById("quitModal");
   const quitCancel = document.getElementById("quitCancel");
 
-  const { computeInsertIndex } = require("./drag-geometry");
+  // 拖拽几何计算（DOM 无关的纯函数）。
+  // ⚠️ 渲染进程 webPreferences: nodeIntegration=false + contextIsolation=true（main.js:298-299），
+  // 因此 `require` 在渲染进程里是 undefined —— 原代码在此行直接抛 ReferenceError，
+  // 导致整个 IIFE 在第 24 行就崩溃，其后所有事件绑定 / renderStatus / renderCards 全部不执行，
+  // 这正是「卡在初始化中…、卡片空白、整页无法操作」的根因。
+  // 改为从 window 读取（drag-geometry.js 已以 <script> 注入），并保留一份内联兜底实现，
+  // 保证即使该文件缺失也能渲染卡片、拖拽仍可工作，绝不再依赖 require。
+  const computeInsertIndex =
+    (typeof window !== "undefined" && typeof window.computeInsertIndex === "function")
+      ? window.computeInsertIndex
+      : function fallbackComputeInsertIndex(rects, px, py) {
+          let idx = rects.length;
+          for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            const cy = r.top + r.height / 2;
+            const cx = r.left + r.width / 2;
+            if (py < cy - r.height / 2) { idx = i; break; }
+            if (Math.abs(py - cy) <= r.height / 2 && px < cx) { idx = i; break; }
+          }
+          return idx;
+        };
   const quitConfirm = document.getElementById("quitConfirm");
 
   // ── 主题 ──
@@ -123,7 +143,9 @@
           <div class="card-title">${t.name}</div>
           <div class="card-desc">${t.desc}</div>
           <div class="card-meta">
-            ${statusHTML(running ? "ok" : "off", running ? "在线" : "离线")}
+            ${(typeof statusHTML === "function")
+              ? statusHTML(running ? "ok" : "off", running ? "在线" : "离线")
+              : (running ? "在线" : "离线")}
             <span class="card-port">${t.url.replace("http://localhost:", "端口 ")}</span>
           </div>
         </div>
@@ -435,13 +457,23 @@
   // ── 服务状态 ──
   function renderStatus(status) {
     serviceStatus = status || {};
-    const keys = Object.keys(serviceStatus);
-    const online = keys.filter((k) => serviceStatus[k] && serviceStatus[k].running).length;
-    const kdocsLevel = (serviceStatus.kdocs && serviceStatus.kdocs.running) ? 'ok' : 'off';
-    const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
-    const agg = aggregateStatus([kdocsLevel, netdiskLevel]);
-    aggEl.innerHTML = statusHTML(aggColorLevel(agg), aggLabel(agg));
-    renderCards();
+    // 防御性：状态系统组件（status-luxe.js 提供的全局函数）若未加载成功，
+    // 必须保证卡片渲染与页面可操作，绝不能让状态胶囊的异常阻断整个初始化序列。
+    try {
+      const kdocsLevel = (serviceStatus.kdocs && serviceStatus.kdocs.running) ? 'ok' : 'off';
+      const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
+      const agg = (typeof aggregateStatus === "function")
+        ? aggregateStatus([kdocsLevel, netdiskLevel])
+        : 'off';
+      const colorLevel = (typeof aggColorLevel === "function") ? aggColorLevel(agg) : agg;
+      aggEl.innerHTML = (typeof statusHTML === "function")
+        ? statusHTML(colorLevel, aggLabel(agg))
+        : (aggLabel(agg) || "");
+    } catch (e) {
+      // 状态胶囊渲染失败不应阻断卡片与页面：回退为纯文本标签，保证 #aggStatus 被替换。
+      if (aggEl) aggEl.textContent = aggLabel('off');
+    }
+    renderCards(); // 无论状态系统是否成功，卡片必须渲染、页面必须可操作
   }
   // 入口聚合标签：err→异常 / off→离线 / warn→需注意 / info→检测中 / ok→全部正常
   function aggLabel(level) {
@@ -463,7 +495,9 @@
 
   // ── 更新 ──
   function setUpdateUI(text, busy, level) {
-    updateStatusEl.innerHTML = level ? statusHTML(level, text || "") : (text || "");
+    updateStatusEl.innerHTML = level
+      ? ((typeof statusHTML === "function") ? statusHTML(level, text || "") : (text || ""))
+      : (text || "");
     updateBtn.disabled = !!busy;
     updateBtn.textContent = busy ? "⏳ 检查中…" : "🔄 检测更新";
   }

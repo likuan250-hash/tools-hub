@@ -17,4 +17,13 @@ function computeInsertIndex(rects, px, py) {
   return idx;
 }
 
-module.exports = { computeInsertIndex };
+// 双上下文导出：
+//  - 浏览器：以 <script> 注入到 window（渲染进程关闭 nodeIntegration，不能用 require）。
+//  - Node（单测 / require）：走 module.exports，保持 renderer/test/drag-geometry.test.js 可用。
+// 两种方式互不污染，且都不会在对方环境变量缺失时抛错。
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { computeInsertIndex };
+}
+if (typeof window !== "undefined") {
+  window.computeInsertIndex = computeInsertIndex;
+}

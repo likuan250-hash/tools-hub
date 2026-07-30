@@ -38,14 +38,14 @@
 }
 
 [data-theme="light"] {
-  --bg-1: #eaf0ff;
-  --bg-2: #f6f8ff;
-  --bg-3: #efe6ff;
+  --bg-1: #dde6ff;
+  --bg-2: #e9edfb;
+  --bg-3: #e6ddfb;
   --text: #1b1f3b;
   --text-dim: #5b6189;
 
   --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-border: rgba(120, 120, 180, 0.18);
+  --glass-border: rgba(90, 95, 150, 0.35);
 
   --accent: #7c5cff;
   --accent-2: #21d4fd;

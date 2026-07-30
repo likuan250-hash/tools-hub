@@ -156,55 +156,15 @@
     renderCards(false); // 重渲染以应用/撤除排序态样式（不打断 pop-in）
   }
 
-  // 计算拖拽指针应落入的插入位置（网格阅读顺序：上排优先、同排左优先）
-  function getInsertIndex(px, py, dragged) {
-    const siblings = [...cardsEl.children].filter((c) => c !== dragged);
-    let insert = siblings.length;
-    for (let i = 0; i < siblings.length; i++) {
-      const r = siblings[i].getBoundingClientRect();
-      const cy = r.top + r.height / 2;
-      const cx = r.left + r.width / 2;
-      if (py < cy - r.height / 2) { insert = i; break; }                       // 指针在更靠上的行
-      if (Math.abs(py - cy) <= r.height / 2 && px < cx) { insert = i; break; } // 同排、中心左侧
-    }
-    return insert;
-  }
-
-  // 拖拽中：根据指针位置把被拖卡片插入新位置，并对兄弟卡片做 FLIP 平滑过渡
-  function reorderTo(px, py, dragged) {
-    const children = [...cardsEl.children];
-    if (children.length < 2) return;
-    const siblings = children.filter((c) => c !== dragged);
-    // 先清掉兄弟卡片可能残留的 FLIP 过渡，保证测量准确
-    siblings.forEach((c) => { c.style.transition = "none"; c.style.transform = ""; });
-    void cardsEl.offsetWidth; // 强制回流
-    const insert = getInsertIndex(px, py, dragged);
-    const newOrder = [...siblings];
-    newOrder.splice(insert, 0, dragged);
-    const curKeys = children.map((c) => c.dataset.key).join(",");
-    const newKeys = newOrder.map((c) => c.dataset.key).join(",");
-    if (curKeys === newKeys) return;
-    // FLIP：记录兄弟卡片当前位置 → 重排 DOM → 反位移后过渡归零
-    const first = new Map();
-    siblings.forEach((c) => first.set(c, c.getBoundingClientRect()));
-    newOrder.forEach((c) => cardsEl.appendChild(c));
-    siblings.forEach((c) => {
-      const f = first.get(c);
-      const last = c.getBoundingClientRect();
-      const dx = f.left - last.left;
-      const dy = f.top - last.top;
-      if (dx || dy) {
-        c.style.transition = "none";
-        c.style.transform = `translate(${dx}px, ${dy}px)`;
-        requestAnimationFrame(() => {
-          c.style.transition = "transform .3s var(--ease-spring)";
-          c.style.transform = "";
-        });
-      }
-    });
-  }
-
-  // 拖拽核心：Pointer Events 手写，鼠标/触屏通吃，不引库
+  // 拖拽核心：Pointer Events 手写，鼠标/触屏通吃，不引库。
+  // 性能优化要点（解决卡顿）：
+  //   1) pointermove 用 rAF 合帧，最多每帧执行一次（而非每次事件都跑，事件频率可达 ~120Hz）；
+  //   2) 兄弟卡片矩形在拖拽过程中「稳定」——仅在重排时变动，因此缓存起来，
+  //      插入位置判定纯算术、零 getBoundingClientRect，消除 layout thrashing；
+  //   3) reorder 自身完成「读→写→读」分批，去掉了原先每帧强制的 void offsetWidth 回流；
+  //   4) 仅在插入位置真正变化时才重排 + FLIP，平时 pointermove 几乎零成本；
+  //   5) CSS 侧 .dragging-active 给卡片加 will-change:transform 并临时去掉 backdrop-filter，
+  //      避免每帧重绘昂贵的毛玻璃（见 style.css）。
   function onCardPointerDown(e, card) {
     if (!sortMode) return;          // 非排序模式不触发拖拽
     if (e.button !== 0) return;     // 仅左键
@@ -212,30 +172,108 @@
     const rect = card.getBoundingClientRect();
     const grabX = e.clientX - rect.left;
     const grabY = e.clientY - rect.top;
-    let curDx = 0, curDy = 0; // 当前已应用的跟随位移
+    let layoutLeft = rect.left;     // 被拖卡片布局基准（不含 transform），仅重排时刷新
+    let layoutTop = rect.top;
+    // 缓存兄弟卡片矩形：拖拽中兄弟仅在重排时变动，平时稳定 → 判定插入位无需每帧测量
+    let siblingRects = [...cardsEl.children]
+      .filter((c) => c !== card)
+      .map((c) => c.getBoundingClientRect());
+    let insertIndex = siblingRects.length; // 当前插入位置（相对 siblings）
+    let rafScheduled = false;
+    let rafId = 0;
+    let flipRaf = 0;
+    let lastX = e.clientX, lastY = e.clientY;
+
     card.setPointerCapture(e.pointerId);
     card.classList.add("dragging");
     cardsEl.classList.add("dragging-active");
 
-    // 让被拖卡片始终贴着指针（按布局实时推算，DOM 重排后不跳变）
-    function place(clientX, clientY) {
-      const r = card.getBoundingClientRect();
-      const layoutLeft = r.left - curDx;
-      const layoutTop = r.top - curDy;
-      curDx = (clientX - grabX) - layoutLeft;
-      curDy = (clientY - grabY) - layoutTop;
-      card.style.transform = `translate(${curDx}px, ${curDy}px) scale(1.04) rotate(1.5deg)`;
+    // 被拖卡片始终贴着指针：相对其布局基准推算位移，避免每帧读取自身 rect
+    function applyFollow(x, y) {
+      const dx = (x - grabX) - layoutLeft;
+      const dy = (y - grabY) - layoutTop;
+      card.style.transform = `translate(${dx}px, ${dy}px) scale(1.04) rotate(1.5deg)`;
     }
-    place(e.clientX, e.clientY);
 
+    // 用缓存矩形计算插入位置（纯算术，零布局读取）
+    function computeInsert(px, py) {
+      let idx = siblingRects.length;
+      for (let i = 0; i < siblingRects.length; i++) {
+        const r = siblingRects[i];
+        const cy = r.top + r.height / 2;
+        const cx = r.left + r.width / 2;
+        if (py < cy - r.height / 2) { idx = i; break; }                       // 指针在更靠上的行
+        if (Math.abs(py - cy) <= r.height / 2 && px < cx) { idx = i; break; } // 同排、中心左侧
+      }
+      return idx;
+    }
+
+    // 插入位置变化时重排 + FLIP；自身完成读→写→读分批，杜绝 layout thrashing
+    function doReorder(idx) {
+      const siblings = [...cardsEl.children].filter((c) => c !== card);
+      const newOrder = [...siblings];
+      newOrder.splice(idx, 0, card);
+      const curKeys = [...cardsEl.children].map((c) => c.dataset.key).join(",");
+      const newKeys = newOrder.map((c) => c.dataset.key).join(",");
+      if (curKeys === newKeys) return;
+      if (flipRaf) cancelAnimationFrame(flipRaf);
+      // 落定兄弟卡片可能残留的 FLIP 过渡/位移，保证 first 测量是真实 layout
+      siblings.forEach((c) => { c.style.transition = "none"; c.style.transform = ""; });
+      // 读阶段：neutralize 被拖卡片后，测得所有卡片当前 layout（first）
+      card.style.transform = "";
+      const first = new Map();
+      [...cardsEl.children].forEach((c) => first.set(c, c.getBoundingClientRect()));
+      // 写阶段：重排 DOM
+      newOrder.forEach((c) => cardsEl.appendChild(c));
+      // 读阶段：测得重排后 layout（last，含被拖卡片新槽位）
+      const last = new Map();
+      newOrder.forEach((c) => last.set(c, c.getBoundingClientRect()));
+      // FLIP 兄弟卡片（被拖卡片单独处理，不参加过渡动画）
+      newOrder.forEach((c) => {
+        if (c === card) return;
+        const f = first.get(c), l = last.get(c);
+        const dx = f.left - l.left, dy = f.top - l.top;
+        c.style.transition = "none";
+        c.style.transform = `translate(${dx}px, ${dy}px)`;
+      });
+      // 被拖卡片：把布局基准更新为新槽位，稍后由 applyFollow 重新贴合指针
+      const cl = last.get(card);
+      if (cl) { layoutLeft = cl.left; layoutTop = cl.top; }
+      flipRaf = requestAnimationFrame(() => {
+        newOrder.forEach((c) => {
+          if (c === card) return;
+          c.style.transition = "transform .3s var(--ease-spring)";
+          c.style.transform = "";
+        });
+      });
+      // 兄弟矩形已随重排改变，用上一步测得的 layout（last）刷新缓存，
+      // 避免被刚写入的反向位移 transform 污染（getBoundingClientRect 含 transform）
+      siblingRects = newOrder.filter((c) => c !== card).map((c) => last.get(c));
+      applyFollow(lastX, lastY);
+    }
+
+    function frame() {
+      rafScheduled = false;
+      applyFollow(lastX, lastY);
+      const idx = computeInsert(lastX, lastY);
+      if (idx !== insertIndex) {
+        insertIndex = idx;
+        doReorder(idx);
+      }
+    }
     function move(ev) {
-      place(ev.clientX, ev.clientY);
-      reorderTo(ev.clientX, ev.clientY, card);
+      lastX = ev.clientX; lastY = ev.clientY;
+      if (!rafScheduled) {
+        rafScheduled = true;
+        rafId = requestAnimationFrame(frame);
+      }
     }
     function up(ev) {
       card.removeEventListener("pointermove", move);
       card.removeEventListener("pointerup", up);
       card.removeEventListener("pointercancel", up);
+      if (rafScheduled) cancelAnimationFrame(rafId);
+      if (flipRaf) cancelAnimationFrame(flipRaf);
       card.releasePointerCapture(ev.pointerId);
       card.classList.remove("dragging");
       cardsEl.classList.remove("dragging-active");
@@ -247,6 +285,7 @@
       const restored = cardsEl.querySelector(`.card[data-key="${key}"]`);
       if (restored) restored.focus(); // 保住键盘焦点，可达性
     }
+    applyFollow(e.clientX, e.clientY);
     card.addEventListener("pointermove", move);
     card.addEventListener("pointerup", up);
     card.addEventListener("pointercancel", up);

@@ -224,8 +224,16 @@ body {
 .cards.sorting .card.dragging { cursor: grabbing; z-index: 5; }
 .cards.sorting .card.dragging:hover { transform: none; }
 .cards.sorting .card-open { display: none; }
+/* 拖拽进行中：提升合成层（避免每帧重排重绘），并临时去掉毛玻璃
+   —— backdrop-filter 在被变换元素上每帧都需重新模糊背景，是卡顿主因之一 */
+.cards.dragging-active .card { will-change: transform; }
+.cards.dragging-active .card {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
 .cards.sorting .card.dragging {
   box-shadow: var(--shadow-modal), 0 24px 60px rgba(var(--accent-rgb), .35);
+  will-change: transform;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .icon-btn.active {
   border-color: var(--accent);

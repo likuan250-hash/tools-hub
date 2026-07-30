@@ -77,11 +77,12 @@
   // ── 入口卡片 ──
   function renderCards() {
     cardsEl.innerHTML = "";
-    Object.values(TOOLS).forEach((t) => {
+    Object.values(TOOLS).forEach((t, i) => {
       const s = serviceStatus[t.key] || {};
       const running = !!s.running;
       const card = document.createElement("div");
-      card.className = "card";
+      card.className = "card pop-in";
+      card.style.setProperty("--i", i); // 入场 stagger 序号
       card.innerHTML = `
         <div class="card-icon">${t.icon}</div>
         <div class="card-body">
@@ -95,6 +96,12 @@
         </div>
         <button class="card-open">打开</button>
       `;
+      // 液态玻璃高光跟随光标（写入 --mx/--my 供 ::before 径向高光使用）
+      card.addEventListener("mousemove", (e) => {
+        const r = card.getBoundingClientRect();
+        card.style.setProperty("--mx", ((e.clientX - r.left) / r.width * 100) + "%");
+        card.style.setProperty("--my", ((e.clientY - r.top) / r.height * 100) + "%");
+      });
       card.querySelector(".card-open").onclick = () => openTab(t.key);
       cardsEl.appendChild(card);
     });

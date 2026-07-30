@@ -1,0 +1,79 @@
+/* tools-hub/shared/macos-motion.css
+ * 三套前端共用的 macOS 动效层。只引用 tokens.css 的变量，不写死颜色。
+ * 加载顺序：tokens.css → (macos.css) → macos-motion.css，
+ * 确保本文件的动效属性在子工具内联样式之后生效（后定义者胜）。
+ * 只设置 transition / animation / transform(hover) / 伪元素高光等动效属性，不覆盖布局。
+ */
+
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 0.18s;
+  --dur: 0.28s;
+}
+
+/* ── 液态玻璃高光：由 JS 写入 --mx/--my（光标百分比）驱动；无 JS 时居中淡显 ── */
+.liquid, .card, .panel, .modal { position: relative; }
+.liquid::before, .card::before, .panel::before, .modal::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 30%),
+              rgba(255, 255, 255, 0.16), transparent 60%);
+  opacity: 0; pointer-events: none; transition: opacity var(--dur);
+}
+.card:hover::before, .panel:hover::before, .modal:hover::before, .liquid:hover::before { opacity: 1; }
+
+/* ── 通用可点元素：弹簧缓动 + 按压反馈 ── */
+.btn, .auth-btn, .icon-btn, .update-btn, .theme-btn, .ver-badge, .tab, .chip,
+.card-open, .dir-btn, .group-copy, .clear-input, .clear-corner,
+.modal-actions button, .tab-close {
+  transition:
+    transform var(--dur) var(--ease-spring),
+    box-shadow var(--dur) var(--ease-out),
+    background var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out),
+    filter var(--dur) var(--ease-out);
+}
+.btn:active, .auth-btn:active, .card-open:active, .icon-btn:active, .update-btn:active,
+.theme-btn:active, .ver-badge:active, .tab:active, .chip:active, .dir-btn:active,
+.group-copy:active, .clear-input:active, .clear-corner:active,
+.modal-actions button:active, .tab-close:active { transform: scale(0.97); }
+
+/* ── 状态点呼吸 ── */
+.dot.ok, .chip .dot.green, .dot.green {
+  animation: statusBreath 2.4s ease-in-out infinite;
+}
+@keyframes statusBreath {
+  0%, 100% { box-shadow: 0 0 6px var(--ok); }
+  50% { box-shadow: 0 0 12px var(--ok); }
+}
+
+/* ── 入场 stagger pop-in（JS 设置 --i 序号）── */
+.pop-in { animation: popIn 0.5s var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 0.08s); }
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── 旋转（spinner 复用）── */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── 无障碍：减少动态 ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+  }
+  .card::before, .panel::before, .modal::before, .liquid::before { display: none; }
+}
+
+/* ── 无障碍：降低透明（降级为实色玻璃）── */
+@media (prefers-reduced-transparency: reduce) {
+  .card, .panel, .modal, .chip,
+  .btn.ghost, .theme-btn, .ver-badge, .icon-btn, .update-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}

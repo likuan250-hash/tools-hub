@@ -63,6 +63,13 @@ app.use((req, res, next) => {
 });
 
 registerAuthRoutes(app, { store, logger, baidu, baiduAuth, quark, quarkAuth, xunlei, xunleiAuth });
+
+// ── 共享样式：从仓库 shared/ 提供 tokens.css 与 macos-motion.css（三套前端共用单一真源）──
+app.get(['/tokens.css', '/macos-motion.css'], (req, res) => {
+  const file = path.join(__dirname, '..', 'shared', req.path.slice(1));
+  res.type('css').sendFile(file, (err) => { if (err) res.status(404).end(); });
+});
+
 // 静态资源防缓存: 每次都重新验证, 避免浏览器长期使用旧 app.js(曾导致「改了代码仍看到旧行为」)
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {

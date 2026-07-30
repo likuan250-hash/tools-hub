@@ -5,29 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>多维表智能录入</title>
   <style>
-    :root {
-      --bg-1: #0f1226;
-      --bg-2: #1a1f3c;
-      --bg-3: #2b1a4a;
-      --text: #eef1ff;
-      --text-dim: #aab0d8;
-      --glass-bg: rgba(255, 255, 255, 0.06);
-      --glass-border: rgba(255, 255, 255, 0.12);
-      --accent: #7c5cff;
-      --accent-2: #21d4fd;
-      --ok: #34d399;
-      --warn: #fbbf24;
-      --err: #f87171;
-    }
-    [data-theme="light"] {
-      --bg-1: #eaf0ff;
-      --bg-2: #f6f8ff;
-      --bg-3: #efe6ff;
-      --text: #1b1f3b;
-      --text-dim: #5b6189;
-      --glass-bg: rgba(255, 255, 255, 0.55);
-      --glass-border: rgba(120, 120, 180, 0.18);
-    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -48,7 +25,7 @@
       width: 44px; height: 44px; border-radius: 14px;
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
       display: grid; place-items: center; font-size: 22px;
-      box-shadow: 0 8px 30px rgba(124, 92, 255, 0.4);
+      box-shadow: 0 8px 30px rgba(var(--accent-rgb), 0.4);
     }
     h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
     .sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
@@ -72,12 +49,12 @@
     .ver-badge.checking { color: var(--accent-2); }
     .ver-badge.has-update {
       color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      border-color: transparent; box-shadow: 0 6px 20px rgba(124,92,255,0.4);
+      border-color: transparent; box-shadow: 0 6px 20px rgba(var(--accent-rgb),0.4);
       animation: badgePulse 1.6s ease-in-out infinite;
     }
     @keyframes badgePulse {
-      0%, 100% { box-shadow: 0 6px 20px rgba(124,92,255,0.4); }
-      50% { box-shadow: 0 6px 28px rgba(33,212,253,0.65); }
+      0%, 100% { box-shadow: 0 6px 20px rgba(var(--accent-rgb),0.4); }
+      50% { box-shadow: 0 6px 28px rgba(var(--accent2-rgb),0.65); }
     }
 
     .status-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
@@ -107,7 +84,7 @@
       transition: border 0.2s ease, box-shadow 0.2s ease;
     }
     [data-theme="light"] input[type="text"] { background: rgba(255,255,255,0.6); }
-    input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,92,255,0.25); }
+    input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.25); }
 
     textarea {
       width: 100%; min-height: 150px; padding: 14px; border-radius: 12px;
@@ -118,7 +95,7 @@
       transition: border 0.2s ease, box-shadow 0.2s ease;
     }
     [data-theme="light"] textarea { background: rgba(255,255,255,0.6); }
-    textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,92,255,0.25); }
+    textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.25); }
     textarea::placeholder { color: var(--text-dim); opacity: 0.6; }
 
     .input-wrap { position: relative; }
@@ -143,10 +120,10 @@
       width: 100%; padding: 14px; border: none; border-radius: 14px; cursor: pointer;
       font-size: 15px; font-weight: 600; color: #fff;
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      box-shadow: 0 10px 30px rgba(124, 92, 255, 0.35);
+      box-shadow: 0 10px 30px rgba(var(--accent-rgb), 0.35);
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(124, 92, 255, 0.5); }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(var(--accent-rgb), 0.5); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     .btn.ghost { background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text); box-shadow: none; }
 
@@ -156,7 +133,7 @@
     .preview-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 14px; line-height: 2.1; }
     .preview-grid .label { color: var(--text-dim); white-space: nowrap; }
     .preview-grid .value { color: var(--text); word-break: break-all; }
-    .preview-grid .tag { display: inline-block; padding: 1px 9px; background: rgba(124,92,255,0.18); color: #c4b5ff; border-radius: 6px; font-size: 12px; margin: 2px 3px; }
+    .preview-grid .tag { display: inline-block; padding: 1px 9px; background: rgba(var(--accent-rgb),0.18); color: var(--accent-3); border-radius: 6px; font-size: 12px; margin: 2px 3px; }
 
     .auto-result { display: none; }
     .auto-result.show { display: block; }
@@ -187,7 +164,7 @@
     .modal { width: min(480px, 92vw); border: 1px solid var(--glass-border); border-radius: 20px; background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%); padding: 26px; box-shadow: 0 24px 70px rgba(0,0,0,0.5); }
     .modal-title { font-size: 17px; margin-bottom: 14px; font-weight: 600; }
     .modal-body { font-size: 13px; color: var(--text-dim); line-height: 1.7; margin-bottom: 6px; word-break: break-all; }
-    .modal-body .lk { display: inline-block; margin: 4px 4px 0 0; padding: 2px 8px; border-radius: 6px; background: rgba(124,92,255,0.15); color: #c4b5ff; font-size: 12px; word-break: break-all; }
+    .modal-body .lk { display: inline-block; margin: 4px 4px 0 0; padding: 2px 8px; border-radius: 6px; background: rgba(var(--accent-rgb),0.15); color: var(--accent-3); font-size: 12px; word-break: break-all; }
     .modal-check { display: flex; align-items: flex-start; gap: 9px; font-size: 14px; margin: 14px 0 4px; cursor: pointer; color: var(--text); }
     .modal-check input { margin-top: 2px; width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
     .modal-actions { display: flex; gap: 10px; margin-top: 22px; }
@@ -198,6 +175,8 @@
 
     @media (max-width: 680px) { .input-row { grid-template-columns: 1fr; } .input-row .browse { justify-self: start; } }
   </style>
+  <link rel="stylesheet" href="/tokens.css" />
+  <link rel="stylesheet" href="/macos-motion.css" />
   <link rel="stylesheet" href="/macos.css" />
 </head>
 <body>

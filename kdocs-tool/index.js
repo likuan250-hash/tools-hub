@@ -3,6 +3,7 @@
 // 如果被其他项目 require，则导出 router 供挂载
 
 const express = require("express");
+const path = require("path");
 const router = require("./router");
 
 // 被其他项目 require 时，直接导出 router
@@ -13,6 +14,11 @@ module.exports = router;
 if (require.main === module) {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
+  // 共享样式：从仓库 shared/ 提供 tokens.css 与 macos-motion.css（三套前端共用单一真源）
+  app.get(['/tokens.css', '/macos-motion.css'], (req, res) => {
+    const file = path.join(__dirname, '..', 'shared', req.path.slice(1));
+    res.type('css').sendFile(file, (err) => { if (err) res.status(404).end(); });
+  });
   app.use("/", router);
 
   const PORT = process.env.KDOCS_PORT || 3599;

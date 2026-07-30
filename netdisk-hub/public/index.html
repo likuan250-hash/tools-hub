@@ -89,9 +89,8 @@
       border-radius: 4px; background: linear-gradient(180deg, var(--accent), var(--accent-2));
     }
 
-    /* 控件实色背景：明暗两态，避免 glass 套 glass 导致层次崩塌（对齐入口页实色控件） */
+    /* 控件实色背景默认值（暗色态），亮/暗覆盖见文末 style 块 */
     :root { --field-bg: var(--bg-2); --solid-bg: var(--bg-2); }
-    [data-theme="light"] { --field-bg: #ffffff; --solid-bg: #f1f4ff; }
     label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
     input[type="text"], input[type="password"], input[type="number"], select, textarea {
       width: 100%; padding: 12px 14px; border-radius: 12px;
@@ -296,10 +295,70 @@
     .modal-foot .modal-hint { flex: 1; font-size: 12px; color: var(--text-dim); word-break: break-all; }
     .modal-foot .btn.ghost { width: auto; padding: 9px 16px; font-size: 13px; }
     .modal-foot .auth-btn { padding: 9px 16px; font-size: 13px; }
+    /* 亮色玻璃分离增强：顶部白高光 + 底部暗线（白底上原 0.10 白高光不可见，靠加深边框 + 此暗线承担分离） */
+    [data-theme="light"] .panel,
+    [data-theme="light"] .chip,
+    [data-theme="light"] .card,
+    [data-theme="light"] .modal {
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(20, 30, 80, 0.10);
+    }
+    /* 实色回退：老设备/部分 webview 不支持 backdrop-filter 时玻璃失效，用实色卡片 + 正常深边框保证可读 */
+    @supports not (backdrop-filter: blur(1px)) {
+      .panel, .chip, .card, .modal, .theme-btn, .ver-badge, .tab {
+        -webkit-backdrop-filter: none; backdrop-filter: none;
+        background: #eef1fb; border: 1px solid rgba(90, 95, 150, 0.45);
+      }
+    }
   </style>
   <link rel="stylesheet" href="/tokens.css" />
   <link rel="stylesheet" href="/macos-motion.css" />
   <link rel="stylesheet" href="/macos.css" />
+  <!-- 主题 token 覆盖：必须位于 /tokens.css 的 <link> 之后，才能用同特异性+后加载盖过其默认值（#ffffff/#f1f4ff 近白） -->
+  <style>
+    /* 暗色主题增强：玻璃面板需要足够不透明度才能在深蓝背景上可辨 */
+    :root, [data-theme="dark"] {
+      --glass-bg: rgba(255, 255, 255, 0.32);
+      --glass-border: rgba(255, 255, 255, 0.42);
+    }
+    /* 亮色主题关键 token 直接内联，严格对齐 build/collage.png 的完美风格（覆盖 /tokens.css 默认近白值） */
+    [data-theme="light"] {
+      --bg-1: #dde6ff; --bg-2: #e9edfb; --bg-3: #e6ddfb;
+      --text: #1b1f3b; --text-dim: #5b6189;
+      --glass-bg: rgba(255, 255, 255, 0.55);
+      --glass-border: rgba(90, 95, 150, 0.35);
+      --field-bg: #eef1fb; --solid-bg: #e7ecf8;
+      --shadow-card: 0 8px 24px rgba(20, 30, 80, 0.1);
+    }
+    /* ── 次要按钮：对齐入口页的"突出"质感，亮/暗两态都能从玻璃面板浮出 ── */
+    .btn.ghost, .clear-corner, .clear-input, .browse,
+    .copy, .group-copy, .task .copy, .task .retry, .dir-btn {
+      background: rgba(255, 255, 255, 0.16) !important;
+      border: 1px solid rgba(255, 255, 255, 0.42) !important;
+      color: var(--text) !important;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      font-weight: 600 !important;
+    }
+    .task .retry { color: var(--err) !important; border-color: rgba(var(--err-rgb), 0.45) !important; }
+    [data-theme="light"] .btn.ghost,
+    [data-theme="light"] .clear-corner, [data-theme="light"] .clear-input, [data-theme="light"] .browse,
+    [data-theme="light"] .copy, [data-theme="light"] .group-copy,
+    [data-theme="light"] .task .copy, [data-theme="light"] .task .retry, [data-theme="light"] .dir-btn {
+      background: #d3daf2 !important;
+      border: 1px solid rgba(90, 95, 150, 0.55) !important;
+      color: #1b1f3b !important;
+      box-shadow: 0 2px 8px rgba(20, 30, 80, 0.15) !important;
+    }
+    [data-theme="light"] .task .retry { color: var(--err) !important; }
+    /* 标题文字：对齐入口页 text-shadow，在玻璃上更"立"得住 */
+    h1, .brand h1, .card-title, .panel h2, .modal-title {
+      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.20);
+    }
+    [data-theme="light"] h1, [data-theme="light"] .brand h1, [data-theme="light"] .card-title,
+    [data-theme="light"] .panel h2, [data-theme="light"] .modal-title {
+      text-shadow: 0 1px 8px rgba(20, 30, 80, 0.14);
+    }
+  </style>
 </head>
 <body>
   <div class="wrap">

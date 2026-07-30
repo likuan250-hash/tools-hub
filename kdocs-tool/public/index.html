@@ -192,9 +192,187 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="/tokens.css" />
-  <link rel="stylesheet" href="/macos-motion.css" />
-  <link rel="stylesheet" href="/macos.css" />
+  <!-- v0.1.43: 将 shared/tokens.css + shared/macos-motion.css + public/macos.css 内联，
+       修复打包后 shared/ 被打入 app.asar 导致 server.js 子进程 fs 读不到 → 三样式全 404 → 零样式黑字。 -->
+  <style>
+/* ===== shared/tokens.css（单一真源） ===== */
+:root { /* 默认暗色 */
+  --bg-1: #0f1226;
+  --bg-2: #222a52;
+  --bg-3: #2b1a4a;
+  --text: #eef1ff;
+  --text-dim: #c8cff0;
+
+  --glass-bg: rgba(255, 255, 255, 0.32);
+  --glass-border: rgba(255, 255, 255, 0.42);
+
+  --accent: #7c5cff;
+  --accent-2: #21d4fd;
+  --accent-3: #c4b5ff;
+
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --err: #f87171;
+
+  --accent-rgb: 124, 92, 255;
+  --accent2-rgb: 33, 212, 253;
+  --ok-rgb: 52, 211, 153;
+  --err-rgb: 248, 113, 113;
+
+  --switch-off: #4b4f6b;
+  --switch-thumb: #ffffff;
+  --modal-mask: rgba(8, 10, 24, 0.6);
+  --shadow-card: 0 10px 34px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] {
+  --bg-1: #dde6ff;
+  --bg-2: #e9edfb;
+  --bg-3: #e6ddfb;
+  --text: #1b1f3b;
+  --text-dim: #5b6189;
+
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-border: rgba(90, 95, 150, 0.35);
+
+  --accent: #7c5cff;
+  --accent-2: #21d4fd;
+  --accent-3: #5b3df0;
+
+  --ok: #10b981;
+  --warn: #b7791f;
+  --err: #e2483d;
+
+  --accent-rgb: 124, 92, 255;
+  --accent2-rgb: 33, 212, 253;
+  --ok-rgb: 16, 185, 129;
+  --err-rgb: 226, 72, 61;
+
+  --switch-off: #c7c9d8;
+  --switch-thumb: #ffffff;
+  --modal-mask: rgba(20, 24, 55, 0.4);
+  --shadow-card: 0 8px 24px rgba(20, 30, 80, 0.1);
+  --shadow-modal: 0 30px 80px rgba(20, 30, 80, 0.25);
+}
+
+/* ===== shared/macos-motion.css ===== */
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 0.18s;
+  --dur: 0.28s;
+}
+
+.liquid, .card, .panel, .modal { position: relative; }
+.liquid::before, .card::before, .panel::before, .modal::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 30%),
+              rgba(255, 255, 255, 0.16), transparent 60%);
+  opacity: 0; pointer-events: none; transition: opacity var(--dur);
+}
+.card:hover::before, .panel:hover::before, .modal:hover::before, .liquid:hover::before { opacity: 1; }
+
+.btn, .auth-btn, .icon-btn, .update-btn, .theme-btn, .ver-badge, .tab, .chip,
+.card-open, .dir-btn, .group-copy, .clear-input, .clear-corner,
+.modal-actions button, .tab-close {
+  transition:
+    transform var(--dur) var(--ease-spring),
+    box-shadow var(--dur) var(--ease-out),
+    background var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out),
+    filter var(--dur) var(--ease-out);
+}
+.btn:active, .auth-btn:active, .card-open:active, .icon-btn:active, .update-btn:active,
+.theme-btn:active, .ver-badge:active, .tab:active, .chip:active, .dir-btn:active,
+.group-copy:active, .clear-input:active, .clear-corner:active,
+.modal-actions button:active, .tab-close:active { transform: scale(0.97); }
+
+.dot.ok, .chip .dot.green, .dot.green {
+  animation: statusBreath 2.4s ease-in-out infinite;
+}
+@keyframes statusBreath {
+  0%, 100% { box-shadow: 0 0 6px var(--ok); }
+  50% { box-shadow: 0 0 12px var(--ok); }
+}
+
+.pop-in { animation: popIn 0.5s var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 0.08s); }
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+  }
+  .card::before, .panel::before, .modal::before, .liquid::before { display: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .card, .panel, .modal, .chip,
+  .btn.ghost, .theme-btn, .ver-badge, .icon-btn, .update-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ===== public/macos.css ===== */
+:root {
+  --mac-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+              "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+body { font-family: var(--mac-font); }
+
+.mac-ctl { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.mac-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  transition: filter .15s ease;
+}
+.mac-dot::before { font-size: 10px; line-height: 1; font-weight: 700; color: transparent; }
+.mac-close { background: #ff5f57; }
+.mac-close::before { content: "\00D7"; }
+.mac-min   { background: #febc2e; }
+.mac-min::before { content: "\2212"; }
+.mac-max   { background: #28c840; }
+.mac-max::before { content: "\FF0B"; }
+.mac-ctl:hover .mac-dot::before { color: rgba(0, 0, 0, .55); }
+.mac-dot:active { filter: brightness(.92); }
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 160, .35); border-radius: 10px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(140, 140, 160, .55); background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+.switch input {
+  width: 38px; height: 22px; border-radius: 22px;
+  background: rgba(120, 120, 140, .4);
+}
+[data-theme="light"] .switch input { background: rgba(120, 120, 140, .3); }
+.switch input:checked { background: var(--accent); }
+.switch input::after {
+  width: 18px; height: 18px; top: 2px; left: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+}
+.switch input:checked::after { left: 18px; }
+
+input[type="text"], input[type="password"], input[type="number"], select, textarea {
+  border-radius: 10px;
+}
+.btn, .auth-btn, .theme-btn, .ver-badge, .dir-btn, .clear-input {
+  border-radius: 10px;
+}
+  </style>
   <!-- 主题 token 覆盖：必须位于 /tokens.css 的 <link> 之后，才能用同特异性+后加载盖过其默认值（#ffffff/#f1f4ff 近白） -->
   <style>
     /* 暗色主题增强：玻璃面板需要足够不透明度才能在深蓝背景上可辨 */

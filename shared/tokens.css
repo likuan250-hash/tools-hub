@@ -6,13 +6,13 @@
 
 :root { /* 默认暗色 */
   --bg-1: #0f1226;
-  --bg-2: #1a1f3c;
+  --bg-2: #222a52;
   --bg-3: #2b1a4a;
   --text: #eef1ff;
-  --text-dim: #aab0d8;
+  --text-dim: #c5cbee;
 
-  --glass-bg: rgba(255, 255, 255, 0.06);
-  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-bg: rgba(255, 255, 255, 0.10);
+  --glass-border: rgba(255, 255, 255, 0.18);
 
   --accent: #7c5cff;
   --accent-2: #21d4fd;

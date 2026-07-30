@@ -15,14 +15,12 @@ for (const d of ["resources/node", "resources/bin"]) {
 const NODE_DEST = path.join(__dirname, "../resources/node/node.exe");
 
 function findNodeSrc() {
-  const env = process.env.NODE_SRC;
-  if (env && fs.existsSync(env)) return env;
-  const local = "C:/Users/123/.workbuddy/binaries/node/versions/22.22.2/node.exe";
-  if (fs.existsSync(local)) return local;
-  // CI/setup-node 会把 node 加到 PATH，process.execPath 就是 node.exe
+  // 优先当前运行进程所用的 node.exe（本机/CI/npm run 均可靠，不依赖写死路径）
   if (process.execPath && /node\.exe$/i.test(process.execPath) && fs.existsSync(process.execPath)) {
     return process.execPath;
   }
+  const env = process.env.NODE_SRC;
+  if (env && fs.existsSync(env)) return env;
   return null;
 }
 
@@ -58,7 +56,9 @@ function copyNetdiskEnv() {
       return;
     }
   }
-  console.log("[prepare-build] no netdisk-hub/.env source; CI 请配 secrets.NETDISK_ENV, 或本地放 .env 后 build");
+  console.log(
+    "[prepare-build] no netdisk-hub/.env source; CI 请配 secrets.NETDISK_ENV, 或本地放 .env 后 build",
+  );
 }
 
 copyNetdiskEnv();
@@ -86,14 +86,19 @@ function inlineSharedStyles() {
     .filter((l) => !/^\s*@import\s+url\(\s*["']?\.\.\/shared\//.test(l))
     .join("\n");
   const bundled =
-    "/* === inlined from shared/tokens.css (build-time) === */\n" + tk +
-    "\n/* === inlined from shared/macos-motion.css (build-time) === */\n" + mt +
-    "\n/* === renderer/style.css === */\n" + styleBody;
+    "/* === inlined from shared/tokens.css (build-time) === */\n" +
+    tk +
+    "\n/* === inlined from shared/macos-motion.css (build-time) === */\n" +
+    mt +
+    "\n/* === renderer/style.css === */\n" +
+    styleBody;
   fs.writeFileSync(path.join(ROOT, "renderer", "style.inline.css"), bundled);
   let html = fs.readFileSync(path.join(ROOT, "renderer", "index.html"), "utf8");
   html = html.replace('href="style.css"', 'href="style.inline.css"');
   fs.writeFileSync(path.join(ROOT, "renderer", "index.inline.html"), html);
-  console.log("[prepare-build] inlined shared styles -> renderer/style.inline.css + index.inline.html");
+  console.log(
+    "[prepare-build] inlined shared styles -> renderer/style.inline.css + index.inline.html",
+  );
 }
 inlineSharedStyles();
 

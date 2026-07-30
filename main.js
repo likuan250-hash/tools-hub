@@ -9,6 +9,9 @@ const fs = require("fs");
 const crypto = require("crypto");
 const http = require("http");
 
+// 主进程中不依赖 Electron 运行时的纯函数（safeStr / copyDir），抽到 lib 以便独立单测。
+const { safeStr, copyDir } = require("./lib/host-utils");
+
 const RES = process.resourcesPath; // 开发时=项目根，打包后=resources 目录
 const KDOCS_DIR = path.join(RES, "kdocs-tool");
 const NETDISK_DIR = path.join(RES, "netdisk-hub");
@@ -81,16 +84,6 @@ let currentTheme = "dark";
 // 现方案：主进程在 fork 子进程时经环境变量 NETDISK_DATA_DIR / KDOCS_DATA_DIR 注入
 //   userData 下的真实目录，netdisk 直接读写该目录（见 src/store.js / src/xunlei*.js），
 //   resources 下不再留任何 data 引用，升级清理安装目录时数据毫发无损。
-function copyDir(src, dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, e.name);
-    const d = path.join(dest, e.name);
-    if (e.isDirectory()) copyDir(s, d);
-    else fs.copyFileSync(s, d);
-  }
-}
-
 function relocateNetdiskData() {
   if (!app.isPackaged) return; // 仅打包后生效，开发模式不动源码目录
   const userDir = path.join(app.getPath("userData"), "netdisk-hub");
@@ -159,11 +152,6 @@ function getLogFile() {
     catch (e) { _logFile = false; }
   }
   return _logFile || null;
-}
-function safeStr(a) {
-  if (a instanceof Error) return a.stack || a.message;
-  if (typeof a === "string") return a;
-  try { return JSON.stringify(a); } catch (e) { return String(a); }
 }
 function log(...args) {
   const line = "[" + new Date().toISOString() + "] [tools-hub] " + args.map(safeStr).join(" ");

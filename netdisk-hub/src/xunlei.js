@@ -349,6 +349,13 @@ function isConnected() {
   try { return fs.existsSync(STORAGE_DIR); } catch (e) { return false; }
 }
 
+// 测试用：注入有效鉴权令牌，跳过 Playwright 浏览器读取（不依赖浏览器即可跑 HTTP 接口层单测）。
+// 生产代码不会调用；仅被 test 使用。
+function setAuthForTest(auth) {
+  tokenCache = Object.assign({}, tokenCache, auth || {});
+  if (!tokenCache.expires_at) tokenCache.expires_at = Date.now() + 10 * 365 * 24 * 60 * 60 * 1000;
+}
+
 async function pingSession() {
   // 纯探测: 不修改已保存的登录态(避免「探测失败」反向把 connected 写成 false 导致误判未连接)
   try {
@@ -440,6 +447,7 @@ async function probeListRoot() {
 
 module.exports = {
   isConnected, pingSession, parseSurl, findFolder, createFolder,
-  getShareList, saveShare, listFiles, listSubfolders, createShare, transfer, probeListRoot,
+  getShareInfo, restore, getShareList, saveShare, listFiles, listSubfolders, createShare, transfer, probeListRoot,
   loadTokensFromProfile: loadTokensFromProfileGuarded,
+  setAuthForTest,
 };

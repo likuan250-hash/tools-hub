@@ -237,8 +237,9 @@ async function verify(surl, pwd, bdstoken) {
 }
 
 // 从分享页 HTML 解析出转存所需的 shareid / share_uk / fs_id 列表
-const SHARE_ID_RE = /"shareid":(\d+?),"/;
-const SHARE_UK_RE = /"share_uk":"(\d+?)",/;
+// 注意：允许逗号/冒号后可选空白，避免分享页 HTML 非压缩（带空格）时静默解析失败。
+const SHARE_ID_RE = /"shareid":\s*(\d+?)\s*,/;
+const SHARE_UK_RE = /"share_uk":\s*"(\d+?)"\s*,/;
 const FS_ID_RE = /"fs_id":(\d+?),/g;
 const NAME_RE = /"server_filename":"(.+?)",/g;
 // 取单个对象段内的 server_filename(非全局,用于按 fs_id 片段配对,避免受外层分享标题干扰)

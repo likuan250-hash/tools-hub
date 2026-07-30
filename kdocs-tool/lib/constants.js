@@ -4,6 +4,28 @@
 const INTRO_BLACKLIST = /疑似虚构|无法确认|经核实无真实|请勿轻信|非官方渠道|暂无公开资料|无法核实|没有公开资料|不存在|误传|虚构/gi;
 const SIZE_EMPTY = /^(无|未知|none|null|未抓取到)?$/i;
 
+// ── 大小归一化 ──
+// 把各种写法（"30.7G" / "2T" / "512MB" / "800K" / "30.7GB"）统一为规范形式
+// "30.7GB" / "2TB" / "512MB" / "800KB"，便于跨来源一致性与比较。
+// 纯函数，可单测；无法识别或非法值返回 ""。
+const SIZE_UNIT_RE = /(\d+(?:\.\d+)?)\s*(B|KB|K|MB|M|GB|G|TB|T)\b/i;
+function normalizeSize(raw) {
+  if (raw == null) return "";
+  const m = String(raw).match(SIZE_UNIT_RE);
+  if (!m) return "";
+  const v = parseFloat(m[1]);
+  if (!isFinite(v) || v <= 0) return "";
+  let unit = m[2].toUpperCase();
+  if (unit === "K") unit = "KB";
+  else if (unit === "M") unit = "MB";
+  else if (unit === "G") unit = "GB";
+  else if (unit === "T") unit = "TB";
+  // >=100 取整（如 512MB / 123GB），否则保留 1 位小数；去掉多余的 .0
+  let s = v >= 100 ? v.toFixed(0) : v.toFixed(1);
+  s = s.replace(/\.0$/, "");
+  return s + unit;
+}
+
 function isBadIntro(s) {
   return !s || INTRO_BLACKLIST.test(s) || s.length < 10;
 }
@@ -11,4 +33,4 @@ function isBadSize(s) {
   return !s || SIZE_EMPTY.test(s.trim());
 }
 
-module.exports = { INTRO_BLACKLIST, SIZE_EMPTY, isBadIntro, isBadSize };
+module.exports = { INTRO_BLACKLIST, SIZE_EMPTY, SIZE_UNIT_RE, normalizeSize, isBadIntro, isBadSize };

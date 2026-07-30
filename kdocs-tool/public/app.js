@@ -335,6 +335,18 @@ async function runAuto(text, opts = {}) {
             autoSummary.textContent = "✅ 全部完成！记录 ID: " + (d.recordId || "—");
             addLog("ok", d.recordId ? "🎉 记录 " + d.recordId + " 创建成功！" : "🎉 全部完成！");
           }
+          // 数据溯源：介绍/大小来源（provenance）让正确性可追溯
+          const prov = [];
+          if (d.introProvenance) prov.push("介绍:" + d.introProvenance);
+          if (d.sizeProvenance) prov.push("大小:" + d.sizeProvenance);
+          if (prov.length) addLog("info", "🔎 数据溯源 — " + prov.join(" · "));
+          // 占位/缺失字段显式标注（不再静默空），提醒人工校对
+          if (d.needsReview) {
+            autoSummary.className = "result-summary warn";
+            autoSummary.textContent = "⚠️ 已完成，但部分字段为占位/待核对（" + prov.join("，") + "），建议人工补充";
+            addLog("info", "⚠️ 需人工校对：介绍或大小来源不可靠，已占位标注，建议后续补充真实数据");
+          }
+
           // 有记录即可查看（创建/更新/跳过/封面缺失均视为有记录可查；整体失败时若已建记录也允许查看）
           kdocsViewBtn.style.display = d.recordId ? "block" : "none";
         }

@@ -1,7 +1,7 @@
 // quark.test.js — 夸克分享页大小抓取单元测试（版本号选择为纯函数，无需网络）
 const test = require("node:test");
 const assert = require("node:assert");
-const { parseVersion, pickLatestVersion } = require("../lib/quark");
+const { parseVersion, pickLatestVersion, parseBaiduSurl, parseXunleiSurl, getBaiduSize, getXunleiSize } = require("../lib/quark");
 
 test("parseVersion 提取名称中的版本号", () => {
   assert.deepStrictEqual(parseVersion("游戏v1"), [1]);
@@ -43,4 +43,26 @@ test("pickLatestVersion 带点版本号正确比较", () => {
     { file_name: "Game 1.10", dir: true, fid: "2" },
   ];
   assert.deepStrictEqual(pickLatestVersion(list).map(x => x.file_name), ["Game 1.10"]);
+});
+
+// ── 百度/迅雷链接解析 + 无凭据优雅降级（best-effort）──
+test("parseBaiduSurl 提取分享短链", () => {
+  assert.strictEqual(parseBaiduSurl("https://pan.baidu.com/s/1AbCdEf"), "1AbCdEf");
+  assert.strictEqual(parseBaiduSurl("https://pan.baidu.com/share/init?surl=xyz123"), "xyz123");
+  assert.strictEqual(parseBaiduSurl("不是链接"), null);
+});
+
+test("parseXunleiSurl 提取分享短链", () => {
+  assert.strictEqual(parseXunleiSurl("https://pan.xunlei.com/s/ABC123"), "ABC123");
+  assert.strictEqual(parseXunleiSurl("https://pan.baidu.com/s/x"), null);
+});
+
+test("getBaiduSize 无凭据（无 env 且本机无 netdisk-hub）时返回 null，不报错", async () => {
+  const r = await getBaiduSize("https://pan.baidu.com/s/1AbCdEf");
+  assert.strictEqual(r, null, "无百度登录凭据应优雅降级为 null");
+});
+
+test("getXunleiSize 无凭据时返回 null，不报错", async () => {
+  const r = await getXunleiSize("https://pan.xunlei.com/s/ABC123");
+  assert.strictEqual(r, null, "无迅雷登录凭据应优雅降级为 null");
 });

@@ -205,4 +205,122 @@ async function getTotalSize(link) {
   return Promise.race([work, timeout]);
 }
 
-module.exports = { getTotalSize, getCookie, parseLink, formatSize, BASE, parseVersion, pickLatestVersion };
+// ── 百度 / 迅雷 分享页「总大小」抓取（best-effort）──
+// 与夸克同理：依赖 netdisk-hub 已登录的会话凭据（store.json 中 accounts.baidu / accounts.xunlei.cookie）。
+// 无凭据 / 任何异常 → 返回 null，上层静默回退（绝不打断录入流程）。
+// ⚠️ UNVERIFIED：这两个接口未在本机（无 netdisk-hub 会话）实测，按公开 API 形态实现；
+//    仅做防御式降级，返回 null 不会产出错误数据。
+
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
+const NETDISK_HUB_DIR = process.env.NETDISK_HUB_DIR || "E:\\工作空间\\netdisk-hub";
+
+// 通用：从 env 或 netdisk-hub store.json 读取指定网盘登录 cookie
+function readStoreCookie(provider, envName) {
+  const env = (process.env[envName] || "").trim();
+  if (env) return env;
+  try {
+    const storePath = path.join(NETDISK_HUB_DIR, "data", "store.json");
+    if (fs.existsSync(storePath)) {
+      const d = JSON.parse(fs.readFileSync(storePath, "utf8"));
+      const acc = d.accounts && d.accounts[provider];
+      if (acc && acc.cookie) return acc.cookie;
+    }
+  } catch (_) { /* 忽略 */ }
+  return null;
+}
+
+function netdiskFetch(url, opts = {}) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const res = fetch(url, { ...opts, signal: ctrl.signal });
+    return Promise.resolve(res).then(async (r) => ({ ok: r.ok, status: r.status, text: await r.text().catch(() => "") }));
+  } finally { clearTimeout(t); }
+}
+
+function parseBaiduSurl(link) {
+  const s = (link || "").trim();
+  let m = s.match(/pan\.baidu\.com\/s\/([A-Za-z0-9_-]+)/);
+  if (m) return m[1];
+  m = s.match(/[?&]surl=([^&]+)/);
+  if (m) return m[1];
+  return null;
+}
+
+function parseXunleiSurl(link) {
+  const s = (link || "").trim();
+  const m = s.match(/pan\.xunlei\.com\/s\/([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+async function getBaiduSize(link) {
+  const cookie = readStoreCookie("baidu", "BAIDU_COOKIE");
+  if (!cookie) return null;
+  const surl = parseBaiduSurl(link);
+  if (!surl) return null;
+  try {
+    // 1) 取分享页 HTML，提取 shareid / uk / bdstoken（window.yunData 或内联 JSON）
+    const page = await netdiskFetch(`https://pan.baidu.com/s/${surl}`, {
+      headers: { Cookie: cookie, "User-Agent": UA },
+    });
+    if (!page.ok) return null;
+    const shareId = (page.text.match(/"shareid"\s*[:=]\s*(\d+)/) || page.text.match(/shareId["']?\s*[:=]\s*(\d+)/) || [])[1];
+    const uk = (page.text.match(/"uk"\s*[:=]\s*(\d+)/) || [])[1];
+    const bdstoken = (page.text.match(/"bdstoken"\s*[:=]\s*"([a-f0-9]+)"/) || [])[1];
+    if (!shareId || !uk) return null;
+
+    let bytes = 0, files = 0;
+    const walk = async (dir) => {
+      const u = `https://pan.baidu.com/api/share/list?shareid=${shareId}&uk=${uk}${bdstoken ? "&bdstoken=" + bdstoken : ""}&dir=${encodeURIComponent(dir)}&page=1&num=1000&order=time&desc=1&clienttype=0&web=1&channel=web`;
+      const r = await netdiskFetch(u, {
+        headers: { Cookie: cookie, "User-Agent": UA, Referer: `https://pan.baidu.com/s/${surl}` },
+      });
+      let j; try { j = JSON.parse(r.text); } catch { return; }
+      if (!j || j.errno !== 0) return;
+      for (const it of (j.list || [])) {
+        if (it.isdir) await walk(it.path);
+        else { bytes += Number(it.size) || 0; files += 1; }
+      }
+    };
+    await walk("/");
+    if (bytes <= 0) return null;
+    return { bytes, text: formatSize(bytes), files };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function getXunleiSize(link) {
+  const cookie = readStoreCookie("xunlei", "XUNLEI_COOKIE");
+  if (!cookie) return null;
+  const sid = parseXunleiSurl(link);
+  if (!sid) return null;
+  try {
+    // UNVERIFIED 骨架：迅雷分享需先换 shareInfo 再列 drive 文件，真实可用依赖 space-auth；
+    // 任何失败 → null。当前无会话，线上未验证。
+    const h = { Cookie: cookie, "User-Agent": UA, "Content-Type": "application/json" };
+    const infoRes = await netdiskFetch(`https://xluser-ssl.xunlei.com/v1/share/info?share_id=${sid}`, { headers: h });
+    let info; try { info = JSON.parse(infoRes.text); } catch { return null; }
+    const share = info && info.data;
+    if (!share || !share.folder_id) return null;
+
+    let bytes = 0, files = 0;
+    const walk = async (parentId) => {
+      const u = `https://api-pan.xunlei.com/drive/v1/files?parent_folder_id=${encodeURIComponent(parentId)}&page_size=100&page_num=1`;
+      const r = await netdiskFetch(u, { headers: h });
+      let jj; try { jj = JSON.parse(r.text); } catch { return; }
+      const list = (jj && jj.data && jj.data.files) || [];
+      for (const it of list) {
+        if (it.kind === "folder" || it.folder_type) await walk(it.id);
+        else { bytes += Number(it.size) || 0; files += 1; }
+      }
+    };
+    await walk(share.folder_id);
+    if (bytes <= 0) return null;
+    return { bytes, text: formatSize(bytes), files };
+  } catch (_) {
+    return null;
+  }
+}
+
+module.exports = { getTotalSize, getCookie, getBaiduSize, getXunleiSize, parseLink, parseBaiduSurl, parseXunleiSurl, formatSize, BASE, parseVersion, pickLatestVersion };

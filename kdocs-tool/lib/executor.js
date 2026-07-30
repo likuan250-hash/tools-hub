@@ -5,12 +5,13 @@ const steam = require("./steam");
 const kdocs = require("./kdocs");
 const ai = require("./ai");
 const quark = require("./quark");
-const { isBadIntro } = require("./constants");
+const { isBadIntro, normalizeSize } = require("./constants");
 
 // 默认依赖（真实实现）；测试可通过 opts.deps 覆盖任意项注入 mock
 const DEFAULT_DEPS = {
   fs,
   searchSteamAppId: steam.searchSteamAppId,
+  getSteamAppDetails: steam.getSteamAppDetails,
   downloadCover: steam.downloadCover,
   downloadCoverFromUrl: steam.downloadCoverFromUrl,
   callMcporter: kdocs.callMcporter,
@@ -19,6 +20,8 @@ const DEFAULT_DEPS = {
   aiDescribe: ai.aiDescribe,
   aiCoverSearch: ai.aiCoverSearch,
   getTotalSize: quark.getTotalSize,
+  getBaiduSize: quark.getBaiduSize,
+  getXunleiSize: quark.getXunleiSize,
 };
 
 // ── 查重：翻页拉全表，比对「游戏名称」字段，精确匹配 parsed.raw ──
@@ -147,18 +150,40 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     ok({ name: "Steam AppID", appid });
   }
 
-  // 3. 游戏介绍与大小：bl 即内置 agent，负责联网搜真实介绍 + 抓大小（含夸克/百度分享页）
-  doing({ name: "游戏介绍与大小（bl）" });
+  // 3. 游戏介绍：Steam 官方描述作主源（质量最高、零编造），bl 降次级，双无则占位 + 待校对
+  doing({ name: "游戏介绍与大小（bl 辅助）" });
+  // 3.1 Steam 官方 store 描述（仅 appid 命中时尝试；失败不致命，交由 bl 兜底）
+  let steamDesc = "";
+  if (appid) {
+    try {
+      const det = await deps.getSteamAppDetails(appid);
+      steamDesc = (det && det.shortDescription) || "";
+    } catch (_) { /* Steam 详情失败不致命 */ }
+  }
+  // 3.2 bl 生成（介绍 + 大小猜测），作为次级源 / 大小兜底
   const aiRes = await deps.aiDescribe(parsed.gameName, parsed.raw, {
     quarkUrl: parsed.quarkUrl,
     baiduUrl: parsed.baiduUrl,
     xunleiUrl: parsed.xunleiUrl,
     englishName: parsed.englishName,
   });
-  // 内容质量校验：丢弃免责声明
-  let desc = aiRes.intro;
-  if (desc && !isBadIntro(desc)) ok({ name: "游戏介绍生成", desc });
-  else { skip({ name: "游戏介绍生成", reason: "bl 未返回有效介绍或含免责声明" }); desc = parsed.raw; }
+  // 3.3 选择介绍主源 + 溯源（provenance）
+  let desc = "";
+  let introProvenance = "";
+  if (steamDesc && !isBadIntro(steamDesc)) {
+    desc = steamDesc;
+    introProvenance = "Steam官方";
+    ok({ name: "游戏介绍生成（Steam 官方）", desc });
+  } else if (aiRes.intro && !isBadIntro(aiRes.intro)) {
+    desc = aiRes.intro;
+    introProvenance = "bl联网";
+    ok({ name: "游戏介绍生成（bl）", desc });
+  } else {
+    // 兜底占位（非标题、非免责声明），显式标注待人工校对，而非静默空
+    desc = "介绍待补充";
+    introProvenance = "占位";
+    skip({ name: "游戏介绍生成", reason: "Steam 无官方描述且 bl 未返回有效介绍，已占位待人工补充" });
+  }
 
   // 4. 下载封面（优先级：Steam 官方 CDN → bl 联网搜真实封面(中英文双搜+下载校验) → 手动链接 → 留空）
   let coverPath = null;
@@ -207,29 +232,47 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     else fail({ name: "附件上传", error: up.error });
   }
 
-  // 5.5 夸克分享页总大小（真实字节求和，按版本号取最新版）：有夸克链接即优先抓取，失败才回退文本/留空
-  let quarkSize = "";
+  // 5.5 真实分享页大小（夸克/百度/迅雷，真实字节求和，严格优先于 bl 猜测与文本识别）
+  const realSizes = {}; // { quark:"30.7GB", baidu:"...", xunlei:"..." }
   if (parsed.quarkUrl) {
     doing({ name: "夸克分享页大小抓取" });
     try {
       const r = await deps.getTotalSize(parsed.quarkUrl);
-      if (r && r.text && r.bytes > 0) {
-        quarkSize = r.text;
-        ok({ name: "夸克分享页大小", size: r.text, files: r.files });
-      } else {
-        skip({ name: "夸克分享页大小", reason: "未获取到有效大小（分享为空或未配置夸克登录）" });
-      }
-    } catch (e) {
-      skip({ name: "夸克分享页大小", reason: e.message });
-    }
+      if (r && r.text && r.bytes > 0) { realSizes.quark = r.text; ok({ name: "夸克分享页大小", size: r.text, files: r.files }); }
+      else skip({ name: "夸克分享页大小", reason: "未获取到有效大小（分享为空或未配置夸克登录）" });
+    } catch (e) { skip({ name: "夸克分享页大小", reason: e.message }); }
+  }
+  if (parsed.baiduUrl) {
+    doing({ name: "百度分享页大小抓取" });
+    try {
+      const r = await deps.getBaiduSize(parsed.baiduUrl);
+      if (r && r.text && r.bytes > 0) { realSizes.baidu = r.text; ok({ name: "百度分享页大小", size: r.text, files: r.files }); }
+      else skip({ name: "百度分享页大小", reason: "未获取到有效大小（分享为空或未配置百度登录）" });
+    } catch (e) { skip({ name: "百度分享页大小", reason: e.message }); }
+  }
+  if (parsed.xunleiUrl) {
+    doing({ name: "迅雷分享页大小抓取" });
+    try {
+      const r = await deps.getXunleiSize(parsed.xunleiUrl);
+      if (r && r.text && r.bytes > 0) { realSizes.xunlei = r.text; ok({ name: "迅雷分享页大小", size: r.text, files: r.files }); }
+      else skip({ name: "迅雷分享页大小", reason: "未获取到有效大小（分享为空或未配置迅雷登录）" });
+    } catch (e) { skip({ name: "迅雷分享页大小", reason: e.message }); }
   }
 
   // 6. 创建记录
   doing({ name: "创建多维表记录" });
-  // 游戏大小：夸克真实求和优先（准确），其次 bl 简介附带，再次文本识别
-  const gameSize = resolveGameSize(quarkSize, aiRes.size, parsed.size);
+  // 游戏大小：真实字节求和（夸克>百度>迅雷）严格优先，其次 bl 简介附带，再次文本识别，全无则留空 + 待核对
+  const gameSize = resolveGameSize(realSizes, aiRes.size, parsed.size);
+  const sizeProvenance = realSizes.quark ? "夸克真实"
+    : realSizes.baidu ? "百度真实"
+    : realSizes.xunlei ? "迅雷真实"
+    : aiRes.size ? "bl猜测"
+    : parsed.size ? "文本识别"
+    : "待核";
+  // 需要人工校对：介绍是占位，或大小全来源缺失
+  const needsReview = introProvenance === "占位" || !gameSize;
   const coverSize = (objectId && coverPath) ? deps.fs.statSync(coverPath).size : 0;
-  const fields = buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize });
+  const fields = buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize, needsReview, introProvenance, sizeProvenance });
 
   let recordId = null;
   try {
@@ -261,23 +304,37 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     steps, recordId, success, action: "created", gameName: parsed.gameName,
     coverStatus, coverLost,
     coverPath: coverLost ? coverPath : null, // 仅当可补传时回传本地路径，供「仅重传封面」使用
+    needsReview, introProvenance, sizeProvenance, // 数据溯源：介绍/大小来源与是否待人工校对
   };
   emit({ type: "done", result });
   return result;
 }
 
 // ── 纯函数（不依赖外部 IO，可单测）──
-// 游戏大小优先级：夸克真实求和 > bl 简介附带 > 文本识别 > 空
-function resolveGameSize(quarkSize, aiSize, parsedSize) {
-  return quarkSize || aiSize || parsedSize || "";
+// 游戏大小优先级：真实字节求和（夸克>百度>迅雷）严格优先，其次 bl 简介附带，再次文本识别，全无则空。
+// 所有候选均经 normalizeSize 统一为规范形式（"30.7G"→"30.7GB"）。
+function resolveGameSize(realSizes = {}, aiSize = "", parsedSize = "") {
+  const order = ["quark", "baidu", "xunlei"];
+  for (const k of order) {
+    const s = normalizeSize(realSizes[k]);
+    if (s) return s;
+  }
+  const ai = normalizeSize(aiSize);
+  if (ai) return ai;
+  return normalizeSize(parsedSize) || "";
 }
 
 // 组装多维表字段（封面对象仅当 objectId+coverPath 都存在时附带）
-function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize }) {
+// needsReview / introProvenance / sizeProvenance 写入「游戏信息」标签，让数据来源可追溯、缺失显式标注。
+function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize, needsReview, introProvenance, sizeProvenance }) {
+  const tags = [...(parsed.tags || [])];
+  if (introProvenance) tags.push(`介绍:${introProvenance}`);
+  if (sizeProvenance) tags.push(`大小:${sizeProvenance}`);
+  if (needsReview) tags.push("⚠需人工校对");
   const fields = {
     游戏名称: parsed.raw,
     游戏介绍: desc || parsed.raw,
-    游戏信息: parsed.tags,
+    游戏信息: tags,
     更新日期: new Date().toISOString().split("T")[0].replace(/-/g, "/"),
   };
   if (gameSize) fields["游戏大小"] = gameSize;

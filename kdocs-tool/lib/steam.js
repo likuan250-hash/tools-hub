@@ -72,6 +72,45 @@ function downloadCover(gameName, appid, coverDir) {
   })();
 }
 
+/**
+ * 解析 Steam store appdetails 返回的 data 块（纯函数，可单测）。
+ * @returns {{shortDescription:string, genres:string[], type:string}|null}
+ */
+function parseSteamAppDetails(data) {
+  if (!data) return null;
+  const sd = (data.short_description || "").replace(/\s+/g, " ").trim();
+  const genres = Array.isArray(data.genres)
+    ? data.genres.map(g => (g && g.description) || "").filter(Boolean)
+    : [];
+  const type = data.type || "";
+  return { shortDescription: sd, genres, type };
+}
+
+/** 抓取 Steam 官方 store 描述（主源，质量最高）。失败/无结果返回 null，绝不抛错打断流程。 */
+function getSteamAppDetails(appid) {
+  return new Promise((resolve) => {
+    if (!appid) return resolve(null);
+    const url = `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`;
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const req = https.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 10000 }, (res) => {
+      let d = "";
+      res.on("data", (c) => d += c);
+      res.on("end", () => {
+        try {
+          const j = JSON.parse(d);
+          const entry = j && j[String(appid)];
+          if (entry && entry.success && entry.data) done(parseSteamAppDetails(entry.data));
+          else done(null); // 应用下架/无数据：返回 null，交由 bl 兜底
+        } catch { done(null); }
+      });
+      res.on("error", () => done(null));
+    });
+    req.on("error", () => done(null));
+    req.on("timeout", () => { req.destroy(); done(null); });
+  });
+}
+
 /** 从任意图片 URL 下载封面（非 Steam 游戏：用户提供的官方封面链接兜底） */
 function downloadCoverFromUrl(gameName, url, coverDir) {
   coverDir = coverDir || DEFAULT_COVER_DIR;
@@ -82,4 +121,4 @@ function downloadCoverFromUrl(gameName, url, coverDir) {
   return tryDownload(url, fp);
 }
 
-module.exports = { searchSteamAppId, downloadCover, downloadCoverFromUrl };
+module.exports = { searchSteamAppId, downloadCover, downloadCoverFromUrl, getSteamAppDetails, parseSteamAppDetails };

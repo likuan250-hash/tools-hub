@@ -24,9 +24,12 @@ function baseDeps(over = {}) {
     calls,
     checkKdocsReady: () => true,
     searchSteamAppId: async () => null,
+    getSteamAppDetails: async () => null, // 默认无 Steam 官方描述（走 bl 兜底）
     aiDescribe: () => ({ intro: "Hazelight 开发的双人合作冒险游戏。", size: "30.7G" }),
     aiCoverSearch: async () => "https://cdn.x.com/a.jpg", // 默认 bl 能搜到封面（中英文双搜）
     getTotalSize: async () => null, // 默认无夸克大小（有 quarkUrl 时也不报错）
+    getBaiduSize: async () => null, // 默认无百度大小
+    getXunleiSize: async () => null, // 默认无迅雷大小
     downloadCover: async () => { downloadCoverCount++; return "/fake/steam.jpg"; },
     downloadCoverFromUrl: async () => { downloadFromUrlCount++; return "/fake/cover.jpg"; },
     fileBase64: () => "base64data",
@@ -60,27 +63,30 @@ test("正常流程字段映射正确", async () => {
   assert.strictEqual(res.recordId, "r1");
   assert.strictEqual(lastCreate["游戏名称"], "双影奇境（Split Fiction）");
   assert.strictEqual(lastCreate["游戏介绍"], "Hazelight 开发的双人合作冒险游戏。");
-  assert.strictEqual(lastCreate["游戏大小"], "30.7G");
+  assert.strictEqual(lastCreate["游戏大小"], "30.7GB", "大小经归一化：30.7G → 30.7GB");
   assert.strictEqual(lastCreate["夸克网盘"][0].address, "https://pan.quark.cn/s/x");
 });
 
-test("游戏大小优先级：ai.size > parsed.size > quarkSize", async () => {
+test("游戏大小优先级：ai.size > parsed.size（归一化）", async () => {
   // ai 优先
   let deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "10G", coverUrl: "" }) });
   await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "10G");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "10GB", "ai 优先且归一化");
 
   // ai 空 → parsed 优先
   deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "", coverUrl: "" }) });
   await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "5G");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "5GB", "ai 空时 parsed 优先且归一化");
 });
 
-test("含免责声明的介绍被丢弃，用原始名兜底", async () => {
+test("含免责声明的介绍被丢弃，改为占位「介绍待补充」+ needsReview（非标题兜底）", async () => {
   const deps = baseDeps({ aiDescribe: () => ({ intro: "该游戏经核实无真实公开资料，疑似虚构，请勿轻信。", size: "", coverUrl: "" }) });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
-  assert.strictEqual(lastCreate["游戏介绍"], "双影奇境（Split Fiction）");
+  assert.strictEqual(lastCreate["游戏介绍"], "介绍待补充", "免责声明应被丢弃并占位，而非用标题兜底");
+  assert.strictEqual(res.introProvenance, "占位");
+  assert.strictEqual(res.needsReview, true);
+  assert.ok(lastCreate["游戏信息"].includes("⚠需人工校对"));
 });
 
 test("大小缺失时不再提示手动填写，直接不写入游戏大小字段", async () => {
@@ -136,7 +142,8 @@ test("需求：创建记录字段完整（游戏信息/更新日期/作品展示
   const deps = baseDeps();
   const res = await autoExecute(baseParsed({ tags: ["PC游戏", "动作"], baiduUrl: "https://pan.baidu.com/s/b" }), null, "/tmp", { deps });
   const f = deps._state().lastCreate;
-  assert.deepStrictEqual(f["游戏信息"], ["PC游戏", "动作"], "游戏信息应为标签数组");
+  // 游戏信息除原始标签外，还应带数据溯源标签（介绍/大小来源）
+  assert.deepStrictEqual(f["游戏信息"], ["PC游戏", "动作", "介绍:bl联网", "大小:bl猜测"], "游戏信息含原始标签 + 溯源标签");
   assert.ok(/^\d{4}\/\d{2}\/\d{2}$/.test(f["更新日期"]), "更新日期应为 YYYY/MM/DD");
   assert.ok(f["作品展示"] && f["作品展示"][0].uploadId === "obj1" && f["作品展示"][0].source === "upload_ks3", "应带作品展示附件");
   assert.deepStrictEqual(f["百度网盘"], [{ address: "https://pan.baidu.com/s/b", displayText: "https://pan.baidu.com/s/b" }], "百度网盘应为地址数组");
@@ -263,11 +270,98 @@ test("查重未命中 → 正常创建（action=created），list_records 先于
 });
 
 // ── 重构后纯函数单测（2026-07-30 评审+重构演练新增）──
-test("resolveGameSize 优先级：夸克 > ai > parsed > 空", () => {
-  assert.strictEqual(resolveGameSize("30.7G", "", ""), "30.7G", "夸克真实字节最准，应优先");
-  assert.strictEqual(resolveGameSize("", "25G", "5G"), "25G", "无夸克时 ai 优先于 parsed");
-  assert.strictEqual(resolveGameSize("", "", "20G"), "20G");
-  assert.strictEqual(resolveGameSize("", "", ""), "", "全空返回空串（不写字段）");
+test("resolveGameSize 优先级：真实字节(夸克>百度>迅雷) > bl > 文本 > 空（并归一化）", () => {
+  assert.strictEqual(resolveGameSize({ quark: "30.7G" }, "", ""), "30.7GB", "夸克真实字节最准，应优先且归一化");
+  assert.strictEqual(resolveGameSize({ baidu: "25G" }, "", ""), "25GB", "无夸克时百度真实优先");
+  assert.strictEqual(resolveGameSize({ xunlei: "12G" }, "", ""), "12GB", "无夸克/百度时迅雷真实优先");
+  assert.strictEqual(resolveGameSize({}, "25G", "5G"), "25GB", "无真实大小时 bl 优先于文本");
+  assert.strictEqual(resolveGameSize({}, "", "20G"), "20GB", "文本识别兜底且归一化");
+  assert.strictEqual(resolveGameSize({}, "", ""), "", "全空返回空串（不写字段）");
+});
+
+test("resolveGameSize 真实大小严格优先于 bl 猜测（即使 bl 也有值）", () => {
+  // 真实字节求和最准，不应被 bl 猜测覆盖
+  assert.strictEqual(resolveGameSize({ quark: "30.7GB" }, "99G", "88G"), "30.7GB");
+});
+
+// ── 游戏介绍兜底（v0.1.48：Steam 官方主源 + bl 降次级 + 占位待核对）──
+test("介绍主源：Steam 官方描述优先于 bl（provenance=Steam官方）", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    getSteamAppDetails: async () => ({ shortDescription: "Steam 官方：一款双人合作动作冒险游戏。", genres: ["动作"], type: "game" }),
+    aiDescribe: () => ({ intro: "bl 可能编造的简介。", size: "30.7G" }),
+  });
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const { lastCreate } = deps._state();
+  assert.strictEqual(lastCreate["游戏介绍"], "Steam 官方：一款双人合作动作冒险游戏。", "应使用 Steam 官方描述而非 bl");
+  assert.strictEqual(res.introProvenance, "Steam官方");
+  assert.strictEqual(res.needsReview, false, "有官方来源则无需校对");
+  assert.ok(lastCreate["游戏信息"].includes("介绍:Steam官方"), "溯源标签应写入游戏信息");
+});
+
+test("介绍降级：Steam 无描述时回退 bl（provenance=bl联网）", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    getSteamAppDetails: async () => null, // 无官方描述
+    aiDescribe: () => ({ intro: "bl 提供的真实简介。", size: "30.7G" }),
+  });
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const { lastCreate } = deps._state();
+  assert.strictEqual(lastCreate["游戏介绍"], "bl 提供的真实简介。");
+  assert.strictEqual(res.introProvenance, "bl联网");
+});
+
+test("介绍兜底：双无则占位 + needsReview（不再用标题/免责声明洗白）", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => null,
+    getSteamAppDetails: async () => null,
+    aiDescribe: () => ({ intro: "经核实无真实公开资料，疑似虚构，请勿轻信。", size: "" }), // bl 返回黑名单
+  });
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const { lastCreate } = deps._state();
+  assert.strictEqual(lastCreate["游戏介绍"], "介绍待补充", "双无应占位而非标题/免责声明");
+  assert.strictEqual(res.introProvenance, "占位");
+  assert.strictEqual(res.needsReview, true, "占位应标记需人工校对");
+  assert.ok(lastCreate["游戏信息"].includes("⚠需人工校对"), "需校对标签应写入游戏信息");
+  assert.ok(lastCreate["游戏信息"].includes("介绍:占位"));
+});
+
+test("大小全缺失 → 不写游戏大小 + needsReview=true + 溯源=待核", async () => {
+  const deps = baseDeps({
+    aiDescribe: () => ({ intro: "x".repeat(20), size: "" }),
+    getTotalSize: async () => null,
+  });
+  const res = await autoExecute(baseParsed({ quarkUrl: "https://pan.quark.cn/s/x" }), null, "/tmp", { deps });
+  const { lastCreate } = deps._state();
+  assert.ok(!("游戏大小" in lastCreate), "大小全缺失不写字段");
+  assert.strictEqual(res.sizeProvenance, "待核");
+  assert.strictEqual(res.needsReview, true, "大小缺失应标记需校对");
+});
+
+test("百度/迅雷真实大小参与优先级（百度真实 > bl 猜测）", async () => {
+  const deps = baseDeps({
+    aiDescribe: () => ({ intro: "x".repeat(20), size: "99G" }),
+    getBaiduSize: async () => ({ bytes: 30_700_000_000, text: "30.7GB", files: 3 }),
+  });
+  await autoExecute(baseParsed({ baiduUrl: "https://pan.baidu.com/s/b" }), null, "/tmp", { deps });
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "30.7GB", "百度真实大小应优先于 bl 猜测");
+});
+
+// ── buildRecordFields 写入溯源/校对标签 ──
+test("buildRecordFields 写入 provenance 与 needsReview 标签", () => {
+  const fields = buildRecordFields(baseParsed(), {
+    desc: "介绍文本", coverPath: null, objectId: null, gameSize: "30.7GB",
+    coverSize: 0, needsReview: true, introProvenance: "占位", sizeProvenance: "待核",
+  });
+  assert.deepStrictEqual(fields["游戏信息"], ["PC游戏", "介绍:占位", "大小:待核", "⚠需人工校对"]);
+});
+
+test("buildRecordFields 未传溯源参数时仅保留原始标签（不污染）", () => {
+  const fields = buildRecordFields(baseParsed({ tags: ["PC游戏", "动作"] }), {
+    desc: "x", coverPath: "/x/c.jpg", objectId: null, gameSize: "", coverSize: 0,
+  });
+  assert.deepStrictEqual(fields["游戏信息"], ["PC游戏", "动作"]);
+  assert.strictEqual(fields["游戏大小"], undefined);
 });
 
 test("buildRecordFields 组装字段（网盘链接 + 封面对象）", () => {

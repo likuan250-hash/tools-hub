@@ -1,9 +1,6 @@
 /* macOS 风格补充层（与内联玻璃拟态主题叠加，仅新增/微调，不破坏原布局）。
    由 tools-hub 统一引入，使网盘转存中转台呈现 macOS 观感。 */
-:root {
-  --mac-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-              "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-}
+/* --mac-font / --mono-font 现统一定义于 shared/tokens.css（三套前端单一真源），此处仅引用 */
 body { font-family: var(--mac-font); }
 
 /* ── macOS 红黄绿交通灯（webview 内为视觉装饰；壳内可控制窗口）── */

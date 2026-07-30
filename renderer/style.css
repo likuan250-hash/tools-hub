@@ -4,7 +4,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
-  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--mac-font, -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif);
   /* ambient 渐变光斑背景：玻璃材质才能显出折射；
      多个光斑覆盖中/下/右区域，避免中间大片平色导致玻璃坍塌 */
   background:

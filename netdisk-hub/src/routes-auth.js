@@ -5,7 +5,7 @@
 function xunleiLoginPage() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>迅雷网盘登录</title>
 <style>
-  body{font-family:-apple-system,"PingFang SC",system-ui,sans-serif;background:#0f1115;color:#cfd3dc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;background:#0f1115;color:#cfd3dc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
   .box{width:440px;max-width:90vw;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:30px;text-align:center}
   h2{margin:0 0 10px;font-size:18px}
   p{color:#aab0d8;font-size:13px;line-height:1.7;margin:0}
@@ -59,7 +59,7 @@ function xunleiLoginPage() {
 function baiduLoginPage() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>百度网盘登录</title>
 <style>
-  body{font-family:-apple-system,"PingFang SC",system-ui,sans-serif;background:#0f1115;color:#cfd3dc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;background:#0f1115;color:#cfd3dc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
   .box{width:440px;max-width:90vw;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:30px;text-align:center}
   h2{margin:0 0 10px;font-size:18px}
   p{color:#aab0d8;font-size:13px;line-height:1.7;margin:0}
@@ -113,7 +113,7 @@ function baiduLoginPage() {
 function quarkLoginPage() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>夸克网盘登录</title>
 <style>
-  body{font-family:-apple-system,"PingFang SC",system-ui,sans-serif;background:#0f1115;color:#cfd3dc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;background:#0f1115;color:#cfd3dc;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
   .box{width:440px;max-width:90vw;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:30px;text-align:center}
   h2{margin:0 0 10px;font-size:18px}
   p{color:#aab0d8;font-size:13px;line-height:1.7;margin:0}
@@ -194,7 +194,7 @@ module.exports = function registerAuthRoutes(app, deps) {
         expiresAt: Date.now() + (data.expires_in || 2592000) * 1000,
         scope: data.scope,
       });
-      res.type("html").send("<!doctype html><html><head><meta charset=utf-8><title>授权完成</title></head><body style=\"font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#cfd3dc\"><p>百度授权成功,正在返回…</p><script>try { if (window.opener) { window.opener.postMessage({ provider: \"baidu\", authorized: true }, location.origin); setTimeout(function(){ window.close(); }, 300); } else { location.href = \"/?authorized=baidu\"; } } catch (e) { location.href = \"/?authorized=baidu\"; }</script></body></html>");
+      res.type("html").send("<!doctype html><html><head><meta charset=utf-8><title>授权完成</title></head><body style=\"font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#cfd3dc\"><p>百度授权成功,正在返回…</p><script>try { if (window.opener) { window.opener.postMessage({ provider: \"baidu\", authorized: true }, location.origin); setTimeout(function(){ window.close(); }, 300); } else { location.href = \"/?authorized=baidu\"; } } catch (e) { location.href = \"/?authorized=baidu\"; }</script></body></html>");
     } catch (e) {
       res.redirect("/?error=auth_failed&msg=" + encodeURIComponent(e.message));
     }

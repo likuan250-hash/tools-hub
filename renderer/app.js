@@ -11,6 +11,8 @@
   const aggEl = document.getElementById("aggStatus");
   const versionEl = document.getElementById("version");
   const themeBtn = document.getElementById("themeBtn");
+  const sortBtn = document.getElementById("sortBtn");
+  const sortHintEl = document.getElementById("sortHint");
   const updateBtn = document.getElementById("updateBtn");
   const updateStatusEl = document.getElementById("updateStatus");
   const winMin = document.getElementById("winMin");
@@ -75,17 +77,45 @@
   const HOME_KEY = "__home__";
   const openTabs = [{ key: HOME_KEY, name: "入口" }]; // 入口页常驻、不可关闭
   let activeKey = HOME_KEY;
+  let sortMode = false; // 卡片排序编辑模式
+
+  // ── 卡片顺序持久化 ──
+  // 读取已保存顺序：过滤已删除工具、把新增工具追加到末尾（兜底）
+  function getCardOrder() {
+    let stored = [];
+    try {
+      const raw = localStorage.getItem("card-order");
+      if (raw) stored = JSON.parse(raw);
+    } catch (e) {}
+    if (!Array.isArray(stored)) stored = [];
+    const valid = stored.filter((k) => TOOLS[k]);
+    Object.keys(TOOLS).forEach((k) => { if (!valid.includes(k)) valid.push(k); });
+    return valid;
+  }
+  // 把当前 DOM 顺序写回 localStorage
+  function saveCardOrder() {
+    const order = [...cardsEl.children].map((c) => c.dataset.key).filter(Boolean);
+    try { localStorage.setItem("card-order", JSON.stringify(order)); } catch (e) {}
+  }
 
   // ── 入口卡片 ──
-  function renderCards() {
+  function renderCards(animate = true) {
+    const order = getCardOrder();
     cardsEl.innerHTML = "";
-    Object.values(TOOLS).forEach((t, i) => {
-      const s = serviceStatus[t.key] || {};
+    order.forEach((key, i) => {
+      const t = TOOLS[key];
+      if (!t) return;
+      const s = serviceStatus[key] || {};
       const running = !!s.running;
       const card = document.createElement("div");
-      card.className = "card pop-in";
-      card.style.setProperty("--i", i); // 入场 stagger 序号
+      card.className = "card" + (animate ? " pop-in" : "");
+      card.dataset.key = key;
+      if (animate) card.style.setProperty("--i", i); // 入场 stagger 序号
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", t.name + "，排序模式下可拖动调整顺序");
       card.innerHTML = `
+        <div class="grip" aria-hidden="true">⠿</div>
         <div class="card-icon">${t.icon}</div>
         <div class="card-body">
           <div class="card-title">${t.name}</div>
@@ -96,17 +126,152 @@
             <span class="card-port">${t.url.replace("http://localhost:", "端口 ")}</span>
           </div>
         </div>
-        <button class="card-open">打开</button>
+        <button class="card-open" type="button">打开</button>
       `;
-      // 液态玻璃高光跟随光标（写入 --mx/--my 供 ::before 径向高光使用）
+      // 液态玻璃高光跟随光标（写入 --mx/--my 供 ::before 径向高光使用）；排序/拖拽时不更新
       card.addEventListener("mousemove", (e) => {
+        if (sortMode || card.classList.contains("dragging")) return;
         const r = card.getBoundingClientRect();
         card.style.setProperty("--mx", ((e.clientX - r.left) / r.width * 100) + "%");
         card.style.setProperty("--my", ((e.clientY - r.top) / r.height * 100) + "%");
       });
       card.querySelector(".card-open").onclick = () => openTab(t.key);
+      card.addEventListener("pointerdown", (e) => onCardPointerDown(e, card));
+      card.addEventListener("keydown", (e) => onCardKeyDown(e, card));
       cardsEl.appendChild(card);
     });
+    cardsEl.classList.toggle("sorting", sortMode);
+  }
+
+  // 进入/退出排序编辑模式
+  function toggleSortMode() {
+    sortMode = !sortMode;
+    if (sortBtn) {
+      sortBtn.classList.toggle("active", sortMode);
+      sortBtn.textContent = sortMode ? "✓" : "⇅";
+      sortBtn.title = sortMode ? "完成排序" : "调整卡片顺序";
+      sortBtn.setAttribute("aria-pressed", sortMode ? "true" : "false");
+    }
+    if (sortHintEl) sortHintEl.hidden = !sortMode;
+    renderCards(false); // 重渲染以应用/撤除排序态样式（不打断 pop-in）
+  }
+
+  // 计算拖拽指针应落入的插入位置（网格阅读顺序：上排优先、同排左优先）
+  function getInsertIndex(px, py, dragged) {
+    const siblings = [...cardsEl.children].filter((c) => c !== dragged);
+    let insert = siblings.length;
+    for (let i = 0; i < siblings.length; i++) {
+      const r = siblings[i].getBoundingClientRect();
+      const cy = r.top + r.height / 2;
+      const cx = r.left + r.width / 2;
+      if (py < cy - r.height / 2) { insert = i; break; }                       // 指针在更靠上的行
+      if (Math.abs(py - cy) <= r.height / 2 && px < cx) { insert = i; break; } // 同排、中心左侧
+    }
+    return insert;
+  }
+
+  // 拖拽中：根据指针位置把被拖卡片插入新位置，并对兄弟卡片做 FLIP 平滑过渡
+  function reorderTo(px, py, dragged) {
+    const children = [...cardsEl.children];
+    if (children.length < 2) return;
+    const siblings = children.filter((c) => c !== dragged);
+    // 先清掉兄弟卡片可能残留的 FLIP 过渡，保证测量准确
+    siblings.forEach((c) => { c.style.transition = "none"; c.style.transform = ""; });
+    void cardsEl.offsetWidth; // 强制回流
+    const insert = getInsertIndex(px, py, dragged);
+    const newOrder = [...siblings];
+    newOrder.splice(insert, 0, dragged);
+    const curKeys = children.map((c) => c.dataset.key).join(",");
+    const newKeys = newOrder.map((c) => c.dataset.key).join(",");
+    if (curKeys === newKeys) return;
+    // FLIP：记录兄弟卡片当前位置 → 重排 DOM → 反位移后过渡归零
+    const first = new Map();
+    siblings.forEach((c) => first.set(c, c.getBoundingClientRect()));
+    newOrder.forEach((c) => cardsEl.appendChild(c));
+    siblings.forEach((c) => {
+      const f = first.get(c);
+      const last = c.getBoundingClientRect();
+      const dx = f.left - last.left;
+      const dy = f.top - last.top;
+      if (dx || dy) {
+        c.style.transition = "none";
+        c.style.transform = `translate(${dx}px, ${dy}px)`;
+        requestAnimationFrame(() => {
+          c.style.transition = "transform .3s var(--ease-spring)";
+          c.style.transform = "";
+        });
+      }
+    });
+  }
+
+  // 拖拽核心：Pointer Events 手写，鼠标/触屏通吃，不引库
+  function onCardPointerDown(e, card) {
+    if (!sortMode) return;          // 非排序模式不触发拖拽
+    if (e.button !== 0) return;     // 仅左键
+    e.preventDefault();
+    const rect = card.getBoundingClientRect();
+    const grabX = e.clientX - rect.left;
+    const grabY = e.clientY - rect.top;
+    let curDx = 0, curDy = 0; // 当前已应用的跟随位移
+    card.setPointerCapture(e.pointerId);
+    card.classList.add("dragging");
+    cardsEl.classList.add("dragging-active");
+
+    // 让被拖卡片始终贴着指针（按布局实时推算，DOM 重排后不跳变）
+    function place(clientX, clientY) {
+      const r = card.getBoundingClientRect();
+      const layoutLeft = r.left - curDx;
+      const layoutTop = r.top - curDy;
+      curDx = (clientX - grabX) - layoutLeft;
+      curDy = (clientY - grabY) - layoutTop;
+      card.style.transform = `translate(${curDx}px, ${curDy}px) scale(1.04) rotate(1.5deg)`;
+    }
+    place(e.clientX, e.clientY);
+
+    function move(ev) {
+      place(ev.clientX, ev.clientY);
+      reorderTo(ev.clientX, ev.clientY, card);
+    }
+    function up(ev) {
+      card.removeEventListener("pointermove", move);
+      card.removeEventListener("pointerup", up);
+      card.removeEventListener("pointercancel", up);
+      card.releasePointerCapture(ev.pointerId);
+      card.classList.remove("dragging");
+      cardsEl.classList.remove("dragging-active");
+      card.style.transform = "";
+      card.style.transition = "";
+      const key = card.dataset.key;
+      saveCardOrder();
+      renderCards(false); // 规范化 DOM（清除内联过渡）
+      const restored = cardsEl.querySelector(`.card[data-key="${key}"]`);
+      if (restored) restored.focus(); // 保住键盘焦点，可达性
+    }
+    card.addEventListener("pointermove", move);
+    card.addEventListener("pointerup", up);
+    card.addEventListener("pointercancel", up);
+  }
+
+  // 键盘可达性：排序模式下方向键移动卡片；普通模式 Enter/空格 打开
+  function onCardKeyDown(e, card) {
+    if (!sortMode) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTab(card.dataset.key); }
+      return;
+    }
+    const order = [...cardsEl.children];
+    const idx = order.indexOf(card);
+    let target = -1;
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") target = idx - 1;
+    else if (e.key === "ArrowRight" || e.key === "ArrowDown") target = idx + 1;
+    else return;
+    e.preventDefault();
+    if (target < 0 || target >= order.length) return;
+    const moved = order.slice();
+    const [c] = moved.splice(idx, 1);
+    moved.splice(target, 0, c);
+    moved.forEach((el) => cardsEl.appendChild(el));
+    saveCardOrder();
+    card.focus();
   }
 
   // ── 标签与 webview ──
@@ -289,6 +454,9 @@
       api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + (e.message || ""), false));
     }
   };
+
+  // ── 入口卡片排序开关 ──
+  if (sortBtn) sortBtn.onclick = toggleSortMode;
 
   // ── 自定义标题栏窗口控制 ──
   if (api && api.windowControl) {

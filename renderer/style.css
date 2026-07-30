@@ -204,3 +204,30 @@ body {
   transition: transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease-out);
 }
 .card-open:hover { transform: translateY(-2px); box-shadow: 0 12px 34px rgba(var(--accent-rgb), 0.5); }
+
+/* ── 卡片排序模式 ── */
+.sort-hint {
+  margin-top: 26px; font-size: 13px; color: var(--text-dim);
+  text-align: center; letter-spacing: .3px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  padding: 8px 16px; border-radius: 12px;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.grip {
+  position: absolute; top: 10px; right: 12px;
+  font-size: 18px; line-height: 1; color: var(--text-dim);
+  opacity: 0; transition: opacity .2s ease; pointer-events: none; user-select: none;
+}
+.cards.sorting .grip { opacity: .9; }
+.cards.sorting .card { cursor: grab; touch-action: none; }
+.cards.sorting .card:hover { transform: none; border-color: var(--accent-2); }
+.cards.sorting .card.dragging { cursor: grabbing; z-index: 5; }
+.cards.sorting .card.dragging:hover { transform: none; }
+.cards.sorting .card-open { display: none; }
+.cards.sorting .card.dragging {
+  box-shadow: var(--shadow-modal), 0 24px 60px rgba(var(--accent-rgb), .35);
+}
+.icon-btn.active {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), .16);
+}

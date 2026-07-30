@@ -18,6 +18,7 @@
         <span id="aggStatus" class="agg">初始化中…</span>
         <span id="updateStatus" class="update-status"></span>
         <button id="updateBtn" class="update-btn" title="检测更新">🔄 检测更新</button>
+        <button id="sortBtn" class="icon-btn" title="调整卡片顺序" aria-pressed="false">⇅</button>
         <button id="themeBtn" class="icon-btn" title="切换主题">🌗</button>
         <span class="win-ctl">
           <button id="winMin" class="win-dot win-min" title="最小化" aria-label="最小化"></button>
@@ -37,6 +38,7 @@
         <div class="landing-title">工具统一入口</div>
         <div class="landing-sub">点击下方卡片打开对应工具，所有页面都在此窗口内运行</div>
         <div id="toolCards" class="cards"><!-- 动态生成 --></div>
+        <div id="sortHint" class="sort-hint" hidden>拖动卡片调整顺序 · 用 ⇅ 方向键移动 · 点 ✓ 完成</div>
       </div>
     </main>
   </div>

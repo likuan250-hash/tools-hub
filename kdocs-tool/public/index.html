@@ -92,7 +92,20 @@
     label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
     /* 控件实色背景：明暗两态，避免 glass 套 glass */
     :root { --field-bg: var(--bg-2); --solid-bg: var(--bg-2); }
-    [data-theme="light"] { --field-bg: #ffffff; --solid-bg: #f1f4ff; }
+    /* 暗色主题增强：玻璃面板需要足够不透明度才能在深蓝背景上可辨 */
+    :root, [data-theme="dark"] {
+      --glass-bg: rgba(255, 255, 255, 0.32);
+      --glass-border: rgba(255, 255, 255, 0.42);
+    }
+    /* 亮色主题关键 token 直接内联，严格对齐 build/collage.png 的完美风格（不依赖 /tokens.css） */
+    [data-theme="light"] {
+      --bg-1: #dde6ff; --bg-2: #e9edfb; --bg-3: #e6ddfb;
+      --text: #1b1f3b; --text-dim: #5b6189;
+      --glass-bg: rgba(255, 255, 255, 0.55);
+      --glass-border: rgba(90, 95, 150, 0.35);
+      --field-bg: #eef1fb; --solid-bg: #e7ecf8;
+      --shadow-card: 0 8px 24px rgba(20, 30, 80, 0.1);
+    }
     input[type="text"], textarea {
       width: 100%; padding: 12px 14px; border-radius: 12px;
       border: 1px solid var(--glass-border); background: var(--field-bg);
@@ -178,6 +191,20 @@
     .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--text-dim); border-top-color: var(--accent-2); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
 
     @media (max-width: 680px) { .input-row { grid-template-columns: 1fr; } .input-row .browse { justify-self: start; } }
+    /* 亮色玻璃分离增强：顶部白高光 + 底部暗线（白底上原 0.10 白高光不可见，靠加深边框 + 此暗线承担分离） */
+    [data-theme="light"] .panel,
+    [data-theme="light"] .chip,
+    [data-theme="light"] .card,
+    [data-theme="light"] .modal {
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(20, 30, 80, 0.10);
+    }
+    /* 实色回退：老设备/部分 webview 不支持 backdrop-filter 时玻璃失效，用实色卡片 + 正常深边框保证可读 */
+    @supports not (backdrop-filter: blur(1px)) {
+      .panel, .chip, .card, .modal, .theme-btn, .ver-badge, .tab {
+        -webkit-backdrop-filter: none; backdrop-filter: none;
+        background: #eef1fb; border: 1px solid rgba(90, 95, 150, 0.45);
+      }
+    }
   </style>
   <link rel="stylesheet" href="/tokens.css" />
   <link rel="stylesheet" href="/macos-motion.css" />

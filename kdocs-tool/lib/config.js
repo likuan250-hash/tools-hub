@@ -2,6 +2,6 @@
 const FILE_ID = "h9aREMoyL1MMMeDCHLWa1xsikoTpExj2o";
 const KDOCS_VIEW_URL = "https://www.kdocs.cn/l/" + FILE_ID; // 金山文档多维表在线查看地址（与前端 app.js 中常量保持一致）
 const DEFAULT_COVER_DIR = "E:\\游戏网站建设";
-const WORK_DIR = __dirname; // when required from index.js, this is E:\kdocs-tool
+const WORK_DIR = __dirname; // 解析为 tools-hub/kdocs-tool（项目内相对路径，不依赖外部目录）
 
 module.exports = { FILE_ID, KDOCS_VIEW_URL, DEFAULT_COVER_DIR, WORK_DIR };

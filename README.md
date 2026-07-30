@@ -213,11 +213,9 @@ cp netdisk-hub/.env.example netdisk-hub/.env
 |---|---|---|
 | `tools-hub/kdocs-tool/` | **源码（唯一）** | 直接在此编辑、提交 |
 | `tools-hub/netdisk-hub/` | **源码（唯一）** | 直接在此编辑、提交 |
-| `E:\kdocs-tool` | NTFS 目录联接 | 指向 `tools-hub/kdocs-tool`，旧快捷方式 / 启动面板仍可打开，但解析到同一份源码 |
-| `E:\工作空间\netdisk-hub` | NTFS 目录联接 | 指向 `tools-hub/netdisk-hub`，同上 |
-| `E:\kdocs-tool.gitbak` / `E:\工作空间\netdisk-hub.gitbak` | 备份 | 统一前的独立仓库原件（含各自 git 历史、node_modules、登录态），可保留或后续删除 |
+| `E:\kdocs-tool.gitbak` / `E:\工作空间\netdisk-hub.gitbak` | 备份(归档) | 统一前独立仓库原件（含各自 git 历史、node_modules、登录态），仅作归档保留，与本项目无活动关联 |
 
-> ⚠️ 联接只是"视图"，改 `E:\kdocs-tool` 实际改的是 `tools-hub/kdocs-tool`。现在已经不可能再两份各改各的、产生分叉。
+> ⚠️ `tools-hub` 是这两个子工具的唯一源码与运行位置，项目自包含、不依赖任何外部仓库或目录联接。早期位于 `E:\kdocs-tool`、`E:\工作空间\netdisk-hub` 的 NTFS 目录联接（指向本仓库子目录）已移除，旧独立仓库仅以 `.gitbak` 归档保留。
 > `node_modules/` 与运行时 `data/`、`.env` 均为本地依赖 / 隐私数据，已被 `.gitignore` 忽略，不会进仓库；仓库内的 `node_modules` 为本地开发 / 独立运行准备，重新克隆后需各自 `npm install`。
 
 ### 版本号与更新

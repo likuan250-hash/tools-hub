@@ -18,9 +18,17 @@
 //   ④ Playwright 仅在「读 token / 重新登录」时使用,正常转存全程纯 HTTP(快、稳)。
 
 const store = require('./store');
-const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+
+// Playwright 仅在需要启动真实浏览器（读 token / 重新登录）时才加载，
+// 避免「仅调用解析函数」时也强制依赖 playwright 模块，提升启动速度，
+// 并让解析函数的单元测试可在无浏览器环境下运行。
+let _playwright = null;
+function getChromium() {
+  if (!_playwright) _playwright = require('playwright');
+  return _playwright.chromium;
+}
 
 // 登录态目录：同 store.js，优先 NETDISK_DATA_DIR(升级不丢)，否则回退安装目录 data/。
 const STORAGE_DIR = path.join(
@@ -60,7 +68,7 @@ async function loadTokensFromProfile() {
   // 用 headless:true + 窗口外置参数,确保 Windows 上也不闪现黑框。
   // persistent context 在部分 Chromium 版本下仍会创建可见窗口,
   // 移出屏幕(-10000,-10000) + 1x1 尺寸 + start-minimized 可彻底隐藏。
-  const context = await chromium.launchPersistentContext(STORAGE_DIR, {
+  const context = await getChromium().launchPersistentContext(STORAGE_DIR, {
     headless: true,
     args: [
       '--no-sandbox',

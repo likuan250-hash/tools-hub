@@ -7,12 +7,11 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  kdocs-tool:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         node-version: [22.x]
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,9 +21,58 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+          cache-dependency-path: kdocs-tool/package-lock.json
 
       - name: Install dependencies
+        working-directory: kdocs-tool
         run: npm install
 
       - name: Run automated tests
+        working-directory: kdocs-tool
         run: npm test
+
+  netdisk-hub:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22.x]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: netdisk-hub/package-lock.json
+
+      - name: Install dependencies
+        working-directory: netdisk-hub
+        env:
+          # 解析函数单测无需真实浏览器；跳过 playwright 浏览器下载以加速 CI 并避免下载失败。
+          # （xunlei.js 已改为懒加载 playwright，测试运行时不依赖它。）
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm install
+
+      - name: Run automated tests
+        working-directory: netdisk-hub
+        run: npm test
+
+  renderer:
+    # 入口页纯逻辑（拖拽插入几何计算）：无外部依赖，仅需 Node。
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22.x]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Run renderer pure-logic tests
+        run: node --test renderer/test/drag-geometry.test.js

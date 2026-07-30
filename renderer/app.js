@@ -20,6 +20,8 @@
   const winClose = document.getElementById("winClose");
   const quitModal = document.getElementById("quitModal");
   const quitCancel = document.getElementById("quitCancel");
+
+  const { computeInsertIndex } = require("./drag-geometry");
   const quitConfirm = document.getElementById("quitConfirm");
 
   // ── 主题 ──
@@ -196,17 +198,8 @@
     }
 
     // 用缓存矩形计算插入位置（纯算术，零布局读取）
-    function computeInsert(px, py) {
-      let idx = siblingRects.length;
-      for (let i = 0; i < siblingRects.length; i++) {
-        const r = siblingRects[i];
-        const cy = r.top + r.height / 2;
-        const cx = r.left + r.width / 2;
-        if (py < cy - r.height / 2) { idx = i; break; }                       // 指针在更靠上的行
-        if (Math.abs(py - cy) <= r.height / 2 && px < cx) { idx = i; break; } // 同排、中心左侧
-      }
-      return idx;
-    }
+    // 几何计算抽到 drag-geometry.js（DOM 无关），此处仅作薄封装。
+    const computeInsert = (px, py) => computeInsertIndex(siblingRects, px, py);
 
     // 插入位置变化时重排 + FLIP；自身完成读→写→读分批，杜绝 layout thrashing
     function doReorder(idx) {

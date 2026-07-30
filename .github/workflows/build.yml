@@ -35,6 +35,12 @@ jobs:
         working-directory: kdocs-tool
         run: npm test
 
+      - name: Run netdisk-hub tests (CI 门禁，失败则不出包)
+        working-directory: netdisk-hub
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm test
+
       - name: Install Playwright Chromium (bundled into node_modules)
         working-directory: netdisk-hub
         env:

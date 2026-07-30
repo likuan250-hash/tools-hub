@@ -1,6 +1,6 @@
 {
   "name": "tools-hub",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "description": "工具统一桌面应用：集成 kdocs-tool 与 netdisk-hub，单启动器、单安装包",
   "main": "main.js",
   "private": true,
@@ -30,7 +30,8 @@
       "main.js",
       "preload.js",
       "webview-preload.js",
-      "renderer/**/*"
+      "renderer/**/*",
+      "shared/**/*"
     ],
     "extraResources": [
       {

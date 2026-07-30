@@ -63,5 +63,39 @@ function copyNetdiskEnv() {
 
 copyNetdiskEnv();
 
+// ── 构建期内联共享样式 ──
+// 根因修复：打包后 asar 内 CSS @import 跨目录('../shared/...')曾整份加载失败，
+// 导致 tokens.css（含全部颜色变量与亮/暗主题规则）未生效，界面全黑、主题切换无效。
+// 这里在构建期把 shared/tokens.css + shared/macos-motion.css 内联进 renderer，
+// 生成 style.inline.css 与 index.inline.html（打包后主进程改用之），
+// 运行时彻底不依赖 @import。dev 模式仍走 index.html（@import 在项目目录可正常解析）。
+function inlineSharedStyles() {
+  const sharedDir = path.join(ROOT, "shared");
+  const tkPath = path.join(sharedDir, "tokens.css");
+  const mtPath = path.join(sharedDir, "macos-motion.css");
+  if (!fs.existsSync(tkPath) || !fs.existsSync(mtPath)) {
+    console.log("[prepare-build] shared 样式缺失，跳过内联（dev/异常）");
+    return;
+  }
+  const tk = fs.readFileSync(tkPath, "utf8");
+  const mt = fs.readFileSync(mtPath, "utf8");
+  const styleSrc = fs.readFileSync(path.join(ROOT, "renderer", "style.css"), "utf8");
+  // 去掉 renderer/style.css 顶部对 ../shared/ 的 @import（运行时已内联，避免重复/失败）
+  const styleBody = styleSrc
+    .split("\n")
+    .filter((l) => !/^\s*@import\s+url\(\s*["']?\.\.\/shared\//.test(l))
+    .join("\n");
+  const bundled =
+    "/* === inlined from shared/tokens.css (build-time) === */\n" + tk +
+    "\n/* === inlined from shared/macos-motion.css (build-time) === */\n" + mt +
+    "\n/* === renderer/style.css === */\n" + styleBody;
+  fs.writeFileSync(path.join(ROOT, "renderer", "style.inline.css"), bundled);
+  let html = fs.readFileSync(path.join(ROOT, "renderer", "index.html"), "utf8");
+  html = html.replace('href="style.css"', 'href="style.inline.css"');
+  fs.writeFileSync(path.join(ROOT, "renderer", "index.inline.html"), html);
+  console.log("[prepare-build] inlined shared styles -> renderer/style.inline.css + index.inline.html");
+}
+inlineSharedStyles();
+
 require("./prune-bailian");
 console.log("[prepare-build] done");

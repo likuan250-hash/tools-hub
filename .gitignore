@@ -10,3 +10,6 @@ resources/bin/node_modules/
 .env
 # 网盘凭证加密主密钥（v0.1.27 起 AES-256-GCM 用），绝不可进 git，否则加密形同虚设
 .masterkey
+# 构建期内联生成的 renderer 临时文件（由 scripts/prepare-build.js 生成，不进 git）
+renderer/style.inline.css
+renderer/index.inline.html

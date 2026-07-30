@@ -309,7 +309,11 @@ function createMainWindow() {
       webviewTag: true, // 允许在壳体内使用 <webview> 内嵌工具页面
     },
   });
-  mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  // 打包后用构建期内联版（style.inline.css，彻底不依赖 @import），dev 用 index.html
+  const rendererEntry = app.isPackaged
+    ? path.join(__dirname, "renderer", "index.inline.html")
+    : path.join(__dirname, "renderer", "index.html");
+  mainWindow.loadFile(rendererEntry);
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });

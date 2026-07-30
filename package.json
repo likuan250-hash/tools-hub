@@ -6,15 +6,24 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "build": "node scripts/prepare-build.js && electron-builder --dir",
-    "dist": "node scripts/prepare-build.js && electron-builder --win nsis -p always"
+    "build": "node scripts/prepare-build.js && electron-builder --dir && node scripts/verify-build-assets.js",
+    "dist": "node scripts/prepare-build.js && electron-builder --win nsis -p always && node scripts/verify-build-assets.js",
+    "verify:build": "node scripts/verify-build-assets.js",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.js\"",
+    "prepare": "simple-git-hooks"
   },
   "dependencies": {
     "electron-updater": "^6.3.0"
   },
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "eslint": "^9.13.0",
+    "globals": "^15.11.0",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "simple-git-hooks": "^2.11.1"
   },
   "build": {
     "appId": "com.likuan.tools-hub",
@@ -79,5 +88,14 @@
       "deleteAppDataOnUninstall": false,
       "include": "installer.nsh"
     }
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ]
   }
 }

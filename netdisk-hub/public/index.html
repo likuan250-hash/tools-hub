@@ -510,7 +510,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     }
     /* ── 次要按钮：对齐入口页的"突出"质感，亮/暗两态都能从玻璃面板浮出 ── */
     .btn.ghost, .clear-corner, .clear-input, .browse,
-    .copy, .group-copy, .task .copy, .task .retry, .dir-btn {
+    .copy, .group-copy, .task .copy, .task .retry {
       background: rgba(255, 255, 255, 0.16) !important;
       border: 1px solid rgba(255, 255, 255, 0.42) !important;
       color: var(--text) !important;
@@ -522,13 +522,37 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     [data-theme="light"] .btn.ghost,
     [data-theme="light"] .clear-corner, [data-theme="light"] .clear-input, [data-theme="light"] .browse,
     [data-theme="light"] .copy, [data-theme="light"] .group-copy,
-    [data-theme="light"] .task .copy, [data-theme="light"] .task .retry, [data-theme="light"] .dir-btn {
+    [data-theme="light"] .task .copy, [data-theme="light"] .task .retry {
       background: #d3daf2 !important;
       border: 1px solid rgba(90, 95, 150, 0.55) !important;
       color: #1b1f3b !important;
       box-shadow: 0 2px 8px rgba(20, 30, 80, 0.15) !important;
     }
     [data-theme="light"] .task .retry { color: var(--err) !important; }
+    /* ── 选择目录按钮：accent 主色，与工具箱主题色一致，从玻璃面板"跳"出来 ── */
+    .dir-btn {
+      background: var(--accent) !important;
+      border: 1px solid var(--accent) !important;
+      color: #fff !important;
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.20), 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+      font-weight: 700 !important;
+      transition: transform .18s ease, box-shadow .18s ease, background .18s ease !important;
+    }
+    .dir-btn:hover {
+      background: var(--accent) !important;
+      border-color: var(--accent) !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.28), 0 6px 18px rgba(0, 0, 0, 0.42) !important;
+    }
+    [data-theme="light"] .dir-btn {
+      color: #fff !important;
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.16), 0 4px 12px rgba(20, 30, 80, 0.20) !important;
+    }
+    [data-theme="light"] .dir-btn:hover {
+      box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.24), 0 6px 16px rgba(20, 30, 80, 0.26) !important;
+    }
+    /* 主题由工具箱统一管理，内嵌项目自身的主题按钮永久隐藏 */
+    #themeBtn { display: none !important; }
     /* 标题文字：对齐入口页 text-shadow，在玻璃上更"立"得住 */
     h1, .brand h1, .card-title, .panel h2, .modal-title {
       text-shadow: 0 1px 10px rgba(0, 0, 0, 0.20);

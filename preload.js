@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   // 自定义标题栏的窗口控制（最小化/最大化/关闭）
   windowControl: (action) => ipcRenderer.invoke("window-control", action),
+  // 主题单一真源：渲染进程把当前主题上报给主进程，供 webview-preload 拉取
+  setTheme: (t) => ipcRenderer.invoke("set-theme", t),
   // 退出确认弹窗：主进程请求显示自定义确认框 / 用户确认后真正关闭
   onRequestQuit: (cb) => {
     ipcRenderer.on("request-quit-confirm", () => cb());

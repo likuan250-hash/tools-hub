@@ -28,9 +28,11 @@
   let theme = "dark";
   try { theme = localStorage.getItem("th-theme") || "dark"; } catch (e) {}
   applyTheme(theme);
+  if (api && api.setTheme) { try { api.setTheme(theme); } catch (e) {} } // 上报主进程，供 webview 拉取
   themeBtn.onclick = () => {
     theme = theme === "dark" ? "light" : "dark";
     applyTheme(theme);
+    if (api && api.setTheme) { try { api.setTheme(theme); } catch (e) {} }
     syncThemeToWebviews(theme); // 工具箱切换 → 内嵌项目同步切换
   };
 

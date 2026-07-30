@@ -1,12 +1,4 @@
-// 主题切换(持久化到 localStorage)
-const themeBtn = document.getElementById('themeBtn');
-const saved = localStorage.getItem('theme') || 'dark';
-document.documentElement.setAttribute('data-theme', saved);
-themeBtn.onclick = () => {
-  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('theme', next);
-};
+// 主题由工具箱统一控制（webview-preload 注入 data-theme 并隐藏主题按钮），子页面不再自行管理。
 
 // Banner(授权回调提示)
 const params = new URLSearchParams(location.search);

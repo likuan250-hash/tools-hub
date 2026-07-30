@@ -70,6 +70,9 @@ let quitting = false;
 let allowClose = false;     // 更新安装等场景直接关闭，跳过确认
 let confirmedClose = false; // 用户已在确认框点了“确认关闭”
 
+// ── 主题单一真源：主进程缓存工具箱当前主题，供 webview-preload 主动拉取 ──
+let currentTheme = "dark";
+
 // ── 打包后把 netdisk 可变数据(.env / data/)重定向到 userData，升级不丢 ──
 // resources/ 在 NSIS 升级时会被清空重装，而 app.getPath('userData') 跨版本保留。
 // 方案(已弃用 junction)：曾经用目录 junction 把 resources/netdisk-hub/data 指向 userData，
@@ -408,6 +411,11 @@ ipcMain.handle("open-external", (_e, url) => {
   if (typeof url === "string" && /^https?:\/\//i.test(url)) {
     shell.openExternal(url);
   }
+});
+// ── 主题单一真源：webview 内嵌页主动拉取 / 渲染进程通知当前主题 ──
+ipcMain.handle("get-theme", () => currentTheme);
+ipcMain.handle("set-theme", (_e, t) => {
+  if (t === "light" || t === "dark") currentTheme = t;
 });
 
 app.whenReady().then(() => {

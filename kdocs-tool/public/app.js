@@ -8,16 +8,6 @@ const toast = $("toast"), chipKdocs = $("chipKdocs"), chipBl = $("chipBl"), kdoc
 
 let currentParsed = null;
 
-// ── 主题切换（与网盘转存中转台统一，持久化到 localStorage）──
-const themeBtn = $("themeBtn");
-const savedTheme = localStorage.getItem("theme") || "dark";
-document.documentElement.setAttribute("data-theme", savedTheme);
-themeBtn.onclick = () => {
-  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-  document.documentElement.setAttribute("data-theme", next);
-  localStorage.setItem("theme", next);
-};
-
 // ── 金山文档入口：顶栏常驻 + 成功后「在金山文档查看」，系统浏览器打开多维表 ──
 const KDOCS_VIEW_URL = "https://www.kdocs.cn/l/h9aREMoyL1MMMeDCHLWa1xsikoTpExj2o"; // 与 lib/config.js FILE_ID 对应
 function openKdocsView() {

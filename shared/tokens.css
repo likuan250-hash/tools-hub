@@ -12,8 +12,8 @@
   --text-dim: #c8cff0;
 
   /* 暗色玻璃：权威方案建议透明度 20-30%，边框作为主要视觉分离线 */
-  --glass-bg: rgba(255, 255, 255, 0.22);
-  --glass-border: rgba(255, 255, 255, 0.30);
+  --glass-bg: rgba(255, 255, 255, 0.32);
+  --glass-border: rgba(255, 255, 255, 0.42);
 
   --accent: #7c5cff;
   --accent-2: #21d4fd;
@@ -38,14 +38,14 @@
 }
 
 [data-theme="light"] {
-  --bg-1: #eaf0ff;
-  --bg-2: #f6f8ff;
-  --bg-3: #efe6ff;
+  --bg-1: #dde6ff;
+  --bg-2: #e9edfb;
+  --bg-3: #e6ddfb;
   --text: #1b1f3b;
   --text-dim: #5b6189;
 
   --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-border: rgba(120, 120, 180, 0.18);
+  --glass-border: rgba(90, 95, 150, 0.35);
 
   --accent: #7c5cff;
   --accent-2: #21d4fd;

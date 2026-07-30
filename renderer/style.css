@@ -5,11 +5,14 @@
 html, body { margin: 0; height: 100%; }
 body {
   font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  /* ambient 渐变光斑背景：玻璃材质才能显出折射 */
+  /* ambient 渐变光斑背景：玻璃材质才能显出折射；
+     多个光斑覆盖中/下/右区域，避免中间大片平色导致玻璃坍塌 */
   background:
-    radial-gradient(1200px 600px at 12% -10%, var(--bg-3), transparent 60%),
-    radial-gradient(900px 500px at 110% 10%, var(--bg-2), transparent 55%),
-    linear-gradient(160deg, var(--bg-1), var(--bg-2));
+    radial-gradient(900px 700px at 80% 20%, var(--bg-2), transparent 55%),
+    radial-gradient(1000px 650px at 15% 75%, var(--bg-3), transparent 58%),
+    radial-gradient(800px 500px at 110% 90%, var(--bg-2), transparent 50%),
+    radial-gradient(700px 400px at 50% 55%, rgba(255,255,255,0.04), transparent 48%),
+    linear-gradient(155deg, var(--bg-1), var(--bg-2));
   background-attachment: fixed;
   color: var(--text);
 }
@@ -45,6 +48,7 @@ body {
   background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text);
   height: 36px; border-radius: 10px; cursor: pointer; font-size: 14px;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  box-shadow: var(--shadow-card);
 }
 .icon-btn { width: 36px; }
 .update-btn { padding: 0 14px; }
@@ -109,6 +113,7 @@ body {
 .tab:hover { color: var(--text); }
 .tab.active {
   background: var(--glass-bg); border-color: var(--glass-border); color: var(--text);
+  box-shadow: var(--shadow-card);
 }
 .tab-close {
   width: 18px; height: 18px; border-radius: 5px;
@@ -157,12 +162,12 @@ body {
 .card {
   position: relative; overflow: hidden;
   display: flex; flex-direction: column; gap: 14px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: 22px; padding: 26px 24px;
   -webkit-backdrop-filter: blur(22px) saturate(160%);
   backdrop-filter: blur(22px) saturate(160%);
-  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
   transition:
     transform var(--dur) var(--ease-spring),
     border-color var(--dur) var(--ease-out),
@@ -170,7 +175,7 @@ body {
     background var(--dur) var(--ease-out);
 }
 .card:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.30);
   border-color: var(--accent);
   box-shadow: var(--shadow-card), 0 18px 50px rgba(var(--accent-rgb), 0.25);
   transform: translateY(-4px);

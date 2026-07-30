@@ -9,10 +9,11 @@
   --bg-2: #222a52;
   --bg-3: #2b1a4a;
   --text: #eef1ff;
-  --text-dim: #c5cbee;
+  --text-dim: #c8cff0;
 
-  --glass-bg: rgba(255, 255, 255, 0.10);
-  --glass-border: rgba(255, 255, 255, 0.18);
+  /* 暗色玻璃：权威方案建议透明度 20-30%，边框作为主要视觉分离线 */
+  --glass-bg: rgba(255, 255, 255, 0.22);
+  --glass-border: rgba(255, 255, 255, 0.30);
 
   --accent: #7c5cff;
   --accent-2: #21d4fd;
@@ -32,8 +33,8 @@
   --switch-off: #4b4f6b;
   --switch-thumb: #ffffff;
   --modal-mask: rgba(8, 10, 24, 0.6);
-  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.12);
-  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 10px 34px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.6);
 }
 
 [data-theme="light"] {

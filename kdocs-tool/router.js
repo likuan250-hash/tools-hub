@@ -14,7 +14,7 @@ const { parseInput } = require("./lib/parser");
 const { searchSteamAppId } = require("./lib/steam");
 const { checkBlAvailable, aiDescribe } = require("./lib/ai");
 const { checkKdocsReady } = require("./lib/kdocs");
-const { autoExecute, findExistingRecord } = require("./lib/executor");
+const { autoExecute, findExistingRecord, retryCoverUpload } = require("./lib/executor");
 
 // 提供静态文件（当独立运行时也保持兼容）
 router.use(express.static(path.join(__dirname, "public")));
@@ -160,6 +160,19 @@ router.post("/api/auto", async (req, res) => {
   } finally {
     clearInterval(heartbeat);
     try { res.end(); } catch { /* 已结束 */ }
+  }
+});
+
+// ── 仅重传封面（P0-3 补救）：对已存在记录补传封面附件并写入 作品展示 字段 ──
+router.post("/api/retry-cover", async (req, res) => {
+  const { recordId, coverPath } = req.body || {};
+  if (!recordId || !coverPath) return res.status(400).json({ error: "缺少 recordId 或 coverPath" });
+  if (!fs.existsSync(coverPath)) return res.status(400).json({ error: "封面文件不存在：" + coverPath });
+  try {
+    const r = await retryCoverUpload(recordId, coverPath, {});
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 

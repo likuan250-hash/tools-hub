@@ -4,9 +4,45 @@ const autoBtn = $("autoBtn"), coverDir = $("coverDir"), browseDirBtn = $("browse
 const clearBtn = $("clearBtn");
 const preview = $("preview"), previewContent = $("previewContent");
 const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $("autoSummary"), autoLog = $("autoLog"), kdocsViewBtn = $("kdocsViewBtn");
+const retryCoverBtn = $("retryCoverBtn");
 const toast = $("toast"), chipKdocs = $("chipKdocs"), chipBl = $("chipBl"), kdocsBtn = $("kdocsBtn");
 
 let currentParsed = null;
+let currentRecordId = null;   // 供「仅重传封面」补传
+let currentCoverPath = null;  // 已下载但上传失败的本地封面路径
+
+// ── 「仅重传封面」：封面已下载但上传失败时，补传并写回记录（P0-3 补救）──
+retryCoverBtn.onclick = async () => {
+  if (!currentRecordId || !currentCoverPath) return;
+  retryCoverBtn.disabled = true;
+  retryCoverBtn.textContent = "⏳ 重传中…";
+  try {
+    const r = await fetch("/api/retry-cover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordId: currentRecordId, coverPath: currentCoverPath }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      autoSummary.className = "result-summary ok";
+      autoSummary.textContent = "✅ 封面已补传，记录完整";
+      addLog("ok", "✅ 封面已重新上传并写入记录");
+      retryCoverBtn.style.display = "none";
+    } else {
+      autoSummary.className = "result-summary fail";
+      autoSummary.textContent = "❌ 封面重传仍失败：" + (d.error || "未知");
+      addLog("err", "❌ 封面重传失败：" + (d.error || ""));
+      retryCoverBtn.disabled = false;
+      retryCoverBtn.textContent = "🔄 仅重传封面";
+    }
+  } catch (e) {
+    autoSummary.className = "result-summary fail";
+    autoSummary.textContent = "❌ 重传请求失败：" + e.message;
+    addLog("err", "❌ 重传请求失败：" + e.message);
+    retryCoverBtn.disabled = false;
+    retryCoverBtn.textContent = "🔄 仅重传封面";
+  }
+};
 
 // ── 金山文档入口：顶栏常驻 + 成功后「在金山文档查看」，系统浏览器打开多维表 ──
 const KDOCS_VIEW_URL = "https://www.kdocs.cn/l/h9aREMoyL1MMMeDCHLWa1xsikoTpExj2o"; // 与 lib/config.js FILE_ID 对应
@@ -167,7 +203,7 @@ function buildStepDetail(s) {
 }
 
 function renderStep(s) {
-  const icon = s.status === "成功" ? "✅" : s.status === "跳过" ? "⏭️" : s.status === "失败" ? "❌" : "🔄";
+  const icon = s.status === "成功" ? "✅" : s.status === "跳过" ? "⏭️" : s.status === "失败" ? "❌" : s.status === "警告" ? "⚠️" : "🔄";
   const detail = buildStepDetail(s);
   let item = stepEls[s.index];
   if (!item) {
@@ -224,6 +260,9 @@ async function runAuto(text, opts = {}) {
   autoLog.innerHTML = "";
   autoSummary.textContent = "";
   kdocsViewBtn.style.display = "none";
+  retryCoverBtn.style.display = "none";
+  retryCoverBtn.disabled = false;
+  retryCoverBtn.textContent = "🔄 仅重传封面";
   stepEls.length = 0;
 
   autoResult.classList.add("show");
@@ -269,10 +308,20 @@ async function runAuto(text, opts = {}) {
         } else if (ev.type === "done") {
           finished = true;
           const d = ev.result;
+          currentRecordId = d.recordId || null;
+          currentCoverPath = d.coverPath || null;
+          retryCoverBtn.style.display = "none"; // 默认隐藏，封面缺失且可补传时才显示
           if (d.gameName) { currentParsed = { ...currentParsed, gameName: d.gameName }; preview.style.display = "block"; }
           if (!d.success) {
             autoSummary.className = "result-summary fail";
             autoSummary.textContent = "⚠️ 部分步骤未成功";
+            retryCoverBtn.style.display = (d.coverLost && d.coverPath) ? "block" : "none";
+          } else if (d.coverStatus === "failed") {
+            // 封面缺失但记录已建：显式黄警，不再假装「全部完成」（P0-1 修复）
+            autoSummary.className = "result-summary warn";
+            autoSummary.textContent = "⚠️ 已完成，但封面未成功获取/上传（记录无封面）";
+            addLog("info", "⚠️ 封面缺失：" + (d.coverLost ? "已下载但上传失败，可点「仅重传封面」" : "下载失败，无可用封面"));
+            retryCoverBtn.style.display = (d.coverLost && d.coverPath) ? "block" : "none";
           } else if (d.action === "skipped") {
             autoSummary.className = "result-summary ok";
             autoSummary.textContent = "⏭️ 已跳过（文档中已存在）记录 ID: " + (d.recordId || "—");
@@ -286,8 +335,8 @@ async function runAuto(text, opts = {}) {
             autoSummary.textContent = "✅ 全部完成！记录 ID: " + (d.recordId || "—");
             addLog("ok", d.recordId ? "🎉 记录 " + d.recordId + " 创建成功！" : "🎉 全部完成！");
           }
-          // 成功后显示「在金山文档查看」按钮（创建/更新/跳过均视为有记录可查）
-          kdocsViewBtn.style.display = d.success ? "block" : "none";
+          // 有记录即可查看（创建/更新/跳过/封面缺失均视为有记录可查；整体失败时若已建记录也允许查看）
+          kdocsViewBtn.style.display = d.recordId ? "block" : "none";
         }
       }
     }

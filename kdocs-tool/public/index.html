@@ -152,6 +152,7 @@
     .result-summary { text-align: center; padding: 14px; margin-top: 10px; font-size: 16px; font-weight: 600; }
     .result-summary.ok { color: var(--ok); }
     .result-summary.fail { color: var(--err); }
+    .result-summary.warn { color: #e6a23c; }
 
     .log-area { margin-top: 10px; padding: 10px 14px; background: var(--field-bg); border: 1px solid var(--glass-border); border-radius: 12px; font-family: monospace; font-size: 13px; line-height: 1.6; max-height: 260px; overflow-y: auto; color: var(--text-dim); }
     .log-area .line { padding: 1px 0; }
@@ -481,6 +482,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <div id="autoSteps"></div>
     <div class="result-summary" id="autoSummary"></div>
     <button class="btn ghost" id="kdocsViewBtn" style="display:none;margin-top:12px;">🔗 在金山文档查看</button>
+    <button class="btn ghost" id="retryCoverBtn" style="display:none;margin-top:12px;">🔄 仅重传封面</button>
     <div class="log-area" id="autoLog"></div>
   </div>
 

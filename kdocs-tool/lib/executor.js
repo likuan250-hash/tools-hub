@@ -68,6 +68,9 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   const ok = (s) => { steps[stepIdx] = { ...s, status: "成功" }; emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } }); };
   const skip = (s) => { steps[stepIdx] = { ...s, status: "跳过" }; emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } }); };
   const fail = (s) => { steps[stepIdx] = { ...s, status: "失败" }; emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } }); };
+  // 警告：步骤尝试过但出错/降级（如封面下载真实报错）。不算「失败」(不拉红整体)，
+  // 但也不该被当成「跳过」洗白——单独状态供前端显式提示（P0-1 修复）。
+  const warn = (s) => { steps[stepIdx] = { ...s, status: "警告" }; emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } }); };
   const doing = (s) => { stepIdx = steps.length; steps.push({ ...s, status: "进行中" }); emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } }); };
 
   // 1. 检查 kdocs
@@ -159,6 +162,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 
   // 4. 下载封面（优先级：Steam 官方 CDN → bl 联网搜真实封面(中英文双搜+下载校验) → 手动链接 → 留空）
   let coverPath = null;
+  let coverAttemptFailed = false; // 封面下载真实报错(区别于合理留空)，供最终 coverStatus 判定
   // 4.1 Steam 官方 CDN（已有 appid 时）
   if (!coverPath && appid) {
     doing({ name: "下载 Steam 封面" });
@@ -166,7 +170,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       coverPath = await deps.downloadCover(parsed.gameName, appid, coverDir);
       const s = deps.fs.statSync(coverPath);
       ok({ name: "封面下载（Steam 官方）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
-    } catch (e) { skip({ name: "封面下载（Steam 官方）", reason: e.message }); }
+    } catch (e) { coverAttemptFailed = true; warn({ name: "封面下载（Steam 官方）", reason: e.message }); }
   }
   // 4.2 bl 联网搜真实封面（中英文名各搜一次，downloadCoverFromUrl 做真实下载校验防破图）
   if (!coverPath && deps.aiCoverSearch) {
@@ -180,7 +184,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       } else {
         skip({ name: "封面下载（bl 联网搜索）", reason: "未搜到可用封面直链" });
       }
-    } catch (e) { skip({ name: "封面下载（bl 联网搜索）", reason: e.message }); }
+    } catch (e) { coverAttemptFailed = true; warn({ name: "封面下载（bl 联网搜索）", reason: e.message }); }
   }
   // 4.3 手动链接兜底
   if (!coverPath && manualCoverUrl) {
@@ -189,28 +193,18 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       coverPath = await deps.downloadCoverFromUrl(parsed.gameName, manualCoverUrl, coverDir);
       const s = deps.fs.statSync(coverPath);
       ok({ name: "封面下载（手动链接）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
-    } catch (e) { skip({ name: "封面下载（手动链接）", reason: e.message }); }
+    } catch (e) { coverAttemptFailed = true; warn({ name: "封面下载（手动链接）", reason: e.message }); }
   }
   if (!coverPath) { doing({ name: "封面下载" }); skip({ name: "封面下载", reason: "Steam 无匹配、bl 未搜到、且无手动链接，留空" }); }
 
-  // 5. 上传附件
+  // 5. 上传附件（失败自动重试 1 次，瞬错常见；仍失败则标记 coverLost 供前端补传）
   let objectId = null;
   if (coverPath) {
     doing({ name: "上传附件" });
-    try {
-      const b64 = deps.fileBase64(coverPath);
-      const ext = path.extname(coverPath).slice(1).toLowerCase();
-      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-      const uploadRes = await deps.callMcporter("upload_attachment", {
-        sheet_id: 1,
-        filename: `${parsed.gameName}_cover.${ext}`,
-        content_type: mime,
-        content_base64: b64,
-      });
-      objectId = uploadRes?.object_id || uploadRes?.data?.object_id;
-      if (objectId) ok({ name: "附件上传", objectId });
-      else fail({ name: "附件上传", error: JSON.stringify(uploadRes) });
-    } catch (e) { fail({ name: "附件上传", error: e.message }); }
+    const up = await tryUploadAttachment(deps, coverPath, parsed, 2);
+    objectId = up.objectId;
+    if (objectId) ok({ name: "附件上传", objectId });
+    else fail({ name: "附件上传", error: up.error });
   }
 
   // 5.5 夸克分享页总大小（真实字节求和，按版本号取最新版）：有夸克链接即优先抓取，失败才回退文本/留空
@@ -254,8 +248,20 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     } catch (e) { skip({ name: "验证", reason: e.message }); }
   }
 
-  const success = steps.every(s => s.status === "成功" || s.status === "跳过");
-  const result = { steps, recordId, success, action: "created", gameName: parsed.gameName };
+  // 封面状态：ok=已获取并上传；absent=合理留空(无来源)；failed=尝试过但报错/上传失败
+  let coverStatus;
+  if (objectId) coverStatus = "ok";
+  else if (coverPath) coverStatus = "failed";            // 下载成功但上传失败（可补传）
+  else if (coverAttemptFailed) coverStatus = "failed";   // 下载真实报错
+  else coverStatus = "absent";                           // 无来源，合理留空
+  const coverLost = !!coverPath && !objectId;            // 已下载但上传失败，本地封面可补传
+  // 「警告」不拉红整体（封面是尽力而为），但前端会据此显式提示，不再假装全成功
+  const success = steps.every(s => s.status === "成功" || s.status === "跳过" || s.status === "警告");
+  const result = {
+    steps, recordId, success, action: "created", gameName: parsed.gameName,
+    coverStatus, coverLost,
+    coverPath: coverLost ? coverPath : null, // 仅当可补传时回传本地路径，供「仅重传封面」使用
+  };
   emit({ type: "done", result });
   return result;
 }
@@ -286,4 +292,60 @@ function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverS
   return fields;
 }
 
-module.exports = { autoExecute, findExistingRecord, DEFAULT_DEPS, buildRecordFields, resolveGameSize };
+// ── 附件上传（带重试）：瞬错常见，失败自动重试 attempts-1 次 ──
+async function tryUploadAttachment(deps, coverPath, parsed, attempts = 2) {
+  const ext = path.extname(coverPath).slice(1).toLowerCase();
+  const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  let lastErr = null;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const uploadRes = await deps.callMcporter("upload_attachment", {
+        sheet_id: 1,
+        filename: `${parsed.gameName}_cover.${ext}`,
+        content_type: mime,
+        content_base64: deps.fileBase64(coverPath),
+      });
+      const oid = uploadRes?.object_id || uploadRes?.data?.object_id;
+      if (oid) return { objectId: oid };
+      lastErr = "未返回 object_id：" + JSON.stringify(uploadRes);
+    } catch (e) { lastErr = e.message; }
+  }
+  return { objectId: null, error: lastErr };
+}
+
+// ── 「仅重传封面」补救（P0-3）：对已存在记录补传封面附件并写入 作品展示 字段 ──
+async function retryCoverUpload(recordId, coverPath, opts = {}) {
+  const deps = { ...DEFAULT_DEPS, ...(opts.deps || {}) };
+  const emit = typeof opts.onStep === "function" ? opts.onStep : () => {};
+  const steps = [];
+  let stepIdx = -1;
+  const ok = (s) => { steps[stepIdx] = { ...s, status: "成功" }; emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } }); };
+  const fail = (s) => { steps[stepIdx] = { ...s, status: "失败" }; emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } }); };
+  const doing = (s) => { stepIdx = steps.length; steps.push({ ...s, status: "进行中" }); emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } }); };
+
+  if (!recordId || !coverPath) return { success: false, error: "缺少 recordId 或 coverPath", steps };
+  let objectId = null;
+  doing({ name: "重传封面附件" });
+  try {
+    const up = await tryUploadAttachment(deps, coverPath, { gameName: "cover" }, 2);
+    objectId = up.objectId;
+    if (objectId) ok({ name: "重传封面附件", objectId });
+    else { fail({ name: "重传封面附件", error: up.error }); return { success: false, objectId: null, steps }; }
+  } catch (e) { fail({ name: "重传封面附件", error: e.message }); return { success: false, objectId: null, steps }; }
+
+  doing({ name: "更新记录封面字段" });
+  try {
+    const ext = path.extname(coverPath).slice(1).toLowerCase();
+    const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+    const size = deps.fs.statSync(coverPath).size;
+    await deps.callMcporter("dbsheet.update_records", {
+      sheet_id: 1,
+      records: [{ id: recordId, fields: { "作品展示": [{ fileName: `cover.${ext}`, size, source: "upload_ks3", type: mime, uploadId: objectId }] } }],
+    });
+    ok({ name: "更新记录封面字段" });
+  } catch (e) { fail({ name: "更新记录封面字段", error: e.message }); return { success: false, objectId, steps }; }
+
+  return { success: true, objectId, steps };
+}
+
+module.exports = { autoExecute, findExistingRecord, DEFAULT_DEPS, buildRecordFields, resolveGameSize, tryUploadAttachment, retryCoverUpload };

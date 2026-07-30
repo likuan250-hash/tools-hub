@@ -142,9 +142,10 @@ test("需求：创建记录字段完整（游戏信息/更新日期/作品展示
   assert.deepStrictEqual(f["百度网盘"], [{ address: "https://pan.baidu.com/s/b", displayText: "https://pan.baidu.com/s/b" }], "百度网盘应为地址数组");
 });
 
-// ── 需求冲突点（已知行为，待用户确认是否改为失败）──
-// 用户需求：bl / 兜底必须给封面。但当前 success 判定为「全成功或跳过」，
-// 封面所有源失败仅记为「跳过」，仍会创建无作品展示的记录。
+// ── 封面缺失语义（P0-1 修复后）──
+// 封面是尽力而为：下载「真实报错」记为「警告」(不拉红整体)，并置 coverStatus='failed' 供前端显式提示；
+// 下载「无来源」(bl 未搜到直链等) 记为「跳过」且 coverStatus='absent'，属合理留空。
+// 二者均不阻断记录创建，但失败不再被洗白成无声的 success。
 test("onStep 实时回调：每步 emit step（带 index），结束 emit done", async () => {
   const events = [];
   const deps = baseDeps();
@@ -167,13 +168,41 @@ test("onStep 实时回调：每步 emit step（带 index），结束 emit done",
   assert.strictEqual(res.recordId, "r1");
 });
 
-test("需求GAP：封面所有源失败 → 当前仍判 success 且不含作品展示（待确认）", async () => {
+test("封面无来源（bl 未搜到直链）→ 跳过 + coverStatus='absent'，仍判 success 且无作品展示", async () => {
   const deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "10G" }), aiCoverSearch: async () => "" });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const coverSteps = res.steps.filter(s => s.name.includes("封面"));
-  assert.ok(coverSteps.length >= 1 && coverSteps.every(s => s.status === "跳过"), "封面应全部跳过");
-  assert.strictEqual(res.success, true, "（已知行为）封面缺失仍判成功，与「必须有封面」需求冲突");
+  assert.ok(coverSteps.length >= 1 && coverSteps.every(s => s.status === "跳过"), "无来源应记为跳过");
+  assert.strictEqual(res.coverStatus, "absent", "无来源应为 absent");
+  assert.strictEqual(res.success, true, "合理留空不应失败");
   assert.ok(!("作品展示" in deps._state().lastCreate), "无封面则不应有作品展示");
+});
+
+test("P0-1 修复：封面下载真实报错 → 警告 + coverStatus='failed'，仍判 success 但无作品展示", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    downloadCover: async () => { throw new Error("Steam CDN 503"); },
+    aiCoverSearch: async () => "", // 不给备用直链，避免 bl 兜底成功
+  });
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const coverSteps = res.steps.filter(s => s.name.includes("封面"));
+  assert.ok(coverSteps.some(s => s.status === "警告"), "真实报错应记为警告");
+  assert.strictEqual(res.coverStatus, "failed", "下载报错应为 failed");
+  assert.strictEqual(res.success, true, "警告不拉红整体（封面尽力而为）");
+  assert.ok(!("作品展示" in deps._state().lastCreate), "无封面则不应有作品展示");
+});
+
+test("P0-3 修复：封面下载成功但上传失败 → coverLost + 回传 coverPath 供补传", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    downloadCover: async () => "/fake/steam.jpg",
+    callMcporter: (fn) => { if (fn === "upload_attachment") return { data: {} }; return { data: { records: [{ id: "r1" }] } }; },
+  });
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  assert.strictEqual(res.coverStatus, "failed", "下载成功但上传失败应为 failed");
+  assert.strictEqual(res.coverLost, true, "应标记 coverLost");
+  assert.strictEqual(res.coverPath, "/fake/steam.jpg", "应回传本地封面路径供补传");
+  assert.strictEqual(res.success, false, "上传失败步骤记失败，整体 success 应为 false");
 });
 
 // ── 查重分支（1.0.18 新增：文档已存在时提示跳过 / 强制新增 / 更新网盘链接）──

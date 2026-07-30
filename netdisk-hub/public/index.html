@@ -65,7 +65,7 @@
     .card {
       border: 1px solid var(--glass-border); border-radius: 18px;
       background: var(--glass-bg); backdrop-filter: blur(22px) saturate(160%);
-      box-shadow: var(--shadow-card);
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
       padding: 18px; position: relative; overflow: hidden;
     }
     .card .name { font-size: 15px; font-weight: 600; }
@@ -77,7 +77,7 @@
     .panel {
       border: 1px solid var(--glass-border); border-radius: 22px;
       background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%);
-      box-shadow: var(--shadow-card);
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
       padding: 26px; margin-bottom: 24px;
     }
     .panel h2 {
@@ -89,21 +89,23 @@
       border-radius: 4px; background: linear-gradient(180deg, var(--accent), var(--accent-2));
     }
 
+    /* 控件实色背景：明暗两态，避免 glass 套 glass 导致层次崩塌（对齐入口页实色控件） */
+    :root { --field-bg: var(--bg-2); --solid-bg: var(--bg-2); }
+    [data-theme="light"] { --field-bg: #ffffff; --solid-bg: #f1f4ff; }
     label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
     input[type="text"], input[type="password"], input[type="number"], select, textarea {
       width: 100%; padding: 12px 14px; border-radius: 12px;
-      border: 1px solid var(--glass-border); background: var(--glass-bg);
+      border: 1px solid var(--glass-border); background: var(--field-bg);
       color: var(--text); font-size: 14px; outline: none;
       transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
     }
-    [data-theme="light"] input, [data-theme="light"] select, [data-theme="light"] textarea { background: rgba(255,255,255,0.6); }
     input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.25); }
-    textarea::placeholder { color: var(--text-dim); opacity: 0.8; }
+    textarea::placeholder { color: var(--text-dim); opacity: 0.75; }
     .row { display: grid; grid-template-columns: 1fr 200px; gap: 14px; margin-bottom: 14px; }
     .field { margin-bottom: 14px; }
     .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .clear-input {
-      border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-dim);
+      border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text-dim);
       font-size: 12px; padding: 4px 12px; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;
     }
     .clear-input:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.18); }
@@ -124,7 +126,7 @@
     }
     .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(var(--accent-rgb), 0.5); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-    .btn.ghost { background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text); box-shadow: none; }
+    .btn.ghost { background: var(--field-bg); border: 1px solid var(--glass-border); color: var(--text); box-shadow: var(--shadow-card); }
     .auth-btn {
       border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: #fff;
       padding: 8px 16px; background: linear-gradient(135deg, var(--accent), var(--accent-2));
@@ -135,21 +137,21 @@
 
     .result {
       margin-top: 18px; padding: 16px; border-radius: 14px;
-      border: 1px solid var(--glass-border); background: var(--glass-bg);
+      border: 1px solid var(--glass-border); background: var(--field-bg);
       display: none;
     }
     .result.show { display: block; animation: pop 0.4s ease; }
     @keyframes pop { from { opacity: 0; transform: translateY(8px);} to {opacity:1; transform:none;} }
     .result a { color: var(--accent-2); word-break: break-all; }
     .result .line { font-size: 14px; margin: 6px 0; }
-    .copy { margin-left: 8px; font-size: 12px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text); cursor: pointer; }
+    .copy { margin-left: 8px; font-size: 12px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text); cursor: pointer; }
     .err { color: var(--err); margin-top: 14px; font-size: 14px; display: none; }
     .err.show { display: block; }
 
     .tasks { margin-top: 8px; }
     .task {
       border: 1px solid var(--glass-border); border-radius: 14px; padding: 14px 16px;
-      margin-bottom: 10px; background: var(--glass-bg); font-size: 13px;
+      margin-bottom: 10px; background: var(--field-bg); font-size: 13px;
       box-shadow: var(--shadow-card);
     }
     .task .top { display: flex; justify-content: space-between; gap: 10px; }
@@ -177,7 +179,7 @@
     .task .row-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .task .copy, .task .retry {
       font-size: 12px; padding: 4px 10px; border-radius: 8px;
-      border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text); cursor: pointer; margin-left: 0;
+      border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text); cursor: pointer; margin-left: 0;
     }
     .task .retry { color: var(--err); border-color: rgba(var(--err-rgb),0.4); }
     /* 历史按标题分组 */
@@ -187,7 +189,7 @@
     .group-summary { font-size: 12px; opacity: 0.75; white-space: nowrap; }
     .group-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
     .group-copy {
-      border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text);
+      border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text);
       font-size: 12px; padding: 5px 12px; border-radius: 9px; cursor: pointer; white-space: nowrap;
       transition: all 0.2s ease; flex-shrink: 0;
     }
@@ -204,7 +206,7 @@
     .batch-preview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
     .bp-card, .br-card {
       border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px;
-      background: var(--glass-bg); font-size: 12px;
+      background: var(--field-bg); font-size: 12px;
     }
     .bp-card.off { opacity: 0.5; }
     .bp-name, .br-name { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
@@ -219,22 +221,21 @@
     .provider-check {
       display: flex; align-items: center; gap: 10px;
       border: 1px solid var(--glass-border); border-radius: 12px;
-      padding: 10px 12px; background: var(--glass-bg); cursor: pointer;
+      padding: 10px 12px; background: var(--field-bg); cursor: pointer;
     }
     .provider-check input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
     .check-name { font-size: 14px; font-weight: 600; white-space: nowrap; }
     .check-meta { flex: 1; font-size: 11px; color: var(--text-dim); word-break: break-all; min-width: 0; margin-left: 4px; }
     .copy-preview {
       margin-top: 10px; padding: 12px; border-radius: 12px;
-      border: 1px dashed var(--glass-border); background: var(--glass-bg);
+      border: 1px dashed var(--glass-border); background: var(--field-bg);
       font-size: 13px; line-height: 1.7; word-break: break-all; white-space: pre-wrap;
     }
     .copy-all { width: auto; padding: 10px 18px; font-size: 14px; }
     .ver-box {
       padding: 10px 14px; border-radius: 12px; border: 1px solid var(--glass-border);
-      background: rgba(0,0,0,0.15); font-size: 14px; font-weight: 600; word-break: break-all;
+      background: var(--field-bg); font-size: 14px; font-weight: 600; word-break: break-all;
     }
-    [data-theme="light"] .ver-box { background: rgba(255,255,255,0.6); }
 
     /* ── 格式化分享文本(默认收起) ── */
     .fmt-body { margin-top: 14px; }
@@ -251,7 +252,7 @@
     .dir-row .dir-label { opacity: 0.85; line-height: 1.4; }
     .dir-row .dir-label b { font-weight: 600; word-break: break-all; }
     .dir-btn {
-      border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text);
+      border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text);
       font-size: 12px; padding: 5px 12px; border-radius: 9px; cursor: pointer; white-space: nowrap;
       transition: all 0.2s ease; flex-shrink: 0;
     }

@@ -66,7 +66,7 @@
       display: flex; align-items: center; gap: 8px; padding: 10px 16px;
       border: 1px solid var(--glass-border); border-radius: 14px;
       background: var(--glass-bg); backdrop-filter: blur(22px) saturate(160%);
-      box-shadow: var(--shadow-card);
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
       font-size: 13px; color: var(--text-dim);
     }
     .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
@@ -77,7 +77,7 @@
     .panel {
       border: 1px solid var(--glass-border); border-radius: 22px;
       background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%);
-      box-shadow: var(--shadow-card);
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
       padding: 26px; margin-bottom: 22px;
     }
     .panel h2 {
@@ -90,17 +90,17 @@
     }
 
     label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+    /* 控件实色背景：明暗两态，避免 glass 套 glass */
+    :root { --field-bg: var(--bg-2); --solid-bg: var(--bg-2); }
+    [data-theme="light"] { --field-bg: #ffffff; --solid-bg: #f1f4ff; }
     input[type="text"], textarea {
       width: 100%; padding: 12px 14px; border-radius: 12px;
-      border: 1px solid var(--glass-border); background: var(--glass-bg);
+      border: 1px solid var(--glass-border); background: var(--field-bg);
       color: var(--text); font-size: 14px; outline: none;
       transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
     }
     textarea { min-height: 150px; padding: 14px; font-family: "Cascadia Code", "JetBrains Mono", "PingFang SC", monospace; line-height: 1.7; resize: vertical; }
-    [data-theme="light"] input[type="text"], [data-theme="light"] textarea { background: rgba(255,255,255,0.6); }
     input[type="text"]:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.25); }
-    textarea::placeholder { color: var(--text-dim); opacity: 0.8; }
-    textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.25); }
     textarea::placeholder { color: var(--text-dim); opacity: 0.75; }
 
     .input-wrap { position: relative; }
@@ -108,11 +108,11 @@
       position: absolute; top: 10px; right: 10px; z-index: 2;
       width: auto; padding: 5px 12px; font-size: 12px;
       border-radius: 10px; cursor: pointer;
-      border: 1px solid var(--glass-border); background: var(--glass-bg);
+      border: 1px solid var(--glass-border); background: var(--field-bg);
       color: var(--text-dim); backdrop-filter: blur(12px);
       opacity: 0.75; transition: opacity 0.2s ease, color 0.2s ease, background 0.2s ease;
     }
-    .clear-corner:hover { opacity: 1; color: var(--text); background: rgba(255,255,255,0.12); }
+    .clear-corner:hover { opacity: 1; color: var(--text); background: var(--solid-bg); }
 
     .input-row { display: grid; grid-template-columns: 120px 1fr auto; gap: 12px; align-items: center; margin-top: 14px; }
     .input-row label { margin: 0; white-space: nowrap; }
@@ -130,7 +130,7 @@
     }
     .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(var(--accent-rgb), 0.5); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-    .btn.ghost { background: var(--glass-bg); border: 1px solid var(--glass-border); color: var(--text); box-shadow: none; }
+    .btn.ghost { background: var(--field-bg); border: 1px solid var(--glass-border); color: var(--text); box-shadow: var(--shadow-card); }
 
     .toolbar { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
     .toolbar .btn { width: auto; padding: 11px 20px; font-size: 14px; }
@@ -154,8 +154,7 @@
     .result-summary.ok { color: var(--ok); }
     .result-summary.fail { color: var(--err); }
 
-    .log-area { margin-top: 10px; padding: 10px 14px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; font-family: monospace; font-size: 13px; line-height: 1.6; max-height: 260px; overflow-y: auto; color: var(--text-dim); }
-    [data-theme="light"] .log-area { background: rgba(255,255,255,0.5); }
+    .log-area { margin-top: 10px; padding: 10px 14px; background: var(--field-bg); border: 1px solid var(--glass-border); border-radius: 12px; font-family: monospace; font-size: 13px; line-height: 1.6; max-height: 260px; overflow-y: auto; color: var(--text-dim); }
     .log-area .line { padding: 1px 0; }
     .log-area .line.info { color: var(--text-dim); }
     .log-area .line.ok { color: var(--ok); }
@@ -166,7 +165,7 @@
 
     /* ── 重复确认 modal ── */
     .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 1000; }
-    .modal { width: min(480px, 92vw); border: 1px solid var(--glass-border); border-radius: 20px; background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%); padding: 26px; box-shadow: 0 24px 70px rgba(0,0,0,0.5); }
+    .modal { width: min(480px, 92vw); border: 1px solid var(--glass-border); border-radius: 20px; background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%); padding: 26px; box-shadow: 0 24px 70px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255, 255, 255, 0.10); }
     .modal-title { font-size: 17px; margin-bottom: 14px; font-weight: 600; }
     .modal-body { font-size: 13px; color: var(--text-dim); line-height: 1.7; margin-bottom: 6px; word-break: break-all; }
     .modal-body .lk { display: inline-block; margin: 4px 4px 0 0; padding: 2px 8px; border-radius: 6px; background: rgba(var(--accent-rgb),0.15); color: var(--accent-3); font-size: 12px; word-break: break-all; }

@@ -114,7 +114,7 @@
     .switch input:checked { background: var(--accent); }
     .switch input::after { content: ""; position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--switch-thumb); top: 3px; left: 3px; transition: left 0.2s; }
     .switch input:checked::after { left: 21px; }
-    .switch span { font-size: 13px; color: var(--text-dim); }
+    .switch span { font-size: 13px; color: var(--text); font-weight: 600; }
 
     .btn {
       width: 100%; padding: 14px; border: none; border-radius: 14px; cursor: pointer;
@@ -474,10 +474,11 @@ body { font-family: var(--mac-font); }
 
 .switch input {
   width: 38px; height: 22px; border-radius: 22px;
-  background: rgba(120, 120, 140, .4);
+  background: rgba(var(--accent-rgb), 0.30);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.35);
 }
-[data-theme="light"] .switch input { background: rgba(120, 120, 140, .3); }
-.switch input:checked { background: var(--accent); }
+[data-theme="light"] .switch input { background: rgba(var(--accent-rgb), 0.20); }
+.switch input:checked { background: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.20); }
 .switch input::after {
   width: 18px; height: 18px; top: 2px; left: 2px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .3);

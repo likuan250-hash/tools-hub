@@ -3,24 +3,24 @@
 // Banner(授权回调提示)
 const params = new URLSearchParams(location.search);
 const banner = document.getElementById('banner');
+// 状态横幅：渲染为玻璃胶囊（成功绿 / 失败红 / 无配置灰）
+function setBanner(level, msg) {
+  banner.className = 'banner show';
+  banner.innerHTML = statusHTML(level, msg);
+}
 if (params.get('authorized') === 'baidu') {
-  banner.className = 'banner show ok';
-  banner.textContent = '✅ 百度网盘授权成功,可以开始转存了';
+  setBanner('ok', '✅ 百度网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('authorized') === 'quark') {
-  banner.className = 'banner show ok';
-  banner.textContent = '✅ 夸克网盘授权成功,可以开始转存了';
+  setBanner('ok', '✅ 夸克网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('authorized') === 'xunlei') {
-  banner.className = 'banner show ok';
-  banner.textContent = '✅ 迅雷网盘授权成功,可以开始转存了';
+  setBanner('ok', '✅ 迅雷网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('error') === 'no_config') {
-  banner.className = 'banner show err';
-  banner.textContent = '⚠️ 尚未配置百度应用凭证,请在 .env 填写 BAIDU_CLIENT_ID / BAIDU_CLIENT_SECRET 后重启';
+  setBanner('off', '⚠️ 尚未配置百度应用凭证,请在 .env 填写 BAIDU_CLIENT_ID / BAIDU_CLIENT_SECRET 后重启');
 } else if (params.get('error') === 'auth_failed') {
-  banner.className = 'banner show err';
-  banner.textContent = '⚠️ 百度授权失败:' + (params.get('msg') || '未知错误');
+  setBanner('err', '⚠️ 百度授权失败:' + (params.get('msg') || '未知错误'));
 }
 
 // 授权:弹窗打开对应网盘的授权/登录页
@@ -34,18 +34,15 @@ window.addEventListener('message', (e) => {
   if (e.origin !== location.origin) return;
   if (e.data && e.data.provider === 'baidu' && e.data.authorized) {
     loadAccounts();
-    banner.className = 'banner show ok';
-    banner.textContent = '✅ 百度网盘授权成功,可以开始转存了';
+    setBanner('ok', '✅ 百度网盘授权成功,可以开始转存了');
   }
   if (e.data && e.data.provider === 'quark' && e.data.authorized) {
     loadAccounts();
-    banner.className = 'banner show ok';
-    banner.textContent = '✅ 夸克网盘授权成功,可以开始转存了';
+    setBanner('ok', '✅ 夸克网盘授权成功,可以开始转存了');
   }
   if (e.data && e.data.provider === 'xunlei' && e.data.authorized) {
     loadAccounts();
-    banner.className = 'banner show ok';
-    banner.textContent = '✅ 迅雷网盘授权成功,可以开始转存了';
+    setBanner('ok', '✅ 迅雷网盘授权成功,可以开始转存了');
   }
 });
 
@@ -65,8 +62,6 @@ async function loadAccounts() {
     ];
     cards.innerHTML = defs.map(({ key, name, a }) => {
       const connected = !!(a && a.connected);
-      const dot = connected ? 'on' : 'off';
-      const txt = connected ? '已连接' : '未连接';
       // 已登录但实时联网探测未通过: 区分「登录态真失效」与「仅网络探测不通」
       let warn = '';
       if (connected && a.pingOK === false && a.detail) {
@@ -110,7 +105,7 @@ async function loadAccounts() {
       }
       return `<div class="card">
         <div class="name">${name}</div>
-        <div class="status"><span class="dot ${dot}"></span>${txt}</div>
+        <div class="status">${statusHTML(reallyBad ? 'err' : (connected ? 'ok' : 'off'), reallyBad ? '登录态失效' : (connected ? '已连接' : '未连接'))}</div>
         ${warn}${diag}
         ${dirRow}
         ${authLink}
@@ -168,10 +163,11 @@ function renderTasks() {
     const okCount = list.filter((t) => t.status === 'success').length;
     const failCount = list.filter((t) => t.status === 'failed').length;
     const summary = failCount ? `${okCount} 成功 / ${failCount} 失败` : `${okCount} 成功`;
+    const summaryPill = failCount ? statusHTML('err', summary) : statusHTML('ok', summary);
     const sorted = [...list].sort((a, b) => (PROVIDER_ORDER[a.provider] ?? 9) - (PROVIDER_ORDER[b.provider] ?? 9));
     const rows = sorted.map((t) => {
       const name = t.provider === 'baidu' ? '百度' : t.provider === 'quark' ? '夸克' : t.provider === 'xunlei' ? '迅雷' : t.provider;
-      const badge = t.status === 'success' ? '<span class="badge ok">成功</span>' : '<span class="badge fail">失败</span>';
+      const badge = t.status === 'success' ? statusHTML('ok', '成功', { size: 'sm' }) : statusHTML('err', '失败', { size: 'sm' });
       const time = new Date(t.createdAt).toLocaleString('zh-CN');
       let actions = '';
       if (t.status === 'success' && t.shareLink) {
@@ -194,7 +190,7 @@ function renderTasks() {
       <div class="group-head">
         <span class="group-title">${escapeHtml(title)}</span>
         <span class="group-actions">
-          <span class="group-summary">${summary}</span>
+          <span class="group-summary">${summaryPill}</span>
           ${hasOk ? `<button class="group-copy" data-copy-group="${gi}">📋 复制本组</button>` : ''}
         </span>
       </div>
@@ -373,7 +369,7 @@ function renderResults(results) {
   const html = lastResults.map((res) => {
     const name = PROVIDER_NAME[res.provider] || res.provider;
     if (!res.ok) {
-      return `<div class="br-card fail"><div class="br-name">${name}</div><div class="br-meta">❌ ${escapeHtml(res.error)}</div></div>`;
+      return `<div class="br-card fail">${statusHTML('err', '失败', { size: 'sm' })}<div class="br-name">${name}</div><div class="br-meta">❌ ${escapeHtml(res.error)}</div></div>`;
     }
     const link = res.share && res.share.link ? res.share.link : '';
     const count = res.files ? res.files.length : 0;
@@ -389,6 +385,7 @@ function renderResults(results) {
       </div>`;
     }
     return `<div class="br-card">
+      ${statusHTML('ok', '成功', { size: 'sm' })}
       <div class="br-name">${name}</div>
       <div class="br-meta">${metaLine}</div>
       ${linkArea}
@@ -424,7 +421,7 @@ batchBtn.onclick = async () => {
   const jobs = getSelectedJobs();
   if (!jobs.length) {
     batchErr.className = 'err show';
-    batchErr.textContent = parsedState.order.length ? '请至少勾选 1 个网盘' : '没识别到任何网盘链接';
+    batchErr.innerHTML = statusHTML('err', parsedState.order.length ? '请至少勾选 1 个网盘' : '没识别到任何网盘链接');
     return;
   }
   batchBtn.disabled = true; batchBtn.textContent = '转存中…';
@@ -444,7 +441,7 @@ batchBtn.onclick = async () => {
     renderResults(d.results);
     loadTasks();
   } catch (e) {
-    batchErr.className = 'err show'; batchErr.textContent = '❌ ' + e.message;
+    batchErr.className = 'err show'; batchErr.innerHTML = statusHTML('err', '❌ ' + e.message);
   } finally {
     batchBtn.disabled = false; batchBtn.textContent = '🚀 转存选中并生成分享';
   }
@@ -555,16 +552,24 @@ document.getElementById('clearFailed').addEventListener('click', async () => {
 // ── 右上角版本徽章（只读，更新由工具箱统一管理）──
 const verBadge = document.getElementById('verBadge');
 async function loadVersion() {
+  // 版本数据加载中：先给出「检测中」视觉反馈（蓝 info 呼吸态），避免请求期间空白
+  verBadge.innerHTML = statusHTML('info', '检测中…');
   try {
     const r = await fetch('/api/version');
     const d = await r.json();
     const prefix = d.source === 'tools-hub' ? '工具箱 ' : '独立 ';
-    verBadge.textContent = prefix + 'v' + d.version;
+    if (d.updatable === true) {
+      // 有新版本：琥珀 warn（当前服务端固定返回 updatable:false，分支结构保留，数据可判定时自然触发）
+      verBadge.innerHTML = statusHTML('warn', '有新版本');
+    } else {
+      // 最新：绿 ok
+      verBadge.innerHTML = statusHTML('ok', prefix + 'v' + d.version);
+    }
     verBadge.title = d.source === 'tools-hub'
       ? '由工具箱统一管理，更新请通过工具箱'
       : '独立运行模式';
     verBadge.classList.add('readonly');
-  } catch (e) { verBadge.textContent = 'v?'; }
+  } catch (e) { verBadge.innerHTML = statusHTML('off', 'v?'); }
 }
 
 // ── 转存目录选择(网页选目录,选完持久化,下次不再选) ──
@@ -793,6 +798,9 @@ fmtFill.addEventListener('click', () => {
 loadAccounts();
 loadTasks();
 loadVersion();
+
+// 状态胶囊光标光斑（info 态 hover 随动）
+if (typeof bindStatusCursor === 'function') bindStatusCursor(document);
 
 // 首屏即时渲染(账户接口已改为立即返回,不再被迅雷 token 冷启动阻塞);
 // 2.8s 后再拉一次,等后台探测/迅雷 token 预热完成后刷新卡片上的「联网校验」提示。

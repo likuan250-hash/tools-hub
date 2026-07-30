@@ -41,6 +41,10 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: npm test
 
+      - name: Verify status-luxe sync (三处副本逐字节一致)
+        working-directory: netdisk-hub
+        run: node ../scripts/verify-status-luxe-sync.js
+
       - name: Install Playwright Chromium (bundled into node_modules)
         working-directory: netdisk-hub
         env:

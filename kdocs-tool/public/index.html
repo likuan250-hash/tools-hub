@@ -49,17 +49,6 @@
       font-family: var(--mono-font); white-space: nowrap;
     }
     .ver-badge:hover { transform: translateY(-2px); background: rgba(255,255,255,0.14); }
-    .ver-badge.latest { color: var(--ok); }
-    .ver-badge.checking { color: var(--accent-2); }
-    .ver-badge.has-update {
-      color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      border-color: transparent; box-shadow: 0 6px 20px rgba(var(--accent-rgb),0.4);
-      animation: badgePulse 1.6s ease-in-out infinite;
-    }
-    @keyframes badgePulse {
-      0%, 100% { box-shadow: 0 6px 20px rgba(var(--accent-rgb),0.4); }
-      50% { box-shadow: 0 6px 28px rgba(var(--accent2-rgb),0.65); }
-    }
 
     .status-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
     .chip {
@@ -424,6 +413,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     /* 主题由工具箱统一管理，内嵌项目自身的主题按钮永久隐藏 */
     #themeBtn { display: none !important; }
   </style>
+  <link rel="stylesheet" href="status-luxe.css" />
 </head>
 <body>
 <div class="wrap">
@@ -504,6 +494,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
 </div>
 
 <div class="toast" id="toast"></div>
+<script src="status-luxe.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

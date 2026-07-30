@@ -123,8 +123,7 @@
           <div class="card-title">${t.name}</div>
           <div class="card-desc">${t.desc}</div>
           <div class="card-meta">
-            <span class="dot ${running ? "ok" : "bad"}"></span>
-            <span>${running ? "在线" : "离线"}</span>
+            ${statusHTML(running ? "ok" : "off", running ? "在线" : "离线")}
             <span class="card-port">${t.url.replace("http://localhost:", "端口 ")}</span>
           </div>
         </div>
@@ -438,8 +437,21 @@
     serviceStatus = status || {};
     const keys = Object.keys(serviceStatus);
     const online = keys.filter((k) => serviceStatus[k] && serviceStatus[k].running).length;
-    aggEl.textContent = `服务状态：${online}/${keys.length} 在线`;
+    const kdocsLevel = (serviceStatus.kdocs && serviceStatus.kdocs.running) ? 'ok' : 'off';
+    const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
+    const agg = aggregateStatus([kdocsLevel, netdiskLevel]);
+    aggEl.innerHTML = statusHTML(aggColorLevel(agg), aggLabel(agg));
     renderCards();
+  }
+  // 入口聚合标签：err→异常 / off→离线 / warn→需注意 / info→检测中 / ok→全部正常
+  function aggLabel(level) {
+    switch (level) {
+      case 'err': return '异常';
+      case 'off': return '离线';
+      case 'warn': return '需注意';
+      case 'info': return '检测中';
+      default: return '全部正常';
+    }
   }
   if (api && api.getStatus) {
     api.getStatus().then(renderStatus).catch(() => renderStatus({}));
@@ -450,8 +462,8 @@
   }
 
   // ── 更新 ──
-  function setUpdateUI(text, busy) {
-    updateStatusEl.textContent = text || "";
+  function setUpdateUI(text, busy, level) {
+    updateStatusEl.innerHTML = level ? statusHTML(level, text || "") : (text || "");
     updateBtn.disabled = !!busy;
     updateBtn.textContent = busy ? "⏳ 检查中…" : "🔄 检测更新";
   }
@@ -459,31 +471,31 @@
     api.onUpdateStatus((p) => {
       switch (p.state) {
         case "checking":
-          setUpdateUI("正在检查更新…", true);
+          setUpdateUI("正在检查更新…", true, "info");
           break;
         case "available":
-          setUpdateUI(`发现新版本 ${p.version}，正在下载…`, true);
+          setUpdateUI(`发现新版本 ${p.version}，正在下载…`, true, "info");
           break;
         case "progress":
-          setUpdateUI(`下载中 ${Math.round(p.percent || 0)}%`, true);
+          setUpdateUI(`下载中 ${Math.round(p.percent || 0)}%`, true, "info");
           break;
         case "downloaded":
-          setUpdateUI(`新版本 ${p.version} 已下载`, false);
+          setUpdateUI(`新版本 ${p.version} 已下载`, false, "ok");
           updateBtn.textContent = "🚀 立即安装";
           updateBtn.onclick = () => api.installUpdate && api.installUpdate();
           break;
         case "not-available":
-          setUpdateUI("当前已是最新", false);
+          setUpdateUI("当前已是最新", false, "ok");
           break;
         case "error":
-          setUpdateUI(`更新失败：${p.message || ""}`, false);
+          setUpdateUI(`更新失败：${p.message || ""}`, false, "err");
           break;
       }
     });
   }
   updateBtn.onclick = () => {
     if (api && api.checkUpdate) {
-      api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + (e.message || ""), false));
+      api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + (e.message || ""), false, "err"));
     }
   };
 
@@ -518,4 +530,7 @@
 
   // 初始化：默认显示入口页标签
   switchTab(HOME_KEY);
+
+  // 状态胶囊光标光斑（info 态 hover 随动）
+  if (typeof bindStatusCursor === "function") bindStatusCursor(document);
 })();

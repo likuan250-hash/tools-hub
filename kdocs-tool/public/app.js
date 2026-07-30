@@ -59,14 +59,13 @@ kdocsViewBtn.onclick = openKdocsView;
 
 // ── Toast ──
 function toastMsg(msg, type) {
-  toast.textContent = msg;
-  toast.style.background = type === "err" ? "var(--err)" : "var(--ok)";
+  toast.innerHTML = statusHTML(type === "err" ? "err" : "ok", msg);
   toast.classList.add("show");
   setTimeout(() => toast.classList.remove("show"), 2500);
 }
 
 function setChip(el, ok, label) {
-  el.innerHTML = `<span class="dot ${ok ? "green" : "red"}"></span> ${label}`;
+  el.innerHTML = statusHTML(ok ? "ok" : "off", label);
 }
 
 // ── 启动检查 ──
@@ -205,6 +204,10 @@ function buildStepDetail(s) {
 function renderStep(s) {
   const icon = s.status === "成功" ? "✅" : s.status === "跳过" ? "⏭️" : s.status === "失败" ? "❌" : s.status === "警告" ? "⚠️" : "🔄";
   const detail = buildStepDetail(s);
+  // 状态 → 等级映射（玻璃胶囊三重编码）
+  const LEVEL = { "进行中": "info", "成功": "ok", "失败": "err", "跳过": "off", "警告": "warn" };
+  const lvl = LEVEL[s.status] || "info";
+  const label = esc(s.name) + " — " + s.status;
   let item = stepEls[s.index];
   if (!item) {
     item = document.createElement("div");
@@ -212,7 +215,7 @@ function renderStep(s) {
     autoSteps.appendChild(item);
     stepEls[s.index] = item;
   }
-  item.innerHTML = '<span class="step-icon">' + icon + '</span><div class="step-body"><div class="step-name">' + esc(s.name) + " — " + s.status + "</div>" + (detail ? '<div class="step-detail">' + detail + "</div>" : "") + "</div>";
+  item.innerHTML = '<span class="step-icon">' + icon + '</span><div class="step-body"><div class="step-name">' + statusHTML(lvl, label) + "</div>" + (detail ? '<div class="step-detail">' + detail + "</div>" : "") + "</div>";
   // 进行中的步骤高亮提示，完成后取消
   if (s.status === "进行中") {
     addLog("info", "🔄 进行中：" + s.name);
@@ -397,15 +400,26 @@ function addLog(type, msg) {
 // ── 右上角版本徽章（只读，更新由工具箱统一管理）──
 const verBadge = $("verBadge");
 async function loadVersion() {
+  // 版本数据加载中：先给出「检测中」视觉反馈（蓝 info 呼吸态），避免请求期间空白
+  verBadge.innerHTML = statusHTML('info', '检测中…');
   try {
     const r = await fetch("/api/version");
     const d = await r.json();
     const prefix = d.source === "tools-hub" ? "工具箱 " : "独立 ";
-    verBadge.textContent = prefix + "v" + d.version;
+    if (d.updatable === true) {
+      // 有新版本：琥珀 warn（当前服务端固定返回 updatable:false，分支结构保留，数据可判定时自然触发）
+      verBadge.innerHTML = statusHTML('warn', '有新版本');
+    } else {
+      // 最新：绿 ok
+      verBadge.innerHTML = statusHTML('ok', prefix + "v" + d.version);
+    }
     verBadge.title = d.source === "tools-hub"
       ? "由工具箱统一管理，更新请通过工具箱"
       : "独立运行模式";
     verBadge.classList.add("readonly");
-  } catch { verBadge.textContent = "v?"; }
+  } catch { verBadge.innerHTML = statusHTML('off', "v?"); }
 }
 loadVersion();
+
+// 状态胶囊光标光斑（info 态 hover 随动）
+if (typeof bindStatusCursor === "function") bindStatusCursor(document);

@@ -333,6 +333,7 @@ async function checkSession() {
 module.exports = {
   FOLDER_NAME,
   parseLink,
+  mapExpiredType,
   getValidCookie,
   checkSession,
   getStoken,

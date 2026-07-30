@@ -409,6 +409,7 @@ module.exports = {
   verifyCookie,
   ensureDir,
   parseSurl,
+  parseCleanCookie,
   getShareList,
   transfer,
   listDir,

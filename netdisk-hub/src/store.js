@@ -15,7 +15,10 @@ const STORE_FILE = path.join(DATA_DIR, 'store.json');
 // 密钥+密文同时泄露才会暴露凭证——相比纯明文已显著增强。
 // 注：真正的「每机器绑定」需 Windows DPAPI(需原生模块，CI 不便)，此处为务实方案，
 // 后续可平滑替换为 electron.safeStorage(主进程) 或 win-dpapi。
-const KEY_FILE = path.resolve(DATA_DIR, '..', '..', '.masterkey'); // → userData/.masterkey
+// NETDISK_KEY_FILE 允许外部(含测试)指定主密钥落盘路径；缺省保持原行为 → userData/.masterkey。
+const KEY_FILE = process.env.NETDISK_KEY_FILE
+  ? path.resolve(process.env.NETDISK_KEY_FILE)
+  : path.resolve(DATA_DIR, '..', '..', '.masterkey');
 let _key = null;
 function getKey() {
   if (_key) return _key;
@@ -207,4 +210,7 @@ function getTasks() {
   return d.tasks || [];
 }
 
-module.exports = { getAccount, saveAccount, addTask, getTasks, getDir, setDir, read, write, flushWrite, backupAndRemoveFailed };
+module.exports = {
+  getAccount, saveAccount, addTask, getTasks, getDir, setDir, read, write, flushWrite, backupAndRemoveFailed,
+  encryptObj, decryptObj, // 导出供加解密往返/篡改检测测试
+};

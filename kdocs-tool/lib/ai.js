@@ -6,6 +6,7 @@
 // 用户粘贴的游戏名/网盘链接不再拼进 shell 命令字符串，消除命令注入且特殊字符不再导致调用失败。
 const { spawn } = require("child_process");
 const path = require("path");
+const { INTRO_BLACKLIST, isBadIntro, isBadSize } = require("./constants");
 
 // bl CLI 调用方式解析：
 // 打包/开发态 BL_BIN_PATH 指向 resources/bin/bl.cmd，内部用 resources/node/node.exe 跑
@@ -75,12 +76,6 @@ async function checkBlAvailable() {
   catch { return false; }
 }
 
-// 免责声明黑名单：bl 可能把"严禁编造"理解成"查不到就说虚构"
-const INTRO_BLACKLIST = /疑似虚构|无法确认|经核实无真实|请勿轻信|非官方渠道|暂无公开资料|无法核实|没有公开资料|不存在|误传|虚构/gi;
-const SIZE_EMPTY = /^(无|未知|none|null|未抓取到)?$/i;
-
-function isBadIntro(s) { return !s || INTRO_BLACKLIST.test(s) || s.length < 10; }
-function isBadSize(s) { return !s || SIZE_EMPTY.test(s.trim()); }
 
 /**
  * 构建简介 prompt（只做介绍+可选大小）。

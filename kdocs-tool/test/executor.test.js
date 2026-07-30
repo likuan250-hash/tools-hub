@@ -1,7 +1,7 @@
 // executor.test.js — 编排流程单元测试（注入 fake deps，不依赖外部 CLI）
 const test = require("node:test");
 const assert = require("node:assert");
-const { autoExecute } = require("../lib/executor");
+const { autoExecute, findExistingRecord, buildRecordFields, resolveGameSize } = require("../lib/executor");
 
 function baseParsed(over = {}) {
   return {
@@ -231,4 +231,54 @@ test("查重未命中 → 正常创建（action=created），list_records 先于
   const fns = deps._state().calls.filter(c => c.fn === "dbsheet.list_records" || c.fn === "dbsheet.create_records").map(c => c.fn);
   assert.ok(fns.includes("dbsheet.list_records"), "应先查重");
   assert.ok(fns.indexOf("dbsheet.list_records") < fns.indexOf("dbsheet.create_records"), "查重先于创建");
+});
+
+// ── 重构后纯函数单测（2026-07-30 评审+重构演练新增）──
+test("resolveGameSize 优先级：夸克 > ai > parsed > 空", () => {
+  assert.strictEqual(resolveGameSize("30.7G", "", ""), "30.7G", "夸克真实字节最准，应优先");
+  assert.strictEqual(resolveGameSize("", "25G", "5G"), "25G", "无夸克时 ai 优先于 parsed");
+  assert.strictEqual(resolveGameSize("", "", "20G"), "20G");
+  assert.strictEqual(resolveGameSize("", "", ""), "", "全空返回空串（不写字段）");
+});
+
+test("buildRecordFields 组装字段（网盘链接 + 封面对象）", () => {
+  const parsed = baseParsed({ baiduUrl: "https://pan.baidu.com/s/b", quarkUrl: "https://pan.quark.cn/s/q" });
+  const fields = buildRecordFields(parsed, { desc: "介绍文本", coverPath: "/x/cover.jpg", objectId: "obj9", gameSize: "30.7G", coverSize: 1234 });
+  assert.strictEqual(fields["游戏名称"], parsed.raw);
+  assert.strictEqual(fields["游戏介绍"], "介绍文本");
+  assert.strictEqual(fields["游戏大小"], "30.7G");
+  assert.deepStrictEqual(fields["百度网盘"], [{ address: parsed.baiduUrl, displayText: parsed.baiduUrl }]);
+  assert.deepStrictEqual(fields["夸克网盘"], [{ address: parsed.quarkUrl, displayText: parsed.quarkUrl }]);
+  assert.strictEqual(fields["作品展示"][0].uploadId, "obj9");
+  assert.strictEqual(fields["作品展示"][0].size, 1234);
+  assert.strictEqual(fields["作品展示"][0].type, "image/jpeg");
+});
+
+test("buildRecordFields 无 objectId 时不带封面对象，无大小不写大小字段", () => {
+  const fields = buildRecordFields(baseParsed(), { desc: "x", coverPath: "/x/c.jpg", objectId: null, gameSize: "", coverSize: 0 });
+  assert.strictEqual(fields["作品展示"], undefined, "无 objectId 不应带封面对象");
+  assert.strictEqual(fields["游戏大小"], undefined, "无大小不写字段");
+});
+
+test("findExistingRecord 持续返回 offset 时不超过 MAX_PAGES 页（防死循环）", async () => {
+  let calls = 0;
+  const deps = { callMcporter: async () => { calls++; return { data: { detail: { records: [], offset: "off-" + calls } } }; } };
+  const res = await findExistingRecord(baseParsed(), deps);
+  assert.strictEqual(res.exists, false);
+  assert.ok(calls <= 50, `翻页次数 ${calls} 应 ≤ 50，实际 ${calls}`);
+});
+
+test("查重命中 + updateLinks 但更新失败 → success:false 且 action:update_failed", async () => {
+  const deps = baseDeps({
+    listRecords: [DUP_REC],
+    callMcporter: (fn) => {
+      if (fn === "dbsheet.update_records") throw new Error("网络错误");
+      if (fn === "dbsheet.list_records") return { data: { detail: { records: [DUP_REC] } } };
+      if (fn === "upload_attachment") return { object_id: "obj1" };
+      return { data: { records: [{ id: "r1" }] } };
+    },
+  });
+  const res = await autoExecute(baseParsed({ baiduUrl: "https://pan.baidu.com/s/new" }), null, "/tmp", { deps, updateLinks: true });
+  assert.strictEqual(res.success, false, "更新失败应 success:false");
+  assert.strictEqual(res.action, "update_failed", "更新失败 action 语义应为 update_failed（而非 updated 误导）");
 });

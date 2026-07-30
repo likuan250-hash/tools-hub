@@ -5,6 +5,7 @@ const steam = require("./steam");
 const kdocs = require("./kdocs");
 const ai = require("./ai");
 const quark = require("./quark");
+const { isBadIntro } = require("./constants");
 
 // 默认依赖（真实实现）；测试可通过 opts.deps 覆盖任意项注入 mock
 const DEFAULT_DEPS = {
@@ -20,9 +21,6 @@ const DEFAULT_DEPS = {
   getTotalSize: quark.getTotalSize,
 };
 
-// 免责声明黑名单：丢弃含免责声明的介绍，用原始游戏名兜底
-const INTRO_BLACKLIST = /疑似虚构|无法确认|经核实无真实|请勿轻信|非官方渠道|暂无公开资料|无法核实|没有公开资料|不存在|误传|虚构/gi;
-
 // ── 查重：翻页拉全表，比对「游戏名称」字段，精确匹配 parsed.raw ──
 // 返回 { exists, recordId, existingLinks:{baidu,quark,xunlei} }
 // deps 可注入（测试用）；默认走真实 kdocs
@@ -30,7 +28,10 @@ async function findExistingRecord(parsed, deps = DEFAULT_DEPS) {
   const target = parsed.raw;
   let offset = "";
   let match = null;
-  while (true) {
+  let page = 0;
+  const MAX_PAGES = 50; // 防 API 异常持续返回 offset 导致无限翻页
+  while (page < MAX_PAGES) {
+    page++;
     const res = await deps.callMcporter("dbsheet.list_records", { sheet_id: 1, page_size: 100, offset });
     const detail = res && res.data && res.data.detail;
     const recs = (detail && detail.records) || [];
@@ -119,7 +120,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       return result;
     } catch (e) {
       fail({ name: "更新网盘链接", error: e.message });
-      const result = { steps, recordId: dup.recordId, success: false, action: "updated", gameName: parsed.gameName };
+      const result = { steps, recordId: dup.recordId, success: false, action: "update_failed", gameName: parsed.gameName };
       emit({ type: "done", result });
       return result;
     }
@@ -152,10 +153,9 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     englishName: parsed.englishName,
   });
   // 内容质量校验：丢弃免责声明
-  let desc = aiRes.intro && !INTRO_BLACKLIST.test(aiRes.intro) ? aiRes.intro : "";
-  if (desc) ok({ name: "游戏介绍生成", desc });
-  else skip({ name: "游戏介绍生成", reason: "bl 未返回有效介绍或含免责声明" });
-  if (!desc) desc = parsed.raw;
+  let desc = aiRes.intro;
+  if (desc && !isBadIntro(desc)) ok({ name: "游戏介绍生成", desc });
+  else { skip({ name: "游戏介绍生成", reason: "bl 未返回有效介绍或含免责声明" }); desc = parsed.raw; }
 
   // 4. 下载封面（优先级：Steam 官方 CDN → bl 联网搜真实封面(中英文双搜+下载校验) → 手动链接 → 留空）
   let coverPath = null;
@@ -232,24 +232,10 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 
   // 6. 创建记录
   doing({ name: "创建多维表记录" });
-  const fields = {
-    游戏名称: parsed.raw,
-    游戏介绍: desc || parsed.raw,
-    游戏信息: parsed.tags,
-    更新日期: new Date().toISOString().split("T")[0].replace(/-/g, "/"),
-  };
   // 游戏大小：夸克真实求和优先（准确），其次 bl 简介附带，再次文本识别
-  const gameSize = quarkSize || aiRes.size || parsed.size;
-  if (gameSize) fields["游戏大小"] = gameSize;
-  if (parsed.baiduUrl) fields["百度网盘"] = [{ address: parsed.baiduUrl, displayText: parsed.baiduUrl }];
-  if (parsed.quarkUrl) fields["夸克网盘"] = [{ address: parsed.quarkUrl, displayText: parsed.quarkUrl }];
-  if (parsed.xunleiUrl) fields["迅雷网盘"] = [{ address: parsed.xunleiUrl, displayText: parsed.xunleiUrl }];
-  if (objectId && coverPath) {
-    const s = deps.fs.statSync(coverPath);
-    const ext = path.extname(coverPath).slice(1).toLowerCase();
-    const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-    fields["作品展示"] = [{ fileName: `${parsed.gameName}_cover.${ext}`, size: s.size, source: "upload_ks3", type: mime, uploadId: objectId }];
-  }
+  const gameSize = resolveGameSize(quarkSize, aiRes.size, parsed.size);
+  const coverSize = (objectId && coverPath) ? deps.fs.statSync(coverPath).size : 0;
+  const fields = buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize });
 
   let recordId = null;
   try {
@@ -274,4 +260,30 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   return result;
 }
 
-module.exports = { autoExecute, findExistingRecord, DEFAULT_DEPS, INTRO_BLACKLIST };
+// ── 纯函数（不依赖外部 IO，可单测）──
+// 游戏大小优先级：夸克真实求和 > bl 简介附带 > 文本识别 > 空
+function resolveGameSize(quarkSize, aiSize, parsedSize) {
+  return quarkSize || aiSize || parsedSize || "";
+}
+
+// 组装多维表字段（封面对象仅当 objectId+coverPath 都存在时附带）
+function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize }) {
+  const fields = {
+    游戏名称: parsed.raw,
+    游戏介绍: desc || parsed.raw,
+    游戏信息: parsed.tags,
+    更新日期: new Date().toISOString().split("T")[0].replace(/-/g, "/"),
+  };
+  if (gameSize) fields["游戏大小"] = gameSize;
+  if (parsed.baiduUrl) fields["百度网盘"] = [{ address: parsed.baiduUrl, displayText: parsed.baiduUrl }];
+  if (parsed.quarkUrl) fields["夸克网盘"] = [{ address: parsed.quarkUrl, displayText: parsed.quarkUrl }];
+  if (parsed.xunleiUrl) fields["迅雷网盘"] = [{ address: parsed.xunleiUrl, displayText: parsed.xunleiUrl }];
+  if (objectId && coverPath) {
+    const ext = path.extname(coverPath).slice(1).toLowerCase();
+    const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+    fields["作品展示"] = [{ fileName: `${parsed.gameName}_cover.${ext}`, size: coverSize, source: "upload_ks3", type: mime, uploadId: objectId }];
+  }
+  return fields;
+}
+
+module.exports = { autoExecute, findExistingRecord, DEFAULT_DEPS, buildRecordFields, resolveGameSize };

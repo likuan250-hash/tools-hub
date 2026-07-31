@@ -494,6 +494,15 @@
   }
 
   // ── 更新 ──
+  /** 提取错误的可读摘要（electron-updater 原始 message 常含 URL/堆栈/HTTP 细节） */
+  function cleanErrMsg(raw) {
+    if (!raw) return "未知错误";
+    const s = String(raw).trim();
+    // 只取第一行（真实消息通常在第一行，后面是堆栈或 URL 列表）
+    const first = s.split(/\n/)[0].trim();
+    // 截断到 80 字符，防止撑爆 UI
+    return first.length > 80 ? first.slice(0, 77) + "…" : first;
+  }
   function setUpdateUI(text, busy, level) {
     updateStatusEl.innerHTML = level
       ? ((typeof statusHTML === "function") ? statusHTML(level, text || "") : (text || ""))
@@ -522,14 +531,18 @@
           setUpdateUI("当前已是最新", false, "ok");
           break;
         case "error":
-          setUpdateUI(`更新失败：${p.message || ""}`, false, "err");
+          const msg = cleanErrMsg(p.message);
+          // 对已知临时性问题给友好提示
+          const hint = /latest\.yml|Cannot find|404|network|timeout/i.test(msg)
+            ? "（可能正在构建中，稍后重试）" : "";
+          setUpdateUI(`更新失败：${msg}${hint}`, false, "err");
           break;
       }
     });
   }
   updateBtn.onclick = () => {
     if (api && api.checkUpdate) {
-      api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + (e.message || ""), false, "err"));
+      api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + cleanErrMsg(e.message), false, "err"));
     }
   };
 

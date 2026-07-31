@@ -15,6 +15,10 @@ const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const COOKIES_DIR = DATA_DIR;
 const DEFAULT_COOKIES_PATH = path.join(COOKIES_DIR, 'cookies.json');
 
+// biliup 登录信息文件（LoginInfo 结构）：由 web cookie 经 token 换取后生成，供 -u 使用。
+// 与扁平 web cookie 的 cookies.json 分离，避免破坏 account/comment/season 等依赖 web cookie 的模块。
+const DEFAULT_LOGIN_INFO_PATH = path.join(COOKIES_DIR, 'login_info.json');
+
 // ── 默认配置（带 PRD/设计已知值；其余 UI 可编辑）──
 // 已知常量：tid=17(单机游戏)、seasonId=6918057、sectionId=7630305、copyright=1、
 // noReprint=1、line=bda2、uid=236743002、comment 固定文案。
@@ -77,6 +81,7 @@ function mergeDefaults(obj) {
   // 不受历史 config.json 中旧值（如 D:\biliupR\...）影响，避免升级后路径失效。
   out.biliupExePath = biliupBin.resolveBiliupBin();
   out.cookiesPath = DEFAULT_COOKIES_PATH;
+  out.loginInfoPath = DEFAULT_LOGIN_INFO_PATH;
   if (typeof out.ffmpegPath !== 'string') out.ffmpegPath = def.ffmpegPath;
   return out;
 }
@@ -134,5 +139,7 @@ module.exports = {
   DATA_DIR,
   COOKIES_DIR,
   COOKIES_PATH: DEFAULT_COOKIES_PATH,
+  LOGIN_INFO_PATH: DEFAULT_LOGIN_INFO_PATH,
   getCookiesPath: () => DEFAULT_COOKIES_PATH,
+  getLoginInfoPath: () => DEFAULT_LOGIN_INFO_PATH,
 };

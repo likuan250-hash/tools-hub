@@ -1,4 +1,4 @@
-// lib/command.js —— 命令拼装 + 临时脚本执行（biliup-rs 坑点核心）
+// lib/command.js —— 命令拼装 + 临时脚本执行（biliup-cli v0.2.4 实参语法核心）
 //
 // 已知坑点（见 docs/system_design.md §1.3）：
 //   1) --extra-fields 在 subprocess 列表模式不生效 → 完整命令写入临时脚本文件再执行。
@@ -6,15 +6,22 @@
 //   3) 双引号在 ps1 内用反引号 ` 转义（" → `"）。
 //   4) 执行：powershell -NoProfile -ExecutionPolicy Bypass -File <tmp>。
 //
-// biliup-rs CLI 参数名（v1.2.1 形态，见设计 §8.1，待实测确认）：
-//   upload --video-file --cover --title --tid --tag --copyright --no-reprint
-//          --line --desc --dtime --cookies
-// 注意：若实际 biliup 版本不接受 --video-file，应改为位置参数 <FILE>（见 buildPs1 顶部 TODO）。
+// biliup-cli v0.2.4 真实 CLI 参数（实测 bin/biliup.exe --help / upload --help）：
+//   全局: -u, --user-cookie <FILE>  登录信息文件（必须放在 upload 之前）
+//   子命令: upload [OPTIONS] [VIDEO_PATH]...
+//     --cover --title --tid --tag(逗号分隔单值) --copyright --no-reprint
+//     --line --desc --dtime
+//   注意：v0.2.4【不认识】--video-file 与 --cookies：
+//     - 视频文件是 upload 之后的【位置参数】
+//     - 鉴权走全局 -u（指向 biliup 的 LoginInfo 文件，非扁平 web cookie）
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
 const logger = require('./logger');
+// 仅用于兜底解析 LoginInfo 文件路径（真实运行 config 已携带 loginInfoPath）。
+// 这里 require store 不会形成循环依赖（store 仅依赖 biliupBin）。
+const store = require('./store');
 
 const TMP_DIR = path.join(__dirname, '..', '.tmp');
 
@@ -38,24 +45,58 @@ function batQuote(value) {
 }
 
 // ── 拼装 biliup 参数数组（不含 exe 调用符）──
-function buildArgs(req, cfg, coverPath) {
-  const args = ['upload'];
-  args.push('--video-file', ps1Quote(req.videoPath));
-  if (coverPath) args.push('--cover', ps1Quote(coverPath));
-  args.push('--title', ps1Quote(req.title || ''));
-  args.push('--tid', String(cfg.tid));
-  const tags = (req.tags && req.tags.length) ? req.tags : (cfg.tags || []);
-  for (const t of tags) {
-    if (t) args.push('--tag', ps1Quote(t));
+//
+// biliup-cli v0.2.4 真实语法（见 bin/biliup.exe upload --help / --help）：
+//   全局参数（必须放在子命令之前）：
+//     -u, --user-cookie <FILE>   登录信息文件（biliup 的 LoginInfo 结构，非扁平 web cookie）
+//   子命令：upload [OPTIONS] [VIDEO_PATH]...
+//     --video-file 不存在 → 视频文件是 upload 之后的【位置参数】，可多个
+//     --cookies 不存在 → 鉴权走全局 -u
+//     --tag 为【单个逗号分隔值】（--tag a,b,c），不能逐个 -t 分散
+//     其余 --title/--tid/--copyright/--no-reprint/--line/--desc/--cover/--dtime 均为真实 flag
+//
+// @param {Object} req { videoPath, title, tags, desc, publishMode, dtime }
+// @param {Object} cfg { biliupExePath, tid, copyright, noReprint, line, loginInfoPath, tags }
+// @param {string} [coverPath] 封面 png 路径（可选）
+// @param {{quote?:Function, multiLine?:Function}} [opts] 引号转义函数（ps1/bat 各一套）
+// @returns {string[]} 完整有序参数数组：[-u <loginInfo>, upload, ...flags, <videoPath>]
+function buildArgs(req, cfg, coverPath, opts = {}) {
+  const quote = typeof opts.quote === 'function' ? opts.quote : ps1Quote;
+  const multiLine = typeof opts.multiLine === 'function' ? opts.multiLine : ps1MultiLine;
+
+  // biliup 登录信息文件（LoginInfo 结构）：优先用 config 注入，兜底取 store 默认路径。
+  const loginInfoPath = (cfg && cfg.loginInfoPath)
+    || (store && store.getLoginInfoPath ? store.getLoginInfoPath() : '');
+
+  const args = [];
+  // ① 全局参数 -u 必须放在子命令 upload 之前（v0.2.4 全局位置）。
+  if (loginInfoPath) {
+    args.push('-u', quote(loginInfoPath));
   }
+  // ② 子命令。
+  args.push('upload');
+  // ③ 封面（可选）。
+  if (coverPath) args.push('--cover', quote(coverPath));
+  // ④ 标题 / 分区。
+  args.push('--title', quote(req.title || ''));
+  args.push('--tid', String(cfg.tid));
+  // ⑤ 标签：多个 tag 合并成【单个逗号分隔值】——v0.2.4 要求 --tag a,b,c 形态。
+  const tags = (req.tags && req.tags.length) ? req.tags : (cfg.tags || []);
+  const tagStr = tags.filter((t) => t).join(',');
+  if (tagStr) args.push('--tag', quote(tagStr));
+  // ⑥ 版权 / 转载限制。
   args.push('--copyright', String(cfg.copyright));
   args.push('--no-reprint', String(cfg.noReprint));
-  args.push('--line', ps1Quote(cfg.line));
-  args.push('--desc', ps1MultiLine(req.desc || ''));
+  // ⑦ 上传线路。
+  args.push('--line', quote(cfg.line));
+  // ⑧ 简介（多行用 multiLine 转义）。
+  args.push('--desc', multiLine(req.desc || ''));
+  // ⑨ 延时发布（仅 dtime 模式且提供了时间戳）。
   if (req.publishMode === 'dtime' && req.dtime) {
     args.push('--dtime', String(req.dtime));
   }
-  args.push('--cookies', ps1Quote(cfg.cookiesPath));
+  // ⑩ 视频文件：位置参数，放在 upload 之后、所有 flag 之后（v0.2.4 语法，绝不能用 --video-file）。
+  args.push(quote(req.videoPath));
   return args;
 }
 
@@ -69,9 +110,8 @@ function buildArgs(req, cfg, coverPath) {
  * @returns {{path:string, content:string, shell:string}}
  */
 function buildPs1(req, cfg, coverPath) {
-  // TODO(实测): biliup-rs v1.2.1 若不接受 --video-file，改为位置参数：exe + " " + ps1Quote(videoPath) + " upload ..."
   const exe = cfg.biliupExePath;
-  const args = buildArgs(req, cfg, coverPath);
+  const args = buildArgs(req, cfg, coverPath, { quote: ps1Quote, multiLine: ps1MultiLine });
   const content = [
     '& ' + ps1Quote(exe) + ' ' + args.join(' '),
   ].join('\n');
@@ -88,23 +128,8 @@ function buildBat(req, cfg, coverPath) {
   if (/[\r\n]/.test(req.desc || '')) {
     return buildPs1(req, cfg, coverPath);
   }
-  const args = ['upload'];
-  args.push('--video-file', batQuote(req.videoPath));
-  if (coverPath) args.push('--cover', batQuote(coverPath));
-  args.push('--title', batQuote(req.title || ''));
-  args.push('--tid', String(cfg.tid));
-  const tags = (req.tags && req.tags.length) ? req.tags : (cfg.tags || []);
-  for (const t of tags) {
-    if (t) args.push('--tag', batQuote(t));
-  }
-  args.push('--copyright', String(cfg.copyright));
-  args.push('--no-reprint', String(cfg.noReprint));
-  args.push('--line', batQuote(cfg.line));
-  args.push('--desc', batQuote(req.desc || ''));
-  if (req.publishMode === 'dtime' && req.dtime) {
-    args.push('--dtime', String(req.dtime));
-  }
-  args.push('--cookies', batQuote(cfg.cookiesPath));
+  // 复用 buildArgs，bat 用 batQuote（"" 转义），desc 单行用 batQuote 即可。
+  const args = buildArgs(req, cfg, coverPath, { quote: batQuote, multiLine: batQuote });
   const content = '@echo off\r\n' + '"' + exe + '" ' + args.join(' ');
   return { path: '', content, shell: 'bat' };
 }
@@ -184,6 +209,7 @@ function runViaTempScript(scriptFile, opts = {}) {
 }
 
 module.exports = {
+  buildArgs,
   buildPs1,
   buildBat,
   writeTempScript,

@@ -210,6 +210,10 @@ app.get('/api/login/poll', async (req, res) => {
     if (r.status === 'success' && r.cookies) {
       try {
         auth.saveCookies(r.cookies);
+        // 扫码一次到位：同步生成 biliup 的 LoginInfo（web cookie + token 换取，本地兜底）。
+        auth.ensureLoginInfo(r.cookies).catch((e) => {
+          logger.warn('[login] 生成 biliup LoginInfo 失败（上传前会重试）:', e.message);
+        });
         account.invalidate(); // 立即使 /api/account 缓存失效，反映新登录态
       } catch (e) {
         logger.error('[login] 写 cookie 失败:', e.message);

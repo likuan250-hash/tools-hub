@@ -10,6 +10,7 @@ const biliup = require('./biliup');
 const season = require('./season');
 const comment = require('./comment');
 const cookies = require('./cookies');
+const auth = require('./auth');
 const biliupBin = require('./biliupBin');
 const logger = require('./logger');
 
@@ -46,6 +47,16 @@ async function run(req, ctx) {
   if (!cookiesFile || !cookies.validate(cookiesFile)) {
     emit({ type: 'error', stage: 'pending', message: 'cookies 无效：缺少 SESSDATA 或 bili_jct' });
     return { ok: false, error: 'cookies 无效' };
+  }
+
+  // 生成/刷新 biliup 的 LoginInfo 文件（web cookie + token 换取；本地兜底不依赖网络）。
+  // 必须在上传前完成：biliup -u 指向该文件，缺失会直接报 open cookies file 错误。
+  try {
+    await auth.ensureLoginInfo(cookiesFile, { path: config.loginInfoPath });
+  } catch (e) {
+    logger.error('[task] 生成 biliup LoginInfo 失败:', e.message);
+    emit({ type: 'error', stage: 'pending', message: '生成 biliup 登录信息失败: ' + e.message });
+    return { ok: false, error: '生成 biliup 登录信息失败' };
   }
 
   // 标题：请求给定优先；否则 mp4 去扩展名

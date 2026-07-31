@@ -68,19 +68,94 @@ function setChip(el, ok, label) {
   el.innerHTML = statusHTML(ok ? "ok" : "off", label);
 }
 
+function setAiChip(ok, label) {
+  setChip(chipBl, ok, label || (ok ? "AI ✅ 可用" : "AI ⚠️ 不可用"));
+}
+
 // ── 启动检查 ──
 async function initCheck() {
   try {
     const r = await fetch("/api/check");
     const d = await r.json();
     setChip(chipKdocs, d.kdocsReady, d.kdocsReady ? "kdocs ✅ 已配置" : "kdocs ⚠️ 未配置");
-    setChip(chipBl, d.blAvailable, d.blAvailable ? "AI ✅ 可用" : "AI ⚠️ 不可用");
+    setAiChip(!!d.blAvailable);
+    _aiPrev = !!d.blAvailable;
   } catch {
     setChip(chipKdocs, false, "后端未连接");
-    setChip(chipBl, false, "后端未连接");
+    setAiChip(false);
+    _aiPrev = false;
   }
 }
+
+// ── P05：AI 心跳 / 掉线重连（稳定性）──
+// kdocs AI 由 bl CLI 每次 fresh spawn 检测（stateless），"掉线"=bl 瞬时不可用；
+// 前端每 30s 轮询 /api/check，状态跳变时给明显提示并自动重连，恢复自动消隐，免去人工重开页面。
+const aiBanner = $("aiBanner"), aiBannerMsg = $("aiBannerMsg"), aiReconnectBtn = $("aiReconnectBtn");
+let _aiPrev = null;          // 上一次 AI 在线状态（null=尚未探活）
+let _aiReconnecting = false; // 防止重连请求并发
+
+function showAiBanner(msg) {
+  if (aiBannerMsg) aiBannerMsg.textContent = msg;
+  if (aiBanner) aiBanner.classList.add("show");
+}
+function hideAiBanner() {
+  if (aiBanner) aiBanner.classList.remove("show");
+}
+
+async function checkAiStatus() {
+  try {
+    const r = await fetch("/api/check");
+    const d = await r.json();
+    const ok = !!d.blAvailable;
+    if (_aiPrev !== null && _aiPrev !== ok) {
+      if (ok) {
+        setAiChip(true);
+        hideAiBanner();
+        toastMsg("✅ AI 已恢复在线", "ok");
+      } else {
+        setAiChip(false);
+        showAiBanner("⚠️ AI 已掉线，正在尝试自动重连…");
+        toastMsg("⚠️ AI 已掉线，正在尝试重连", "err");
+      }
+    }
+    _aiPrev = ok;
+    return ok;
+  } catch {
+    if (_aiPrev === true) {
+      setAiChip(false);
+      showAiBanner("⚠️ 与后端失联，无法检测 AI 状态");
+    }
+    _aiPrev = false;
+    return false;
+  }
+}
+
+async function reconnectAi() {
+  if (_aiReconnecting) return;
+  _aiReconnecting = true;
+  if (aiReconnectBtn) aiReconnectBtn.disabled = true;
+  showAiBanner("🔄 正在重新连接 AI…");
+  try {
+    const r = await fetch("/api/ai/reconnect", { method: "POST" });
+    const d = await r.json();
+    const ok = !!d.blAvailable;
+    _aiPrev = ok;
+    setAiChip(ok);
+    if (ok) { hideAiBanner(); toastMsg("✅ AI 已重连", "ok"); }
+    else { showAiBanner("❌ 重连失败，AI 仍不可用，请稍后再试或检查 bl 登录"); toastMsg("❌ AI 重连失败", "err"); }
+  } catch (e) {
+    showAiBanner("❌ 重连请求失败：" + e.message);
+    toastMsg("❌ 重连请求失败：" + e.message, "err");
+  } finally {
+    _aiReconnecting = false;
+    if (aiReconnectBtn) aiReconnectBtn.disabled = false;
+  }
+}
+if (aiReconnectBtn) aiReconnectBtn.onclick = reconnectAi;
+
 initCheck();
+// 心跳：每 30s 探活一次，掉线自动提示+重连，恢复自动消隐
+setInterval(() => { checkAiStatus(); }, 30000);
 
 // ── 清空（输入框右上角）──
 clearBtn.onclick = () => {
@@ -224,7 +299,45 @@ function renderStep(s) {
   }
 }
 
-// ── 重复确认 modal 元素与互斥逻辑 ──
+// ── P09：统一弹窗机制（openModal/closeModal，来去一致、回到原页、不丢上下文）──
+let activeModal = null;
+function openModal(modalEl) {
+  if (!modalEl) return;
+  activeModal = modalEl; // 记录当前浮层，关闭即回到下层原页（不切路由、不重置表单）
+  const panel = modalEl.querySelector(".modal");
+  if (panel) {
+    panel.classList.remove("pop-in");
+    void panel.offsetWidth; // 强制 reflow 以重放入场动画
+    panel.classList.add("pop-in"); // 复用 macos-motion 的 popIn（reduced-motion 下自动降级）
+  }
+  modalEl.classList.add("show");
+}
+function closeModal() {
+  if (!activeModal) return;
+  activeModal.classList.remove("show");
+  const panel = activeModal.querySelector(".modal");
+  if (panel) panel.classList.remove("pop-in");
+  activeModal = null;
+}
+
+// ── P08：轻量任务历史（localStorage，跨会话持久，无新依赖）──
+const HISTORY_KEY_KDOCS = "toolshub:history:kdocs";
+const HISTORY_MAX = 50;
+function loadHistory(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "[]") || []; } catch { return []; }
+}
+function pushHistory(key, entry) {
+  const list = loadHistory(key);
+  list.unshift(entry); // 最新在前
+  if (list.length > HISTORY_MAX) list.length = HISTORY_MAX;
+  try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* 隐私模式可能抛错，忽略 */ }
+  return list;
+}
+function writeKdocsHistory(ok, title, status) {
+  pushHistory(HISTORY_KEY_KDOCS, { ts: Date.now(), ok: !!ok, title: title || "（未命名）", status: status || "" });
+}
+
+// ── 重复确认 modal 元素与互斥逻辑（接入 P09 统一弹窗）──
 const dupMask = $("dupMask"), dupTitle = $("dupTitle"), dupBody = $("dupBody");
 const chkForceAdd = $("chkForceAdd"), chkUpdateLinks = $("chkUpdateLinks");
 const dupCancel = $("dupCancel"), dupContinue = $("dupContinue");
@@ -244,12 +357,12 @@ function showDupModal(text, d) {
   if (d.existingLinks && d.existingLinks.xunlei) links.push("迅雷");
   dupBody.innerHTML = `记录 ID：<b>${esc(d.recordId || "")}</b><br>当前已有网盘链接：${links.length ? links.map(l => `<span class="lk">${esc(l)}</span>`).join("") : "（无）"}<br>请选择处理方式（默认跳过）：`;
   chkForceAdd.checked = false; chkUpdateLinks.checked = false;
-  dupMask.style.display = "grid";
+  openModal(dupMask);
 }
 
-dupCancel.onclick = () => { dupMask.style.display = "none"; addLog("info", "🚫 已取消（保留原记录）"); };
+dupCancel.onclick = () => { closeModal(); addLog("info", "🚫 已取消（保留原记录）"); };
 dupContinue.onclick = () => {
-  dupMask.style.display = "none";
+  closeModal();
   runAuto(_dupText, { forceAdd: chkForceAdd.checked, updateLinks: chkUpdateLinks.checked });
 };
 
@@ -352,10 +465,25 @@ async function runAuto(text, opts = {}) {
 
           // 有记录即可查看（创建/更新/跳过/封面缺失均视为有记录可查；整体失败时若已建记录也允许查看）
           kdocsViewBtn.style.display = d.recordId ? "block" : "none";
+
+          // P08：写一条录入历史（成功/失败 + 稿件标题 + 时间 + 简要状态）
+          {
+            const p = parseInput(text);
+            const title = d.gameName || (p && p.gameName) || (currentParsed && currentParsed.gameName) || "（未命名）";
+            let ok = true, status = "成功";
+            if (!d.success) { ok = false; status = "部分步骤失败"; }
+            else if (d.coverStatus === "failed") { ok = true; status = "完成(封面缺失)"; }
+            else if (d.action === "skipped") { ok = true; status = "已跳过"; }
+            else if (d.action === "updated") { ok = true; status = "已更新链接"; }
+            writeKdocsHistory(ok, title, status);
+          }
         }
       }
     }
   } catch (e) {
+    const p = parseInput(text);
+    const title = (p && p.gameName) || (currentParsed && currentParsed.gameName) || "（未命名）";
+    writeKdocsHistory(false, title, "请求异常");
     addLog("err", "❌ 请求失败: " + e.message);
     autoSummary.className = "result-summary fail";
     autoSummary.textContent = "❌ 执行异常";
@@ -423,6 +551,39 @@ loadVersion();
 
 // 状态胶囊光标光斑（info 态 hover 随动）
 if (typeof bindStatusCursor === "function") bindStatusCursor(document);
+
+// ── P08：历史展示（接入 P09 统一弹窗机制）──
+const historyMask = $("historyMask"), historyList = $("historyList");
+const historyOpenBtn = $("historyBtn"), historyCloseBtn = $("historyClose"), historyClearBtn = $("historyClear");
+
+function renderKdocsHistory() {
+  const list = loadHistory(HISTORY_KEY_KDOCS);
+  if (!list.length) { historyList.innerHTML = '<div class="history-empty">还没有录入记录</div>'; return; }
+  historyList.innerHTML = list.map((h) => {
+    const time = new Date(h.ts).toLocaleString("zh-CN");
+    const badge = h.ok ? "成功" : "失败";
+    return `<div class="history-item">
+      <span class="history-dot ${h.ok ? "ok" : "err"}"></span>
+      <div class="history-main">
+        <div class="history-title">${esc(h.title)}</div>
+        <div class="history-meta">${esc(badge + (h.status ? " · " + h.status : ""))} · ${esc(time)}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+function openKdocsHistory() {
+  renderKdocsHistory();
+  openModal(historyMask);
+}
+if (historyOpenBtn) historyOpenBtn.onclick = openKdocsHistory;
+if (historyCloseBtn) historyCloseBtn.onclick = closeModal;
+if (historyMask) historyMask.addEventListener("click", (e) => { if (e.target === historyMask) closeModal(); });
+if (historyClearBtn) historyClearBtn.onclick = () => {
+  if (confirm("确定清空全部录入历史?")) {
+    try { localStorage.removeItem(HISTORY_KEY_KDOCS); } catch { /* ignore */ }
+    renderKdocsHistory();
+  }
+};
 
 // T02：首屏入场编排（零侵入：仅给 .wrap 首屏可见块挂 pop-in + --i，复用内联 macos-motion.css 的 stagger）
 (function () {

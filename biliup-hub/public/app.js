@@ -45,6 +45,67 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  // ── 轻量 Toast（A2：明暗自动适配，3s 自动消失，复用 pop-in 入场）──
+  function toast(msg) {
+    let host = $("toastHost");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "toastHost";
+      host.className = "toast-host";
+      document.body.appendChild(host);
+    }
+    const isErr = /^❌/.test(msg || "");
+    const el = document.createElement("div");
+    el.className = "toast pop-in";
+    el.setAttribute("role", "status");
+    el.innerHTML = '<span class="toast-ico"></span><span class="toast-msg"></span>';
+    el.querySelector(".toast-ico").textContent = isErr ? "❌" : "✅";
+    el.querySelector(".toast-msg").textContent = msg;
+    host.appendChild(el);
+    // 3s 后淡出移除；reduced-motion 下过渡被全局降级为瞬隐，不影响功能。
+    setTimeout(() => {
+      el.classList.add("toast-out");
+      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+    }, 3000);
+  }
+
+  // ── 统一弹窗机制（P09：openModal/closeModal，来去一致、回到原页、不丢上下文）──
+  let activeModal = null;
+  function openModal(modalEl) {
+    if (!modalEl) return;
+    activeModal = modalEl; // 记录当前浮层，关闭即回到下层原页（不切换路由、不重置表单）
+    const panel = modalEl.querySelector(".modal");
+    if (panel) {
+      panel.classList.remove("pop-in");
+      void panel.offsetWidth; // 强制 reflow 以重放入场动画
+      panel.classList.add("pop-in"); // 复用 macos-motion 的 popIn（reduced-motion 下自动降级）
+    }
+    modalEl.classList.add("show");
+  }
+  function closeModal() {
+    if (!activeModal) return;
+    activeModal.classList.remove("show");
+    const panel = activeModal.querySelector(".modal");
+    if (panel) panel.classList.remove("pop-in");
+    activeModal = null;
+  }
+
+  // ── P08：轻量任务历史（localStorage，跨会话持久，无新依赖）──
+  const HISTORY_KEY_BILIUP = "toolshub:history:biliup";
+  const HISTORY_MAX_BILIUP = 50;
+  function loadHistoryBiliup(key) {
+    try { return JSON.parse(localStorage.getItem(key) || "[]") || []; } catch { return []; }
+  }
+  function pushHistory(key, ok, title, status) {
+    const list = loadHistoryBiliup(key);
+    list.unshift({ ts: Date.now(), ok: !!ok, title: title || "（未命名）", status: status || "" });
+    if (list.length > HISTORY_MAX_BILIUP) list.length = HISTORY_MAX_BILIUP;
+    try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* 隐私模式可能抛错，忽略 */ }
+  }
+  function escapeHtmlBiliup(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
   let selectedVideo = "";
   let running = false;
 
@@ -59,11 +120,24 @@
         const base = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
         $("titleInput").value = base; // 不再重复显示一行文件名
         $("submitHint").textContent = "已选择视频，点击🚀投稿";
+        if ($("clearBtn")) $("clearBtn").style.display = ""; // 显示「清空选择」（B）
       }
     } catch (e) {
       logLine("选择文件失败: " + e.message, "err");
     }
   });
+
+  // ── 清空选择（B：点击清空已选文件状态与展示，回到初始态）──
+  const clearBtnEl = $("clearBtn");
+  if (clearBtnEl) {
+    clearBtnEl.addEventListener("click", () => {
+      selectedVideo = "";
+      $("videoName").textContent = "";
+      clearBtnEl.style.display = "none";
+      $("titleInput").value = "";
+      $("submitHint").textContent = "选择视频后点击投稿（发布前会二次确认模式）";
+    });
+  }
 
   // ── 发布模式切换（#C：根据选中显隐 dtimeInput；切到定时发布默认填 +1h）──
   function defaultDtime() {
@@ -187,10 +261,17 @@
         body: JSON.stringify(payload),
       });
       const j = await resp.json();
-      logLine(j.ok ? "参数已保存" : "保存失败: " + (j.error || ""), j.ok ? "ok" : "err");
-      if (j.ok) loadConfig();
+      if (j.ok) {
+        logLine("参数已保存", "ok");
+        toast("✅ 参数已保存"); // A2：轻量提示
+        loadConfig(); // 回填最新值（含转载 noReprint=0 等）
+      } else {
+        logLine("保存失败: " + (j.error || ""), "err");
+        toast("❌ 保存失败");
+      }
     } catch (e) {
       logLine("保存配置失败: " + e.message, "err");
+      toast("❌ 保存失败");
     }
   });
 
@@ -265,7 +346,7 @@
       loginKey = j.qrcodeKey;
       $("qrImg").src = j.qrDataUrl;
       $("loginStatus").textContent = "请用 B站手机客户端扫码…";
-      $("loginMask").classList.add("show");
+      openModal($("loginMask")); // P09：统一弹窗机制
       if (loginTimer) clearInterval(loginTimer);
       loginTimer = setInterval(pollLogin, 2000);
     } catch (e) {
@@ -298,7 +379,7 @@
   function stopLogin() {
     if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
     loginKey = null;
-    $("loginMask").classList.remove("show");
+    closeModal(); // P09：统一弹窗机制，隐藏即回到下层原页
   }
   $("loginClose").addEventListener("click", stopLogin);
   $("loginCancel").addEventListener("click", stopLogin);
@@ -310,9 +391,9 @@
     let text = "将投稿到 B站（UID 236743002）：\n• 视频：" + (selectedVideo || "(未选择)") + "\n• 模式：";
     text += mode === "dtime" ? "定时发布 " + ($("dtimeInput").value || "") : "立即发布";
     $("confirmText").textContent = text;
-    $("confirmMask").classList.add("show");
+    openModal($("confirmMask")); // P09：统一弹窗机制
   }
-  function closeConfirm() { $("confirmMask").classList.remove("show"); }
+  function closeConfirm() { closeModal(); }
   $("confirmCancel").addEventListener("click", closeConfirm);
   $("confirmMask").addEventListener("click", (e) => { if (e.target === $("confirmMask")) closeConfirm(); });
 
@@ -360,10 +441,11 @@
         return;
       }
       await consumeSSE(resp);
-    } catch (e) {
-      logLine("投稿异常: " + e.message, "err");
-      setCapsule("err", "失败");
-    } finally {
+  } catch (e) {
+    logLine("投稿异常: " + e.message, "err");
+    setCapsule("err", "失败");
+    pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", "投稿异常");
+  } finally {
       running = false;
       $("submitBtn").disabled = false;
       refreshHealth(); // 投稿结束后刷新状态为就绪
@@ -401,14 +483,19 @@
       const m = STAGE_LABEL[ev.stage] || ["info", ev.stage];
       setCapsule(m[0], m[1]);
       if (ev.message) logLine(ev.message, ev.stage === "error" ? "err" : "stage");
-    } else if (ev.type === "done") {
-      setCapsule("ok", "成功");
-      const d = ev.data || {};
-      logLine("🎉 投稿完成！aid=" + (d.aid || "?") + " bvid=" + (d.bvid || "?") + " cid=" + (d.cid || "?") + " 合集=" + (d.season ? "已加" : "否"), "ok");
-    } else if (ev.type === "error") {
-      setCapsule("err", "失败");
-      logLine("❌ 失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
-    }
+  } else if (ev.type === "done") {
+    setCapsule("ok", "成功");
+    const d = ev.data || {};
+    const ok = d.success !== false;
+    logLine("🎉 投稿完成！aid=" + (d.aid || "?") + " bvid=" + (d.bvid || "?") + " cid=" + (d.cid || "?") + " 合集=" + (d.season ? "已加" : "否"), "ok");
+    // P08：写一条投稿历史（成功/失败 + 稿件标题 + 时间 + 简要状态）
+    pushHistory(HISTORY_KEY_BILIUP, ok, $("titleInput").value || "（未命名）", ok ? ("投稿成功" + (d.bvid ? " · " + d.bvid : "")) : (d.error || "投稿未完成"));
+  } else if (ev.type === "error") {
+    setCapsule("err", "失败");
+    logLine("❌ 失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
+    // P08：写一条投稿历史（失败）
+    pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", ev.message || "投稿失败");
+  }
   }
 
   $("submitBtn").addEventListener("click", openConfirm);
@@ -425,16 +512,51 @@
     }
   }
 
-  // ── 高级参数折叠（#F：按钮切换，初始隐藏；chevron 方向随状态旋转）──
+  // ── 高级参数弹窗（A4：点击小按钮弹出独立弹窗页，关闭后回到投稿设置页）──
   const advToggle = $("advToggle");
-  const advBody = $("advBody");
-  if (advToggle && advBody) {
-    advToggle.addEventListener("click", () => {
-      const isOpen = advBody.style.display !== "none";
-      advBody.style.display = isOpen ? "none" : "";
-      advToggle.classList.toggle("open", !isOpen);
-    });
+  const advMask = $("advMask");
+  if (advToggle && advMask) {
+    advToggle.addEventListener("click", () => openModal(advMask));
   }
+  if (advMask) {
+    const advClose = $("advClose");
+    if (advClose) advClose.addEventListener("click", closeModal);
+    // 点击遮罩空白处关闭，回到原页（不重置表单）
+    advMask.addEventListener("click", (e) => { if (e.target === advMask) closeModal(); });
+  }
+
+  // ── P08：投稿历史展示（复用 P09 统一弹窗机制）──
+  const historyMaskBiliup = $("historyMask");
+  const historyListBiliup = $("historyList");
+  const historyBtnBiliup = $("historyBtn");
+  const historyCloseBiliup = $("historyClose");
+  const historyClearBiliup = $("historyClear");
+
+  function renderBiliupHistory() {
+    const list = loadHistoryBiliup(HISTORY_KEY_BILIUP);
+    if (!list.length) { historyListBiliup.innerHTML = '<div class="history-empty">还没有投稿记录</div>'; return; }
+    historyListBiliup.innerHTML = list.map((h) => {
+      const time = new Date(h.ts).toLocaleString("zh-CN");
+      const badge = h.ok ? "成功" : "失败";
+      return `<div class="history-item">
+        <span class="history-dot ${h.ok ? "ok" : "err"}"></span>
+        <div class="history-main">
+          <div class="history-title">${escapeHtmlBiliup(h.title)}</div>
+          <div class="history-meta">${escapeHtmlBiliup(badge + (h.status ? " · " + h.status : ""))} · ${escapeHtmlBiliup(time)}</div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+  function openBiliupHistory() { renderBiliupHistory(); openModal(historyMaskBiliup); }
+  if (historyBtnBiliup) historyBtnBiliup.addEventListener("click", openBiliupHistory);
+  if (historyCloseBiliup) historyCloseBiliup.addEventListener("click", closeModal);
+  if (historyMaskBiliup) historyMaskBiliup.addEventListener("click", (e) => { if (e.target === historyMaskBiliup) closeModal(); });
+  if (historyClearBiliup) historyClearBiliup.addEventListener("click", () => {
+    if (window.confirm("确定清空全部投稿历史?")) {
+      try { localStorage.removeItem(HISTORY_KEY_BILIUP); } catch { /* ignore */ }
+      renderBiliupHistory();
+    }
+  });
 
   // ── 版本号（#B：拉 /api/version 填 verBadge，失败静默保持 "v—"）──
   async function refreshVersion() {

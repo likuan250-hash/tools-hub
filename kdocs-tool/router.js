@@ -40,6 +40,16 @@ router.get("/api/check", async (req, res) => {
   res.json({ kdocsReady: await checkKdocsReady(), blAvailable: await checkBlAvailable() });
 });
 
+// ── P05：AI 掉线重连（重新检测 bl CLI 可用性，返回最新状态；bl 为 fresh spawn，重检即重连）──
+router.post("/api/ai/reconnect", async (req, res) => {
+  try {
+    const blAvailable = await checkBlAvailable();
+    res.json({ ok: true, blAvailable });
+  } catch (e) {
+    res.json({ ok: false, blAvailable: false, error: e.message });
+  }
+});
+
 // 健康检查端点：控制面板(is_ready)仅靠 HTTP 200 判断服务存活
 router.get("/api/ready", (req, res) => {
   res.json({ ok: true, ts: Date.now(), port: 3599, bind: "127.0.0.1" });

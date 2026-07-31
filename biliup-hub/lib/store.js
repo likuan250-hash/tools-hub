@@ -46,8 +46,14 @@ function defaultConfig() {
 }
 
 let cache = null;
-let writeQueue = Promise.resolve();
-let writeScheduled = false;
+
+// 安全整数解析：空串 / null / 非有限数 → 默认值；0 与合法数字原样保留。
+// 修复 Number(0) || def 把 noReprint=0 误改写为 1 的 falsy 陷阱（A1/A3 根因）。
+function toInt(v, def) {
+  if (v === '' || v == null) return def;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : def;
+}
 
 function mergeDefaults(obj) {
   const def = defaultConfig();
@@ -58,10 +64,10 @@ function mergeDefaults(obj) {
   const OLD_COMMENT = '老规矩！！！三连后关注私信自动回复下载方式';
   if (out.comment === OLD_COMMENT) out.comment = def.comment;
   if (!Array.isArray(out.tags)) out.tags = def.tags;
-  out.tid = Number(out.tid) || def.tid;
-  out.copyright = Number(out.copyright) || def.copyright;
-  out.noReprint = Number(out.noReprint) || def.noReprint;
-  out.uid = Number(out.uid) || def.uid;
+  out.tid = toInt(out.tid, def.tid);
+  out.copyright = toInt(out.copyright, def.copyright);
+  out.noReprint = toInt(out.noReprint, def.noReprint); // 0=禁止转载，必须保留
+  out.uid = toInt(out.uid, def.uid);
   out.seasonId = String(out.seasonId == null ? def.seasonId : out.seasonId);
   out.sectionId = String(out.sectionId == null ? def.sectionId : out.sectionId);
   if (typeof out.line !== 'string' || !out.line) out.line = def.line;
@@ -103,15 +109,6 @@ function flushWrite() {
   }
 }
 
-function scheduleWrite() {
-  if (writeScheduled) return;
-  writeScheduled = true;
-  writeQueue = writeQueue.then(() => {
-    writeScheduled = false;
-    flushWrite();
-  });
-}
-
 function loadConfig() {
   ensure();
   return cache;
@@ -123,7 +120,7 @@ function getConfig() {
 
 function saveConfig(c) {
   cache = mergeDefaults(c);
-  scheduleWrite();
+  flushWrite(); // 同步原子刷盘：保存即落盘，修复「关掉重开 settings 丢失」（A1）
   return cache;
 }
 

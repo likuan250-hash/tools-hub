@@ -195,6 +195,20 @@
       border: 1px solid var(--glass-border); background: var(--bg-2);
       box-shadow: 0 30px 80px rgba(0,0,0,0.5); max-height: 80vh; display: flex; flex-direction: column;
     }
+    /* 弹窗正文区：在 modal 固定 max-height 内独立滚动（A4 高级参数弹窗） */
+    .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 14px; padding-right: 4px; }
+
+    /* 历史列表（P08） */
+    .history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    .history-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
+    .history-item:last-child { border-bottom: none; }
+    .history-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+    .history-dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .history-dot.err { background: var(--err); box-shadow: 0 0 8px var(--err); }
+    .history-main { flex: 1; min-width: 0; }
+    .history-title { font-weight: 600; word-break: break-all; }
+    .history-meta { color: var(--text-dim); font-size: 12px; margin-top: 2px; word-break: break-all; }
+    .history-empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 24px; }
     .modal-head { display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 600; }
     .modal-close { border: none; background: transparent; color: var(--text-dim); font-size: 18px; cursor: pointer; line-height: 1; }
     .modal-close:hover { color: var(--text); }
@@ -207,6 +221,28 @@
     .modal-foot .auth-btn { padding: 9px 16px; font-size: 13px; }
     .qr-box { text-align: center; margin: 10px 0 4px; }
     .qr-box img { width: 240px; height: 240px; border-radius: 12px; background: #fff; padding: 8px; }
+
+    /* 遮罩淡入（本地 keyframes，未改共享 macos-motion；reduced-motion 下被全局降级） */
+    @keyframes pop { from { opacity: 0; } to { opacity: 1; } }
+
+    /* ===== Toast（A2：轻量提示，明暗自动适配，3s 自动消失，复用 pop-in 入场） ===== */
+    .toast-host {
+      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+      display: flex; flex-direction: column; gap: 10px; align-items: center;
+      z-index: 100; pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      max-width: 80vw; padding: 12px 20px; border-radius: 14px;
+      font-size: 14px; font-weight: 600; color: var(--text);
+      border: 1px solid var(--glass-border);
+      background: var(--glass-bg); backdrop-filter: blur(18px) saturate(160%);
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .toast .toast-ico { font-size: 16px; }
+    .toast.toast-out { opacity: 0; transform: translateY(8px); transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out); }
+    [data-theme="light"] .toast { box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.7); }
 
     /* 亮色玻璃分离增强（与网盘转存完全一致） */
     [data-theme="light"] .panel,
@@ -447,6 +483,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         <!-- #7 账号区：头像(圆形)+昵称 / 登录按钮（由 app.js 动态渲染） -->
         <div class="account-area" id="accountArea"></div>
         <span id="statusCapsule"></span>
+        <button class="theme-btn" id="historyBtn" title="查看投稿历史">📜 历史</button>
         <button class="ver-badge" id="verBadge" title="由工具箱统一管理">v—</button>
         <button class="theme-btn" id="themeBtn">🌗 主题</button>
       </div>
@@ -460,6 +497,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         <div class="row">
           <button class="auth-btn" id="pickBtn" type="button">📂 浏览</button>
           <span id="videoName" class="file-name"></span>
+          <button class="auth-btn" id="clearBtn" type="button" style="display:none">🗑️ 清空选择</button>
         </div>
       </div>
     </section>
@@ -490,56 +528,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
 
       <div class="field">
         <button type="button" class="adv-toggle" id="advToggle">⚙️ 高级参数 <span class="chev">▾</span></button>
-        <div class="adv-body" id="advBody" style="display:none">
-          <div class="grid-2" style="margin-top:12px">
-            <div class="field"><label>分区 tid</label>
-              <select id="cfgTid">
-                <option value="17">单机游戏</option>
-                <option value="171">电子竞技</option>
-                <option value="172">手机游戏</option>
-                <option value="21">生活</option>
-                <option value="24">动画</option>
-              </select>
-            </div>
-            <div class="field"><label>合集</label><select id="cfgSeason"><option value="">不使用合集</option></select></div>
-            <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select></div>
-            <div class="field"><label>线路 line</label>
-              <select id="cfgLine">
-                <option value="bda2">bda2（默认）</option>
-                <option value="upos">upos</option>
-                <option value="kodo">kodo</option>
-                <option value="cos">cos</option>
-              </select>
-            </div>
-            <div class="field"><label>UID</label><input type="text" id="cfgUid" placeholder="你的 B站 UID" /></div>
-            <div class="field"><label>版权 copyright</label>
-              <select id="cfgCopyright">
-                <option value="1">自制（原创）</option>
-                <option value="2">转载</option>
-              </select>
-            </div>
-            <div class="field"><label>转载 noReprint</label>
-              <select id="cfgNoReprint">
-                <option value="1">允许转载</option>
-                <option value="0">禁止转载</option>
-              </select>
-            </div>
-          </div>
-          <div class="field" style="margin-top:16px">
-            <label>固定简介（4 行，可编辑）</label>
-            <textarea id="cfgDesc"></textarea>
-          </div>
-          <div class="field">
-            <label>置顶评论</label>
-            <textarea id="cfgComment" style="min-height:42px;"></textarea>
-          </div>
-          <div class="kpis">
-            <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
-          </div>
-          <div style="margin-top:14px">
-            <button class="auth-btn" id="saveCfgBtn" type="button">💾 保存参数</button>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -586,6 +574,85 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       </div>
     </div>
   </div>
+
+  <!-- 高级设置弹窗（A4：独立弹窗页；关闭后回到投稿设置页，不重置表单） -->
+  <div class="modal-mask" id="advMask">
+    <div class="modal">
+      <div class="modal-head">
+        <span>⚙️ 高级参数</span>
+        <button class="modal-close" id="advClose" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="grid-2">
+          <div class="field"><label>分区 tid</label>
+            <select id="cfgTid">
+              <option value="17">单机游戏</option>
+              <option value="171">电子竞技</option>
+              <option value="172">手机游戏</option>
+              <option value="21">生活</option>
+              <option value="24">动画</option>
+            </select>
+          </div>
+          <div class="field"><label>合集</label><select id="cfgSeason"><option value="">不使用合集</option></select></div>
+          <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select></div>
+          <div class="field"><label>线路 line</label>
+            <select id="cfgLine">
+              <option value="bda2">bda2（默认）</option>
+              <option value="upos">upos</option>
+              <option value="kodo">kodo</option>
+              <option value="cos">cos</option>
+            </select>
+          </div>
+          <div class="field"><label>UID</label><input type="text" id="cfgUid" placeholder="你的 B站 UID" /></div>
+          <div class="field"><label>版权 copyright</label>
+            <select id="cfgCopyright">
+              <option value="1">自制（原创）</option>
+              <option value="2">转载</option>
+            </select>
+          </div>
+          <div class="field"><label>转载 noReprint</label>
+            <select id="cfgNoReprint">
+              <option value="1">允许转载</option>
+              <option value="0">禁止转载</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" style="margin-top:16px">
+          <label>固定简介（4 行，可编辑）</label>
+          <textarea id="cfgDesc"></textarea>
+        </div>
+        <div class="field">
+          <label>置顶评论</label>
+          <textarea id="cfgComment" style="min-height:42px;"></textarea>
+        </div>
+        <div class="kpis">
+          <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
+        </div>
+        <div style="margin-top:14px">
+          <button class="auth-btn" id="saveCfgBtn" type="button">💾 保存参数</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 投稿历史弹窗（P08，复用 P09 统一弹窗机制） -->
+  <div class="modal-mask" id="historyMask">
+    <div class="modal">
+      <div class="modal-head">
+        <span>📜 投稿历史</span>
+        <button class="modal-close" id="historyClose" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="history-list" id="historyList"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="historyClear" type="button">清空历史</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 宿主（A2：toast() 动态注入子节点） -->
+  <div class="toast-host" id="toastHost"></div>
 
   <script src="status-luxe.js"></script>
   <script src="select-preserve.js"></script>

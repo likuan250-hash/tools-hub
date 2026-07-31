@@ -1,19 +1,19 @@
 // scripts/sync-status-luxe.js
 //
 // 单一来源工作流工具：把「真源」shared/status-luxe 的两份文件
-// （status-luxe.css / status-luxe.js）复制到三处前端副本
-// （renderer / netdisk-hub/public / kdocs-tool/public）。
+// （status-luxe.css / status-luxe.js）复制到四处前端副本
+// （renderer / netdisk-hub/public / kdocs-tool/public / biliup-hub/public）。
 //
 // 设计原则（对应 verify-status-luxe-sync.js 的门禁）：
-//   - 幂等：当三副本已与真源逐字节一致时，不做任何写入（no-op）。
-//   - 不破坏手工编辑：若三副本彼此不一致（疑似有人只改了其中一份），
+//   - 幂等：当四副本已与真源逐字节一致时，不做任何写入（no-op）。
+//   - 不破坏手工编辑：若四副本彼此不一致（疑似有人只改了其中一份），
 //     拒绝静默覆盖，报错退出(1)并提示先手工统一，避免误删某份的编辑。
 //   - 仅显式调用时执行：本脚本不会挂到 prepare/构建钩子，需手动
 //     `npm run sync-status-luxe`（开发者改完 shared/ 后主动同步）。
 //
 // 正常用法：
 //   1) 编辑 shared/status-luxe/status-luxe.{css,js}
-//   2) npm run sync-status-luxe   # 同步到三处前端
+//   2) npm run sync-status-luxe   # 同步到四处前端
 //   3) npm run verify:status-luxe # 可选，确认门禁仍绿
 //
 // 退出码：全部同步成功(含无变更) exit 0；检测到副本彼此分歧 exit 1。
@@ -26,6 +26,7 @@ const COPIES = [
   { name: 'renderer', dir: 'renderer' },
   { name: 'netdisk-hub', dir: 'netdisk-hub/public' },
   { name: 'kdocs-tool', dir: 'kdocs-tool/public' },
+  { name: 'biliup-hub', dir: 'biliup-hub/public' },
 ];
 const FILES = ['status-luxe.css', 'status-luxe.js'];
 
@@ -85,7 +86,7 @@ if (divergence) {
   process.exit(1);
 }
 if (changedAny) {
-  console.log('\nstatus-luxe 已以 shared/ 为真源同步到三处前端副本。');
+  console.log('\nstatus-luxe 已以 shared/ 为真源同步到四处前端副本。');
 } else {
-  console.log('\nstatus-luxe 三处前端副本已与真源一致，无需同步。');
+  console.log('\nstatus-luxe 四处前端副本已与真源一致，无需同步。');
 }

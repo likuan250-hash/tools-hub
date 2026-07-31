@@ -1,0 +1,43 @@
+sequenceDiagram
+    actor U as 用户
+    participant FE as 前端 biliup-hub/public/app.js
+    participant API as 后端 server.js (/api/upload SSE)
+    participant T as Task (lib/task.js)
+    participant CV as CoverExtractor
+    participant BU as BiliupClient
+    participant CB as CommandBuilder
+    participant SA as SeasonAdder
+    participant CM as Commenter
+    participant CK as Cookies
+
+    U->>FE: 选视频 + 填标签 + 选发布模式 → 点「投稿」
+    FE->>FE: 二次确认弹窗(立即/定时)
+    FE->>API: POST /api/upload (SSE) {videoPath, tags, mode, dtime}
+    API->>T: new Task(req, config, cookies)
+    API-->>FE: 200 SSE opened
+    T->>T: stage = pending
+    T-->>FE: event {type:'status', stage:'extracting_cover'}
+    T->>CV: extract(videoPath, ffmpegPath)
+    CV-->>T: coverPng (失败仅告警, 流程继续)
+    T-->>FE: event {type:'log', '抽封面帧1 ... ok/失败'}
+    T->>CB: buildPs1(req, cfg, coverPng)
+    CB-->>T: ScriptFile (utf-8-sig, @chcp 65001)
+    T->>BU: runUpload(script, onLog)
+    BU-->>FE: event {type:'log', line} (实时转发 child_process 输出)
+    BU-->>T: VideoRef (bvid/aid 解析自 stdout)
+    T-->>FE: event {type:'status', stage:'adding_season'}
+    T->>BU: getVideoInfo(ref) 重试≤20次/间隔10s
+    BU-->>T: VideoInfo {aid, cid}
+    T->>CK: getCsrf + toHeader
+    T->>SA: add(sectionId=7630305, aid, cid, title, csrf, header)
+    SA->>SA: POST .../episodes/add, -404 重试≤20次/10s
+    SA-->>T: {ok:true}
+    T-->>FE: event {type:'log', '合集后置完成'}
+    T-->>FE: event {type:'status', stage:'commenting'}
+    T->>CM: post(aid, comment, csrf, header)
+    CM-->>T: rpid
+    T->>CM: pin(aid, rpid, csrf, header)
+    CM-->>T: {ok:true}
+    T-->>FE: event {type:'status', stage:'done'}
+    T-->>FE: event {type:'done', {aid, bvid, cid, season:true}}
+    Note over T: 任一阶段抛错 → event {type:'error', stage, message} → stage=error

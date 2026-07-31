@@ -15,6 +15,7 @@ const { safeStr, copyDir } = require("./lib/host-utils");
 const RES = process.resourcesPath; // 开发时=项目根，打包后=resources 目录
 const KDOCS_DIR = path.join(RES, "kdocs-tool");
 const NETDISK_DIR = path.join(RES, "netdisk-hub");
+const BILIUP_DIR = path.join(RES, "biliup-hub");
 
 // Node 运行时：打包后自带 resources/node/node.exe；开发时回退系统 PATH 的 node
 const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
@@ -61,6 +62,20 @@ const CHILDREN = {
     cwd: NETDISK_DIR,
     url: "http://localhost:3000",
     env: Object.assign({}, process.env, { TOOLSHUB_VERSION: app.getVersion(), PORT: "3000", PLAYWRIGHT_BROWSERS_PATH: "0" }),
+    proc: null,
+    running: false,
+    attempts: 0,
+  },
+  biliup: {
+    key: "biliup",
+    name: "B站自动投稿",
+    script: path.join(BILIUP_DIR, "server.js"),
+    cwd: BILIUP_DIR,
+    url: "http://localhost:3600",
+    env: Object.assign({}, process.env, {
+      TOOLSHUB_VERSION: app.getVersion(),
+      BILIUP_PORT: "3600",
+    }),
     proc: null,
     running: false,
     attempts: 0,
@@ -217,6 +232,7 @@ function startChild(cfg) {
   const dataEnv = app.isPackaged ? {
     NETDISK_DATA_DIR: path.join(app.getPath("userData"), "netdisk-hub", "data"),
     KDOCS_DATA_DIR: path.join(app.getPath("userData"), "kdocs-tool", "data"),
+    BILIUP_DATA_DIR: path.join(app.getPath("userData"), "biliup-hub", "data"),
   } : {};
   const proc = fork(cfg.script, [], {
     cwd: cfg.cwd,
@@ -366,6 +382,17 @@ ipcMain.handle("pick-folder", async () => {
   }
   return { dir: result.filePaths[0] };
 });
+ipcMain.handle("pick-file", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "选择视频文件",
+    properties: ["openFile"],
+    filters: [{ name: "视频", extensions: ["mp4"] }],
+  });
+  if (result.canceled || !result.filePaths.length) {
+    return { filePath: "" };
+  }
+  return { filePath: result.filePaths[0] };
+});
 ipcMain.handle("check-update", async () => {
   try {
     await autoUpdater.checkForUpdates();
@@ -414,6 +441,7 @@ app.whenReady().then(() => {
   relocateNetdiskData();
   cleanupStaleBackups();
   startChild(CHILDREN.netdisk);
+  startChild(CHILDREN.biliup);
   setupAutoUpdater();
   // 子进程启动需要一点时间，稍后推一次状态
   setTimeout(pushStatus, 1500);

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>B站自动投稿</title>
+  <link rel="stylesheet" href="status-luxe.css" />
+  <link rel="stylesheet" href="macos.css" />
+  <style>
+    :root {
+      --mac-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --mono-font: "SF Mono", "Cascadia Code", Consolas, monospace;
+      --accent: #fb7299;            /* B站粉 */
+      --accent-rgb: 251, 114, 153;
+      --bd: rgba(255,255,255,.12);
+      --bg: rgba(20,22,28,.72);
+      --txt: #e6e8ee;
+      --glow: 0 8px 32px rgba(0,0,0,.45);
+      --card-bg: rgba(255,255,255,.06);
+      --card-bd: rgba(255,255,255,.10);
+    }
+    [data-theme="light"] {
+      --bg: rgba(245,246,250,.78);
+      --txt: #1c1f26;
+      --bd: rgba(0,0,0,.10);
+      --card-bg: rgba(255,255,255,.66);
+      --card-bd: rgba(0,0,0,.08);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      color: var(--txt);
+      background:
+        radial-gradient(1200px 600px at 15% -10%, rgba(251,114,153,.18), transparent 60%),
+        radial-gradient(1000px 500px at 110% 10%, rgba(59,130,246,.16), transparent 55%),
+        #0f1115;
+      [data-theme="light"] & { background: #eef0f5; }
+      display: flex; flex-direction: column;
+      min-height: 100vh;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 20px; border-bottom: 1px solid var(--card-bd);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    }
+    .topbar h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .3px; }
+    .topbar .spacer { flex: 1; }
+    .layout {
+      flex: 1; display: grid; gap: 14px; padding: 16px 20px;
+      grid-template-columns: 1.1fr 1fr 1.1fr;
+      align-items: start;
+    }
+    @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+    .col {
+      background: var(--card-bg); border: 1px solid var(--card-bd);
+      border-radius: 16px; padding: 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      box-shadow: var(--glow);
+    }
+    .col h2 { font-size: 13px; margin: 0 0 12px; opacity: .8; font-weight: 600; letter-spacing: .4px; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12px; opacity: .7; margin-bottom: 6px; }
+    input[type="text"], textarea, input[type="datetime-local"], select {
+      width: 100%; padding: 9px 11px; font-size: 13px;
+      background: rgba(255,255,255,.05); color: var(--txt);
+      border: 1px solid var(--card-bd); outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    [data-theme="light"] input, [data-theme="light"] textarea, [data-theme="light"] select { background: rgba(255,255,255,.7); }
+    input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.22); }
+    textarea { resize: vertical; min-height: 64px; font-family: var(--mono-font); font-size: 12px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+      padding: 8px 14px; font-size: 13px; font-weight: 600; color: #fff;
+      background: linear-gradient(180deg, var(--accent), rgba(var(--accent-rgb),.82));
+      border: none; box-shadow: 0 4px 14px rgba(var(--accent-rgb),.35);
+      transition: transform .08s, filter .15s;
+    }
+    .btn:hover { filter: brightness(1.06); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn.secondary { background: rgba(255,255,255,.10); box-shadow: none; color: var(--txt); }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .preview-title {
+      font-family: var(--mono-font); font-size: 12px; color: var(--txt);
+      background: rgba(255,255,255,.04); border: 1px dashed var(--card-bd);
+      border-radius: 10px; padding: 9px 11px; margin-top: 8px; word-break: break-all;
+    }
+    .radio { display: flex; gap: 16px; align-items: center; margin: 6px 0 10px; }
+    .radio label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+    .collapsible > summary {
+      cursor: pointer; list-style: none; font-size: 13px; font-weight: 600;
+      display: flex; align-items: center; gap: 6px; user-select: none;
+    }
+    .collapsible > summary::-webkit-details-marker { display: none; }
+    .collapsible > summary::before { content: "▸"; transition: transform .15s; display: inline-block; }
+    .collapsible[open] > summary::before { transform: rotate(90deg); }
+    .kv { display: grid; grid-template-columns: 96px 1fr; gap: 8px 10px; align-items: center; }
+    .kv label { font-size: 12px; opacity: .7; }
+    .kv input { padding: 6px 9px; font-size: 12px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .kpi { font-size: 11px; opacity: .65; background: rgba(255,255,255,.05); border: 1px solid var(--card-bd); border-radius: 8px; padding: 4px 8px; }
+    .footer {
+      padding: 14px 20px; border-top: 1px solid var(--card-bd);
+      display: flex; gap: 12px; align-items: stretch; flex-direction: column;
+    }
+    .footer .actions { display: flex; gap: 10px; align-items: center; }
+    .log {
+      height: 168px; overflow: auto; font-family: var(--mono-font); font-size: 12px; line-height: 1.55;
+      background: rgba(0,0,0,.35); border: 1px solid var(--card-bd); border-radius: 12px; padding: 10px 12px;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    [data-theme="light"] .log { background: rgba(0,0,0,.06); }
+    .log .line { opacity: .9; }
+    .log .line.stage { color: #ffd479; }
+    .log .line.err { color: #ff8a8a; }
+    .log .line.ok { color: #8ee6a0; }
+    .hint { font-size: 11px; opacity: .55; margin-top: 6px; }
+    .modal-mask {
+      position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none;
+      align-items: center; justify-content: center; z-index: 50; backdrop-filter: blur(4px);
+    }
+    .modal-mask.show { display: flex; }
+    .modal {
+      width: min(420px, 92vw); background: var(--bg); border: 1px solid var(--card-bd);
+      border-radius: 18px; padding: 22px; box-shadow: var(--glow); backdrop-filter: blur(18px);
+    }
+    .modal h3 { margin: 0 0 14px; font-size: 16px; }
+    .modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="mac-ctl" aria-hidden="true">
+      <span class="mac-dot mac-close"></span><span class="mac-dot mac-min"></span><span class="mac-dot mac-max"></span>
+    </div>
+    <h1>B站自动投稿</h1>
+    <div class="spacer"></div>
+    <span id="statusCapsule"></span>
+  </div>
+
+  <div class="layout">
+    <!-- 左：选视频 + 标题预览 -->
+    <section class="col">
+      <h2>选择视频</h2>
+      <div class="field">
+        <label>本地视频文件（mp4）</label>
+        <div class="row">
+          <button class="btn secondary" id="pickBtn" type="button">📂 浏览</button>
+          <span id="videoName" style="font-size:12px;opacity:.7;word-break:break-all;"></span>
+        </div>
+        <div class="preview-title" id="titlePreview">标题将自动取文件名（去扩展名），可下方编辑</div>
+      </div>
+      <div class="field">
+        <label>投稿标题（可编辑）</label>
+        <input type="text" id="titleInput" placeholder="默认取文件名，可覆盖" />
+      </div>
+      <p class="hint">命名建议：【游戏编号】游戏名 版本描述 免费学习版下载.mp4</p>
+    </section>
+
+    <!-- 中：标签 + 发布模式 -->
+    <section class="col">
+      <h2>标签与发布模式</h2>
+      <div class="field">
+        <label>标签（逗号分隔）</label>
+        <input type="text" id="tagsInput" placeholder="辐射4,单机游戏,RPG" />
+      </div>
+      <div class="field">
+        <label>发布模式</label>
+        <div class="radio">
+          <label><input type="radio" name="mode" value="now" checked /> 立即发布</label>
+          <label><input type="radio" name="mode" value="dtime" /> 定时发布</label>
+        </div>
+        <input type="datetime-local" id="dtimeInput" disabled />
+      </div>
+    </section>
+
+    <!-- 右：可折叠投稿参数 -->
+    <section class="col">
+      <h2>投稿参数</h2>
+      <details class="collapsible" open>
+        <summary>参数面板（点击折叠）</summary>
+        <div class="kv" style="margin-top:12px;">
+          <label>分区 tid</label><input type="text" id="cfgTid" />
+          <label>合集 season</label><input type="text" id="cfgSeason" />
+          <label>分集 section</label><input type="text" id="cfgSection" />
+          <label>版权/转载</label>
+          <div class="row">
+            <input type="text" id="cfgCopyright" style="width:64px" />
+            <input type="text" id="cfgNoReprint" style="width:64px" />
+          </div>
+          <label>线路 line</label><input type="text" id="cfgLine" />
+          <label>uid</label><input type="text" id="cfgUid" />
+        </div>
+        <div class="field" style="margin-top:12px;">
+          <label>固定简介（4 行，可编辑）</label>
+          <textarea id="cfgDesc"></textarea>
+        </div>
+        <div class="field">
+          <label>置顶评论</label>
+          <textarea id="cfgComment" style="min-height:42px;"></textarea>
+        </div>
+        <details class="collapsible">
+          <summary>AIGC 合规头（每次必注入简介末尾）</summary>
+          <div class="kv" style="margin-top:10px;">
+            <label>Label</label><input type="text" id="aigcLabel" />
+            <label>ContentProducer</label><input type="text" id="aigcProducer" />
+            <label>ProduceID</label><input type="text" id="aigcProduceId" />
+            <label>ReservedCode1</label><input type="text" id="aigcRc1" />
+            <label>ContentPropagator</label><input type="text" id="aigcPropagator" />
+            <label>PropagateID</label><input type="text" id="aigcPropagateId" />
+            <label>ReservedCode2</label><input type="text" id="aigcRc2" />
+          </div>
+        </details>
+        <div class="kpis">
+          <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn secondary" id="saveCfgBtn" type="button">💾 保存参数</button>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <div class="footer">
+    <div class="actions">
+      <button class="btn" id="submitBtn" type="button">🚀 投稿</button>
+      <span id="submitHint" class="hint">选择视频后点击投稿（发布前会二次确认模式）</span>
+    </div>
+    <div class="log" id="logBox"></div>
+  </div>
+
+  <!-- 二次确认弹窗 -->
+  <div class="modal-mask" id="confirmMask">
+    <div class="modal">
+      <h3>确认投稿？</h3>
+      <p id="confirmText" style="font-size:13px;opacity:.85;line-height:1.6;"></p>
+      <div class="modal-actions">
+        <button class="btn secondary" id="confirmCancel" type="button">取消</button>
+        <button class="btn" id="confirmOk" type="button">确认投稿</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="status-luxe.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

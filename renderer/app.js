@@ -85,14 +85,21 @@
       url: "http://localhost:3599",
       icon: "📊",
     },
-    netdisk: {
-      key: "netdisk",
-      name: "网盘转存中转",
-      desc: "分享链接 → 转存我盘 → 生成我的分享（百度/夸克/迅雷）",
-      url: "http://localhost:3000",
-      icon: "☁️",
-    },
-  };
+  netdisk: {
+    key: "netdisk",
+    name: "网盘转存中转",
+    desc: "分享链接 → 转存我盘 → 生成我的分享（百度/夸克/迅雷）",
+    url: "http://localhost:3000",
+    icon: "☁️",
+  },
+  biliup: {
+    key: "biliup",
+    name: "B站自动投稿",
+    desc: "选视频 → 填标签 → 选模式 → 一键投稿（上传/抽帧/AIGC/合集/置顶）",
+    url: "http://localhost:3600",
+    icon: "📺",
+  },
+};
 
   let serviceStatus = {};
   let webviewPreload = "";
@@ -462,8 +469,9 @@
     try {
       const kdocsLevel = (serviceStatus.kdocs && serviceStatus.kdocs.running) ? 'ok' : 'off';
       const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
+      const biliupLevel = (serviceStatus.biliup && serviceStatus.biliup.running) ? 'ok' : 'off';
       const agg = (typeof aggregateStatus === "function")
-        ? aggregateStatus([kdocsLevel, netdiskLevel])
+        ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel])
         : 'off';
       const colorLevel = (typeof aggColorLevel === "function") ? aggColorLevel(agg) : agg;
       aggEl.innerHTML = (typeof statusHTML === "function")

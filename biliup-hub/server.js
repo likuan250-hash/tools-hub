@@ -1,0 +1,170 @@
+// biliup-hub/server.js —— Express 子服务（监听 127.0.0.1:3600）
+// 同源校验 + 静态资源 + /api/version(回显 bootToken) + 健康检查 + 配置/凭据路由 + /api/upload SSE。
+require('dotenv').config();
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const store = require('./lib/store');
+const cookies = require('./lib/cookies');
+const task = require('./lib/task');
+const logger = require('./lib/logger');
+
+const app = express();
+const PORT = process.env.BILIUP_PORT || 3600;
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// ── 同源校验：阻断跨站 CSRF（与 netdisk/kdocs 同构）──
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    try {
+      const host = new URL(origin).hostname;
+      if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
+        return res.status(403).json({ error: 'forbidden: cross-origin request blocked' });
+      }
+    } catch {
+      return res.status(403).json({ error: 'forbidden: invalid origin' });
+    }
+  }
+  next();
+});
+
+// 静态资源防缓存（避免浏览器长期使用旧 app.js）
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (/\.(js|css|html|htm)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
+
+// 主页
+app.get('/', (req, res) => {
+  try {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  } catch (e) {
+    res.status(500).end();
+  }
+});
+
+// ── 版本（回显 bootToken 供主进程 verifyChildBoot 校验端口归属）──
+function getVersion() {
+  try { return fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim(); }
+  catch { return 'unknown'; }
+}
+app.get('/api/version', (req, res) => {
+  const hubVer = process.env.TOOLSHUB_VERSION;
+  const version = hubVer || getVersion();
+  const source = hubVer ? 'tools-hub' : 'standalone';
+  res.json({ version, source, updatable: false, bootToken: process.env.BOOT_TOKEN || null });
+});
+
+// ── 健康检查 ──
+app.get(['/api/health', '/api/live'], (req, res) => {
+  res.json({ ok: true, ts: Date.now(), port: Number(PORT), bind: '127.0.0.1' });
+});
+
+// ── 配置读取（含 cookies 状态）──
+app.get('/api/config', (req, res) => {
+  const config = store.getConfig();
+  const ck = cookies.checkFile(config.cookiesPath);
+  res.json(Object.assign({}, config, { cookiesOk: ck.ok, cookiesDetail: ck }));
+});
+
+// ── 配置保存（路径/默认参数/AIGC 字段）──
+app.post('/api/config', (req, res) => {
+  try {
+    const incoming = (req.body && typeof req.body === 'object') ? req.body : {};
+    store.saveConfig(incoming);
+    logger.info('[config] 已保存配置');
+    res.json({ ok: true });
+  } catch (e) {
+    logger.error('[config] 保存失败:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── cookies 校验 ──
+app.get('/api/cookies/check', (req, res) => {
+  const config = store.getConfig();
+  res.json(cookies.checkFile(config.cookiesPath));
+});
+
+// ── 上传（SSE 全流程投稿，核心）──
+app.post('/api/upload', (req, res) => {
+  const body = req.body || {};
+  const videoPath = body.videoPath;
+  if (!videoPath) {
+    return res.status(400).json({ error: '缺少 videoPath' });
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  const send = (obj) => {
+    try {
+      res.write('data: ' + JSON.stringify(obj) + '\n\n');
+      if (typeof res.flush === 'function') res.flush();
+    } catch { /* 客户端已断开 */ }
+  };
+  const heartbeat = setInterval(() => {
+    try { res.write(': hb\n\n'); if (typeof res.flush === 'function') res.flush(); } catch { /* ignore */ }
+  }, 3000);
+
+  const finish = () => {
+    clearInterval(heartbeat);
+    try { res.end(); } catch { /* 已结束 */ }
+  };
+
+  const config = store.getConfig();
+  let cookiesFile = null;
+  try { cookiesFile = cookies.load(config.cookiesPath); } catch (e) { /* 下面校验 */ }
+  if (!cookiesFile || !cookies.validate(cookiesFile)) {
+    send({ type: 'error', stage: 'pending', message: 'cookies 无效：缺少 SESSDATA 或 bili_jct（请检查 ' + config.cookiesPath + '）' });
+    finish();
+    return;
+  }
+
+  task.run(body, { config, cookiesFile, onEvent: send, deps: {} })
+    .catch((e) => { send({ type: 'error', stage: 'error', message: e.message }); })
+    .finally(finish);
+});
+
+// ── 启动（EADDRINUSE 自动重试 30 次/300ms，与 netdisk 同构）──
+function startServer(attempt = 0) {
+  const srv = app.listen(PORT, '127.0.0.1', () => {
+    logger.info(`biliup-hub 运行中 → http://localhost:${PORT} (仅本机绑定)`);
+  });
+  srv.on('error', (err) => {
+    if (err.code === 'EADDRINUSE' && attempt < 30) {
+      setTimeout(() => startServer(attempt + 1), 300);
+    } else {
+      logger.error('监听失败:', err);
+      process.exit(1);
+    }
+  });
+  return srv;
+}
+const server = startServer();
+
+// ── 优雅关闭 ──
+let shuttingDown = false;
+function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.warn(`收到 ${signal}, 正在优雅关闭…`);
+  server.close(() => { logger.info('服务已关闭'); process.exit(0); });
+  setTimeout(() => { logger.error('优雅关闭超时,强制退出'); process.exit(1); }, 5000).unref();
+}
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('uncaughtException', (e) => logger.error('未捕获异常:', e));
+process.on('unhandledRejection', (r) => logger.error('未处理的 Promise 拒绝:', r));
+
+module.exports = app;

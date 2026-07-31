@@ -1,0 +1,52 @@
+/* macOS 风格补充层（与内联玻璃拟态主题叠加，仅新增/微调，不破坏原布局）。
+   由 tools-hub 统一引入，使网盘转存中转台呈现 macOS 观感。 */
+/* --mac-font / --mono-font 现统一定义于 shared/tokens.css（三套前端单一真源），此处仅引用 */
+body { font-family: var(--mac-font); }
+
+/* ── macOS 红黄绿交通灯（webview 内为视觉装饰；壳内可控制窗口）── */
+.mac-ctl { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.mac-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  transition: filter .15s ease;
+}
+.mac-dot::before { font-size: 10px; line-height: 1; font-weight: 700; color: transparent; }
+.mac-close { background: #ff5f57; }
+.mac-close::before { content: "\00D7"; }   /* × */
+.mac-min   { background: #febc2e; }
+.mac-min::before { content: "\2212"; }      /* − */
+.mac-max   { background: #28c840; }
+.mac-max::before { content: "\FF0B"; }      /* ＋ */
+.mac-ctl:hover .mac-dot::before { color: rgba(0, 0, 0, .55); }
+.mac-dot:active { filter: brightness(.92); }
+
+/* ── 更 macOS 的滚动条 ── */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 160, .35); border-radius: 10px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(140, 140, 160, .55); background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ── mac 风开关（覆盖原 .switch input：更圆润的中性灰轨道 + 带阴影滑块）── */
+.switch input {
+  width: 38px; height: 22px; border-radius: 22px;
+  background: rgba(var(--accent-rgb), 0.30);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.35);
+}
+[data-theme="light"] .switch input { background: rgba(var(--accent-rgb), 0.20); }
+.switch input:checked { background: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.20); }
+.switch input::after {
+  width: 18px; height: 18px; top: 2px; left: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+}
+.switch input:checked::after { left: 18px; }
+
+/* ── 输入框/按钮更细腻的圆角与聚焦环（mac 感）── */
+input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"], select, textarea {
+  border-radius: 10px;
+}
+.btn, .auth-btn, .theme-btn, .ver-badge, .dir-btn, .clear-input {
+  border-radius: 10px;
+}

@@ -1,10 +1,10 @@
 // scripts/verify-status-luxe-sync.js
 //
-// 校验 status-luxe 的「单一事实来源」shared/status-luxe 与三处前端副本
-// （renderer / netdisk-hub/public / kdocs-tool/public）的 css 与 js
+// 校验 status-luxe 的「单一事实来源」shared/status-luxe 与四处前端副本
+// （renderer / netdisk-hub/public / kdocs-tool/public / biliup-hub/public）的 css 与 js
 // 是否逐字节一致。任一副本与真源或彼此不一致则 exit(1) 并打印差异。
 //
-// 这样「真源」被纳入门禁：改了 shared/ 但忘了同步三副本 → CI 红灯；
+// 这样「真源」被纳入门禁：改了 shared/ 但忘了同步四副本 → CI 红灯；
 // 改了某副本但忘了回灌 shared/ → 同样红灯。从流程上消除漂移隐患。
 //
 // 退出码：一致 exit 0；不一致 exit 1。
@@ -16,11 +16,12 @@ const ROOT = path.resolve(__dirname, '..');
 
 // 单一事实来源（真源）。作为比对基准。
 const SHARED = { name: 'shared', dir: 'shared/status-luxe' };
-// 三处前端副本。
+// 四处前端副本。
 const COPIES = [
   { name: 'renderer', dir: 'renderer' },
   { name: 'netdisk-hub', dir: 'netdisk-hub/public' },
   { name: 'kdocs-tool', dir: 'kdocs-tool/public' },
+  { name: 'biliup-hub', dir: 'biliup-hub/public' },
 ];
 // 参与比对的全部位置：真源在前，便于「副本须与真源一致」的语义。
 const LOCATIONS = [SHARED, ...COPIES];
@@ -56,13 +57,13 @@ for (const f of FILES) {
       console.error(`  ${mark}${h.name}: ${h.hash}  (${h.path})`);
     }
   } else {
-    console.log(`[ OK ] ${f} 四处一致 (${base.hash})`);
+    console.log(`[ OK ] ${f} 真源与四处前端副本一致 (${base.hash})`);
   }
 }
 
 if (failed) {
-  console.error('\nstatus-luxe 同步校验未通过：真源 shared/status-luxe 与三处前端副本必须逐字节一致。');
-  console.error('如需以 shared/ 为准同步三副本，运行: npm run sync-status-luxe');
+  console.error('\nstatus-luxe 同步校验未通过：真源 shared/status-luxe 与四处前端副本必须逐字节一致。');
+  console.error('如需以 shared/ 为准同步四副本，运行: npm run sync-status-luxe');
   process.exit(1);
 }
-console.log('\nstatus-luxe 真源与三处前端副本全部逐字节一致。');
+console.log('\nstatus-luxe 真源与四处前端副本全部逐字节一致。');

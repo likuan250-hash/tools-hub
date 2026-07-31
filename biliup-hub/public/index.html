@@ -53,6 +53,14 @@
     }
     .ver-badge:hover { transform: translateY(-2px); background: rgba(255,255,255,0.14); color: var(--text); }
 
+    /* ===== 账号区（#7 头像/昵称/登录按钮）===== */
+    .account-area { display: flex; align-items: center; gap: 8px; }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--glass-border); cursor: pointer; background: var(--field-bg);
+    }
+    .nick-name { font-size: 13px; font-weight: 600; cursor: pointer; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     /* ===== panel（与网盘转存完全一致） ===== */
     .panel {
       border: 1px solid var(--glass-border); border-radius: 22px;
@@ -116,22 +124,6 @@
 
     .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; padding-left: 10px; border-left: 2px solid var(--glass-border); }
 
-    .preview-title {
-      font-family: var(--mono-font); font-size: 12px; color: var(--text);
-      background: var(--field-bg); border: 1px dashed var(--glass-border);
-      border-radius: 12px; padding: 10px 12px; margin-top: 10px; word-break: break-all; line-height: 1.5;
-    }
-
-    /* collapsible (AIGC) */
-    .collapsible > summary {
-      cursor: pointer; list-style: none; font-size: 14px; font-weight: 650;
-      display: flex; align-items: center; gap: 8px; user-select: none;
-      padding: 10px 0; margin-top: 8px;
-    }
-    .collapsible > summary::-webkit-details-marker { display: none; }
-    .collapsible > summary::before { content: "▸"; transition: transform .15s; display: inline-block; color: var(--accent); }
-    .collapsible[open] > summary::before { transform: rotate(90deg); }
-
     .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
     .kpi { font-size: 11px; opacity: .85; background: var(--field-bg); border: 1px solid var(--glass-border); border-radius: 8px; padding: 5px 10px; }
 
@@ -168,6 +160,8 @@
     .modal-foot .modal-hint { flex: 1; font-size: 12px; color: var(--text-dim); word-break: break-all; }
     .modal-foot .btn.ghost { width: auto; padding: 9px 16px; font-size: 13px; }
     .modal-foot .auth-btn { padding: 9px 16px; font-size: 13px; }
+    .qr-box { text-align: center; margin: 10px 0 4px; }
+    .qr-box img { width: 240px; height: 240px; border-radius: 12px; background: #fff; padding: 8px; }
 
     /* 亮色玻璃分离增强（与网盘转存完全一致） */
     [data-theme="light"] .panel,
@@ -185,8 +179,7 @@
     }
   </style>
 
-  <!-- v0.1.63: 三套样式完全内联（tokens + motion + macos），保证打包后零外部依赖 -->
-  <!-- 与网盘转存 / 金山文档 逐字节对齐的 shared 设计系统（仅强调色不同：B站粉 vs 紫青渐变） -->
+  <!-- 三套样式完全内联（tokens + motion + macos），保证打包后零外部依赖 -->
   <style>
 /* ===== shared/tokens.css（单一真源 —— 明暗 token 严格对齐网盘转存） ===== */
 :root { /* 默认暗色 */
@@ -336,7 +329,7 @@ body { font-family: var(--mac-font); }
 .switch input:checked { background: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.20); }
 .switch input::after {
   width: 18px; height: 18px; top: 2px; left: 2px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+  box-shadow: 1px 3px rgba(0, 0, 0, .3);
 }
 .switch input:checked::after { left: 18px; }
 
@@ -402,17 +395,19 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         <div class="logo">📺</div>
         <div>
           <h1>B站自动投稿</h1>
-          <div class="sub">本地视频 → 自动投稿到 B站（含合集 / 分区 / AIGC 合规头）</div>
+          <div class="sub">本地视频 → 自动投稿到 B站（含合集 / 分区）</div>
         </div>
       </div>
       <div class="header-actions">
+        <!-- #7 账号区：头像(圆形)+昵称 / 登录按钮（由 app.js 动态渲染） -->
+        <div class="account-area" id="accountArea"></div>
         <span id="statusCapsule"></span>
         <button class="ver-badge" id="verBadge" title="由工具箱统一管理">v—</button>
         <button class="theme-btn" id="themeBtn">🌗 主题</button>
       </div>
     </header>
 
-    <!-- 选择视频 -->
+    <!-- 选择视频（独立卡片） -->
     <section class="panel">
       <h2>📂 选择视频</h2>
       <div class="field">
@@ -421,7 +416,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
           <button class="auth-btn" id="pickBtn" type="button">📂 浏览</button>
           <span id="videoName" class="file-name"></span>
         </div>
-        <div class="preview-title" id="titlePreview">标题将自动取文件名（去扩展名），可下方编辑</div>
       </div>
       <div class="field">
         <label>投稿标题（可编辑）</label>
@@ -430,11 +424,11 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <p class="hint">命名建议：【游戏编号】游戏名 版本描述 免费学习版下载.mp4</p>
     </section>
 
-    <!-- 标签与发布模式 -->
+    <!-- 投稿设置（合并：标签与发布模式 + 投稿参数；高级参数折叠） -->
     <section class="panel">
-      <h2>🏷️ 标签与发布模式</h2>
+      <h2>📝 投稿设置</h2>
       <div class="field">
-        <label>标签（逗号分隔）</label>
+        <label>标签（逗号分隔，一般按视频内容自动生成，可手动覆盖）</label>
         <input type="text" id="tagsInput" placeholder="辐射4,单机游戏,RPG" />
       </div>
       <div class="field">
@@ -445,50 +439,37 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         </div>
         <input type="datetime-local" id="dtimeInput" disabled />
       </div>
-    </section>
 
-    <!-- 投稿参数 -->
-    <section class="panel">
-      <h2>⚙️ 投稿参数</h2>
-      <div class="grid-2">
-        <div class="field"><label>分区 tid</label><input type="text" id="cfgTid" /></div>
-        <div class="field"><label>合集 season</label><input type="text" id="cfgSeason" /></div>
-        <div class="field"><label>分集 section</label><input type="text" id="cfgSection" /></div>
-        <div class="field"><label>线路 line</label><input type="text" id="cfgLine" /></div>
-        <div class="field"><label>uid</label><input type="text" id="cfgUid" /></div>
-        <div class="field"><label>版权/转载</label>
-          <div class="grid-2" style="gap:10px">
-            <input type="text" id="cfgCopyright" placeholder="copyright" />
-            <input type="text" id="cfgNoReprint" placeholder="noReprint" />
+      <details class="collapsible" id="advToggle">
+        <summary>⚙️ 高级参数</summary>
+        <div class="grid-2" style="margin-top:12px">
+          <div class="field"><label>分区 tid</label><input type="text" id="cfgTid" /></div>
+          <div class="field"><label>合集 season</label><input type="text" id="cfgSeason" /></div>
+          <div class="field"><label>分集 section</label><input type="text" id="cfgSection" /></div>
+          <div class="field"><label>线路 line</label><input type="text" id="cfgLine" /></div>
+          <div class="field"><label>uid</label><input type="text" id="cfgUid" /></div>
+          <div class="field"><label>版权/转载</label>
+            <div class="grid-2" style="gap:10px">
+              <input type="text" id="cfgCopyright" placeholder="copyright" />
+              <input type="text" id="cfgNoReprint" placeholder="noReprint" />
+            </div>
           </div>
         </div>
-      </div>
-      <div class="field" style="margin-top:16px">
-        <label>固定简介（4 行，可编辑）</label>
-        <textarea id="cfgDesc"></textarea>
-      </div>
-      <div class="field">
-        <label>置顶评论</label>
-        <textarea id="cfgComment" style="min-height:42px;"></textarea>
-      </div>
-      <details class="collapsible">
-        <summary>AIGC 合规头（每次必注入简介末尾）</summary>
-        <div class="grid-2" style="margin-top:12px">
-          <div class="field"><label>Label</label><input type="text" id="aigcLabel" /></div>
-          <div class="field"><label>ContentProducer</label><input type="text" id="aigcProducer" /></div>
-          <div class="field"><label>ProduceID</label><input type="text" id="aigcProduceId" /></div>
-          <div class="field"><label>ReservedCode1</label><input type="text" id="aigcRc1" /></div>
-          <div class="field"><label>ContentPropagator</label><input type="text" id="aigcPropagator" /></div>
-          <div class="field"><label>PropagateID</label><input type="text" id="aigcPropagateId" /></div>
-          <div class="field"><label>ReservedCode2</label><input type="text" id="aigcRc2" /></div>
+        <div class="field" style="margin-top:16px">
+          <label>固定简介（4 行，可编辑）</label>
+          <textarea id="cfgDesc"></textarea>
+        </div>
+        <div class="field">
+          <label>置顶评论</label>
+          <textarea id="cfgComment" style="min-height:42px;"></textarea>
+        </div>
+        <div class="kpis">
+          <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
+        </div>
+        <div style="margin-top:14px">
+          <button class="auth-btn" id="saveCfgBtn" type="button">💾 保存参数</button>
         </div>
       </details>
-      <div class="kpis">
-        <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
-      </div>
-      <div style="margin-top:14px">
-        <button class="auth-btn" id="saveCfgBtn" type="button">💾 保存参数</button>
-      </div>
     </section>
 
     <!-- 投稿 + 日志 -->
@@ -496,7 +477,12 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <h2>🚀 投稿</h2>
       <button class="btn" id="submitBtn" type="button">🚀 投稿</button>
       <p class="hint" id="submitHint">选择视频后点击投稿（发布前会二次确认模式）</p>
-      <div class="log" id="logBox"></div>
+      <!-- #4 日志面板默认隐藏，仅在点击投稿时展示 -->
+      <div id="logWrap" style="display:none">
+        <h3 style="font-size:15px;font-weight:700;margin:16px 0 4px;">📜 投稿日志</h3>
+        <div class="log" id="logBox"></div>
+        <p class="hint" id="logEmpty">投稿进度与结果会显示在这里</p>
+      </div>
     </section>
   </div>
 
@@ -508,6 +494,24 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="modal-actions">
         <button class="btn ghost" id="confirmCancel" type="button">取消</button>
         <button class="btn" id="confirmOk" type="button">确认投稿</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 扫码登录弹窗（#7） -->
+  <div class="modal-mask" id="loginMask">
+    <div class="modal">
+      <div class="modal-head">
+        <span>🔑 扫码登录 B站</span>
+        <button class="modal-close" id="loginClose" type="button">×</button>
+      </div>
+      <p class="hint">用 B站手机客户端扫码登录；cookie 仅存于本机数据目录，与投稿上传共用同一份。</p>
+      <div class="qr-box">
+        <img id="qrImg" alt="登录二维码" />
+      </div>
+      <p class="hint" id="loginStatus">等待扫码…</p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="loginCancel" type="button">取消</button>
       </div>
     </div>
   </div>

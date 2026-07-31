@@ -3,20 +3,29 @@
 // 独立运行时回退到安装目录下的 data/。
 const fs = require('fs');
 const path = require('path');
+const biliupBin = require('./biliupBin');
 
 const DATA_DIR = process.env.BILIUP_DATA_DIR
   ? path.resolve(process.env.BILIUP_DATA_DIR)
   : path.join(__dirname, '..', 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 
+// cookies 默认落点与投稿上传同一份（biliup --cookies 指向它）：
+// 打包后 = userData/biliup-hub/data/cookies.json；开发期回退安装目录 data/。
+const COOKIES_DIR = DATA_DIR;
+const DEFAULT_COOKIES_PATH = path.join(COOKIES_DIR, 'cookies.json');
+
 // ── 默认配置（带 PRD/设计已知值；其余 UI 可编辑）──
 // 已知常量：tid=17(单机游戏)、seasonId=6918057、sectionId=7630305、copyright=1、
-// noReprint=1、line=bda2、uid=236743002、comment 固定文案、AIGC 字段（待用户填真实合规值）。
+// noReprint=1、line=bda2、uid=236743002、comment 固定文案。
+// 注：biliup.exe 路径不再由 UI 配置（#6），改为按运行环境自动解析。
 function defaultConfig() {
   return {
-    biliupExePath: 'D:\\biliupR\\biliup.exe',
+    // biliup.exe 路径：打包内置或开发期回退（lib/biliupBin 解析）。
+    biliupExePath: biliupBin.resolveBiliupBin(),
     ffmpegPath: '', // 空 = 自动探测（biliup 同目录 → PATH → 失败告警）
-    cookiesPath: 'D:\\biliupR\\cookies.json',
+    // cookies 路径：与 BILIUP_DATA_DIR 同目录的 cookies.json（登录/手动放置均可）。
+    cookiesPath: DEFAULT_COOKIES_PATH,
     tid: 17,
     seasonId: '6918057',
     sectionId: '7630305',
@@ -33,17 +42,6 @@ function defaultConfig() {
       '资源来自网络收集整理，版权归原作者所有，请在 24 小时内删除。',
       '如有侵权请联系删除，下载后请支持正版。',
     ].join('\n'),
-    // AIGC 合规头字段（每次投稿必注入简介末尾）。
-    // 真实合规取值需用户提供；此处留空默认，UI 可编辑。Label 固定为 1。
-    aigc: {
-      label: 1,
-      contentProducer: '',
-      produceId: '',
-      reservedCode1: '',
-      contentPropagator: '',
-      propagateId: '',
-      reservedCode2: '',
-    },
   };
 }
 
@@ -54,8 +52,8 @@ let writeScheduled = false;
 function mergeDefaults(obj) {
   const def = defaultConfig();
   const out = Object.assign({}, def, obj || {});
-  // 嵌套对象合并（aigc / tags）
-  out.aigc = Object.assign({}, def.aigc, (obj && obj.aigc) || {});
+  // AIGC 合规头已移除（#3）：清理任何历史残留字段，避免前端/后端误用。
+  delete out.aigc;
   if (!Array.isArray(out.tags)) out.tags = def.tags;
   out.tid = Number(out.tid) || def.tid;
   out.copyright = Number(out.copyright) || def.copyright;
@@ -66,9 +64,11 @@ function mergeDefaults(obj) {
   if (typeof out.line !== 'string' || !out.line) out.line = def.line;
   if (typeof out.comment !== 'string' || !out.comment) out.comment = def.comment;
   if (typeof out.desc !== 'string' || !out.desc) out.desc = def.desc;
-  if (typeof out.biliupExePath !== 'string') out.biliupExePath = def.biliupExePath;
+  // biliup.exe 路径与 cookies 路径为非用户可配项（#6/#7），始终按运行环境强制解析，
+  // 不受历史 config.json 中旧值（如 D:\biliupR\...）影响，避免升级后路径失效。
+  out.biliupExePath = biliupBin.resolveBiliupBin();
+  out.cookiesPath = DEFAULT_COOKIES_PATH;
   if (typeof out.ffmpegPath !== 'string') out.ffmpegPath = def.ffmpegPath;
-  if (typeof out.cookiesPath !== 'string' || !out.cookiesPath) out.cookiesPath = def.cookiesPath;
   return out;
 }
 
@@ -124,4 +124,15 @@ function saveConfig(c) {
   return cache;
 }
 
-module.exports = { loadConfig, getConfig, saveConfig, defaultConfig, mergeDefaults, CONFIG_FILE, DATA_DIR };
+module.exports = {
+  loadConfig,
+  getConfig,
+  saveConfig,
+  defaultConfig,
+  mergeDefaults,
+  CONFIG_FILE,
+  DATA_DIR,
+  COOKIES_DIR,
+  COOKIES_PATH: DEFAULT_COOKIES_PATH,
+  getCookiesPath: () => DEFAULT_COOKIES_PATH,
+};

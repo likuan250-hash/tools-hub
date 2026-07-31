@@ -35,6 +35,43 @@ jobs:
         working-directory: biliup-hub
         run: npm install --no-audit --no-fund
 
+      # #6 内置 biliup.exe：从 biliup-rs 官方 Release 下载 Windows 预编译包，
+      # 解压取出 biliup.exe 放到 biliup-hub/bin/，由 electron-builder extraResources
+      # 一并打进安装包（运行时路径 resources/biliup-hub/bin/biliup.exe）。
+      # 若资产名/下载失败，本步骤必须让 CI 报错（exit 1），避免无声缺包。
+      - name: Download & bundle biliup.exe (biliup-rs prebuilt)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $api = "https://api.github.com/repos/biliup/biliup-rs/releases/latest"
+          $headers = @{ Accept = "application/vnd.github+json" }
+          if ($env:GH_TOKEN) { $headers["Authorization"] = "Bearer $env:GH_TOKEN" }
+          Write-Host "查询最新 release: $api"
+          $rel = Invoke-RestMethod -Headers $headers -Uri $api
+          # 选取 Windows x64 资产（如 biliupR-<ver>-x86_64-windows.zip）
+          $asset = $rel.assets | Where-Object { $_.name -match 'x86_64-windows' -or $_.name -match 'windows-x64' } | Select-Object -First 1
+          if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -match '\.zip$' -and $_.name -match 'windows' } | Select-Object -First 1 }
+          if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -match '\.exe$' } | Select-Object -First 1 }
+          if (-not $asset) { Write-Error "未找到 biliup Windows 资产，请检查 release 资产命名"; exit 1 }
+          Write-Host "选定资产: $($asset.name) -> $($asset.browser_download_url)"
+          $outDir = "biliup-hub/bin"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $zip = Join-Path $outDir "biliup-download"
+          Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile $zip
+          if ($asset.name -match '\.zip$') {
+            Expand-Archive -Force -Path $zip -DestinationPath $outDir
+            $exe = Get-ChildItem -Path $outDir -Recurse -Filter "biliup.exe" | Select-Object -First 1
+            if (-not $exe) { $exe = Get-ChildItem -Path $outDir -Recurse -Filter "*.exe" | Select-Object -First 1 }
+            if (-not $exe) { Write-Error "解压后未找到 biliup.exe"; exit 1 }
+            Copy-Item -Force $exe.FullName (Join-Path $outDir "biliup.exe")
+          } else {
+            Move-Item -Force $zip (Join-Path $outDir "biliup.exe")
+          }
+          if (-not (Test-Path (Join-Path $outDir "biliup.exe"))) { Write-Error "biliup.exe 未就位"; exit 1 }
+          Write-Host "✅ biliup.exe 已就位: $(Join-Path $outDir 'biliup.exe')"
+
       - name: Run kdocs-tool tests (CI 门禁，失败则不出包)
         working-directory: kdocs-tool
         run: npm test

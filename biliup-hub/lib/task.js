@@ -9,8 +9,8 @@ const command = require('./command');
 const biliup = require('./biliup');
 const season = require('./season');
 const comment = require('./comment');
-const aigc = require('./aigc');
 const cookies = require('./cookies');
+const biliupBin = require('./biliupBin');
 const logger = require('./logger');
 
 const STAGES = ['pending', 'extracting_cover', 'uploading', 'adding_season', 'commenting', 'done', 'error'];
@@ -35,6 +35,9 @@ async function run(req, ctx) {
   const log = (stage, message) => emit({ type: 'log', stage, message: message || '' });
   const setStage = (stage, message) => emit({ type: 'status', stage, message: message || '' });
 
+  // biliup.exe 路径按运行环境解析（#6），确保打包/开发都能命中正确位置。
+  config.biliupExePath = biliupBin.resolveBiliupBin();
+
   const videoPath = req && req.videoPath;
   if (!videoPath || !fs.existsSync(videoPath)) {
     emit({ type: 'error', stage: 'pending', message: '视频文件不存在: ' + videoPath });
@@ -52,8 +55,8 @@ async function run(req, ctx) {
     title = base.replace(/\.[^.]+$/, '');
   }
 
-  // 完整 desc：基础简介 + AIGC 头（注入简介末尾）
-  const fullDesc = aigc.appendToDesc(config.desc || '', config.aigc || {});
+  // 完整 desc：基础简介（AIGC 合规头已于 #3 移除，不再注入）。
+  const fullDesc = config.desc || '';
 
   const tags = Array.isArray(req.tags) ? req.tags : (config.tags || []);
   const publishMode = req.publishMode === 'dtime' ? 'dtime' : 'now';

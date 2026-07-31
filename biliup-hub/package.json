@@ -1,7 +1,7 @@
 {
   "name": "biliup-hub",
-  "version": "0.1.0",
-  "description": "B站自动投稿工具（tools-hub 第三个子工具）：上传 → 抽封面 → AIGC 头 → 合集后置 → 评论置顶",
+  "version": "0.1.64",
+  "description": "B站自动投稿工具（tools-hub 第三个子工具）：上传 → 抽封面 → 合集后置 → 评论置顶 → 扫码登录",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,6 +13,7 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "qrcode": "^1.5.4",
     "undici": "^7.28.0"
   }
 }

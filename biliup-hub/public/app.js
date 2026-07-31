@@ -1,11 +1,12 @@
 // biliup-hub/public/app.js —— 前端逻辑
-// pickFile 选视频 / 参数读写 / 发布模式 + 二次确认 / 消费 /api/upload SSE / 状态胶囊
+// pickFile 选视频 / 参数读写 / 发布模式 + 二次确认 / 消费 /api/upload SSE /
+// 状态胶囊(#1) / 投稿日志默认隐藏(#4) / 账号头像+扫码登录(#7) / 健康探活(#5)。
 (function () {
   "use strict";
   const api = window.electronAPI;
   const $ = (id) => document.getElementById(id);
 
-  // ── 状态胶囊 ──
+  // ── 状态胶囊（#1：清晰状态文案 + 前缀）──
   const STAGE_LABEL = {
     pending: ["info", "准备中"],
     extracting_cover: ["info", "抽帧中"],
@@ -23,11 +24,20 @@
       el.textContent = text;
     }
   }
-  setCapsule("off", "空闲");
+  function setReady() {
+    if (!running) setCapsule("ok", "投稿状态：✅ 就绪（待投稿）");
+  }
+  function setOffline() {
+    if (!running) setCapsule("err", "投稿状态：📴 离线（服务未连接）");
+  }
+  // 初始：检测中
+  setCapsule("info", "投稿状态：检测中…");
 
-  // ── 日志 ──
+  // ── 日志（#4：默认隐藏，点击投稿才展示）──
   function logLine(msg, cls) {
     const box = $("logBox");
+    const empty = $("logEmpty");
+    if (empty) empty.style.display = "none"; // 首行日志后隐藏空状态提示
     const div = document.createElement("div");
     div.className = "line" + (cls ? " " + cls : "");
     div.textContent = "> " + msg;
@@ -38,7 +48,7 @@
   let selectedVideo = "";
   let running = false;
 
-  // ── 选视频 ──
+  // ── 选视频（#1：文件名只显示在按钮后；标题自动取文件名去扩展名）──
   $("pickBtn").addEventListener("click", async () => {
     try {
       if (!api || !api.pickFile) { logLine("当前环境不支持选择文件（需工具箱内运行）", "err"); return; }
@@ -47,8 +57,7 @@
         selectedVideo = r.filePath;
         $("videoName").textContent = selectedVideo;
         const base = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
-        $("titlePreview").textContent = base;
-        $("titleInput").value = base;
+        $("titleInput").value = base; // 不再重复显示一行文件名
         $("submitHint").textContent = "已选择视频，点击🚀投稿";
       }
     } catch (e) {
@@ -77,14 +86,6 @@
       $("cfgUid").value = cfg.uid != null ? cfg.uid : "";
       $("cfgDesc").value = cfg.desc || "";
       $("cfgComment").value = cfg.comment || "";
-      const a = cfg.aigc || {};
-      $("aigcLabel").value = a.label != null ? a.label : 1;
-      $("aigcProducer").value = a.contentProducer || "";
-      $("aigcProduceId").value = a.produceId || "";
-      $("aigcRc1").value = a.reservedCode1 || "";
-      $("aigcPropagator").value = a.contentPropagator || "";
-      $("aigcPropagateId").value = a.propagateId || "";
-      $("aigcRc2").value = a.reservedCode2 || "";
       const ck = cfg.cookiesDetail || { ok: !!cfg.cookiesOk };
       $("cookiesKpi").textContent = "cookies: " + (ck.ok ? "✅ 有效" : "❌ 缺失 SESSDATA/bili_jct");
       $("cookiesKpi").style.color = ck.ok ? "" : "#ff8a8a";
@@ -93,7 +94,7 @@
     }
   }
 
-  // ── 保存配置 ──
+  // ── 保存配置（#3：不再包含 AIGC 字段）──
   $("saveCfgBtn").addEventListener("click", async () => {
     const payload = {
       tid: Number($("cfgTid").value) || 17,
@@ -105,15 +106,6 @@
       uid: Number($("cfgUid").value) || 236743002,
       desc: $("cfgDesc").value,
       comment: $("cfgComment").value,
-      aigc: {
-        label: Number($("aigcLabel").value) || 1,
-        contentProducer: $("aigcProducer").value,
-        produceId: $("aigcProduceId").value,
-        reservedCode1: $("aigcRc1").value,
-        contentPropagator: $("aigcPropagator").value,
-        propagateId: $("aigcPropagateId").value,
-        reservedCode2: $("aigcRc2").value,
-      },
     };
     try {
       const resp = await fetch("/api/config", {
@@ -128,6 +120,103 @@
       logLine("保存配置失败: " + e.message, "err");
     }
   });
+
+  // ── 账号区（#7：头像+昵称 / 登录按钮）──
+  function renderAccount(info) {
+    const box = $("accountArea");
+    if (!box) return;
+    box.innerHTML = "";
+    if (info && info.isLogin) {
+      const img = document.createElement("img");
+      img.className = "avatar";
+      img.id = "avatar";
+      img.src = info.face || "";
+      img.alt = info.uname || "用户";
+      img.title = (info.uname || "") + "（点击进入个人空间）";
+      img.addEventListener("click", () => openSpace(info.mid));
+      const name = document.createElement("span");
+      name.className = "nick-name";
+      name.id = "nickName";
+      name.textContent = info.uname || "用户";
+      name.title = "点击进入个人空间";
+      name.addEventListener("click", () => openSpace(info.mid));
+      box.appendChild(img);
+      box.appendChild(name);
+    } else {
+      const btn = document.createElement("button");
+      btn.className = "auth-btn";
+      btn.id = "loginBtn";
+      btn.textContent = "🔑 登录B站";
+      btn.addEventListener("click", openLogin);
+      box.appendChild(btn);
+    }
+  }
+
+  function openSpace(mid) {
+    if (!mid) return;
+    const url = "https://space.bilibili.com/" + mid;
+    if (api && api.openExternal) api.openExternal(url);
+    else window.open(url, "_blank");
+  }
+
+  async function refreshAccount() {
+    try {
+      const resp = await fetch("/api/account");
+      const info = await resp.json();
+      renderAccount(info);
+    } catch (e) {
+      renderAccount({ isLogin: false });
+    }
+  }
+
+  // ── 扫码登录（#7）──
+  let loginTimer = null;
+  let loginKey = null;
+  async function openLogin() {
+    try {
+      const resp = await fetch("/api/login/qrcode", { method: "POST" });
+      const j = await resp.json();
+      if (!j.qrcodeKey) throw new Error(j.error || "获取二维码失败");
+      loginKey = j.qrcodeKey;
+      $("qrImg").src = j.qrDataUrl;
+      $("loginStatus").textContent = "请用 B站手机客户端扫码…";
+      $("loginMask").classList.add("show");
+      if (loginTimer) clearInterval(loginTimer);
+      loginTimer = setInterval(pollLogin, 2000);
+    } catch (e) {
+      if (window.alert) window.alert("登录发起失败: " + e.message);
+    }
+  }
+  async function pollLogin() {
+    if (!loginKey) return;
+    try {
+      const resp = await fetch("/api/login/poll?key=" + encodeURIComponent(loginKey));
+      const j = await resp.json();
+      if (j.status === "waiting") {
+        $("loginStatus").textContent = "等待扫码…";
+      } else if (j.status === "scanned") {
+        $("loginStatus").textContent = "已扫码，请在手机上确认…";
+      } else if (j.status === "success") {
+        stopLogin();
+        $("loginStatus").textContent = "登录成功";
+        refreshAccount();
+        loadConfig(); // cookies 可能已就绪
+      } else if (j.status === "expired") {
+        stopLogin();
+        $("loginStatus").textContent = "二维码已过期，请重新点击登录";
+      }
+    } catch (e) {
+      $("loginStatus").textContent = "轮询失败: " + e.message;
+    }
+  }
+  function stopLogin() {
+    if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
+    loginKey = null;
+    $("loginMask").classList.remove("show");
+  }
+  $("loginClose").addEventListener("click", stopLogin);
+  $("loginCancel").addEventListener("click", stopLogin);
+  $("loginMask").addEventListener("click", (e) => { if (e.target === $("loginMask")) stopLogin(); });
 
   // ── 二次确认 ──
   function openConfirm() {
@@ -165,7 +254,10 @@
 
     running = true;
     $("submitBtn").disabled = true;
+    // #4 展示日志面板（含标题与空状态）
+    $("logWrap").style.display = "";
     $("logBox").innerHTML = "";
+    $("logEmpty").style.display = "";
     logLine("开始投稿流程…");
     setCapsule("info", "准备中");
 
@@ -188,6 +280,7 @@
     } finally {
       running = false;
       $("submitBtn").disabled = false;
+      refreshHealth(); // 投稿结束后刷新状态为就绪
     }
   }
 
@@ -235,6 +328,21 @@
   $("submitBtn").addEventListener("click", openConfirm);
   $("confirmOk").addEventListener("click", () => { closeConfirm(); submit(); });
 
+  // ── 健康探活（#5：检测服务是否离线）──
+  async function refreshHealth() {
+    try {
+      const resp = await fetch("/api/health");
+      if (resp.ok) setReady();
+      else setOffline();
+    } catch (e) {
+      setOffline();
+    }
+  }
+
+  // ── 初始化 ──
   loadConfig();
+  refreshAccount();
+  refreshHealth();
+  setInterval(refreshHealth, 20000); // 每 20s 探活
   if (typeof window.bindStatusCursor === "function") window.bindStatusCursor(document);
 })();

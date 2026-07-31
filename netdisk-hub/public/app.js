@@ -51,7 +51,7 @@ async function loadAccounts() {
   const cards = document.getElementById('cards');
   // 先渲染「检查中」占位(避免校验网络耗时期间空白)
   const names = ['百度网盘', '夸克网盘', '迅雷网盘'];
-  cards.innerHTML = names.map((n) => `<div class="card"><div class="name">${n}</div><div class="status"><span class="dot off"></span>检查中…</div></div>`).join('');
+  cards.innerHTML = names.map((n) => `<div class="card"><div class="name">${n}</div><div class="status">${statusHTML('off', '检查中…')}</div></div>`).join('');
   try {
     const r = await fetch('/api/accounts');
     const d = await r.json();

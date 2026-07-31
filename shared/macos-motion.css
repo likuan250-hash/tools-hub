@@ -39,10 +39,6 @@
 .group-copy:active, .clear-input:active, .clear-corner:active,
 .modal-actions button:active, .tab-close:active { transform: scale(0.97); }
 
-/* ── 状态点呼吸 ── */
-.dot.ok, .chip .dot.green, .dot.green {
-  animation: statusBreath 2.4s ease-in-out infinite;
-}
 @keyframes statusBreath {
   0%, 100% { box-shadow: 0 0 6px var(--ok); }
   50% { box-shadow: 0 0 12px var(--ok); }

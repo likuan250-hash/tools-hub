@@ -36,3 +36,10 @@ input[type="text"], textarea {
 .btn, .theme-btn, .ver-badge, .clear-corner {
   border-radius: 10px;
 }
+
+/* ── 状态 chip 内的检测中点（修复状态系统改造遗漏的无样式残留）── */
+.chip .dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; margin-right: 6px; vertical-align: middle;
+  background: #F59E0B; /* warn 琥珀，与 status-luxe --st-warn 对齐 */
+}

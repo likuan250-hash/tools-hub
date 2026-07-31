@@ -249,10 +249,20 @@ function startChild(cfg) {
     // 子进程可经 IPC 主动上报（预留）
     log(`[${cfg.key}] msg:`, m);
   });
+  // 捕获子进程 stderr（require 失败/未捕获异常等崩溃原因的关键信息）
+  let childStderr = "";
+  proc.stderr?.on("data", (chunk) => {
+    const txt = String(chunk);
+    childStderr += txt;
+    // 仅在子进程异常退出时输出 stderr 避免正常日志刷屏
+  });
   proc.on("exit", (code, signal) => {
     cfg.running = false;
     cfg.proc = null;
-    log(`子进程 ${cfg.key} 退出 code=${code} signal=${signal}`);
+    const errMsg = (code && code !== 0 && childStderr)
+      ? ` | stderr: ${childStderr.slice(0, 500).replace(/\n/g, '\\n')}`
+      : "";
+    log(`子进程 ${cfg.key} 退出 code=${code} signal=${signal}${errMsg}`);
     pushStatus();
     if (quitting) return;
     if (cfg.attempts > MAX_RESTART) {

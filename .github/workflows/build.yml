@@ -31,6 +31,10 @@ jobs:
         working-directory: netdisk-hub
         run: npm install --no-audit --no-fund
 
+      - name: Install biliup-hub deps
+        working-directory: biliup-hub
+        run: npm install --no-audit --no-fund
+
       - name: Run kdocs-tool tests (CI 门禁，失败则不出包)
         working-directory: kdocs-tool
         run: npm test
@@ -39,6 +43,10 @@ jobs:
         working-directory: netdisk-hub
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm test
+
+      - name: Run biliup-hub tests (CI 门禁，失败则不出包)
+        working-directory: biliup-hub
         run: npm test
 
       - name: Verify status-luxe sync (三处副本逐字节一致)

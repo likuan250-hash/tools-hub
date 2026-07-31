@@ -102,3 +102,30 @@ jobs:
           name: ToolsHub-Setup
           path: dist/*.exe
           if-no-files-found: error
+
+      # ── 发布校验门禁（防 electron-builder 静默发布失败）──
+      # 已知坑：electron-builder --win nsis -p always 的 publish 阶段若遇 GitHub API 瞬时错误，
+      # 可能“构建成功但 Release 没建出来”，CI 仍显示 success、artifact 也上传了，
+      # 但用户点“检测更新”查不到新版（无 latest.yml）。这里显式校验 Release 已存在，
+      # 缺失则让 CI 失败并提示重跑，避免再次静默流出无发布的版本。
+      - name: Verify GitHub release published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "校验 Release 是否存在: $TAG"
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/likuan250-hash/tools-hub/releases/tags/$TAG")
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Release $TAG 已发布"
+              exit 0
+            fi
+            echo "  尝试 $i: HTTP $CODE，10s 后重试…"
+            sleep 10
+          done
+          echo "❌ Release $TAG 未发布（electron-builder 发布阶段可能静默失败）。请到 Actions 重跑本次 workflow。"
+          exit 1

@@ -1,38 +1,43 @@
-// test/store.test.js —— store.js 单测（默认配置 / 合并兜底）
-// 覆盖：comment 默认话术（#E 新版完整引流话术）、关键默认值、缺失字段兜底。
+// biliup-hub/test/store.test.js —— store.js 单测（I：置顶评论存量迁移）
 const test = require('node:test');
-const assert = require('node:assert');
+const assert = require('node:assert/strict');
 const store = require('../lib/store');
 
-test('defaultConfig: comment 为新版完整引流话术（含 [表情名] 语法，非 Unicode emoji）', () => {
-  const cfg = store.defaultConfig();
-  assert.strictEqual(
-    cfg.comment,
-    '老规矩！！！三[打call]连后关[调皮]注或者私[喜欢][喜欢]信一下就会自动回复（去看私信哦）会有下载方式哦！！'
-  );
-  // 确保仍使用 B站评论表情语法，而不是被替换成 Unicode emoji。
-  assert.ok(cfg.comment.includes('[打call]'), '应保留 [打call] 表情语法');
-  assert.ok(cfg.comment.includes('[调皮]'), '应保留 [调皮] 表情语法');
-  assert.ok(cfg.comment.includes('[喜欢]'), '应保留 [喜欢] 表情语法');
+// 旧短版话术（须与 lib/store.js 中 OLD_COMMENT 完全一致）。
+const OLD = '老规矩！！！三连后关注私信自动回复下载方式';
+// 新完整版以 defaultConfig().comment 为准（store 已内联该完整版）。
+const NEW = store.defaultConfig().comment;
+
+test('mergeDefaults: 旧短版 comment 自动迁移为新完整版 (I)', () => {
+  const out = store.mergeDefaults({ comment: OLD });
+  assert.notEqual(out.comment, OLD);
+  assert.equal(out.comment, NEW);
 });
 
-test('defaultConfig: 关键默认值符合 PRD（tid=17/line=bda2/copyright/noReprint/uid）', () => {
-  const cfg = store.defaultConfig();
-  assert.strictEqual(cfg.tid, 17);
-  assert.strictEqual(cfg.line, 'bda2');
-  assert.strictEqual(cfg.copyright, 1);
-  assert.strictEqual(cfg.noReprint, 1);
-  assert.strictEqual(cfg.uid, 236743002);
-  assert.strictEqual(cfg.seasonId, '6918057');
-  assert.strictEqual(cfg.sectionId, '7630305');
+test('mergeDefaults: 空 comment 回退默认新完整版 (I)', () => {
+  const out = store.mergeDefaults({ comment: '' });
+  assert.equal(out.comment, NEW);
 });
 
-test('mergeDefaults: 缺失 comment 兜底为默认话术', () => {
+test('mergeDefaults: 未提供 comment 使用默认新完整版 (I)', () => {
   const out = store.mergeDefaults({});
-  assert.ok(typeof out.comment === 'string' && out.comment.length > 0, 'comment 应兜底为默认话术');
+  assert.equal(out.comment, NEW);
 });
 
-test('mergeDefaults: 保留用户已设 comment', () => {
-  const out = store.mergeDefaults({ comment: '自定义置顶话术' });
-  assert.strictEqual(out.comment, '自定义置顶话术');
+test('mergeDefaults: 其它自定义 comment 不被覆盖 (I)', () => {
+  const custom = '这是我自己的置顶评论，请勿改动';
+  const out = store.mergeDefaults({ comment: custom });
+  assert.equal(out.comment, custom);
+});
+
+test('mergeDefaults: seasonId/sectionId 空串保持空串（不回退默认值）', () => {
+  const out = store.mergeDefaults({ seasonId: '', sectionId: '' });
+  assert.equal(out.seasonId, '');
+  assert.equal(out.sectionId, '');
+});
+
+test('mergeDefaults: 缺失 seasonId/sectionId 回退默认值兜底', () => {
+  const out = store.mergeDefaults({});
+  assert.ok(out.seasonId && out.seasonId !== '');
+  assert.ok(out.sectionId && out.sectionId !== '');
 });

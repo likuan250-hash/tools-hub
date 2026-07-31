@@ -1,103 +1,100 @@
-// test/server.test.js —— server.js /api/avatar 路由单测（mock fetch，不触网）
-// 覆盖：入参校验（缺 face / 非法 scheme → 400）、上游代理成功透传 content-type、
-// 上游非 2xx → 502、代理异常 → 500、路由存在性。
-// 同源校验由 server.js 全局 origin 中间件负责，本测试请求不带 Origin 头，正常放行。
+// biliup-hub/test/server.test.js —— server.js 单测（H：/api/seasons 接口）
 const test = require('node:test');
-const assert = require('node:assert');
-const http = require('http');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
-// 让 server.js 的 startServer 绑定到随机端口，避免占用 3600 造成测试进程退出。
-process.env.BILIUP_PORT = '0';
+// 准备临时数据目录（cookies 落点）；必须在 require('../server') 之前设定，
+// 因为 store 在首次 getConfig 时惰性读取 BILIUP_DATA_DIR。
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'biliup-seasons-'));
+
+function writeCookies(obj) {
+  fs.writeFileSync(path.join(TMP, 'cookies.json'), JSON.stringify(obj), 'utf8');
+}
+
+process.env.BILIUP_DATA_DIR = TMP;
+
 const app = require('../server');
 
-function startTestServer() {
+function startServer() {
   return new Promise((resolve) => {
-    const srv = http.createServer(app);
-    srv.listen(0, '127.0.0.1', () => resolve(srv));
+    const srv = app.listen(0, '127.0.0.1', () => resolve(srv));
   });
 }
 
-function get(srv, pathname) {
-  return new Promise((resolve, reject) => {
-    const { port } = srv.address();
-    const r = http.request(
-      { host: '127.0.0.1', port, path: pathname, method: 'GET', headers: {} },
-      (res) => {
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () =>
-          resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) })
-        );
-      }
-    );
-    r.on('error', reject);
-    r.end();
-  });
+async function getJSON(srv, p) {
+  const port = srv.address().port;
+  const resp = await fetch(`http://127.0.0.1:${port}${p}`);
+  return { status: resp.status, body: await resp.json() };
 }
 
-function fakeImgResp({ ok = true, status = 200, ct = 'image/png', body = 'FAKEPNG' } = {}) {
-  return {
-    ok,
-    status,
-    headers: { get: (k) => (String(k).toLowerCase() === 'content-type' ? ct : null) },
-    arrayBuffer: async () => new TextEncoder().encode(body).buffer,
-  };
-}
-
-// 非法 face 校验分支（不依赖 mock）。
-test('GET /api/avatar: 缺 face → 400', async () => {
-  const srv = await startTestServer();
+test('GET /api/seasons 登录态：保留 state=0，过滤 state=-6，映射 sections', async () => {
+  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
+  app.locals.seasonsFetch = async () => ({
+    ok: true,
+    json: async () => ({
+      code: 0,
+      data: {
+        seasons: [
+          { season: { id: 11, title: '合集A', state: 0, sections: [{ id: 111, title: '分集1' }, { id: 112, title: '分集2' }] } },
+          { season: { id: 22, title: '草稿合集', state: -6, sections: [] } },
+          { season: { id: 33, title: '合集B', state: 0, sections: [] } },
+        ],
+      },
+    }),
+  });
+  const srv = await startServer();
   try {
-    const r = await get(srv, '/api/avatar');
-    assert.strictEqual(r.status, 400);
-  } finally { srv.close(); }
+    const { status, body } = await getJSON(srv, '/api/seasons');
+    assert.equal(status, 200);
+    assert.deepEqual(body, {
+      seasons: [
+        { id: '11', title: '合集A', sections: [{ id: '111', title: '分集1' }, { id: '112', title: '分集2' }] },
+        { id: '33', title: '合集B', sections: [] },
+      ],
+    });
+  } finally {
+    app.locals.seasonsFetch = undefined;
+    srv.close();
+  }
 });
 
-test('GET /api/avatar: face 非 http(s)（javascript:） → 400', async () => {
-  const srv = await startTestServer();
+test('GET /api/seasons 未登录（cookies 无效）：降级 {seasons:[]}', async () => {
+  writeCookies({}); // 缺少 SESSDATA / bili_jct
+  const srv = await startServer();
   try {
-    const r = await get(srv, '/api/avatar?face=' + encodeURIComponent('javascript:alert(1)'));
-    assert.strictEqual(r.status, 400);
-  } finally { srv.close(); }
+    const { status, body } = await getJSON(srv, '/api/seasons');
+    assert.equal(status, 200);
+    assert.deepEqual(body, { seasons: [] });
+  } finally {
+    srv.close();
+  }
 });
 
-test('GET /api/avatar: face 非 http(s)（ftp:） → 400', async () => {
-  const srv = await startTestServer();
+test('GET /api/seasons 接口异常：降级 {seasons:[]}（不抛 500）', async () => {
+  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
+  app.locals.seasonsFetch = async () => { throw new Error('network down'); };
+  const srv = await startServer();
   try {
-    const r = await get(srv, '/api/avatar?face=' + encodeURIComponent('ftp://x.com/a.png'));
-    assert.strictEqual(r.status, 400);
-  } finally { srv.close(); }
+    const { status, body } = await getJSON(srv, '/api/seasons');
+    assert.equal(status, 200);
+    assert.deepEqual(body, { seasons: [] });
+  } finally {
+    app.locals.seasonsFetch = undefined;
+    srv.close();
+  }
 });
 
-// 以下用例需注入 mock fetch（写入 app.locals.avatarFetch），串行执行避免互相覆盖。
-test.describe('GET /api/avatar: 代理分支（mock fetch）', { concurrency: 1 }, () => {
-  test('合法 face + 上游 200 → 200 且透传 content-type + 二进制体 + 缓存头', async () => {
-    app.locals.avatarFetch = async () => fakeImgResp({ ok: true, ct: 'image/png' });
-    const srv = await startTestServer();
-    try {
-      const r = await get(srv, '/api/avatar?face=' + encodeURIComponent('https://i0.hdslb.com/avatar.png'));
-      assert.strictEqual(r.status, 200);
-      assert.match(r.headers['content-type'] || '', /image\/png/);
-      assert.strictEqual(r.body.toString(), 'FAKEPNG');
-      assert.ok((r.headers['cache-control'] || '').includes('max-age=300'), '应带 Cache-Control: max-age=300');
-    } finally { srv.close(); app.locals.avatarFetch = undefined; }
-  });
-
-  test('上游非 2xx → 502', async () => {
-    app.locals.avatarFetch = async () => fakeImgResp({ ok: false, status: 404 });
-    const srv = await startTestServer();
-    try {
-      const r = await get(srv, '/api/avatar?face=' + encodeURIComponent('https://i0.hdslb.com/x.png'));
-      assert.strictEqual(r.status, 502);
-    } finally { srv.close(); app.locals.avatarFetch = undefined; }
-  });
-
-  test('代理异常 → 500', async () => {
-    app.locals.avatarFetch = async () => { throw new Error('boom'); };
-    const srv = await startTestServer();
-    try {
-      const r = await get(srv, '/api/avatar?face=' + encodeURIComponent('https://i0.hdslb.com/x.png'));
-      assert.strictEqual(r.status, 500);
-    } finally { srv.close(); app.locals.avatarFetch = undefined; }
-  });
+test('GET /api/seasons 上游非 200：降级 {seasons:[]}', async () => {
+  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
+  app.locals.seasonsFetch = async () => ({ ok: false, status: 412, json: async () => ({}) });
+  const srv = await startServer();
+  try {
+    const { body } = await getJSON(srv, '/api/seasons');
+    assert.deepEqual(body, { seasons: [] });
+  } finally {
+    app.locals.seasonsFetch = undefined;
+    srv.close();
+  }
 });

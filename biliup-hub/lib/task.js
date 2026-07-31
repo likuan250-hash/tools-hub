@@ -100,12 +100,18 @@ async function run(req, ctx) {
     log('uploading', '稿件信息 aid=' + videoInfo.aid + ' cid=' + videoInfo.cid);
 
     // 5) adding_season（坑点2：独立 API 后置；坑点4：-404 重试）
-    setStage('adding_season', '合集后置中');
-    await season.add(config.sectionId, videoInfo.aid, videoInfo.cid, title, csrf, cookieHeader, {
-      onLog: (m) => log('adding_season', m),
-      deps: subDeps,
-    });
-    log('adding_season', '合集后置完成');
+    // H: sectionId 为空串（用户未指定分集）时跳过合集后置，避免向后端传空 sectionId 报错。
+    if (config.sectionId) {
+      setStage('adding_season', '合集后置中');
+      await season.add(config.sectionId, videoInfo.aid, videoInfo.cid, title, csrf, cookieHeader, {
+        onLog: (m) => log('adding_season', m),
+        deps: subDeps,
+      });
+      log('adding_season', '合集后置完成');
+    } else {
+      setStage('adding_season', '跳过合集后置（未指定分集）');
+      log('adding_season', '未指定分集，跳过合集后置');
+    }
 
     // 6) commenting（发布 + 置顶）
     setStage('commenting', '评论置顶中');

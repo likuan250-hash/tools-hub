@@ -54,6 +54,9 @@ function mergeDefaults(obj) {
   const out = Object.assign({}, def, obj || {});
   // AIGC 合规头已移除（#3）：清理任何历史残留字段，避免前端/后端误用。
   delete out.aigc;
+  // I. 置顶评论存量迁移：旧短版话术自动升级为新完整版（手动改过其它值的用户不受影响）。
+  const OLD_COMMENT = '老规矩！！！三连后关注私信自动回复下载方式';
+  if (out.comment === OLD_COMMENT) out.comment = def.comment;
   if (!Array.isArray(out.tags)) out.tags = def.tags;
   out.tid = Number(out.tid) || def.tid;
   out.copyright = Number(out.copyright) || def.copyright;

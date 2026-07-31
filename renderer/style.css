@@ -139,29 +139,37 @@ body {
 /* ── 入口页 ── */
 .landing {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 24px; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
+  padding: 64px 24px 24px; overflow-y: auto;
   visibility: visible;
+  opacity: 1; transform: scale(1);
+  transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-spring);
   z-index: 0;
 }
-.landing.hidden { visibility: hidden; }
+/* M: 切走入口（隐藏）时淡出 + 微缩，延迟到动画结束再 visibility:hidden，露出工具页 */
+.landing.hidden {
+  opacity: 0; transform: scale(0.98) translateY(6px); visibility: hidden;
+  transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-spring), visibility 0s linear var(--dur);
+}
 .landing-title {
   font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: 1px;
   color: var(--text);
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.25);
 }
 .landing-sub {
-  color: var(--text-dim); font-size: 14px; margin-bottom: 32px; text-align: center;
+  color: var(--text-dim); font-size: 14px; margin-bottom: 32px; text-align: left;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.2);
 }
+/* L: 卡片横排居左（空间不足才换行）；固定宽，避免被拉伸 */
 .cards {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px; width: 100%; max-width: 720px;
+  display: flex; flex-direction: row; justify-content: flex-start; flex-wrap: wrap;
+  gap: 14px; width: 100%;
 }
 /* Bento 风格大图标状态 tile —— 背景需保证文字可读,不能过透 */
 .card {
   position: relative; overflow: hidden;
   display: flex; flex-direction: column; gap: 14px;
+  flex: 0 0 auto; width: 260px;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 22px; padding: 26px 24px;

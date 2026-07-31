@@ -19,6 +19,10 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1';
 function getProxyFetch() {
   try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
 }
+// 合集列表代理用的 fetch（与 avatar/account 同构）；便于单测注入 app.locals.seasonsFetch。
+function getSeasonsFetch() {
+  try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
+}
 
 const app = express();
 const PORT = process.env.BILIUP_PORT || 3600;
@@ -113,6 +117,46 @@ app.get('/api/account', async (req, res) => {
   } catch (e) {
     logger.error('[account] 查询失败:', e.message);
     res.json({ isLogin: false });
+  }
+});
+
+// ── 合集列表（#H：登录态下拉级联；未登录/失败降级空数组，前端静默降级）──
+// 同源校验由上方 origin 中间件统一处理；此处仅做 cookies 校验 + 代理转发。
+app.get('/api/seasons', async (req, res) => {
+  try {
+    const config = store.getConfig();
+    const cf = cookies.load(config.cookiesPath);
+    if (!cookies.validate(cf)) {
+      return res.json({ seasons: [] });
+    }
+    const fetchFn = (app.locals && app.locals.seasonsFetch) || getSeasonsFetch();
+    const url = 'https://member.bilibili.com/x2/creative/web/seasons?pn=1&ps=30';
+    const upstream = await fetchFn(url, {
+      headers: {
+        'Cookie': cookies.toHeader(cf),
+        'Referer': 'https://www.bilibili.com/',
+        'User-Agent': USER_AGENT,
+      },
+    });
+    if (!upstream.ok) {
+      return res.json({ seasons: [] });
+    }
+    const json = await upstream.json();
+    const seasons = Array.isArray(json && json.data && json.data.seasons) ? json.data.seasons : [];
+    // 仅保留 state===0 的合集，映射为前端级联所需的 [{id,title,sections:[{id,title}]}]。
+    const mapped = seasons
+      .filter((s) => s && s.season && s.season.state === 0)
+      .map((s) => ({
+        id: String(s.season.id),
+        title: s.season.title,
+        sections: Array.isArray(s.season.sections)
+          ? s.season.sections.map((sec) => ({ id: String(sec.id), title: sec.title }))
+          : [],
+      }));
+    res.json({ seasons: mapped });
+  } catch (e) {
+    logger.error('[seasons] 查询失败:', e.message);
+    res.json({ seasons: [] });
   }
 });
 

@@ -93,8 +93,9 @@
       // 分区/版权/转载/线路 已改为 <select>；用 selectPreserve 赋值，避免旧 config 含
       // 非内置选项（如 tid=20）时浏览器取消选中导致静默丢值（#D Bug 修复）。
       selectPreserve($("cfgTid"), cfg.tid != null ? cfg.tid : "");
-      $("cfgSeason").value = cfg.seasonId != null ? cfg.seasonId : "";
-      $("cfgSection").value = cfg.sectionId != null ? cfg.sectionId : "";
+      // H: 合集/分集改为级联下拉，用 selectPreserve 赋值（兼容旧数字值，不在列表则显示「其它 (val)」）。
+      selectPreserve($("cfgSeason"), cfg.seasonId != null ? cfg.seasonId : "");
+      selectPreserve($("cfgSection"), cfg.sectionId != null ? cfg.sectionId : "");
       selectPreserve($("cfgCopyright"), cfg.copyright != null ? cfg.copyright : "");
       selectPreserve($("cfgNoReprint"), cfg.noReprint != null ? cfg.noReprint : "");
       selectPreserve($("cfgLine"), cfg.line || "");
@@ -109,14 +110,69 @@
     }
   }
 
+  // ── 合集/分集级联下拉（#H）──
+  // seasonSections: seasonId -> [{ id, title }]，供分集下拉级联填充。
+  let seasonSections = Object.create(null);
+  function fillSections(seasonId) {
+    const selSection = $("cfgSection");
+    if (!selSection) return;
+    selSection.length = 1; // 仅保留默认空项「不指定分集」
+    const secs = seasonSections[seasonId] || [];
+    for (const sec of secs) {
+      const opt = document.createElement("option");
+      opt.value = String(sec.id);
+      opt.textContent = (sec.title != null && sec.title !== "") ? sec.title : sec.id;
+      selSection.appendChild(opt);
+    }
+  }
+  function refreshSeasons() {
+    const selSeason = $("cfgSeason");
+    const selSection = $("cfgSection");
+    if (!selSeason || !selSection) return Promise.resolve();
+    // 记住 loadConfig 已设好的当前值（含可能的「其它 (val)」opt），populate 后回填，避免 value 丢失。
+    const prevSeason = selSeason.value;
+    const prevSection = selSection.value;
+    return fetch("/api/seasons")
+      .then((r) => r.json())
+      .then((j) => {
+        const seasons = (j && Array.isArray(j.seasons)) ? j.seasons : [];
+        selSeason.length = 1; // 仅保留默认空项「不使用合集」
+        selSection.length = 1;
+        seasonSections = Object.create(null);
+        for (const s of seasons) {
+          const opt = document.createElement("option");
+          opt.value = String(s.id);
+          opt.textContent = (s.title != null && s.title !== "") ? s.title : s.id;
+          selSeason.appendChild(opt);
+          seasonSections[s.id] = Array.isArray(s.sections) ? s.sections : [];
+        }
+        // 回填此前选中的合集（已登录命中真实合集则选中，否则 selectPreserve 追加「其它」）。
+        if (prevSeason) selectPreserve(selSeason, prevSeason);
+        else selSeason.value = "";
+        fillSections(selSeason.value || prevSeason);
+        if (prevSection) selectPreserve(selSection, prevSection);
+        else selSection.value = "";
+      })
+      .catch((e) => {
+        // 未登录/接口失败：下拉仅留默认空项（上面已清空），不填任何可选项。
+        logLine("加载合集列表失败: " + e.message, "err");
+      });
+  }
+  // 合集变更 → 级联填充分集（重置为默认空项）。
+  const cfgSeasonEl = $("cfgSeason");
+  if (cfgSeasonEl) {
+    cfgSeasonEl.addEventListener("change", () => fillSections(cfgSeasonEl.value));
+  }
+
   // ── 保存配置（#3：不再包含 AIGC 字段）──
   $("saveCfgBtn").addEventListener("click", async () => {
     const payload = {
       // tid/copyright/noReprint 用 coerceInt 统一解析：0 是合法值（如 noReprint=0 禁止转载），
       // 不会被 falsy 兜底改写（#noReprint falsy 陷阱修复）。uid/line 保持原逻辑不动。
       tid: coerceInt($("cfgTid").value, 17),
-      seasonId: String($("cfgSeason").value || "6918057"),
-      sectionId: String($("cfgSection").value || "7630305"),
+      // H: 空串表示「不使用合集 / 不指定分集」，原样保存空串（不再硬兜底 6918057/7630305）。
+      seasonId: String($("cfgSeason").value || ""),
+      sectionId: String($("cfgSection").value || ""),
       copyright: coerceInt($("cfgCopyright").value, 1),
       noReprint: coerceInt($("cfgNoReprint").value, 1),
       line: $("cfgLine").value || "bda2",
@@ -230,6 +286,7 @@
         $("loginStatus").textContent = "登录成功";
         refreshAccount();
         loadConfig(); // cookies 可能已就绪
+        refreshSeasons(); // 登录态刷新后重新拉取合集列表并回填选中项
       } else if (j.status === "expired") {
         stopLogin();
         $("loginStatus").textContent = "二维码已过期，请重新点击登录";
@@ -385,12 +442,18 @@
       const resp = await fetch("/api/version");
       const j = await resp.json();
       const v = j && j.version;
-      if (v) $("verBadge").textContent = "v" + v;
+      // O: 与 netdisk/kdocs 一致，用 statusHTML 胶囊渲染（✅ 工具箱 vX.Y.Z）；失败静默保留占位 "v—"。
+      if (v) {
+        $("verBadge").innerHTML = (typeof window.statusHTML === "function")
+          ? window.statusHTML('ok', '工具箱 v' + v, { size: 'sm' })
+          : ('工具箱 v' + v);
+      }
     } catch (e) { /* 失败静默：保留占位 "v—" */ }
   }
 
   // ── 初始化 ──
   loadConfig();
+  refreshSeasons(); // 登录态下拉级联：populate 后排回 loadConfig 已设值
   refreshAccount();
   refreshHealth();
   refreshVersion();

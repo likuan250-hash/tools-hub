@@ -41,22 +41,23 @@
     }
     .theme-btn:hover { transform: translateY(-2px); background: rgba(255,255,255,0.14); }
     .ver-badge {
-      border: 1px solid var(--glass-border); background: var(--glass-bg);
-      color: var(--text-dim); border-radius: 12px; padding: 8px 14px;
-      cursor: pointer; font-size: 13px; backdrop-filter: blur(16px);
-      box-shadow: var(--shadow-card);
-      transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+      color: var(--text-dim); padding: 6px 10px;
+      cursor: pointer; font-size: 13px;
+      background: transparent; border: none; box-shadow: none;
+      backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 0;
+      transition: color var(--dur) var(--ease-out);
       font-family: var(--mono-font); white-space: nowrap;
     }
-    .ver-badge:hover { transform: translateY(-2px); background: rgba(255,255,255,0.14); }
+    .ver-badge:hover { color: var(--text); }
 
     .status-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
     .chip {
-      display: flex; align-items: center; gap: 8px; padding: 10px 16px;
-      border: 1px solid var(--glass-border); border-radius: 14px;
-      background: var(--glass-bg); backdrop-filter: blur(22px) saturate(160%);
-      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+      display: flex; align-items: center; gap: 8px; padding: 6px 10px;
       font-size: 13px; color: var(--text-dim);
+      background: transparent; border: none; box-shadow: none;
+      backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 0;
+      cursor: default;
+      transition: color var(--dur) var(--ease-out);
     }
     .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
     .chip .dot.green { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
@@ -176,7 +177,7 @@
     }
     /* 实色回退：老设备/部分 webview 不支持 backdrop-filter 时玻璃失效，用实色卡片 + 正常深边框保证可读 */
     @supports not (backdrop-filter: blur(1px)) {
-      .panel, .chip, .card, .modal, .theme-btn, .ver-badge, .tab {
+      .panel, .card, .modal, .theme-btn, .tab {
         -webkit-backdrop-filter: none; backdrop-filter: none;
         background: #eef1fb; border: 1px solid rgba(90, 95, 150, 0.45);
       }
@@ -361,7 +362,7 @@ body { font-family: var(--mac-font); }
 input[type="text"], input[type="password"], input[type="number"], select, textarea {
   border-radius: 10px;
 }
-.btn, .auth-btn, .theme-btn, .ver-badge, .dir-btn, .clear-input {
+.btn, .auth-btn, .theme-btn, .dir-btn, .clear-input {
   border-radius: 10px;
 }
   </style>

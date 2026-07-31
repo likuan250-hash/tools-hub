@@ -60,7 +60,9 @@ function buildArgs(req, cfg, coverPath) {
 }
 
 /**
- * 生成 PowerShell 临时脚本内容（utf-8-sig 编码、头部 @chcp 65001、反引号转义、多行 desc）。
+ * 生成 PowerShell 临时脚本内容（utf-8-sig 编码、反引号转义、多行 desc）。
+ * 注：不再写 @chcp 65001 —— 该语法是 cmd 写法，写在 .ps1 里会被 PowerShell 当作 splatting 解析报错；
+ * 文件已由 writeTempScript 以 utf-8-sig（带 BOM）写入，编码正确无需 chcp。
  * @param {Object} req { videoPath, title, tags, desc, publishMode, dtime }
  * @param {Object} cfg { biliupExePath, tid, copyright, noReprint, line, cookiesPath, tags }
  * @param {string} [coverPath] 封面 png 路径（可选）
@@ -71,7 +73,6 @@ function buildPs1(req, cfg, coverPath) {
   const exe = cfg.biliupExePath;
   const args = buildArgs(req, cfg, coverPath);
   const content = [
-    '@chcp 65001 >nul',                 // 强制 UTF-8 代码页（坑点3，避免中文乱码）
     '& ' + ps1Quote(exe) + ' ' + args.join(' '),
   ].join('\n');
   return { path: '', content, shell: 'ps1' };

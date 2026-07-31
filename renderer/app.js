@@ -108,6 +108,9 @@
   let activeKey = HOME_KEY;
   let sortMode = false; // 卡片排序编辑模式
 
+  // 待激活兜底定时器：key -> timerId（服务未起导致 dom-ready 不触发时强制激活）
+  const pendingFallbacks = new Map();
+
   // ── 卡片顺序持久化 ──
   // 读取已保存顺序：过滤已删除工具、把新增工具追加到末尾（兜底）
   function getCardOrder() {
@@ -364,16 +367,23 @@
     wv.setAttribute("allowpopups", "true"); // 授权页等弹窗需要
     wv.className = "wv";
     wv.id = "wv-" + key;
+    wv.dataset.key = key;
     wv.addEventListener("did-fail-load", (e) => {
       if (e.errorCode === -3) return;
       console.warn("webview 加载失败", key, e.errorDescription);
     });
     // DOM 准备好后触发一次 resize，确保 webview 内部内容正确撑满容器
     wv.addEventListener("dom-ready", () => {
+      wv.dataset.ready = "1";
       try { wv.send("sync-theme", theme); } catch (e) {} // 加载完成后同步工具箱主题
-      if (wv.classList.contains("active")) {
-        resizeWebview(wv);
-        setTimeout(() => resizeWebview(wv), 60);
+      // 仍是当前要展示的标签才淡入；否则仅标记就绪，等切回时直接激活（避免黑闪）
+      if (wv.dataset.key === activeKey) {
+        wv.dataset.pending = "";
+        const ft = pendingFallbacks.get(wv.dataset.key);
+        if (ft) { clearTimeout(ft); pendingFallbacks.delete(wv.dataset.key); }
+        activateWebview(wv);
+      } else {
+        wv.dataset.pending = ""; // 已就绪，pending 失效
       }
     });
     stageEl.appendChild(wv);
@@ -390,6 +400,8 @@
     openTabs.splice(idx, 1);
     const wv = document.getElementById("wv-" + key);
     if (wv) wv.remove();
+    const ft = pendingFallbacks.get(key);
+    if (ft) { clearTimeout(ft); pendingFallbacks.delete(key); }
     renderTabs();
     if (activeKey === key) {
       const tools = openTabs.filter((x) => x.key !== HOME_KEY);
@@ -401,6 +413,32 @@
     // webview 在显示/窗口大小变化后需要触发 resize 才能正确重绘内部尺寸
     if (!wv || !wv.resize) return;
     try { wv.resize(); } catch (e) {}
+  }
+
+  // 激活一个 webview：隐藏 landing + 挂 .active（CSS 淡入微缩放），并触发内部 resize
+  function activateWebview(wv) {
+    landingEl.classList.add("hidden");
+    wv.classList.add("active");
+    requestAnimationFrame(() => {
+      resizeWebview(wv);
+      // 再补一次，兼容某些情况下首帧未生效
+      setTimeout(() => resizeWebview(wv), 60);
+    });
+  }
+
+  // 首次激活兜底：dom-ready 超过 1500ms 仍未触发（如服务未起），且仍是当前目标，
+  // 则强制激活——露出 webview（错误页）也好过卡在 landing/空白。
+  function scheduleFallbackActivation(wv) {
+    const key = wv.dataset.key;
+    if (pendingFallbacks.has(key)) return;
+    const ft = setTimeout(() => {
+      pendingFallbacks.delete(key);
+      if (wv.dataset.ready) return;             // 已就绪
+      if (wv.dataset.key !== activeKey) return; // 已切走
+      wv.dataset.pending = "";
+      activateWebview(wv);
+    }, 1500);
+    pendingFallbacks.set(key, ft);
   }
 
   function switchTab(key) {
@@ -417,22 +455,23 @@
       });
       return;
     }
-    // 工具页：隐藏 landing，显示对应 webview
-    landingEl.classList.add("hidden");
+    // 工具页：显示对应 webview
     openTabs.forEach((x) => {
       if (x.key === HOME_KEY) return; // 跳过入口页，它不走 webview
       const wv = document.getElementById("wv-" + x.key);
       if (!wv) return;
       const active = x.key === key;
-      const wasActive = wv.classList.contains("active");
-      wv.classList.toggle("active", active);
       if (active) {
-        // visibility 改变后内部布局需要一帧才能稳定，延迟 resize
-        requestAnimationFrame(() => {
-          resizeWebview(wv);
-          // 再补一次，兼容某些情况下首帧未生效
-          setTimeout(() => resizeWebview(wv), 60);
-        });
+        if (!wv.dataset.ready) {
+          // 内容未就绪：保持 webview hidden，landing 仍可见（环境光渐变，非黑）；
+          // 等 dom-ready 再 activateWebview（内部隐藏 landing + 挂 .active 淡入）
+          wv.dataset.pending = "1";
+          scheduleFallbackActivation(wv);
+        } else {
+          activateWebview(wv);
+        }
+      } else {
+        wv.classList.remove("active");
       }
     });
   }

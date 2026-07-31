@@ -459,4 +459,25 @@
   refreshVersion();
   setInterval(refreshHealth, 20000); // 每 20s 探活
   if (typeof window.bindStatusCursor === "function") window.bindStatusCursor(document);
+
+  // T02：首屏入场编排（零侵入：仅给 .wrap 首屏可见块挂 pop-in + --i，复用内联 macos-motion.css 的 stagger）
+  function applyEntrance(scope, max) {
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    } catch (e) {}
+    const root = scope || document;
+    const blocks = Array.from(root.children).filter((el) => {
+      if (!el || !el.style) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") return false;
+      if (el.offsetParent === null) return false; // 不在渲染树（如隐藏面板）跳过
+      return true;
+    });
+    const n = Math.min(max || 6, blocks.length);
+    for (let i = 0; i < n; i++) {
+      blocks[i].classList.add("pop-in");
+      blocks[i].style.setProperty("--i", i);
+    }
+  }
+  applyEntrance(document.querySelector(".wrap"));
 })();

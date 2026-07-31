@@ -413,6 +413,21 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     }
     /* 主题由工具箱统一管理，内嵌项目自身的主题按钮永久隐藏 */
     #themeBtn { display: none !important; }
+    /* P01：金山文档状态标签去白框（kdocs 状态胶囊 .st-luxe 玻璃背景在亮色主题下读感发白） */
+    .status-row .chip .st-luxe {
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      padding-left: 2px;
+    }
+    /* 颜色重指到页面主题 token（规避 status-luxe 键控 prefers-color-scheme 与 data-theme 解耦的明暗错配） */
+    .status-row .chip .st-luxe--ok   { --c: var(--ok);       --txt: var(--text); }
+    .status-row .chip .st-luxe--off  { --c: var(--text-dim); --txt: var(--text-dim); }
+    .status-row .chip .st-luxe--warn { --c: var(--warn);     --txt: var(--text); }
+    .status-row .chip .st-luxe--err  { --c: var(--err);      --txt: var(--text); }
+    .status-row .chip .st-luxe--info { --c: var(--accent-2); --txt: var(--text); }
   </style>
   <link rel="stylesheet" href="status-luxe.css" />
 </head>

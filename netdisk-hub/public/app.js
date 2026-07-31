@@ -805,3 +805,26 @@ if (typeof bindStatusCursor === 'function') bindStatusCursor(document);
 // 首屏即时渲染(账户接口已改为立即返回,不再被迅雷 token 冷启动阻塞);
 // 2.8s 后再拉一次,等后台探测/迅雷 token 预热完成后刷新卡片上的「联网校验」提示。
 setTimeout(loadAccounts, 2800);
+
+// T02：首屏入场编排（零侵入：仅给 .wrap 首屏可见块挂 pop-in + --i，复用内联 macos-motion.css 的 stagger）
+(function () {
+  function applyEntrance(scope, max) {
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    } catch (e) {}
+    const root = scope || document;
+    const blocks = Array.from(root.children).filter((el) => {
+      if (!el || !el.style) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") return false;
+      if (el.offsetParent === null) return false; // 不在渲染树（如隐藏面板 / #banner）跳过
+      return true;
+    });
+    const n = Math.min(max || 6, blocks.length);
+    for (let i = 0; i < n; i++) {
+      blocks[i].classList.add("pop-in");
+      blocks[i].style.setProperty("--i", i);
+    }
+  }
+  applyEntrance(document.querySelector(".wrap"));
+})();

@@ -132,9 +132,27 @@ body {
   width: 100%; height: 100%;
   border: none; background: var(--bg-2);
   visibility: hidden;
+  opacity: 0;
+  transform: scale(.98);
   z-index: 1;
+  /* 默认隐藏：visibility 延迟到过渡结束才 hidden，避免淡出途中被裁掉；
+     opacity+scale 提供平滑淡入微缩放（与 .landing 同一手法，消除切页瞬切黑闪） */
+  transition:
+    opacity var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-spring),
+    visibility 0s linear var(--dur);
 }
-.wv.active { visibility: visible; z-index: 2; }
+.wv.active {
+  visibility: visible;
+  opacity: 1;
+  transform: scale(1);
+  z-index: 2;
+  /* 激活：立即 visible，再淡入；可见性切换无延迟 */
+  transition:
+    opacity var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-spring),
+    visibility 0s linear 0s;
+}
 
 /* ── 入口页 ── */
 .landing {

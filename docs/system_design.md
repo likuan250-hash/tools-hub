@@ -1,398 +1,231 @@
-# 系统架构设计 + 任务分解：B站自动投稿（biliup-hub）
+# tools-hub 系统架构设计 + 任务分解
 
-> 架构师：高见远（Bob）｜ 工具箱：tools-hub（Electron，git v0.1.58）｜ 团队：software-biliup-hub
-> 配套文档：`docs/class-diagram.mermaid`（类图）、`docs/sequence-diagram.mermaid`（时序图）
-> 本文档可直接转交工程师 **寇豆码** 实现。所有结论已吸收主理人裁决与 PRD 约束。
+> 架构师：高见远（Bob）｜基于主理人已确认诊断（P01 / P02 根因1+2）产出
+> 项目路径：`E:/d/work/tools-hub`｜Electron 主进程 + 入口页 renderer 经 `<webview>` 内嵌 3 个独立 Express 前端
 
 ---
 
-## 1. 实现方案 + 框架选型
+## Part A：系统设计方案
 
-### 1.1 技术栈（已定，沿用现有同构）
+### 1. 实现方案 + 框架选型
 
-| 层 | 技术 | 说明 |
+**框架选型：沿用现有技术栈，零新增依赖、零构建步骤。**
+
+- 渲染层：原生 HTML/CSS/JS（入口页 `renderer/`）。
+- 嵌入方式：Electron `<webview>`（每个工具一个独立 webview 实例，`src` 指向本地 Express 端口：kdocs `:3599`、netdisk `:3000`、biliup `:3600`）。
+- 三套工具前端（`kdocs-tool` / `netdisk-hub` / `biliup-hub`）均为独立 Express 服务，已各自**内联** `tokens.css` + `macos-motion.css` + `status-luxe.css` 副本（v0.1.43 起为修复打包后 `app.asar` 404 而内联，单一真源仍是 `shared/`），运行时零外部依赖。
+- 主题同步：渲染进程 `window.electronAPI.setTheme` 上报主进程 → `webview-preload.js` 注入 `<html data-theme>` 并隐藏 `#themeBtn`；渲染进程经 `wv.send("sync-theme", t)` 把主题推给已开 webview。
+
+**如何把"页面级入场"接上三套独立前端（根因2）：**
+
+三套工具页 `index.html` 已内联完整 `macos-motion.css`（含 `.pop-in` 类与 `@keyframes popIn`），但**没有任何元素挂 `class="pop-in"`**，故首屏只"啪"地出现。修复采用**零侵入**方式：在各工具 `app.js` 运行时（脚本位于 `<body>` 末尾，等价于 DOMContentLoaded），按文档顺序给首屏可见块（`.wrap > header` / `.panel` / `.cards`）依次挂 `pop-in` + `--i`，直接复用既有 keyframes 做 stagger 弹入。**不改 HTML 结构、不改现有 class、不新增 CSS。**
+
+**黑闪根因1 修复：**
+
+`renderer/style.css` 的 `.wv` / `.wv.active` 当前只切 `visibility:hidden/visible`，无 opacity/transform 过渡 → 切工具页是"瞬切"；首次导航远程 HTML 有延迟，期间露出 `.wv` 自身深蓝背景 `background: var(--bg-2)`（≈黑）。两步解决：
+1. 给 `.wv`/`.wv.active` 增加 `opacity(0→1)` + `transform(scale .98→1)` 过渡（淡入微缩放），保留 `visibility` 切换（避免 `display:none` 导致 webview 内部尺寸异常），隐藏侧把 `visibility:hidden` 延后到过渡结束。
+2. 在 `renderer/app.js` 中**把"首次激活"延迟到 webview `dom-ready`**（内容就绪才淡入）；`dom-ready` 之前 webview 保持 hidden，下方带环境光渐变的 landing 仍可见 → 黑闪消失。已 loaded 的 webview 切回时直接激活（内容已在，淡入无黑）。
+
+---
+
+### 2. 文件列表（标注改动）
+
+| 文件（相对仓库根） | 是否改动 | 改动内容 |
 |---|---|---|
-| 主进程 | Electron `main.js` | 经 `CHILDREN` 注册表 `fork` 子进程；端口防抢占（bootToken） |
-| 子服务 | **原生 Node + Express**（非 Vite/React） | 监听 `127.0.0.1:3600`，与 `netdisk-hub`（3000）/ `kdocs-tool`（3599）同构 |
-| 编排逻辑 | Node `child_process` 调 `biliup.exe` | 重写为临时脚本文件执行（绕开 `--extra-fields` 坑），**不复用** `D:\biliupR` 的 `.ps1/.bat` |
-| 前端 | **原生 HTML/CSS/JS** + `shared/status-luxe` | macos 玻璃拟态，与网盘/金山前端一致；复用 status-luxe（复制为第 4 副本） |
-| 外部二进制 | `biliup.exe` / `ffmpeg` / `cookies.json` | 路径全部 UI 可配，不硬编码 `D:\` |
-
-> 为什么不用 Vite/React：主进程以 `<webview>` 内嵌子服务页面，现有两套工具均用原生 + status-luxe，biliup-hub 必须**同构**以保证视觉/流程/构建链路一致。
-
-### 1.2 biliup-hub 子服务进程模型
-
-```
-main.js (Electron)
-  └─ CHILDREN.biliup = { key, name, script, cwd:'biliup-hub', url:'http://localhost:3600', env }
-       └─ fork('biliup-hub/server.js', [], { cwd, env:{TOOLSHUB_VERSION, BILIUP_PORT='3600', BILIUP_DATA_DIR, BOOT_TOKEN}, execPath: NODE_BIN })
-            └─ Express 监听 127.0.0.1:3600（仅本机，EADDRINUSE 自动重试 30 次）
-                 ├─ 同源校验中间件（阻断跨站 CSRF）
-                 ├─ /api/version（回显 bootToken 供主进程 verifyChildBoot 校验）
-                 ├─ /api/health  /api/live
-                 ├─ /api/config (GET/POST)  配置持久化
-                 ├─ /api/cookies/check       校验 cookies.json
-                 └─ POST /api/upload         SSE 流式进度（核心全流程）
-```
-
-- **生命周期**：与 netdisk/kdocs 完全一致 —— `startChild()` 拉起、`exit` 后 2s 重启（≤5 次）、`before-quit` 由 `stopAllChildren()` 统一 SIGTERM。
-- **端口防抢占**：`/api/version` 回显 `process.env.BOOT_TOKEN`；主进程 `verifyChildBoot()` 比对不一致即告警。
-- **数据目录**：打包后由主进程注入 `BILIUP_DATA_DIR`（指向 `userData/biliup-hub/data`）；开发模式回退 `biliup-hub/data/`。`.env`/`data/`/`logs/` 不进 git（`.gitignore`）。
-
-### 1.3 关键坑点内建机制（设计强制项）
-
-| 坑点 | 设计对策 |
-|---|---|
-| `--extra-fields` 在 subprocess 列表模式不生效 | 完整命令写入**临时脚本文件**再执行；优先 `.ps1`（`utf-8-sig` + 头部 `@chcp 65001` + 反引号 `` ` `` 转义双引号、` `n ` 换行）。bat 仅作兜底（`""` 转义，且不支多行 desc → 多行场景一律走 ps1）。执行：`child_process.execFile('powershell', ['-NoProfile','-ExecutionPolicy','Bypass','-File', tmp])` |
-| 合集 `season_id` 被 App 投稿接口忽略 | 投稿成功后用独立 API 后置：`POST https://member.bilibili.com/x2/creative/web/season/section/episodes/add`，参数 **`sectionId=7630305`**（非 season_id）、`episodes=[{aid,cid,title,charging_pay:0}]`，带 `csrf=bili_jct` + 完整 Cookie 头 |
-| 简介多行 | ps1 的 desc 用 `` `n `` 拼接；文件 `utf-8-sig` |
-| 上传后 API 索引延迟（返回 -404） | `getVideoInfo`（取 aid/cid）与合集添加均**重试 ≤20 次、间隔 10s**（约 3 分钟） |
+| `renderer/style.css` | ✅ 改 | `.wv`/`.wv.active` 增加 opacity+transform 过渡；确认 `prefers-reduced-motion` 降级（已被 `macos-motion.css` 的 `*` 规则覆盖，核查即可）。保持 `visibility` 切换语义 |
+| `renderer/app.js` | ✅ 改 | `switchTab` 增加"未 `dom-ready` 不激活 / `data-pending`"逻辑；`dom-ready` 监听里激活 pending webview 并 `resize`；可选加 1500ms 兜底强制激活 |
+| `kdocs-tool/public/app.js` | ✅ 改 | 顶部新增 `applyEntrance()`；脚本末尾对 `.wrap` 首屏可见块挂 `pop-in`+`--i` |
+| `biliup-hub/public/app.js` | ✅ 改 | 同上（首屏 = header + 三个 `section.panel`） |
+| `netdisk-hub/public/app.js` | ✅ 改 | 同上（首屏 = header + `.cards` + 三个 `.panel`，跳过隐藏的 `#banner`） |
+| `kdocs-tool/public/index.html` | ✅ 改 | 在现有覆盖 `<style>` 内追加 `.status-row .chip .st-luxe` 去白框 + 颜色重指（P01） |
+| `shared/macos-motion.css` | ❌ 不改 | 复用 `.pop-in` / `@keyframes popIn` / `--ease-*` / `--dur`，**不新增不修改** |
+| `shared/status-luxe/*` | ❌ 不改 | P01 仅做 kdocs 局部 CSS 覆盖；全局 `data-theme` 修复见"待明确事项#3" |
+| `docs/system_design.md` | ➕ 产出 | 本设计文档 |
+| `docs/sequence-diagram.mermaid` | ➕ 产出 | 时序图 |
+| `docs/class-diagram.mermaid` | ➕ 产出 | 类图 |
 
 ---
 
-## 2. 文件列表及相对路径
+### 3. 关键数据结构 / 接口
 
-### 2.1 新建文件（biliup-hub/）
+**3.1 webview 显隐状态（renderer 侧，驱动过渡的 DOM 钩子）**
 
-| 文件 | 职责 |
-|---|---|
-| `biliup-hub/package.json` | 子服务依赖（express / undici / dotenv）+ 脚本（start/dev/test） |
-| `biliup-hub/VERSION` | 版本号（同 netdisk，被 `/api/version` 读取；主进程注入 `TOOLSHUB_VERSION` 时以注入为准） |
-| `biliup-hub/.gitignore` | 忽略 `logs/ data/ .tmp/ .env node_modules/` |
-| `biliup-hub/.env.example` | 示例环境变量（`BILIUP_PORT` 等） |
-| `biliup-hub/server.js` | Express 子服务入口：同源校验、静态资源、版本/健康检查、配置/凭据路由、`/api/upload` SSE 路由；绑定 3600，EADDRINUSE 重试 |
-| `biliup-hub/lib/logger.js` | 日志（复用 netdisk 模式：按日滚动写 `logs/app-YYYY-MM-DD.log`，stdout 同显） |
-| `biliup-hub/lib/store.js` | 配置持久化（`data/config.json` 读写，内存缓存 + 串行刷盘） |
-| `biliup-hub/lib/cookies.js` | 加载/校验 `cookies.json`（必须含 `SESSDATA`+`bili_jct`）、拼装 Cookie 头字符串与 csrf |
-| `biliup-hub/lib/command.js` | **核心坑点**：拼装临时 `.ps1`/`.bat` 脚本内容（utf-8-sig、转义、多行 desc） |
-| `biliup-hub/lib/cover.js` | ffmpeg 抽帧（探测 ffmpeg 路径；`-ss 00:00:01 -vframes 1`；失败仅告警不阻断） |
-| `biliup-hub/lib/biliup.js` | 执行上传（`execFile` 跑临时脚本、解析 stdout 拿 bvid/aid）、`getVideoInfo` 重试 20×10s |
-| `biliup-hub/lib/season.js` | 合集后置 API 调用 + 重试 20×10s（处理 -404） |
-| `biliup-hub/lib/comment.js` | 评论发布 + 置顶（B站 reply API） |
-| `biliup-hub/lib/aigc.js` | 拼装 AIGC YAML front-matter 字符串（每次投稿必注入） |
-| `biliup-hub/lib/task.js` | **任务状态机 + SSE 事件编排**：串联 cover→upload→season→comment，逐阶段 emit 事件 |
-| `biliup-hub/public/index.html` | 前端页面：顶部标题+status-luxe 胶囊、三栏（选视频/标签+模式/可折叠参数）、底部「投稿」+二次确认弹窗+进度日志；内联 shared tokens/macos-motion + 引用 `macos.css`/`status-luxe.css` |
-| `biliup-hub/public/app.js` | 前端逻辑：`electronAPI.pickFile()` 选视频、参数读写、发布模式+二次确认、`fetch('/api/upload')` 消费 SSE、渲染进度日志与状态胶囊 |
-| `biliup-hub/public/macos.css` | 复制自 `netdisk-hub/public/macos.css`（macos 玻璃样式引用） |
-| `biliup-hub/public/status-luxe.css` | 复制自 `shared/status-luxe`（第 4 副本，纳入 sync 校验） |
-| `biliup-hub/public/status-luxe.js` | 复制自 `shared/status-luxe`（第 4 副本） |
-| `biliup-hub/test/command.test.js` | command.js 单测（断言 ps1 内容/转义/utf-8-sig；mock `child_process` 或 `fs`） |
-| `biliup-hub/test/biliup.test.js` | biliup.js 单测（上传解析、getVideoInfo 重试 20×10s；mock `child_process`） |
-| `biliup-hub/test/season.test.js` | season.js 单测（合集添加、-404 重试；mock `undici`/`fetch`） |
-| `biliup-hub/test/comment.test.js` | comment.js 单测（发布+置顶；mock `undici`/`fetch`） |
+| 钩子 | 取值 | 含义 |
+|---|---|---|
+| `.wv` 类 | 常驻 | hidden 态：`visibility:hidden; opacity:0; transform:scale(.98)` |
+| `.wv.active` 类 | 切换 | 显示态：`visibility:visible; opacity:1; transform:scale(1)`（CSS 过渡触发淡入微缩放） |
+| `wv.dataset.ready` | `"1"` | `dom-ready` 已触发，内容就绪 |
+| `wv.dataset.pending` | `"1"` | 已请求激活但内容未就绪，等待 `dom-ready` 再挂 `.active` |
+| `wv.dataset.key` | 工具 key | `kdocs` / `netdisk` / `biliup` |
 
-### 2.2 修改文件（集成点）
+**3.2 入场编排 DOM 钩子（各工具 app.js，零侵入）**
 
-| 文件 | 改动 |
-|---|---|
-| `main.js` | ① `CHILDREN` 增加 `biliup`（端口 3600、cwd、env 注入 `BILIUP_PORT`/`BILIUP_DATA_DIR`/`BOOT_TOKEN`）；② `app.whenReady` 中 `startChild(CHILDREN.biliup)`；③ 新增 `ipcMain.handle('pick-file', …)`（用 `dialog.showOpenDialog` 选单个 mp4） |
-| `renderer/app.js` | `TOOLS` 注册表增加 `biliup`（key/name/desc/url/icon）；`renderStatus` 聚合可纳入 `biliup` 运行态（可选，建议加以保证聚合胶囊准确） |
-| `webview-preload.js` | `contextBridge` 暴露 `pickFile: () => ipcRenderer.invoke('pick-file')`（现有 `pickFolder` 供 P1-4 文件夹选择复用） |
-| `scripts/sync-status-luxe.js` | `COPIES` 增加 `{ name:'biliup-hub', dir:'biliup-hub/public' }`（三处→四处） |
-| `scripts/verify-status-luxe-sync.js` | `COPIES` 同步增加 `biliup-hub/public`；日志文案「四处一致」 |
-| `package.json`（根） | `build.extraResources` 增加 `{ from:'biliup-hub', to:'biliup-hub', filter:[…!data/**,!logs/**,!**/.env,…] }`；`scripts.test` 可追加 `npm --prefix biliup-hub test` |
-
----
-
-## 3. 数据结构与接口
-
-### 3.1 类图（详见 `docs/class-diagram.mermaid`）
-
-```mermaid
-classDiagram
-    class Config {
-      +String biliupExePath
-      +String ffmpegPath
-      +String cookiesPath
-      +Number tid
-      +String seasonId
-      +String sectionId
-      +Number copyright
-      +Number noReprint
-      +String line
-      +String[] tags
-      +String comment
-      +AigcFields aigc
-    }
-    class AigcFields {
-      +Number label
-      +String contentProducer
-      +String produceId
-      +String reservedCode1
-      +String contentPropagator
-      +String propagateId
-      +String reservedCode2
-    }
-    class CookiesFile {
-      +String SESSDATA
-      +String bili_jct
-      +Map extra
-    }
-    class UploadRequest {
-      +String videoPath
-      +String[] tags
-      +String publishMode
-      +Number dtime
-      +String title
-      +Config params
-    }
-    class UploadEvent {
-      +String type
-      +String stage
-      +String message
-      +Object data
-    }
-    class VideoRef { +String bvid +Number aid }
-    class VideoInfo { +Number aid +Number cid +String title }
-    class ScriptFile { +String path +String content +String shell }
-    class Store { +loadConfig() Config +saveConfig(c) void +getConfig() Config }
-    class Cookies { +load(path) CookiesFile +validate(cf) Boolean +toHeader(cf) String +getCsrf(cf) String }
-    class CommandBuilder { +buildPs1(req, cfg, coverPath) ScriptFile +buildBat(req, cfg, coverPath) ScriptFile }
-    class CoverExtractor { +extract(videoPath, ffmpegPath) String }
-    class BiliupClient { +runUpload(script, onLog) VideoRef +getVideoInfo(ref) VideoInfo }
-    class SeasonAdder { +add(sectionId, aid, cid, title, csrf, cookieHeader) Result }
-    class Commenter { +post(aid, msg, csrf, cookieHeader) rpid +pin(aid, rpid, csrf, cookieHeader) Result }
-    class AigcBuilder { +buildFrontMatter(fields) String }
-    class Task { -Config cfg -CookiesFile cookies +run(req) Stream~UploadEvent~ -setStage(stage) void }
-    Store ..> Config : reads/writes
-    Cookies ..> CookiesFile : parses
-    CommandBuilder ..> ScriptFile : produces
-    CommandBuilder ..> AigcBuilder : uses front-matter
-    CoverExtractor ..> ScriptFile : cover path -> CommandBuilder
-    BiliupClient ..> CommandBuilder : executes script
-    BiliupClient ..> VideoRef : returns
-    BiliupClient ..> VideoInfo : getVideoInfo
-    SeasonAdder ..> Cookies : csrf/header
-    Commenter ..> Cookies : csrf/header
-    Task o-- Store
-    Task o-- Cookies
-    Task o-- CoverExtractor
-    Task o-- BiliupClient
-    Task o-- SeasonAdder
-    Task o-- Commenter
-    Task ..> CommandBuilder
-    Task ..> UploadEvent : emits
-```
-
-### 3.2 关键数据结构（JSON Schema）
-
-**Config（持久化于 `data/config.json`）**
-```json
-{
-  "biliupExePath": "D:\\biliupR\\biliup.exe",
-  "ffmpegPath": "",
-  "cookiesPath": "D:\\biliupR\\cookies.json",
-  "tid": 17,
-  "seasonId": "6918057",
-  "sectionId": "7630305",
-  "copyright": 1,
-  "noReprint": 1,
-  "line": "bda2",
-  "tags": [],
-  "comment": "老规矩！！！三连后关注私信自动回复下载方式",
-  "aigc": {
-    "label": 1,
-    "contentProducer": "",
-    "produceId": "",
-    "reservedCode1": "",
-    "contentPropagator": "",
-    "propagateID": "",
-    "reservedCode2": ""
+```js
+// 通用 helper（三套 app.js 各内联一份，约 15 行，不引文件、不碰 HTML）
+function applyEntrance(scope, max) {
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  } catch (e) {}
+  const root = scope || document;
+  const blocks = Array.from(root.children).filter((el) => {
+    if (!el || !el.style) return false;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    if (el.offsetParent === null) return false;   // 不在渲染树（如隐藏面板）跳过
+    return true;
+  });
+  const n = Math.min(max || 6, blocks.length);
+  for (let i = 0; i < n; i++) {
+    blocks[i].classList.add('pop-in');            // 复用 macos-motion.css 既有类
+    blocks[i].style.setProperty('--i', i);         // stagger 序号（步长由 .pop-in 的 0.08s 决定）
   }
 }
+// 调用（脚本位于 body 末尾，DOM 已就绪）：
+applyEntrance(document.querySelector('.wrap'));
 ```
 
-**CookiesFile（解析自 `cookies.json`）**
-```json
-{ "SESSDATA": "xxxx", "bili_jct": "yyyy", "<其他b站cookie键>": "<值>" }
-```
-> 校验：`SESSDATA` 与 `bili_jct` 必须同时存在，否则 `/api/cookies/check` 返回 `ok:false` 并指引用户补。
+**3.3 主题同步 IPC**
 
-**UploadRequest（POST `/api/upload` body）**
-```json
-{
-  "videoPath": "E:\\素材\\【游戏252】潜水员戴夫 官方中文+全DLC.mp4",
-  "tags": ["辐射4", "单机游戏", "RPG"],
-  "publishMode": "now" | "dtime",
-  "dtime": 1700000000,
-  "title": "【游戏252】潜水员戴夫 官方中文+全DLC...",
-  "params": { "/* 可选：覆盖 Config 中单项，如本次临时改 tid */" }
+```
+渲染进程 window.electronAPI.setTheme(t)  → 主进程
+主进程 → webview-preload.js 注入 <html data-theme="t">，隐藏 #themeBtn
+渲染进程 switchTab/syncThemeToWebviews → wv.send("sync-theme", t)  →  webview 内 document
+```
+
+---
+
+### 4. 程序调用流程（时序图）
+
+见 `docs/sequence-diagram.mermaid`（已导出）。要点：
+
+```
+点击卡片 → openTab 创建 <webview>
+  → switchTab：未 dom-ready 则 data-pending=1（保持 hidden，下方 landing 可见，无黑闪）
+  → webview 加载 → dom-ready：wv.send("sync-theme") + 挂 .active（CSS 淡入微缩放）+ resize
+  → 工具页 app.js 末：applyEntrance() 给首屏块挂 pop-in+--i → stagger 弹入
+```
+
+---
+
+### 5. 待明确事项（见 Part B §8）
+
+---
+
+## Part B：任务分解
+
+> ⚠️ **任务粒度说明**：主理人诊断建议拆 T1–T7（7 项）。本设计按架构师角色硬性约束**整合为 ≤5 个顶层任务**（T01–T05），每个顶层任务内部保留对诊断 T1–T7 的映射，避免把无关模块硬合并、也避免单文件任务过度碎片化。其中 T01（renderer 双文件）、T03（kdocs 单文件）为精准修复，主动放宽"每任务 ≥3 文件"的软约束。
+
+### 6. 依赖包列表
+
+**无新增依赖。**
+
+- 前端：原生 HTML/CSS/JS（无框架、无打包）。
+- 动画：`shared/macos-motion.css`、各工具已内联的 `macos-motion.css` 副本（复用 `.pop-in`/`popIn`，不新增）。
+- 状态：`shared/status-luxe/*` 及各工具副本（P01 仅局部覆盖，不改）。
+- `package.json` / `package-lock.json` **无需改动**。
+
+---
+
+### 7. 任务列表（有序、含依赖）
+
+| Task ID | 任务名 | 对应诊断 | Source Files | Dependencies | Priority |
+|---|---|---|---|---|---|
+| **T01** | renderer 基座：webview 显隐过渡 + 时序衔接（解决黑闪根因1） | T1 + T2 | `renderer/style.css`、`renderer/app.js` | 无 | P0 |
+| **T02** | 三套工具页首屏入场编排（解决根因2 / 工具页无入场） | T3 + T4 + T5 | `kdocs-tool/public/app.js`、`biliup-hub/public/app.js`、`netdisk-hub/public/app.js` | 无（与 T01 可并行；建议 T01 先定基调） | P1 |
+| **T03** | kdocs 状态标签去白框 | T6 | `kdocs-tool/public/index.html` | 无 | P1 |
+| **T04** | reduced-motion 一致性核查与收口 | T7 | `renderer/style.css`、`kdocs-tool/public/index.html`、`biliup-hub/public/index.html`、`netdisk-hub/public/index.html`、`kdocs-tool/public/app.js`、`biliup-hub/public/app.js`、`netdisk-hub/public/app.js` | T01、T02、T03 | P2 |
+| **T05** | 设计文档与交付物沉淀 | — | `docs/system_design.md`、`docs/sequence-diagram.mermaid`、`docs/class-diagram.mermaid` | 全部（随实现增量更新） | P2 |
+
+**各任务实现要点：**
+
+- **T01（黑闪根因1）**
+  - `style.css`：`.wv` 增加 `opacity:0; transform:scale(.98)` 与 `transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-spring), visibility 0s linear var(--dur)`；`.wv.active` 设 `opacity:1; transform:scale(1)` 且 `transition` 中 `visibility 0s linear 0s`（显示立即 visible、再淡入）。`background: var(--bg-2)` 保留。
+  - `app.js`：`switchTab` 激活分支——若 `!wv.dataset.ready` 则置 `data-pending=1` 且不挂 `.active`；`dom-ready` 监听里若 `data-pending` 则挂 `.active` 并 `resize`；已 ready 直接挂 `.active`。可选：创建 webview 时设 1500ms 兜底强制激活（防服务未起导致永不显示）。
+- **T02（工具页入场）**：三套 `app.js` 各内联 `applyEntrance()`（见 §3.2），脚本末尾对 `.wrap` 首屏可见块挂 `pop-in`+`--i`。kdocs 取 header/`.status-row`/首个可见 `.panel`；biliup 取 header + 三个 `section.panel`；netdisk 取 header/`.cards`/三个 `.panel`（跳过 `display:none` 的 `#banner`）。
+- **T03（P01 去白框）**：见 §8 的精确选择器与 CSS。
+- **T04（reduced-motion）**：逐项核查 (1) renderer `.wv`/`.landing` 过渡被 `macos-motion.css` 的 `@media (prefers-reduced-motion)` `*` 规则降级；(2) 三套工具页 `pop-in` 被各自内联 `macos-motion.css` 降级；(3) `status-luxe.css` 自带 reduced-motion 规则生效；(4) `applyEntrance` 的 `matchMedia` 守卫在命中时跳过挂 `pop-in`。统一行为：reduced-motion 时直接显示、无过渡/动画。
+- **T05**：本交付物，随实现同步更新。
+
+---
+
+### 8. 共享知识（跨文件约定）
+
+| 约定 | 取值 / 说明 |
+|---|---|
+| 入场 class 命名 | `pop-in`（已存在于 `macos-motion.css`，**复用，勿新增**） |
+| `--i` 步长 | **实际 `macos-motion.css` 为 `calc(var(--i,0) * 0.08s)` = 80ms** ⚠️（与诊断描述的 60ms 不符，以实际文件为准，勿改共享文件） |
+| 缓动 / 时长 token | `--ease-spring: cubic-bezier(0.34,1.56,0.64,1)`、`--ease-out: cubic-bezier(0.22,1,0.36,1)`、`--dur: 0.28s`（以 `shared/macos-motion.css` 实际值为准；⚠️ 诊断写的 `--ease-out` 为 `cubic-bezier(0.16,1,0.3,1)`，以实际为准） |
+| reduced-motion | 由 `macos-motion.css` / `status-luxe.css` 的 `@media (prefers-reduced-motion: reduce)` 统一降级；`applyEntrance` 额外加 `matchMedia` 守卫 |
+| 主题变量复用 | `var(--bg-2)`、`var(--ok)`、`var(--text)` 等 tokens 来自 `shared/tokens.css`（三套工具内联副本，单一真源）；主题由 `webview-preload` 注入 `data-theme` 并隐藏 `#themeBtn`，渲染进程经 `wv.send("sync-theme", t)` 同步；**勿硬编码颜色** |
+| DOM id 不变 | 所有元素 id 保持现状（`landing` / `wv-<key>` / `chipKdocs` / `chipBl` / `verBadge` …），仅增 class / `data-*` 属性 |
+| 入场 hook 零侵入 | 只在各 `app.js` 运行时给首屏块挂 `pop-in`+`--i`，**不改 HTML 结构、不改现有 class** |
+| P01 状态色键控陷阱 | `status-luxe` 胶囊色 token（`--st-*`）键控 `prefers-color-scheme`，但工具主题由 `data-theme` 管理（两者解耦）。P01 修复把状态色重指向页面 `--ok`/`--text` 等，避免明暗错配（详见待明确事项#3） |
+
+**P01 精确修复（T03，kdocs `index.html` 覆盖 `<style>` 内追加）：**
+
+```css
+/* P01：状态胶囊去白框 → 轻量文字 + 点，明暗主题都干净 */
+.status-row .chip .st-luxe {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding-left: 2px;
 }
+/* 颜色重指到页面主题 token（规避 status-luxe 键控 prefers-color-scheme 的明暗错配） */
+.status-row .chip .st-luxe--ok   { --c: var(--ok);        --txt: var(--text); }
+.status-row .chip .st-luxe--off  { --c: var(--text-dim);  --txt: var(--text-dim); }
+.status-row .chip .st-luxe--warn { --c: var(--warn);      --txt: var(--text); }
+.status-row .chip .st-luxe--err  { --c: var(--err);       --txt: var(--text); }
+.status-row .chip .st-luxe--info { --c: var(--accent-2);  --txt: var(--text); }
 ```
-
-**UploadEvent（SSE `data:` 推送，每行一个 JSON）**
-```json
-{ "type": "log",     "stage": "uploading",        "message": "进度 62% ..." }
-{ "type": "status",  "stage": "extracting_cover", "message": "抽封面帧1" }
-{ "type": "status",  "stage": "adding_season",    "message": "合集后置重试 3/20 (-404)" }
-{ "type": "done",    "stage": "done",             "data": { "aid": 123, "bvid": "BV1xx", "cid": 456, "season": true } }
-{ "type": "error",   "stage": "adding_season",    "message": "合集添加失败：..." }
-```
-
-**SeasonAddRequest（合集后置 API）**
-```
-POST https://member.bilibili.com/x2/creative/web/season/section/episodes/add
-Headers: Cookie: <完整cookie头(含SESSDATA)>
-Body(form): sectionId=7630305 & csrf=<bili_jct>
-           & episodes=[{"aid":123,"cid":456,"title":"...","charging_pay":0}]
-```
-
-### 3.3 前端 ↔ 后端 接口清单
-
-| 方法 | 路径 | 说明 | 响应 |
-|---|---|---|---|
-| GET | `/api/version` | 版本 + bootToken（主进程校验端口归属） | `{version, source, updatable:false, bootToken}` |
-| GET | `/api/health` `/api/live` | 存活/就绪探针 | `{ok, ts, port:3600, bind:'127.0.0.1'}` |
-| GET | `/api/config` | 读取当前配置 + cookies 状态 | `Config & { cookiesOk:boolean }` |
-| POST | `/api/config` | 保存配置（路径/默认参数/AIGC 字段） | `{ok:true}` |
-| GET | `/api/cookies/check` | 校验 cookies.json 含 `SESSDATA`+`bili_jct` | `{ok, hasSESSDATA, hasBiliJct}` |
-| POST | `/api/upload` | **SSE 全流程投稿**（核心） | `text/event-stream`，逐行 `UploadEvent` |
-
-> 前端原生能力：`window.electronAPI.pickFile()`（选 mp4）→ `main.js` `pick-file` IPC → `dialog.showOpenDialog({properties:['openFile'], filters:[{name:'视频',extensions:['mp4']}]})`。
+> 实现时核对选择器：当前 `kdocs` `initCheck()` 已用 `statusHTML()` 渲染 `.st-luxe` 胶囊（非诊断旧描述的 `.chip` 纯文本），白框即该胶囊玻璃背景 `var(--bg)` 在亮色主题下读感发白。若线上仍为无 `.st-luxe` 的旧结构，则改为对 `.chip` / 其文本节点去白框。
 
 ---
 
-## 4. 程序调用流程（详见 `docs/sequence-diagram.mermaid`）
+### 9. 待明确事项
 
-```mermaid
-sequenceDiagram
-    actor U as 用户
-    participant FE as 前端 biliup-hub/public/app.js
-    participant API as 后端 server.js (/api/upload SSE)
-    participant T as Task (lib/task.js)
-    participant CV as CoverExtractor
-    participant BU as BiliupClient
-    participant CB as CommandBuilder
-    participant SA as SeasonAdder
-    participant CM as Commenter
-    participant CK as Cookies
-    U->>FE: 选视频 + 填标签 + 选发布模式 → 点「投稿」
-    FE->>FE: 二次确认弹窗(立即/定时)
-    FE->>API: POST /api/upload (SSE) {videoPath, tags, mode, dtime}
-    API->>T: new Task(req, config, cookies)
-    API-->>FE: 200 SSE opened
-    T->>T: stage = pending
-    T-->>FE: event {type:'status', stage:'extracting_cover'}
-    T->>CV: extract(videoPath, ffmpegPath)
-    CV-->>T: coverPng (失败仅告警, 流程继续)
-    T-->>FE: event {type:'log', '抽封面帧1 ... ok/失败'}
-    T->>CB: buildPs1(req, cfg, coverPng)
-    CB-->>T: ScriptFile (utf-8-sig, @chcp 65001)
-    T->>BU: runUpload(script, onLog)
-    BU-->>FE: event {type:'log', line} (实时转发 child_process 输出)
-    BU-->>T: VideoRef (bvid/aid 解析自 stdout)
-    T-->>FE: event {type:'status', stage:'adding_season'}
-    T->>BU: getVideoInfo(ref) 重试≤20次/间隔10s
-    BU-->>T: VideoInfo {aid, cid}
-    T->>CK: getCsrf + toHeader
-    T->>SA: add(sectionId=7630305, aid, cid, title, csrf, header)
-    SA->>SA: POST .../episodes/add, -404 重试≤20次/10s
-    SA-->>T: {ok:true}
-    T-->>FE: event {type:'log', '合集后置完成'}
-    T-->>FE: event {type:'status', stage:'commenting'}
-    T->>CM: post(aid, comment, csrf, header)
-    CM-->>T: rpid
-    T->>CM: pin(aid, rpid, csrf, header)
-    CM-->>T: {ok:true}
-    T-->>FE: event {type:'status', stage:'done'}
-    T-->>FE: event {type:'done', {aid, bvid, cid, season:true}}
-    Note over T: 任一阶段抛错 → event {type:'error', stage, message} → stage=error
-```
-
-**状态机（后端 `Task`）**
-```
-pending → extracting_cover → uploading → adding_season → commenting → done
-   │            │                │             │              │
-   └────────────┴────────────────┴─────────────┴──────────────┴──→ error（任意阶段，附 stage+message）
-```
-> 设计裁决：封面帧在 `uploading` **之前**抽取（封面是 biliup 投稿参数，且 `--extra-fields` 已废，无法后置注入），与 PRD P0-1 文字顺序略有差异但更稳健；AIGC 头随 desc 在 `uploading` 阶段一并提交。
+1. **`macos-motion.css` 实际值与诊断描述不一致**：诊断写 `--i` 步长 60ms、`--ease-out: cubic-bezier(0.16,1,0.3,1)`；但 `shared/macos-motion.css` 及三套工具内联副本实际为 **80ms** 与 `cubic-bezier(0.22,1,0.36,1)`。设计以实际文件为准（不修改共享文件）。若主理人确需 60ms，需同步改 `shared/macos-motion.css` 及三处内联副本（超出"复用不新增"范围，须单独确认）。
+2. **P01 选择器需实现时核对**：见 §8 P01 说明——当前为 `.st-luxe` 胶囊，白框源自其玻璃背景；建议以浏览器实际 DOM 为准落选择器。
+3. **`status-luxe` 颜色键控 `prefers-color-scheme` 与工具 `data-theme` 解耦（潜在更深根因）**：这是明暗主题下状态色可能错配的源头。P01 仅做 kdocs 局部覆盖；建议另立任务统一把 `shared/status-luxe.css` 改为 `[data-theme="dark"|"light"]` 选择器（覆盖三套工具 + 入口页），不在本次 P01 范围。
+4. **netdisk `.cards` 异步填充**：账号卡片由 `loadAccounts()` 异步渲染，`pop-in` 在 `applyEntrance` 时挂到空容器上、内容随后填入——视觉可接受；若要求卡片内容也 stagger，需在 `loadAccounts()` 渲染后补挂（超出零侵入范围，建议保持容器级）。
+5. **黑闪兜底超时**：T01 把"首次激活"延迟到 `dom-ready`，若服务未起 / `dom-ready` 不触发，webview 永不显示。建议加 ~1500ms 兜底强制激活（实现时确认是否纳入）。
 
 ---
 
-## 5. 任务列表（有序、含依赖、按实现顺序）
+### 10. 任务依赖图
 
-> 规则：≤5 个任务，每个任务 ≥3 文件，按功能/层次分组；T01 必为「项目基础设施」。
-> QA 重点：lib 内 `command.js`/`biliup.js`/`season.js`/`comment.js` 用 **mock `child_process` / mock `undici`** 覆盖命令拼装、重试、合集/评论逻辑（见各任务标注）。
-
-### T01 · 项目基础设施 + 集成点（P0）
-- **依赖**：无
-- **文件**：`biliup-hub/package.json`、`biliup-hub/VERSION`、`biliup-hub/.gitignore`、`biliup-hub/.env.example`、`biliup-hub/server.js`（Express 骨架 + 同源校验 + `/api/version` 回显 bootToken + 3600 绑定 + EADDRINUSE 重试）、`main.js`（CHILDREN.biliup + `pick-file` IPC + `app.whenReady` 启动）、`renderer/app.js`（TOOLS.biliup）、`webview-preload.js`（`pickFile`）、`scripts/sync-status-luxe.js`（四处）、`scripts/verify-status-luxe-sync.js`（四处）、`package.json`（根，extraResources 增 biliup-hub）
-- **交付**：服务可起、卡片可点开、status-luxe 第 4 副本纳入门禁、选文件对话框可用。
-
-### T02 · 配置与凭据层（P0）
-- **依赖**：T01
-- **文件**：`biliup-hub/lib/logger.js`、`biliup-hub/lib/store.js`、`biliup-hub/lib/cookies.js`、`biliup-hub/server.js`（`/api/config` GET/POST、`/api/cookies/check` 路由）
-- **交付**：配置持久化、cookies 加载/校验/拼装 Cookie 头与 csrf。
-
-### T03 · biliup 编排核心：命令拼装 + 抽帧 + 上传（P0，坑点核心）
-- **依赖**：T01, T02
-- **文件**：`biliup-hub/lib/command.js`、`biliup-hub/lib/cover.js`、`biliup-hub/lib/biliup.js`、`biliup-hub/test/command.test.js`、`biliup-hub/test/biliup.test.js`
-- **QA 重点（mock `child_process`）**：ps1 内容为 `utf-8-sig`、头部 `@chcp 65001`、双引号反引号转义、desc 多行 `` `n ``；biliup stdout 解析出 bvid/aid；`getVideoInfo` 重试 20×10s 且遇 -404 正确重试。
-
-### T04 · 合集后置 + 评论置顶 + AIGC（P0）
-- **依赖**：T02
-- **文件**：`biliup-hub/lib/aigc.js`、`biliup-hub/lib/season.js`、`biliup-hub/lib/comment.js`、`biliup-hub/test/season.test.js`、`biliup-hub/test/comment.test.js`
-- **QA 重点（mock `undici`/`fetch`）**：合集 `sectionId=7630305` + `episodes=[{aid,cid,title,charging_pay:0}]` + csrf + 完整 Cookie 头；-404 重试 20×10s；评论发布拿到 rpid 后置顶（action=3）。
-
-### T05 · 前端 UI + 全流程编排 + 进度回传（P0）
-- **依赖**：T02, T03, T04
-- **文件**：`biliup-hub/lib/task.js`（状态机 + SSE 编排，串联 T02–T04）、`biliup-hub/public/index.html`、`biliup-hub/public/app.js`、`biliup-hub/public/status-luxe.css`、`biliup-hub/public/status-luxe.js`、`biliup-hub/public/macos.css`、`biliup-hub/server.js`（`/api/upload` SSE 路由接 `Task.run`）
-- **交付**：选视频→填标签→选模式→二次确认→投稿→实时进度日志→状态胶囊（空闲/抽帧中/上传中/合集后置中/成功/失败）。
-
-### 任务依赖图
 ```mermaid
 graph TD
-    T01[T01 基础设施+集成] --> T02[T02 配置与凭据]
-    T01 --> T03[T03 命令拼装+抽帧+上传]
-    T02 --> T03
-    T02 --> T04[T04 合集+评论+AIGC]
-    T02 --> T05[T05 前端+编排+回传]
+    T01[T01 renderer 基座<br/>webview 过渡+时序]:::p0
+    T02[T02 三套工具页入场编排]:::p1
+    T03[T03 kdocs 去白框]:::p1
+    T04[T04 reduced-motion 核查]:::p2
+    T05[T05 设计文档沉淀]:::p2
+
+    T01 --> T04
+    T02 --> T04
+    T03 --> T04
+    T01 --> T05
+    T02 --> T05
     T03 --> T05
     T04 --> T05
+
+    classDef p0 fill:#fde2e2,stroke:#e2483d,color:#1b1f3b;
+    classDef p1 fill:#fff3d6,stroke:#b7791f,color:#1b1f3b;
+    classDef p2 fill:#e2f0ff,stroke:#7c5cff,color:#1b1f3b;
 ```
 
 ---
 
-## 6. 依赖包列表
+## Part C：设计如何同时解决"黑闪"与"工具页无入场"
 
-`biliup-hub/package.json`（与现有 `netdisk-hub/package.json` 结构一致，独立 `node_modules`）：
+**黑闪（根因1）** —— 双保险：
+1. **过渡层**：`.wv` 由纯 `visibility` 切换改为 `opacity 0→1 + transform scale .98→1` 过渡。切换瞬间不再是"硬切"，而是 webview 容器平滑淡入并微缩放，即使内容略有延迟，用户看到的是 webview 在 landing（带环境光渐变，非纯黑）之上渐显，黑感被柔化。
+2. **时序层（关键）**：把"首次激活"延迟到 webview `dom-ready`——在远程 HTML 未就绪前 webview 保持 hidden，下方 landing 一直可见；内容就绪（`dom-ready`）那一刻才挂 `.active` 淡入，此时展示的已是加载好的页面壳，深蓝背景根本不会被用户看到。已 loaded 的 webview 切回直接淡入（内容已在）。两者叠加 → 黑闪消除。
 
-```
-- express@^5.2.1        # 子服务 HTTP 框架（与 netdisk 同版本）
-- undici@^7.28.0        # 调用 B站 API（fetch + 可选 ProxyAgent）；与 netdisk 同版本
-- dotenv@^17.4.2        # 读取 .env（与 netdisk 同版本）
-```
+**工具页无入场（根因2）** —— 零侵入复用既有动效资产：
+三套工具页早已内联完整 `macos-motion.css`（含 `.pop-in` 类与 `@keyframes popIn`），缺的只是"打开页面那一刻的入场编排"。`applyEntrance()` 在每套 `app.js` 运行时按文档顺序给首屏可见块（header / `.panel` / `.cards`）挂 `pop-in` + `--i`，直接驱动既有 stagger 弹入。按钮 hover/点击的弹簧缓动本来就有（`.btn/.panel` 的 `--ease-spring` 过渡），现在补上"页面级入场"这一环，与入口页卡片的 `pop-in` stagger 体验对齐。
 
-> **外部二进制（非 npm 依赖，路径 UI 可配）**：`biliup.exe`（默认 `D:\biliupR\biliup.exe`）、`ffmpeg`（默认空 → 探测 biliup 同目录/PATH）、`cookies.json`（默认 `D:\biliupR\cookies.json`）。
-> **不引入**：`node-cron`（P2 定时扫描才需要，v1 不做）；`form-data`（B站 API 多为 query/form 直拼，无需额外库）；`node-fetch`（已有 undici）。
-> 测试用 Node 内置 `node:test`，无需额外依赖。
-
----
-
-## 7. 共享知识（跨文件约定）
-
-- **端口**：`3600`（仅 `127.0.0.1` 绑定；`EADDRINUSE` 自动重试 30 次/300ms）。
-- **bootToken 机制**：主进程 `crypto.randomBytes(16).toString('hex')` 注入 `BOOT_TOKEN` 环境变量；`/api/version` 回显；主进程 `verifyChildBoot()` 比对不一致即安全告警（端口防抢占）。
-- **status-luxe 复制与同步**：复制 `shared/status-luxe/{status-luxe.css,status-luxe.js}` 到 `biliup-hub/public`（**第 4 副本**）；`scripts/sync-status-luxe.js` 与 `scripts/verify-status-luxe-sync.js` 的 `COPIES` 由三处扩为**四处**；`npm run verify:status-luxe` 门禁必须全绿（真源与四副本逐字节一致）。
-- **临时脚本目录**：`biliup-hub/.tmp/`（`.gitignore`，启动时清理）；`fs.writeFileSync(path, content, { encoding: 'utf-8-sig' })`；ps1 头部 `@chcp 65001 >nul`。bat 仅兜底（不支持多行 desc）。
-- **日志格式**：`[ISO时间] [LEVEL] 消息`（LEVEL: INFO/WARN/ERROR/DEBUG），落 `biliup-hub/logs/app-YYYY-MM-DD.log`，stdout 同显；前端进度日志直接转发 child_process 行。
-- **同源校验**：所有 `/api/*` 前置中间件拒绝非 `127.0.0.1/localhost/::1` Origin（与 netdisk/kdocs 一致）。
-- **数据目录**：`process.env.BILIUP_DATA_DIR`（打包注入 `userData/biliup-hub/data`）→ `data/config.json`；开发回退 `biliup-hub/data/`。
-- **AIGC 头**：每次投稿必注入；front-matter 拼接到**简介（desc）末尾**（多行，经 ps1 `` `n `` 实现），不破坏标题规则。
-- **重试策略**：`getVideoInfo` 与合集添加统一「≤20 次、间隔 10s」应对 -404 索引延迟。
-- **发布模式**：`now` 默认；`dtime` 经 `--dtime <unix秒>` 传入；点「投稿」先弹二次确认弹窗确认模式。
-
----
-
-## 8. 待明确事项（需主理人/用户拍板）
-
-1. **biliup 命令行参数名（版本回归风险）**：本设计按 v1.2.1 形态使用 `--video-file / --cover / --title / --tid / --tag / --copyright / --no-reprint / --line / --desc / --dtime / --cookies`。升级 biliup 后参数名/行为可能变化，需在 `command.js` 集中管理、留回归用例。❓请确认 v1.2.1 参数名清单无误。
-2. **ffmpeg 是否随 biliup 自带**：设计为「探测 biliup 同目录 → PATH → UI 覆盖」；抽帧失败仅告警不阻断。但具体 biliup 安装是否附带 ffmpeg 仍待实测确认默认值。
-3. **评论置顶 API 端点**：采用社区已知 `x/v2/reply/add`（拿 rpid）+ `x/v2/reply/action`（action=3 置顶），csrf=`bili_jct`。需实测验证端点与返回码（尤其 `-101` 未登录/`--comments` 权限）。
-4. **AIGC 字段真实取值**：`ContentProducer/ProduceID/ReservedCode1/ContentPropagator/PropagateID/ReservedCode2` 当前为可配置空默认值，需用户提供或确认固定常量（合规标识内容）。
-5. **标题推导规则**：v1 标题 = mp4 去扩展名；若需从 `【游戏编号】游戏名 …` 正则提取编号匹配合集，请确认编号↔season 映射表（默认仍用固定 `seasonId/sectionId`）。
-6. **跨平台**：v1 仅 Windows（Electron 打包 win nsis；临时脚本用 ps1/cmd）。macOS/Linux 需改 shell 拼装（bash）+ 跨平台 biliup 二进制，建议列为后续。
-7. **node-cron 占位**：9:10 自动扫描（P2-1）留 P2；v1 不引入定时依赖。若希望预留接口，可在 `server.js` 留 stub 注释，不实现。
-8. **cookies 过期检测粒度**：v1 运行时仅校验「存在 SESSDATA+bili_jct」；过期由 API 返回码（`-101`/`-404`）在上传/合集阶段分类提示并指引刷新，不主动探测有效期。是否需更主动的预检（调 `x/web-interface/nav` 验登录态）待定。
-9. **批量/文件夹（P1-4 / P2-2）边界**：v1 严格单视频（`pickFile`）；`E:\素材\` 文件夹浏览与多视频队列留作后续，复用现有 `pickFolder` 能力即可，无需 v1 实现。
-```
+**统一护栏**：两套修复都复用现有 `prefers-reduced-motion` 降级（`macos-motion.css` 的 `*` 规则 + `status-luxe.css` 自带规则 + `applyEntrance` 的 `matchMedia` 守卫），并在明暗主题下自动适配（全部走 `var(--bg-2)`/`var(--ok)`/`var(--text)` 等 token，DOM id 保持不变）。

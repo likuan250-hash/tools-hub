@@ -1,4 +1,6 @@
 // lib/biliup.js —— 执行上传（临时脚本）+ getVideoInfo 重试（坑点4：-404 延迟索引）
+const fs = require('fs');
+const path = require('path');
 const command = require('./command');
 const logger = require('./logger');
 
@@ -41,6 +43,35 @@ function parseUploadOutput(stdout) {
   return { bvid, aid };
 }
 
+// 完整上传输出落盘目录（与 command 共用 .tmp）。
+const UPLOAD_LOG_DIR = command.TMP_DIR;
+
+/**
+ * 将完整 stdout + stderr + exit code 落盘（根治铺路的关键证据）。
+ * 无论解析成败都落盘，便于人工/根治核对「exit0 但无标识」的真实原因。
+ * @param {string} stdout biliup 标准输出
+ * @param {string} stderr biliup 标准错误
+ * @param {number} code 进程退出码（0/非0/null）
+ * @returns {string|null} 落盘文件路径；失败返回 null
+ */
+function writeUploadLog(stdout, stderr, code) {
+  try {
+    fs.mkdirSync(UPLOAD_LOG_DIR, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const logPath = path.join(UPLOAD_LOG_DIR, `upload-${ts}.log`);
+    // utf-8 无 BOM；含时间戳、exit code 与完整 stdout/stderr。
+    const header = `[${new Date().toISOString()}] biliup upload finished (exit=${code})\n`;
+    const body = header +
+      '----- stdout -----\n' + (stdout || '') +
+      '\n----- stderr -----\n' + (stderr || '') + '\n';
+    fs.writeFileSync(logPath, body, { encoding: 'utf8' });
+    return logPath;
+  } catch (e) {
+    logger.error('[biliup] 上传日志落盘失败:', e.message);
+    return null;
+  }
+}
+
 /**
  * 执行上传（跑临时脚本，转发 child_process 输出）。
  * @param {{content:string, shell:string}} scriptFile
@@ -50,11 +81,20 @@ function parseUploadOutput(stdout) {
 async function runUpload(scriptFile, opts = {}) {
   const deps = Object.assign({}, DEFAULT_DEPS, opts.deps || {});
   const onLog = typeof opts.onLog === 'function' ? opts.onLog : () => {};
-  const { stdout } = await deps.runViaTempScript(scriptFile, { onLog, deps: opts.deps });
+  const { stdout, stderr, code } = await deps.runViaTempScript(scriptFile, { onLog, deps: opts.deps });
+
+  // ② 完整 stdout/stderr/exit code 落盘（无论解析成败都落盘，根治铺路关键证据）。
+  const logPath = writeUploadLog(stdout, stderr, code);
+
   const ref = parseUploadOutput(stdout);
   if (!ref.bvid && !ref.aid) {
-    // 解析失败：仍返回（上层可用 getVideoInfo 按 bvid 兜底），但记录告警。
-    logger.warn('[biliup] 未能从输出解析 bvid/aid，原始输出:', stdout.slice(0, 500));
+    // ① 上传真实性早报：
+    if (code != null && code !== 0) {
+      // exit!=0 → 明确抛「上传失败」，让 task 早报真实失败，而非下游 getVideoInfo 当替罪羊。
+      throw new Error('biliup 上传失败(exit=' + code + '): ' + (stderr || '').slice(0, 300));
+    }
+    // exit==0 但未解析出标识：留痕告警，仍返回空 ref（下游 getVideoInfo 会报，但日志已留痕）。
+    logger.warn('[biliup] 上传已结束(exit=0)但未从输出解析到 bvid/aid，完整日志已落盘: ' + logPath);
   }
   return ref;
 }
@@ -116,4 +156,4 @@ async function getVideoInfo(ref, opts = {}) {
   throw new Error('getVideoInfo 重试耗尽(20/10s)：' + (lastErr && lastErr.message));
 }
 
-module.exports = { runUpload, getVideoInfo, parseUploadOutput, DEFAULT_DEPS, USER_AGENT };
+module.exports = { runUpload, getVideoInfo, parseUploadOutput, writeUploadLog, DEFAULT_DEPS, USER_AGENT };

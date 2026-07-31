@@ -1,8 +1,24 @@
 // test/biliup.test.js —— biliup.js 单测
-// 覆盖：上传输出解析、getVideoInfo 重试 20×10s（mock child_process / fetch）。
+// 覆盖：上传输出解析、getVideoInfo 重试 20×10s（mock child_process / fetch）、
+//       P03 低风险改进：exit code 透传 + 完整 stdout 落盘 + 上传真实性早报。
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
 const biliup = require('../lib/biliup');
+const command = require('../lib/command');
+
+// 列出 .tmp 下所有 upload-*.log，返回 { path, content }[]（供落盘断言）。
+function listUploadLogs() {
+  const dir = command.TMP_DIR;
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((f) => /^upload-.*\.log$/.test(f))
+    .map((f) => {
+      const fp = path.join(dir, f);
+      return { path: fp, content: fs.readFileSync(fp, 'utf8') };
+    });
+}
 
 test('parseUploadOutput: 从 stdout 解析 bvid/aid', () => {
   const out = 'uploading...\nBV1xxABC done\n{"aid":123456,"bvid":"BV1xxABC"}';
@@ -66,4 +82,46 @@ test('getVideoInfo: 非 -404 错误码立即失败（不重试）', async () => 
     /未登录/
   );
   assert.strictEqual(calls, 1, '非 -404 应立即失败');
+});
+
+// ── P03 低风险改进新增用例 ──
+
+test('runUpload(用例A): exit=0 无 BV 输出 → 返回空 ref 且完整 stdout 已落盘', async () => {
+  const marker = '某无BV输出-' + Date.now();
+  const before = listUploadLogs().map((x) => x.path);
+  const fakeScript = { content: 'x', shell: 'ps1' };
+  const deps = {
+    runViaTempScript: async () => ({ stdout: marker, stderr: '', code: 0 }),
+  };
+  const ref = await biliup.runUpload(fakeScript, { deps });
+  assert.deepStrictEqual(ref, { bvid: null, aid: null });
+  // 断言本次运行新生成的 upload-*.log 含完整 stdout 文本（落盘生效）。
+  const logs = listUploadLogs().filter((x) => !before.includes(x.path));
+  assert.ok(logs.length > 0, '应生成 upload-*.log');
+  assert.ok(
+    logs.some((x) => x.content.includes(marker)),
+    '落盘日志应含完整 stdout 文本: ' + marker
+  );
+  // 清理本次测试产物
+  for (const x of logs) { try { fs.unlinkSync(x.path); } catch (_) {} }
+});
+
+test('runUpload(用例B): exit=1 报错 → 抛错且 message 含 上传失败(exit=1)', async () => {
+  const fakeScript = { content: 'x', shell: 'ps1' };
+  const deps = {
+    runViaTempScript: async () => ({ stdout: '', stderr: 'some error', code: 1 }),
+  };
+  await assert.rejects(
+    async () => await biliup.runUpload(fakeScript, { deps }),
+    /上传失败\(exit=1\)/
+  );
+});
+
+test('runUpload(用例C 回归): exit=0 含 BV+aid → 正常返回解析结果', async () => {
+  const fakeScript = { content: 'x', shell: 'ps1' };
+  const deps = {
+    runViaTempScript: async () => ({ stdout: 'BV1xx aid=123', stderr: '', code: 0 }),
+  };
+  const ref = await biliup.runUpload(fakeScript, { deps });
+  assert.deepStrictEqual(ref, { bvid: 'BV1xx', aid: 123 });
 });

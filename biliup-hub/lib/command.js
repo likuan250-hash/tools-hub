@@ -133,7 +133,8 @@ function writeTempScript(scriptFile, dir) {
  * @param {{content:string, shell:string}} scriptFile
  * @param {{onLog?:Function, onError?:Function, deps?:Object}} [opts]
  *   opts.deps.execFile 可注入（单测 mock）；默认 child_process.execFile。
- * @returns {Promise<{stdout:string, stderr:string}>}
+ * @returns {Promise<{stdout:string, stderr:string, code:number}>}
+ *   向后兼容：旧调用方解构 { stdout, stderr } 仍可用，新增的 code 不破坏既有用法。
  */
 function runViaTempScript(scriptFile, opts = {}) {
   const deps = Object.assign({ execFile }, opts.deps || {});
@@ -165,11 +166,17 @@ function runViaTempScript(scriptFile, opts = {}) {
     }
     const child = deps.execFile(file, args, { windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
       cleanup();
+      // 透传 exit code：成功路径 code=0；失败路径取 err.code 或 child.exitCode，
+      // 以便上层区分「真上传成功」vs「exit0 但无标识」（根治铺路）。
+      const code = err ? (err.code ?? child.exitCode) : 0;
       if (err) {
         onError(stderr || err.message);
-        return reject(new Error('biliup 执行失败: ' + (stderr || err.message)));
+        const execErr = new Error('biliup 执行失败: ' + (stderr || err.message));
+        // 可选：为 reject 的 Error 附带 exit code，便于上游早报/治理。
+        if (code !== null && code !== undefined) execErr.code = code;
+        return reject(execErr);
       }
-      resolve({ stdout: stdout || '', stderr: stderr || '' });
+      resolve({ stdout: stdout || '', stderr: stderr || '', code });
     });
     if (child.stdout) child.stdout.on('data', (d) => onLog(d.toString()));
     if (child.stderr) child.stderr.on('data', (d) => onError(d.toString()));

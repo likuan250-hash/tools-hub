@@ -89,7 +89,12 @@ async function run(req, ctx) {
       onLog: (line) => log('uploading', line.trim()),
       deps: subDeps,
     });
-    log('uploading', '上传完成 bvid=' + (ref.bvid || '?') + ' aid=' + (ref.aid || '?'));
+    if (ref.bvid || ref.aid) {
+      log('uploading', '上传完成 bvid=' + (ref.bvid || '?') + ' aid=' + (ref.aid || '?'));
+    } else {
+      // 无标识：不再打「上传完成」（假成功）。早报真实状态，提示日志已落盘待核对。
+      log('uploading', '上传已结束但未解析到稿件标识（完整日志已落盘 .tmp/upload-*.log，待人工/根治核对）');
+    }
 
     // 4) getVideoInfo（重试应对 -404）
     setStage('uploading', '等待稿件索引');

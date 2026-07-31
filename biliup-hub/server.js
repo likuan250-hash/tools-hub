@@ -13,6 +13,13 @@ const account = require('./lib/account');
 const auth = require('./lib/auth');
 const logger = require('./lib/logger');
 
+// 头像代理用的 UA（绕过 B站防盗链）；同源校验复用下方 origin 中间件。
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1';
+// 优先用 undici 的 fetch（与 account.js 同构），便于单测注入 app.locals.avatarFetch。
+function getProxyFetch() {
+  try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
+}
+
 const app = express();
 const PORT = process.env.BILIUP_PORT || 3600;
 
@@ -109,6 +116,36 @@ app.get('/api/account', async (req, res) => {
   }
 });
 
+// ── 头像代理（#A：绕过 B站防盗链/Referer 校验，避免前端 <img> 裂图）──
+// 同源校验由上方 origin 中间件统一处理；此处仅做入参校验 + 代理转发。
+app.get('/api/avatar', async (req, res) => {
+  const face = (req.query && req.query.face) || '';
+  if (typeof face !== 'string' || !/^https?:\/\//i.test(face)) {
+    return res.status(400).json({ error: 'invalid face url' });
+  }
+  try {
+    const fetchFn = (app.locals && app.locals.avatarFetch) || getProxyFetch();
+    const upstream = await fetchFn(face, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Referer': 'https://www.bilibili.com/',
+        'Accept': 'image/*',
+      },
+    });
+    if (!upstream.ok) {
+      return res.status(502).json({ error: 'upstream avatar error', status: upstream.status });
+    }
+    const ct = (upstream.headers && upstream.headers.get('content-type')) || 'image/jpeg';
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.set('Content-Type', ct);
+    res.set('Cache-Control', 'public, max-age=300');
+    res.end(buf);
+  } catch (e) {
+    logger.error('[avatar] 代理失败:', e.message);
+    res.status(500).json({ error: 'avatar proxy failed' });
+  }
+});
+
 // ── 扫码登录：生成二维码（#7）──
 app.post('/api/login/qrcode', async (req, res) => {
   try {
@@ -192,6 +229,7 @@ app.use((err, req, res, next) => {
 });
 
 // ── 启动（EADDRINUSE 自动重试 30 次/300ms，与 netdisk 同构）──
+let server = null;
 function startServer(attempt = 0) {
   const srv = app.listen(PORT, '127.0.0.1', () => {
     logger.info(`biliup-hub 运行中 → http://localhost:${PORT} (仅本机绑定)`);
@@ -207,7 +245,10 @@ function startServer(attempt = 0) {
   });
   return srv;
 }
-const server = startServer();
+// 仅作为入口（node server.js）启动时监听；被 require 时（如单测）不占用端口，避免测试进程空转。
+if (require.main === module) {
+  server = startServer();
+}
 
 // ── 优雅关闭 ──
 let shuttingDown = false;
@@ -215,6 +256,7 @@ function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.warn(`收到 ${signal}, 正在优雅关闭…`);
+  if (!server) { process.exit(0); return; }
   server.close(() => { logger.info('服务已关闭'); process.exit(0); });
   setTimeout(() => { logger.error('优雅关闭超时,强制退出'); process.exit(1); }, 5000).unref();
 }

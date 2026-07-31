@@ -65,10 +65,23 @@
     }
   });
 
-  // ── 发布模式切换 ──
+  // ── 发布模式切换（#C：根据选中显隐 dtimeInput；切到定时发布默认填 +1h）──
+  function defaultDtime() {
+    // 当前本地时间 + 1 小时，格式 YYYY-MM-DDTHH:mm（本地时区）。
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    const pad = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+      + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
   document.querySelectorAll('input[name="mode"]').forEach((r) => {
     r.addEventListener("change", () => {
-      $("dtimeInput").disabled = r.value !== "dtime";
+      const dtime = $("dtimeInput");
+      if (r.value === "dtime") {
+        dtime.style.display = "";
+        if (!dtime.value) dtime.value = defaultDtime();
+      } else {
+        dtime.style.display = "none";
+      }
     });
   });
 
@@ -77,12 +90,14 @@
     try {
       const resp = await fetch("/api/config");
       const cfg = await resp.json();
-      $("cfgTid").value = cfg.tid != null ? cfg.tid : "";
+      // 分区/版权/转载/线路 已改为 <select>；用 selectPreserve 赋值，避免旧 config 含
+      // 非内置选项（如 tid=20）时浏览器取消选中导致静默丢值（#D Bug 修复）。
+      selectPreserve($("cfgTid"), cfg.tid != null ? cfg.tid : "");
       $("cfgSeason").value = cfg.seasonId != null ? cfg.seasonId : "";
       $("cfgSection").value = cfg.sectionId != null ? cfg.sectionId : "";
-      $("cfgCopyright").value = cfg.copyright != null ? cfg.copyright : "";
-      $("cfgNoReprint").value = cfg.noReprint != null ? cfg.noReprint : "";
-      $("cfgLine").value = cfg.line || "";
+      selectPreserve($("cfgCopyright"), cfg.copyright != null ? cfg.copyright : "");
+      selectPreserve($("cfgNoReprint"), cfg.noReprint != null ? cfg.noReprint : "");
+      selectPreserve($("cfgLine"), cfg.line || "");
       $("cfgUid").value = cfg.uid != null ? cfg.uid : "";
       $("cfgDesc").value = cfg.desc || "";
       $("cfgComment").value = cfg.comment || "";
@@ -97,11 +112,13 @@
   // ── 保存配置（#3：不再包含 AIGC 字段）──
   $("saveCfgBtn").addEventListener("click", async () => {
     const payload = {
-      tid: Number($("cfgTid").value) || 17,
+      // tid/copyright/noReprint 用 coerceInt 统一解析：0 是合法值（如 noReprint=0 禁止转载），
+      // 不会被 falsy 兜底改写（#noReprint falsy 陷阱修复）。uid/line 保持原逻辑不动。
+      tid: coerceInt($("cfgTid").value, 17),
       seasonId: String($("cfgSeason").value || "6918057"),
       sectionId: String($("cfgSection").value || "7630305"),
-      copyright: Number($("cfgCopyright").value) || 1,
-      noReprint: Number($("cfgNoReprint").value) || 1,
+      copyright: coerceInt($("cfgCopyright").value, 1),
+      noReprint: coerceInt($("cfgNoReprint").value, 1),
       line: $("cfgLine").value || "bda2",
       uid: Number($("cfgUid").value) || 236743002,
       desc: $("cfgDesc").value,
@@ -122,6 +139,14 @@
   });
 
   // ── 账号区（#7：头像+昵称 / 登录按钮）──
+  // 默认头像（内联 SVG：灰色圆底 + 小人剪影），代理失败时兜底，确保不裂图。
+  const DEFAULT_AVATAR_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+    '<rect width="32" height="32" rx="16" fill="#c8cff0"/>' +
+    '<circle cx="16" cy="12" r="6" fill="#6b7299"/>' +
+    '<path d="M5 28c0-6 5-9 11-9s11 3 11 9z" fill="#6b7299"/>' +
+    '</svg>'
+  );
   function renderAccount(info) {
     const box = $("accountArea");
     if (!box) return;
@@ -130,9 +155,13 @@
       const img = document.createElement("img");
       img.className = "avatar";
       img.id = "avatar";
-      img.src = info.face || "";
+      const face = (info.face || "").trim();
+      // #A：经 /api/avatar 代理绕过防盗链；face 为空则直接用默认头像。
+      img.referrerPolicy = 'no-referrer';
+      img.src = face ? ('/api/avatar?face=' + encodeURIComponent(face)) : DEFAULT_AVATAR_SVG;
       img.alt = info.uname || "用户";
       img.title = (info.uname || "") + "（点击进入个人空间）";
+      img.onerror = () => { img.onerror = null; img.src = DEFAULT_AVATAR_SVG; };
       img.addEventListener("click", () => openSpace(info.mid));
       const name = document.createElement("span");
       name.className = "nick-name";
@@ -339,10 +368,32 @@
     }
   }
 
+  // ── 高级参数折叠（#F：按钮切换，初始隐藏；chevron 方向随状态旋转）──
+  const advToggle = $("advToggle");
+  const advBody = $("advBody");
+  if (advToggle && advBody) {
+    advToggle.addEventListener("click", () => {
+      const isOpen = advBody.style.display !== "none";
+      advBody.style.display = isOpen ? "none" : "";
+      advToggle.classList.toggle("open", !isOpen);
+    });
+  }
+
+  // ── 版本号（#B：拉 /api/version 填 verBadge，失败静默保持 "v—"）──
+  async function refreshVersion() {
+    try {
+      const resp = await fetch("/api/version");
+      const j = await resp.json();
+      const v = j && j.version;
+      if (v) $("verBadge").textContent = "v" + v;
+    } catch (e) { /* 失败静默：保留占位 "v—" */ }
+  }
+
   // ── 初始化 ──
   loadConfig();
   refreshAccount();
   refreshHealth();
+  refreshVersion();
   setInterval(refreshHealth, 20000); // 每 20s 探活
   if (typeof window.bindStatusCursor === "function") window.bindStatusCursor(document);
 })();

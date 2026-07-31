@@ -122,6 +122,24 @@
     }
     .auth-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(var(--accent-rgb), 0.45); }
 
+    /* ===== 高级参数按钮（#F：替代原生 details 小三角，玻璃+accent，明暗两态） ===== */
+    .adv-toggle {
+      width: 100%; padding: 14px 16px; border-radius: 14px; cursor: pointer;
+      font-size: 14px; font-weight: 600; color: var(--text);
+      display: flex; align-items: center; justify-content: space-between;
+      border: 1px solid var(--glass-border);
+      background: var(--glass-bg); backdrop-filter: blur(16px);
+      box-shadow: var(--shadow-card);
+      transition: transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease-out),
+        background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+    }
+    .adv-toggle:hover { transform: translateY(-2px); border-color: var(--accent); }
+    .adv-toggle.open { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25); }
+    .adv-toggle .chev { display: inline-block; color: var(--accent); font-size: 12px;
+      transition: transform var(--dur) var(--ease-spring); }
+    .adv-toggle.open .chev { transform: rotate(180deg); }
+    .adv-body { margin-top: 6px; }
+
     .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; padding-left: 10px; border-left: 2px solid var(--glass-border); }
 
     .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
@@ -417,10 +435,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
           <span id="videoName" class="file-name"></span>
         </div>
       </div>
-      <div class="field">
-        <label>投稿标题（可编辑）</label>
-        <input type="text" id="titleInput" placeholder="默认取文件名，可覆盖" />
-      </div>
       <p class="hint">命名建议：【游戏编号】游戏名 版本描述 免费学习版下载.mp4</p>
     </section>
 
@@ -428,48 +442,77 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <section class="panel">
       <h2>📝 投稿设置</h2>
       <div class="field">
+        <label>投稿标题（可编辑）</label>
+        <input type="text" id="titleInput" placeholder="默认取文件名，可覆盖" />
+      </div>
+      <div class="field">
         <label>标签（逗号分隔，一般按视频内容自动生成，可手动覆盖）</label>
         <input type="text" id="tagsInput" placeholder="辐射4,单机游戏,RPG" />
       </div>
       <div class="field">
         <label>发布模式</label>
-        <div class="radio">
-          <label><input type="radio" name="mode" value="now" checked /> 立即发布</label>
-          <label><input type="radio" name="mode" value="dtime" /> 定时发布</label>
+        <div class="row">
+          <div class="radio">
+            <label><input type="radio" name="mode" value="now" checked /> 立即发布</label>
+            <label><input type="radio" name="mode" value="dtime" /> 定时发布</label>
+          </div>
+          <input type="datetime-local" id="dtimeInput" style="display:none; width:auto; min-width:220px;" />
         </div>
-        <input type="datetime-local" id="dtimeInput" disabled />
       </div>
 
-      <details class="collapsible" id="advToggle">
-        <summary>⚙️ 高级参数</summary>
-        <div class="grid-2" style="margin-top:12px">
-          <div class="field"><label>分区 tid</label><input type="text" id="cfgTid" /></div>
-          <div class="field"><label>合集 season</label><input type="text" id="cfgSeason" /></div>
-          <div class="field"><label>分集 section</label><input type="text" id="cfgSection" /></div>
-          <div class="field"><label>线路 line</label><input type="text" id="cfgLine" /></div>
-          <div class="field"><label>uid</label><input type="text" id="cfgUid" /></div>
-          <div class="field"><label>版权/转载</label>
-            <div class="grid-2" style="gap:10px">
-              <input type="text" id="cfgCopyright" placeholder="copyright" />
-              <input type="text" id="cfgNoReprint" placeholder="noReprint" />
+      <div class="field">
+        <button type="button" class="adv-toggle" id="advToggle">⚙️ 高级参数 <span class="chev">▾</span></button>
+        <div class="adv-body" id="advBody" style="display:none">
+          <div class="grid-2" style="margin-top:12px">
+            <div class="field"><label>分区 tid</label>
+              <select id="cfgTid">
+                <option value="17">单机游戏</option>
+                <option value="171">电子竞技</option>
+                <option value="172">手机游戏</option>
+                <option value="21">生活</option>
+                <option value="24">动画</option>
+              </select>
+            </div>
+            <div class="field"><label>合集 ID</label><input type="text" id="cfgSeason" placeholder="你的 B站合集 ID" /></div>
+            <div class="field"><label>分集 ID</label><input type="text" id="cfgSection" placeholder="分集 ID" /></div>
+            <div class="field"><label>线路 line</label>
+              <select id="cfgLine">
+                <option value="bda2">bda2（默认）</option>
+                <option value="upos">upos</option>
+                <option value="kodo">kodo</option>
+                <option value="cos">cos</option>
+              </select>
+            </div>
+            <div class="field"><label>UID</label><input type="text" id="cfgUid" placeholder="你的 B站 UID" /></div>
+            <div class="field"><label>版权 copyright</label>
+              <select id="cfgCopyright">
+                <option value="1">自制（原创）</option>
+                <option value="2">转载</option>
+              </select>
+            </div>
+            <div class="field"><label>转载 noReprint</label>
+              <select id="cfgNoReprint">
+                <option value="1">允许转载</option>
+                <option value="0">禁止转载</option>
+              </select>
             </div>
           </div>
+          <div class="field" style="margin-top:16px">
+            <label>固定简介（4 行，可编辑）</label>
+            <textarea id="cfgDesc"></textarea>
+          </div>
+          <div class="field">
+            <label>置顶评论</label>
+            <textarea id="cfgComment" style="min-height:42px;"></textarea>
+          </div>
+          <div class="kpis">
+            <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
+          </div>
+          <div style="margin-top:14px">
+            <button class="auth-btn" id="saveCfgBtn" type="button">💾 保存参数</button>
+          </div>
         </div>
-        <div class="field" style="margin-top:16px">
-          <label>固定简介（4 行，可编辑）</label>
-          <textarea id="cfgDesc"></textarea>
-        </div>
-        <div class="field">
-          <label>置顶评论</label>
-          <textarea id="cfgComment" style="min-height:42px;"></textarea>
-        </div>
-        <div class="kpis">
-          <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
-        </div>
-        <div style="margin-top:14px">
-          <button class="auth-btn" id="saveCfgBtn" type="button">💾 保存参数</button>
-        </div>
-      </details>
+      </div>
     </section>
 
     <!-- 投稿 + 日志 -->
@@ -517,6 +560,8 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   </div>
 
   <script src="status-luxe.js"></script>
+  <script src="select-preserve.js"></script>
+  <script src="coerce-int.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

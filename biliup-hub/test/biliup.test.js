@@ -125,3 +125,97 @@ test('runUpload(用例C 回归): exit=0 含 BV+aid → 正常返回解析结果'
   const ref = await biliup.runUpload(fakeScript, { deps });
   assert.deepStrictEqual(ref, { bvid: 'BV1xx', aid: 123 });
 });
+
+// ── 修复二：exit0 假成功但 stderr 暴露 B站 API 失败 → 主动暴露真实原因 ──
+// 全程 mock runViaTempScript 与 fs（避免真删文件/真跑二进制）。
+const noopFs = { mkdirSync: () => {}, writeFileSync: () => {} };
+
+test('runUpload(修复二-A): exit=0 但 stderr 含 {"code":-400,"message":"请求错误"} → 抛 biliup 上传失败(code=-400)', async () => {
+  const fakeScript = { content: 'x', shell: 'ps1' };
+  const deps = {
+    runViaTempScript: async () => ({ stdout: '', stderr: 'Error: {"code":-400,"data":null,"message":"请求错误","ttl":1}', code: 0 }),
+    fs: noopFs,
+  };
+  await assert.rejects(
+    async () => await biliup.runUpload(fakeScript, { deps }),
+    /biliup 上传失败\(code=-400\)/
+  );
+});
+
+test('runUpload(修复二-B): exit=0 但 stderr 含 "token 失效" → 抛疑似鉴权/会话失效', async () => {
+  const fakeScript = { content: 'x', shell: 'ps1' };
+  const deps = {
+    runViaTempScript: async () => ({ stdout: '', stderr: 'token 失效，请重新登录', code: 0 }),
+    fs: noopFs,
+  };
+  await assert.rejects(
+    async () => await biliup.runUpload(fakeScript, { deps }),
+    /biliup 上传失败\(疑似鉴权\/会话失效\)/
+  );
+});
+
+test('runUpload(修复二-C 回归): exit=0 且 stderr 为空 → 仍返回空 ref（不抛错，保留旧行为）', async () => {
+  const fakeScript = { content: 'x', shell: 'ps1' };
+  const deps = {
+    runViaTempScript: async () => ({ stdout: '', stderr: '', code: 0 }),
+    fs: noopFs,
+  };
+  const ref = await biliup.runUpload(fakeScript, { deps });
+  assert.deepStrictEqual(ref, { bvid: null, aid: null });
+});
+
+// ── detectBiliupApiFailure 直接单测 ──
+test('detectBiliupApiFailure: stderr 为空/纯空白 → 不抛错（返回 undefined）', () => {
+  assert.strictEqual(biliup.detectBiliupApiFailure(''), undefined);
+  assert.strictEqual(biliup.detectBiliupApiFailure('   '), undefined);
+});
+
+test('detectBiliupApiFailure: 含鉴权关键字但无 code JSON → 抛疑似鉴权/会话失效', () => {
+  assert.throws(
+    () => biliup.detectBiliupApiFailure('登录过期，请重新登录'),
+    /biliup 上传失败\(疑似鉴权\/会话失效\)/
+  );
+});
+
+test('detectBiliupApiFailure: 含负数 code JSON → 抛出 message 内容', () => {
+  assert.throws(
+    () => biliup.detectBiliupApiFailure('Error: {"code":-101,"message":"请先登录"}'),
+    /biliup 上传失败\(code=-101\): 请先登录/
+  );
+});
+
+// ── 补充断言（QA 严过关）：修复二-A 的抛出 message 必须与产品预期文案「逐字」一致，
+// 避免下游被「缺少 bvid/aid」之类误导性文案掩盖。engineer 用例仅用正则匹配前缀，
+// 此处用精确全等校验整句。 ──
+test('runUpload(修复二-A 强化): exit=0 含 -400 JSON → 抛错 message 精确为「biliup 上传失败(code=-400): 请求错误」', async () => {
+  const fakeScript = { content: 'x', shell: 'ps1' };
+  const deps = {
+    runViaTempScript: async () => ({ stdout: '', stderr: 'Error: {"code":-400,"data":null,"message":"请求错误","ttl":1}', code: 0 }),
+    fs: noopFs,
+  };
+  await assert.rejects(
+    async () => await biliup.runUpload(fakeScript, { deps }),
+    (err) => err instanceof Error && err.message === 'biliup 上传失败(code=-400): 请求错误',
+    'message 应为精确文案，而非误导性「缺少 bvid/aid」'
+  );
+});
+
+// ── 补充断言（QA 严过关）：模拟真实回放，stderr 为多行混合日志（含其它 biliup 噪声）
+// 仍能从其中定位负数 code JSON 并抛出清晰错误，不被噪声淹没。 ──
+test('runUpload(修复二-A 噪声行): stderr 含进度噪点 + -400 JSON → 仍精确抛出', async () => {
+  const fakeScript = { content: 'x', shell: 'ps1' };
+  const noisy = [
+    '[INFO] preparing upload...',
+    'some unrelated warning line',
+    'Error: {"code":-400,"data":null,"message":"请求错误","ttl":1}',
+    '[DEBUG] exit',
+  ].join('\n');
+  const deps = {
+    runViaTempScript: async () => ({ stdout: '', stderr: noisy, code: 0 }),
+    fs: noopFs,
+  };
+  await assert.rejects(
+    async () => await biliup.runUpload(fakeScript, { deps }),
+    (err) => err instanceof Error && err.message === 'biliup 上传失败(code=-400): 请求错误'
+  );
+});

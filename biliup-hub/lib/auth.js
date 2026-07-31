@@ -230,6 +230,34 @@ async function ensureLoginInfo(webCookies, opts = {}) {
   return saveLoginInfo(loginInfo, opts);
 }
 
+/**
+ * 清除登录态（退出登录）：best-effort 删除 credentials 文件。
+ *
+ * 仅删凭证，不动 config.json：
+ *   - store.getCookiesPath()（扁平 web cookie，由二维码登录写入）
+ *   - store.getLoginInfoPath()（biliup 上传用 LoginInfo，与 cookies.json 分离）
+ * 任一文件不存在也不报错（fs.existsSync 判断后再 unlink）。
+ *
+ * @param {{fs?:Object}} [opts] opts.fs 覆盖文件系统实现（单测 mock）；默认用真实 fs。
+ * @returns {{ok:boolean, cleared:string[]}} cleared 为实际删除的文件绝对路径列表。
+ */
+function clearSession(opts = {}) {
+  const f = opts.fs || fs;
+  const targets = [store.getCookiesPath(), store.getLoginInfoPath()];
+  const cleared = [];
+  for (const p of targets) {
+    try {
+      if (p && f.existsSync(p)) {
+        f.unlinkSync(p);
+        cleared.push(p);
+      }
+    } catch (e) {
+      logger.warn('[auth] 删除凭证失败(' + p + '):', e.message);
+    }
+  }
+  return { ok: true, cleared };
+}
+
 module.exports = {
   generateQrcode,
   pollQrcode,
@@ -239,5 +267,6 @@ module.exports = {
   exchangeLoginInfo,
   saveLoginInfo,
   ensureLoginInfo,
+  clearSession,
   COOKIE_INFO_URL,
 };

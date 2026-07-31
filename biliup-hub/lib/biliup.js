@@ -24,6 +24,7 @@ const DEFAULT_DEPS = {
   getFetch,
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   logger,
+  fs, // 可注入（单测 mock，避免真实落盘）
 };
 
 // ── 从 biliup stdout 解析投稿结果（bvid + aid）──
@@ -52,11 +53,13 @@ const UPLOAD_LOG_DIR = command.TMP_DIR;
  * @param {string} stdout biliup 标准输出
  * @param {string} stderr biliup 标准错误
  * @param {number} code 进程退出码（0/非0/null）
+ * @param {Object} [fsImpl] 文件系统实现（默认模块级 fs；单测可注入 mock）
  * @returns {string|null} 落盘文件路径；失败返回 null
  */
-function writeUploadLog(stdout, stderr, code) {
+function writeUploadLog(stdout, stderr, code, fsImpl) {
+  const f = fsImpl || fs;
   try {
-    fs.mkdirSync(UPLOAD_LOG_DIR, { recursive: true });
+    f.mkdirSync(UPLOAD_LOG_DIR, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     const logPath = path.join(UPLOAD_LOG_DIR, `upload-${ts}.log`);
     // utf-8 无 BOM；含时间戳、exit code 与完整 stdout/stderr。
@@ -64,11 +67,44 @@ function writeUploadLog(stdout, stderr, code) {
     const body = header +
       '----- stdout -----\n' + (stdout || '') +
       '\n----- stderr -----\n' + (stderr || '') + '\n';
-    fs.writeFileSync(logPath, body, { encoding: 'utf8' });
+    f.writeFileSync(logPath, body, { encoding: 'utf8' });
     return logPath;
   } catch (e) {
     logger.error('[biliup] 上传日志落盘失败:', e.message);
     return null;
+  }
+}
+
+// B站 API 失败特征关键字（不区分大小写）：鉴权/会话失效类错误。
+const BILIUP_API_FAILURE_KEYWORDS = /请求错误|未登录|登录失效|登录过期|请先登录|token|cookie|鉴权|UNAUTHORIZED|csrf/i;
+
+/**
+ * 检测 biliup 是否以「exit0 假成功」收场、但 stderr 暴露了 B站 API 失败（多为登录态失效/鉴权失败）。
+ *
+ * 真实场景（见上传日志）：biliup 退出码返回 0，但 stderr 打印
+ *   Error: {"code":-400,"data":null,"message":"请求错误","ttl":1}
+ * 这是登录态过期/鉴权的典型信号。若不及时暴露，下游 getVideoInfo 会因 ref 为空抛出
+ * 误导性的「getVideoInfo 缺少 bvid/aid」错误，掩盖真实原因。
+ *
+ * 行为：
+ *  - 命中失败时【直接抛出】清晰错误（让 task 早报真实失败原因，而非 getVideoInfo 当替罪羊）。
+ *  - stderr 完全为空（真·静默成功但无标识）→ 不抛，交由调用方维持 WARN + 返回空 ref 的旧行为。
+ *
+ * @param {string} stderr biliup 标准错误输出
+ */
+function detectBiliupApiFailure(stderr) {
+  const text = String(stderr || '');
+  if (!text.trim()) return; // 空 stderr：真·静默成功但无标识，不抛（保留旧行为，避免误杀）
+  // 优先：解析 JSON 形态错误 {"code":<负数>,"message":"<msg>"}（字段顺序可能含 data 等中间键）。
+  const codeMatch = text.match(/"code"\s*:\s*(-?\d+)/);
+  if (codeMatch && parseInt(codeMatch[1], 10) < 0) {
+    const msgMatch = text.match(/"message"\s*:\s*"([^"]*)"/);
+    const message = msgMatch ? msgMatch[1] : '未知错误';
+    throw new Error('biliup 上传失败(code=' + codeMatch[1] + '): ' + message);
+  }
+  // 退化：关键字命中（鉴权/会话相关）。
+  if (BILIUP_API_FAILURE_KEYWORDS.test(text)) {
+    throw new Error('biliup 上传失败(疑似鉴权/会话失效): ' + text.slice(0, 200));
   }
 }
 
@@ -84,7 +120,8 @@ async function runUpload(scriptFile, opts = {}) {
   const { stdout, stderr, code } = await deps.runViaTempScript(scriptFile, { onLog, deps: opts.deps });
 
   // ② 完整 stdout/stderr/exit code 落盘（无论解析成败都落盘，根治铺路关键证据）。
-  const logPath = writeUploadLog(stdout, stderr, code);
+  const fsImpl = deps.fs || fs;
+  const logPath = writeUploadLog(stdout, stderr, code, fsImpl);
 
   const ref = parseUploadOutput(stdout);
   if (!ref.bvid && !ref.aid) {
@@ -93,7 +130,11 @@ async function runUpload(scriptFile, opts = {}) {
       // exit!=0 → 明确抛「上传失败」，让 task 早报真实失败，而非下游 getVideoInfo 当替罪羊。
       throw new Error('biliup 上传失败(exit=' + code + '): ' + (stderr || '').slice(0, 300));
     }
-    // exit==0 但未解析出标识：留痕告警，仍返回空 ref（下游 getVideoInfo 会报，但日志已留痕）。
+    // exit==0 或 code 为 null：检测 stderr 是否暗示 B站 API 失败（exit0 假成功）。
+    // 命中（如 {"code":-400,"message":"请求错误"} 或鉴权/会话失效关键字）即【抛出清晰错误】，
+    // 让 task 早报真实失败原因，而非下游 getVideoInfo 当替罪羊报误导性「缺少 bvid/aid」。
+    detectBiliupApiFailure(stderr); // 命中则抛错（不返回）
+    // 未命中（stderr 为空或无失败特征）→ 维持现状 WARN + 返回空 ref（保留旧行为，避免误杀）。
     logger.warn('[biliup] 上传已结束(exit=0)但未从输出解析到 bvid/aid，完整日志已落盘: ' + logPath);
   }
   return ref;
@@ -156,4 +197,4 @@ async function getVideoInfo(ref, opts = {}) {
   throw new Error('getVideoInfo 重试耗尽(20/10s)：' + (lastErr && lastErr.message));
 }
 
-module.exports = { runUpload, getVideoInfo, parseUploadOutput, writeUploadLog, DEFAULT_DEPS, USER_AGENT };
+module.exports = { runUpload, getVideoInfo, parseUploadOutput, writeUploadLog, detectBiliupApiFailure, DEFAULT_DEPS, USER_AGENT };

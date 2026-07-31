@@ -308,6 +308,14 @@
       name.addEventListener("click", () => openSpace(info.mid));
       box.appendChild(img);
       box.appendChild(name);
+      // 退出登录按钮（Catch 修复：允许用户自助清除过期登录态，避免卡死）
+      const logoutBtn = document.createElement("button");
+      logoutBtn.className = "auth-btn";
+      logoutBtn.id = "logoutBtn";
+      logoutBtn.textContent = "退出登录";
+      logoutBtn.title = "清除本机登录凭证并退出登录";
+      logoutBtn.addEventListener("click", doLogout);
+      box.appendChild(logoutBtn);
     } else {
       const btn = document.createElement("button");
       btn.className = "auth-btn";
@@ -332,6 +340,23 @@
       renderAccount(info);
     } catch (e) {
       renderAccount({ isLogin: false });
+    }
+  }
+
+  // ── 退出登录（Catch 修复）──
+  // POST /api/logout → 后端 best-effort 删除 cookies.json + login_info.json（仅凭证，不动 config）。
+  // 无论成功失败都重新拉取 /api/account，使账号区回到「未登录/请扫码」并显示二维码登录入口。
+  async function doLogout() {
+    try {
+      const resp = await fetch("/api/logout", { method: "POST" });
+      const j = await resp.json().catch(() => ({}));
+      if (j && j.ok) toast("✅ 已退出登录");
+      else toast("❌ 退出登录失败");
+    } catch (e) {
+      toast("❌ 退出登录失败: " + e.message);
+    } finally {
+      refreshAccount(); // 重新渲染账号区（显示登录按钮，二维码入口恢复可用）
+      refreshSeasons(); // 登录态失效，清空合集/分集级联下拉
     }
   }
 

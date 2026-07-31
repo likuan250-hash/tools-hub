@@ -226,6 +226,21 @@ app.get('/api/login/poll', async (req, res) => {
   }
 });
 
+// ── 退出登录 / 清除登录态（Catch 修复：解决登录态过期后用户卡死、无法自助刷新）──
+// best-effort 删除 cookies.json + login_info.json（仅删凭证，不动 config.json）。
+// 成功后立即使 /api/account 缓存失效，前端重新拉取即显示「未登录/请扫码」并恢复二维码登录入口。
+app.post('/api/logout', (req, res) => {
+  try {
+    const r = auth.clearSession();
+    account.invalidate(); // 立即使 /api/account 5 分钟缓存失效，反映未登录态
+    logger.info('[logout] 已清除登录态，删除文件:', r.cleared);
+    res.json({ ok: true, cleared: r.cleared });
+  } catch (e) {
+    logger.error('[logout] 失败:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ── 上传（SSE 全流程投稿，核心）──
 app.post('/api/upload', (req, res) => {
   const body = req.body || {};

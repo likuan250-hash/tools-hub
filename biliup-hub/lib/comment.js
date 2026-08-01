@@ -1,13 +1,12 @@
 // lib/comment.js —— 评论发布 + 置顶（B站 reply API）
-// 端点（社区已知形态，待实测确认，见设计 §8.3）：
-//   发布：POST https://api.bilibili.com/x/v2/reply/add   → 返回 rpid
-//   置顶：POST https://api.bilibili.com/x/v2/reply/action → action=3 置顶
+// 端点：
+//   发布：POST https://api.bilibili.com/x/v2/reply/add    → 返回 rpid
+//   置顶：POST https://api.bilibili.com/x/v2/reply/top   → action=1 置顶 / action=0 取消
 const logger = require('./logger');
 
-// TODO(实测): 以下端点 / action 码以社区已知形态为准，v1 回归时请实测确认。
 const REPLY_ADD_URL = 'https://api.bilibili.com/x/v2/reply/add';
-const REPLY_ACTION_URL = 'https://api.bilibili.com/x/v2/reply/action';
-const REPLY_TOP_ACTION = 3; // TODO(实测): 置顶 action 码；社区已知为 3
+const REPLY_TOP_URL = 'https://api.bilibili.com/x/v2/reply/top';
+const REPLY_SETTOP_ACTION = 1; // 1=置顶, 0=取消置顶
 
 let _fetch;
 function getFetch() {
@@ -75,13 +74,13 @@ async function pin(aid, rpid, csrf, cookieHeader, opts = {}) {
   const deps = Object.assign({}, DEFAULT_DEPS, opts.deps || {});
   const fetchFn = deps.fetchFn || deps.getFetch();
   const body = new URLSearchParams();
-  body.set('type', '1');
+  body.set('type', '1');            // 1 = 视频稿件
   body.set('oid', String(aid));
   body.set('rpid', String(rpid));
-  body.set('action', String(REPLY_TOP_ACTION));
+  body.set('action', String(REPLY_SETTOP_ACTION));
   body.set('csrf', String(csrf));
 
-  const resp = await fetchFn(REPLY_ACTION_URL, {
+  const resp = await fetchFn(REPLY_TOP_URL, {
     method: 'POST',
     headers: {
       'Cookie': cookieHeader,
@@ -99,4 +98,4 @@ async function pin(aid, rpid, csrf, cookieHeader, opts = {}) {
   return { ok: true, raw: json };
 }
 
-module.exports = { post, pin, REPLY_ADD_URL, REPLY_ACTION_URL, REPLY_TOP_ACTION, DEFAULT_DEPS };
+module.exports = { post, pin, REPLY_ADD_URL, REPLY_TOP_URL, REPLY_SETTOP_ACTION, DEFAULT_DEPS };

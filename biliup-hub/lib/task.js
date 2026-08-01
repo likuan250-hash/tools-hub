@@ -129,11 +129,18 @@ async function run(req, ctx) {
       log('adding_season', '未指定分集，跳过合集后置');
     }
 
-    // 6) commenting（发布 + 置顶）
+    // 6) commenting（发布 + 置顶）—— 非致命：失败不影响投稿整体结果
     setStage('commenting', '评论置顶中');
-    const rpid = await comment.post(videoInfo.aid, config.comment, csrf, cookieHeader, { deps: subDeps });
-    await comment.pin(videoInfo.aid, rpid, csrf, cookieHeader, { deps: subDeps });
-    log('commenting', '评论已发布并置顶 rpid=' + rpid);
+    let rpid;
+    try {
+      rpid = await comment.post(videoInfo.aid, config.comment, csrf, cookieHeader, { deps: subDeps });
+      await comment.pin(videoInfo.aid, rpid, csrf, cookieHeader, { deps: subDeps });
+      log('commenting', '评论已发布并置顶 rpid=' + rpid);
+    } catch (commentErr) {
+      // 评论置顶为非关键步骤：失败仅记录警告，投稿任务仍算成功（继续 to done）。
+      logger.warn('[task] 评论发布/置顶失败（非致命，投稿已完成）: ' + commentErr.message);
+      log('commenting', '评论发布/置顶失败（非致命，已跳过）: ' + commentErr.message);
+    }
 
     // 7) done
     setStage('done', '投稿完成');

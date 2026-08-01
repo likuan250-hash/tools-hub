@@ -28,17 +28,29 @@ test('post: 失败码抛错', async () => {
   );
 });
 
-test('pin: 返回 ok', async () => {
-  const fetchFn = async () => fakeResp({ code: 0, data: {} });
+test('pin: top 返回 ok', async () => {
+  let urlSeen = '';
+  let bodySeen = '';
+  const fetchFn = async (url, opts) => { urlSeen = url; bodySeen = opts.body; return fakeResp({ code: 0, data: {} }); };
   const r = await comment.pin(1, 555, 'csrf', 'c', { deps: { fetchFn, sleep: async () => {} } });
   assert.strictEqual(r.ok, true);
+  assert.ok(urlSeen.includes('/reply/top'), 'pin 应请求 top 接口');
+  assert.ok(bodySeen.includes('action=1'), 'pin 应带 action=1（置顶）');
 });
 
-test('pin: 失败抛错', async () => {
-  const fetchFn = async () => fakeResp({ code: -111, message: '置顶失败' });
+test('pin: top 非 0 码抛错 (如 12011)', async () => {
+  const fetchFn = async () => fakeResp({ code: 12011, message: '不合法的赞或踩' });
   await assert.rejects(
     async () => await comment.pin(1, 555, 'csrf', 'c', { deps: { fetchFn, sleep: async () => {} } }),
-    /置顶失败/
+    /评论置顶失败/
+  );
+});
+
+test('pin: fetch 网络错误抛错', async () => {
+  const fetchFn = async () => { throw new Error('network down'); };
+  await assert.rejects(
+    async () => await comment.pin(1, 555, 'csrf', 'c', { deps: { fetchFn, sleep: async () => {} } }),
+    /network down/
   );
 });
 
@@ -51,10 +63,12 @@ test('post: 请求体含 oid/message/csrf', async () => {
   assert.ok(bodySeen.includes('csrf=mycsrf'));
 });
 
-test('pin: 请求体含 action=REPLY_TOP_ACTION', async () => {
+test('pin: 请求体含 rpid 与 action=REPLY_SETTOP_ACTION', async () => {
+  let urlSeen = '';
   let bodySeen = '';
-  const fetchFn = async (url, opts) => { bodySeen = opts.body; return fakeResp({ code: 0 }); };
+  const fetchFn = async (url, opts) => { urlSeen = url; bodySeen = opts.body; return fakeResp({ code: 0 }); };
   await comment.pin(42, 9, 'mycsrf', 'cookie', { deps: { fetchFn, sleep: async () => {} } });
+  assert.ok(urlSeen.includes('/reply/top'), 'pin 应请求 top 接口');
   assert.ok(bodySeen.includes('rpid=9'));
-  assert.ok(bodySeen.includes('action=' + comment.REPLY_TOP_ACTION));
+  assert.ok(bodySeen.includes('action=' + comment.REPLY_SETTOP_ACTION));
 });

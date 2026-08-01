@@ -35,6 +35,44 @@ jobs:
         with:
           node-version: "22"
 
+      # ── CI 缓存：加速依赖安装（key 基于 lock 文件，版本号变更不失效）──
+      - name: Cache root node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-root-${{ hashFiles('package-lock.json') }}
+          restore-keys: nm-root-
+
+      - name: Cache kdocs-tool node_modules
+        uses: actions/cache@v4
+        with:
+          path: kdocs-tool/node_modules
+          key: nm-kdocs-${{ hashFiles('kdocs-tool/package-lock.json') }}
+          restore-keys: nm-kdocs-
+
+      - name: Cache netdisk-hub node_modules
+        uses: actions/cache@v4
+        with:
+          path: netdisk-hub/node_modules
+          key: nm-netdisk-${{ hashFiles('netdisk-hub/package-lock.json') }}
+          restore-keys: nm-netdisk-
+
+      - name: Cache biliup-hub node_modules
+        uses: actions/cache@v4
+        with:
+          path: biliup-hub/node_modules
+          key: nm-biliup-${{ hashFiles('biliup-hub/package-lock.json') }}
+          restore-keys: nm-biliup-
+
+      - name: Cache electron + electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-v1
+          restore-keys: electron-${{ runner.os }}-
+
       - name: Install app deps (electron + electron-builder)
         run: npm install --no-audit --no-fund
 

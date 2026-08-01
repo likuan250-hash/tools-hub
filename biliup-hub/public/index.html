@@ -39,7 +39,7 @@
       color: var(--text); border-radius: 12px; padding: 8px 14px;
       cursor: pointer; font-size: 13px; backdrop-filter: blur(16px) saturate(160%);
       box-shadow: var(--shadow-card);
-      transition: transform 0.2s ease, background 0.2s ease;
+      transition: transform var(--motion-base) var(--ease-standard), background var(--motion-base) var(--ease-standard);
     }
     .theme-btn:hover { background: rgba(255,255,255,0.14); }
 
@@ -63,10 +63,10 @@
 
     /* ===== panel（与网盘转存完全一致） ===== */
     .panel {
-      border: 1px solid var(--glass-border); border-radius: 22px;
+      border: 1px solid var(--glass-border); border-radius: var(--r-lg);
       background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%);
       box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
-      padding: 26px; margin-bottom: 24px;
+      padding: var(--sp-6); margin-bottom: var(--sp-6);
     }
     .panel h2 {
       font-size: 17px; font-weight: 700; margin-bottom: 18px;
@@ -77,18 +77,40 @@
       border-radius: 4px; background: linear-gradient(180deg, var(--accent), var(--accent-2));
     }
 
-    /* ===== 表单控件（与网盘转存完全一致） ===== */
-    :root { --field-bg: var(--bg-2); --solid-bg: var(--bg-2); }
+    /* ===== 表单控件（统一：半透明微妙表面 + 发丝边 + 12px 圆角 + 内阴影 + 4px 焦点环） ===== */
     label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
-    input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"], select, textarea {
-      width: 100%; padding: 12px 14px; border-radius: 12px;
-      border: 1px solid var(--glass-border); background: var(--field-bg);
-      color: var(--text); font-size: 14px; outline: none;
-      transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    input[type="text"], input[type="password"], input[type="number"],
+    input[type="datetime-local"], select, textarea {
+      width: 100%;
+      padding: var(--field-pad-y) var(--field-pad-x);
+      border-radius: var(--field-radius);
+      border: 1px solid var(--field-border);
+      background: var(--field-bg);
+      color: var(--fg);
+      font-size: 14px; line-height: 1.5;
+      outline: none;
+      box-shadow: var(--field-inset);
+      transition:
+        border-color var(--motion-base) var(--ease-standard),
+        box-shadow   var(--motion-base) var(--ease-standard),
+        background    var(--motion-base) var(--ease-standard);
     }
-    input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.25); }
-    textarea::placeholder { color: var(--text-dim); opacity: 0.75; }
-    textarea { resize: vertical; min-height: 84px; font-family: var(--mono-font); font-size: 13px; line-height: 1.5; }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: var(--field-inset), var(--field-focus-ring);
+    }
+    textarea { resize: vertical; min-height: 84px; font-family: var(--mono-font); font-size: 13px; }
+    textarea::placeholder, input::placeholder { color: var(--muted); opacity: .8; }
+
+    /* select 统一去原生箭头 + 灰色 chevron（三模块一致） */
+    select {
+      appearance: none; -webkit-appearance: none;
+      padding-right: 34px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2398989d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+    input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     .field { margin-bottom: 16px; }
     .field:last-child { margin-bottom: 0; }
     .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
@@ -114,7 +136,7 @@
       color: var(--text); background: var(--field-bg);
       border: 1px solid var(--glass-border); border-radius: 12px;
       transition:
-        transform var(--dur) var(--ease-spring),
+        transform var(--dur) var(--ease-standard),
         background var(--dur) var(--ease-out),
         border-color var(--dur) var(--ease-out),
         color var(--dur) var(--ease-out),
@@ -132,20 +154,20 @@
 
     /* ===== 按钮（与网盘转存完全一致） ===== */
     .btn {
-      width: 100%; padding: 14px; border: none; border-radius: 14px; cursor: pointer;
+      width: 100%; padding: 14px; border: none; border-radius: var(--r-lg); cursor: pointer;
       font-size: 15px; font-weight: 600; color: #fff;
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
       box-shadow: 0 10px 30px rgba(var(--accent-rgb), 0.35);
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
     }
     .btn:hover { box-shadow: 0 14px 40px rgba(var(--accent-rgb), 0.5); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     .btn.ghost { background: var(--field-bg); border: 1px solid var(--glass-border); color: var(--text); box-shadow: var(--shadow-card); }
     .auth-btn {
-      border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: #fff;
+      border: none; border-radius: var(--r-md); cursor: pointer; font-size: 13px; font-weight: 600; color: #fff;
       padding: 8px 16px; background: linear-gradient(135deg, var(--accent), var(--accent-2));
       box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.3);
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
     }
     .auth-btn:hover { box-shadow: 0 10px 26px rgba(var(--accent-rgb), 0.45); }
 
@@ -191,9 +213,12 @@
     }
     .modal-mask.show { display: flex; animation: pop 0.25s ease; }
     .modal {
-      width: 100%; max-width: 480px; border-radius: 20px; padding: 22px;
-      border: 1px solid var(--glass-border); background: var(--bg-2);
-      box-shadow: 0 30px 80px rgba(0,0,0,0.5); max-height: 80vh; display: flex; flex-direction: column;
+      width: 100%; max-width: 480px; padding: 22px;
+      border: 1px solid var(--glass-border); border-radius: var(--r-lg);
+      background: var(--surface);
+      -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+      box-shadow: var(--shadow-modal);
+      max-height: 80vh; display: flex; flex-direction: column;
     }
     /* 弹窗正文区：在 modal 固定 max-height 内独立滚动（A4 高级参数弹窗） */
     .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 14px; padding-right: 4px; }
@@ -230,22 +255,21 @@
     @keyframes pop { from { opacity: 0; } to { opacity: 1; } }
 
     /* ===== Toast（A2：轻量提示，明暗自动适配，3s 自动消失，复用 pop-in 入场） ===== */
-    .toast-host {
-      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
-      display: flex; flex-direction: column; gap: 10px; align-items: center;
-      z-index: 100; pointer-events: none;
-    }
+    .toast-host { position: fixed; left: 50%; bottom: var(--sp-7); transform: translateX(-50%);
+      display: flex; flex-direction: column; gap: var(--sp-3); align-items: center; z-index: 100; pointer-events: none; }
     .toast {
       pointer-events: auto;
-      max-width: 80vw; padding: 12px 20px; border-radius: 14px;
-      font-size: 14px; font-weight: 600; color: var(--text);
-      border: 1px solid var(--glass-border);
-      background: var(--glass-bg); backdrop-filter: blur(16px) saturate(160%);
+      max-width: 80vw; padding: 10px 18px; border-radius: var(--r-md);
+      font-size: 14px; font-weight: 600; color: var(--fg);
+      border: 1px solid var(--glass-border); background: var(--surface);
+      -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
       box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
       display: flex; align-items: center; gap: 8px;
     }
-    .toast .toast-ico { font-size: 16px; }
-    .toast.toast-out { opacity: 0; transform: translateY(8px); transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out); }
+    .toast .toast-ico { width: 16px; height: 16px; flex: none; display: inline-flex; }
+    .toast .toast-msg { line-height: 1.4; }
+    .toast.toast-out { opacity: 0; transform: translateY(8px);
+      transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard); }
     [data-theme="light"] .toast { box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.7); }
 
     /* 亮色玻璃分离增强（与网盘转存完全一致） */
@@ -267,57 +291,120 @@
   <!-- 三套样式完全内联（tokens + motion + macos），保证打包后零外部依赖 -->
   <style>
 /* ===== shared/tokens.css（单一真源 —— 明暗 token 严格对齐网盘转存） ===== */
-:root { /* 默认暗色 */
-  --bg-1: #0f1226; --bg-2: #222a52; --bg-3: #2b1a4a;
-  --text: #eef1ff; --text-dim: #c8cff0;
+:root { /* 默认暗色 —— Apple HIG token（新增规范名，旧名作别名） */
+  /* 页面基底：保留既有蓝调；新增 --bg 规范名 */
+  --bg: #1d1d1f;
+  --bg-1: #0f1226;
+  --bg-2: #222a52;
+  --bg-3: #2b1a4a;
 
-  --glass-bg: rgba(255, 255, 255, 0.32);
+  /* 文字：规范名 --fg / --fg-2 / --muted；旧名 --text / --text-dim 作别名 */
+  --fg: #f5f5f7;
+  --fg-2: #c7c7cc;
+  --muted: #98989d;
+  --text: var(--fg);
+  --text-dim: var(--fg-2);
+
+  /* 表面：--surface 即既有玻璃面板；--surface-2 为字段微妙表面（修复突兀关键） */
+  --surface: rgba(255, 255, 255, 0.32);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --field-bg: var(--surface-2);
+  --solid-bg: var(--surface-2);
+  --glass-bg: var(--surface);
+
+  /* 边框：--border 为字段发丝边；--glass-border 继续用于面板 */
+  --border: #3a3a3c;
+  --border-soft: rgba(255, 255, 255, 0.12);
   --glass-border: rgba(255, 255, 255, 0.42);
+  --field-border: var(--border);
 
-  /* B站粉强调色（品牌区分），其余 token 与网盘转存完全一致 */
+  /* 强调色（保留分模块品牌色；见规范决策点#1 备选方案） */
   --accent: #fb7299; --accent-2: #00aeec; --accent-3: #c4b5ff;
+  --accent-hover: #fc8aab; --accent-active: #e85c83;
+  --accent-rgb: 251, 114, 153; --accent2-rgb: 0, 174, 236;
 
+  /* 语义色 */
   --ok: #34d399; --warn: #fbbf24; --err: #f87171;
+  --ok-rgb: 52, 211, 153; --err-rgb: 248, 113, 113;
+  --success: var(--ok); --danger: var(--err);
 
-  --accent-rgb: 251,114,153; --accent2-rgb: 0,174,236;
-  --ok-rgb: 52,211,153; --err-rgb: 248,113,113;
-
+  /* 开关 / 遮罩 */
   --switch-off: #4b4f6b; --switch-thumb: #ffffff;
   --modal-mask: rgba(8, 10, 24, 0.6);
   --shadow-card: 0 10px 34px rgba(0, 0, 0, 0.35);
   --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.6);
 
+  /* 圆角阶梯 */
+  --r-sm: 8px; --r-md: 12px; --r-lg: 18px; --r-pill: 999px;
+
+  /* 阴影 / 层级 */
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  /* 间距阶梯 */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 48px;
+
+  /* 焦点环 */
+  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent);
+  --field-focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent);
+
+  /* 字段专用 */
+  --field-radius: var(--r-md);
+  --field-pad-y: 9px; --field-pad-x: 12px;
+  --field-inset: inset 0 1px 2px rgba(0, 0, 0, 0.10);
+
+  /* 动效（规范统一；旧名 --dur / --ease-* 作别名） */
+  --motion-fast: 150ms;
+  --motion-base: 220ms;
+  --ease-standard: cubic-bezier(0.28, 0.22, 1);
+  --ease-emphasized: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur: var(--motion-base); --dur-fast: var(--motion-fast);
+  --ease-out: var(--ease-standard); --ease-spring: var(--ease-emphasized);
+
+  /* 字体 */
   --mac-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   --mono-font: "SF Mono", Menlo, "Cascadia Code", "JetBrains Mono", Consolas, "PingFang SC", monospace;
 }
 
 [data-theme="light"] {
+  --bg: #ffffff;
   --bg-1: #dde6ff; --bg-2: #e9edfb; --bg-3: #e6ddfb;
-  --text: #1b1f3b; --text-dim: #5b6189;
 
-  --glass-bg: rgba(255, 255, 255, 0.55);
+  --fg: #1d1d1f; --fg-2: #424245; --muted: #6e6e73;
+  --text: var(--fg); --text-dim: var(--fg-2);
+
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-2: rgba(0, 0, 0, 0.04);
+  --field-bg: var(--surface-2); --solid-bg: var(--surface-2);
+  --glass-bg: var(--surface);
+
+  --border: #d2d2d7; --border-soft: rgba(0, 0, 0, 0.08);
   --glass-border: rgba(90, 95, 150, 0.35);
+  --field-border: var(--border);
 
   --accent: #fb7299; --accent-2: #00aeec; --accent-3: #5b3df0;
+  --accent-hover: #fc8aab; --accent-active: #e85c83;
+  --accent-rgb: 251, 114, 153; --accent2-rgb: 0, 174, 236;
 
   --ok: #10b981; --warn: #b7791f; --err: #e2483d;
-
-  --accent-rgb: 251,114,153; --accent2-rgb: 0,174,236;
-  --ok-rgb: 16,185,129; --err-rgb: 226,72,61;
+  --ok-rgb: 16, 185, 129; --err-rgb: 226, 72, 61;
+  --success: var(--ok); --danger: var(--err);
 
   --switch-off: #c7c9d8; --switch-thumb: #ffffff;
   --modal-mask: rgba(20, 24, 55, 0.4);
   --shadow-card: 0 8px 24px rgba(20, 30, 80, 0.1);
   --shadow-modal: 0 30px 80px rgba(20, 30, 80, 0.25);
+
+  --elev-raised: 0 12px 32px rgba(0, 0, 0, 0.08);
+
+  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent);
+  --field-focus-ring: var(--focus-ring);
+  --field-inset: inset 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 /* ===== shared/macos-motion.css（完整版，与网盘转存逐行一致） ===== */
-:root {
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --dur-fast: 0.18s;
-  --dur: 0.28s;
-}
+/* —— 动效 token（--dur / --ease-*）已统一定义于上方 shared/tokens.css，此处不再重复 —— */
 
 .liquid, .card, .panel, .modal { position: relative; }
 .liquid::before, .card::before, .panel::before, .modal::before {
@@ -332,7 +419,7 @@
 .card-open, .dir-btn, .group-copy, .clear-input, .clear-corner,
 .modal-actions button, .tab-close {
   transition:
-    transform var(--dur) var(--ease-spring),
+    transform var(--dur) var(--ease-standard),
     box-shadow var(--dur) var(--ease-out),
     background var(--dur) var(--ease-out),
     border-color var(--dur) var(--ease-out),
@@ -435,10 +522,7 @@ body { font-family: var(--mac-font); }
 .switch input:checked::after { left: 18px; }
 
 input[type="text"], input[type="password"], input[type="number"], select, textarea {
-  border-radius: 10px;
-}
-.btn, .auth-btn, .theme-btn, .dir-btn, .clear-input {
-  border-radius: 10px;
+  border-radius: var(--field-radius);
 }
   </style>
 
@@ -453,7 +537,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       --text: #1b1f3b; --text-dim: #5b6189;
       --glass-bg: rgba(255, 255, 255, 0.55);
       --glass-border: rgba(90, 95, 150, 0.35);
-      --field-bg: #eef1fb; --solid-bg: #e7ecf8;
+      --field-bg: var(--surface-2); --solid-bg: var(--surface-2);
       --shadow-card: 0 8px 24px rgba(20, 30, 80, 0.1);
     }
     /* 次要按钮：对齐入口页的"突出"质感，亮/暗两态都能从玻璃面板浮出 */
@@ -542,24 +626,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     .modal.glass .grid-2 { margin-top: 4px; }
     .grid-2 > .field:last-child { grid-column: 1 / -1; }
     .field-hint { font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
-    .field input, .field select, .field textarea {
-      width: 100%; padding: 9px 12px; border-radius: 10px;
-      background: var(--field-bg); border: 1px solid var(--glass-border);
-      color: var(--text); font-size: 14px;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,.06);
-      transition: border .2s, box-shadow .2s, background .2s;
-    }
-    .field select {
-      appearance: none; -webkit-appearance: none;
-      padding-right: 34px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239aa0b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 12px center;
-    }
-    .field input:focus, .field select:focus, .field textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .25);
-    }
 
     /* —— a11y 护栏：并入既有 @supports / reduced-transparency（必补） —— */
     @supports not (backdrop-filter: blur(1px)) {
@@ -587,7 +653,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
       box-shadow: var(--shadow-card);
       cursor: pointer; font-size: 13px; font-weight: 500; line-height: 1;
-      transition: border .2s ease, box-shadow .2s ease, background .2s ease, color .2s ease;
+      transition: border var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard), background var(--motion-base) var(--ease-standard), color var(--motion-base) var(--ease-standard);
     }
     .icon-btn:hover {
       border-color: var(--accent); background: rgba(var(--accent-rgb), .10);
@@ -605,7 +671,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       color: #fff; background: var(--accent); border: 1px solid transparent; border-radius: 11px;
       cursor: pointer; user-select: none;
       box-shadow: 0 8px 20px rgba(var(--accent-rgb), .28);
-      transition: filter .2s ease, transform .12s ease, box-shadow .2s ease, background .2s ease;
+      transition: filter var(--motion-base) var(--ease-standard), transform var(--motion-fast) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard), background var(--motion-base) var(--ease-standard);
     }
     .btn-exec:hover:not(:disabled) { filter: brightness(1.07); }
     .btn-exec:active:not(:disabled) { transform: translateY(1px); }
@@ -656,7 +722,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="field">
         <label>本地视频文件（mp4）</label>
         <div class="row">
-          <button class="auth-btn" id="pickBtn" type="button"><i class="app-ico" data-ico="folder"></i> 浏览</button>
+          <button class="auth-btn" id="pickBtn" type="button"><i class="app-ico" data-ico="folder"></i> 选择文件</button>
           <span id="videoName" class="file-name"></span>
         </div>
       </div>

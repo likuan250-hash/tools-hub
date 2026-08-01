@@ -45,6 +45,33 @@ function setExec(btn, on) {
   }
 }
 
+// ── 轻量 Toast（T05：与 biliup/kdocs 统一，玻璃 .toast-host + 子节点，3s 自动消失，复用 pop-in 入场）──
+function toast(msg, type) {
+  let host = document.getElementById('toastHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toastHost';
+    host.className = 'toast-host';
+    document.body.appendChild(host);
+  }
+  const isErr = type === 'err';
+  // 消息内已内联 ico() SVG（如错误态显式带 cross）时不再叠加 .toast-ico，避免双图标
+  const hasInlineIcon = typeof msg === 'string' && msg.indexOf('ico(') !== -1;
+  const el = document.createElement('div');
+  el.className = 'toast pop-in';
+  el.setAttribute('role', 'status');
+  el.innerHTML = '<span class="toast-ico"></span><span class="toast-msg"></span>';
+  el.querySelector('.toast-ico').innerHTML = hasInlineIcon ? '' : (isErr ? ico('cross') : ico('check'));
+  const msgEl = el.querySelector('.toast-msg');
+  if (hasInlineIcon) msgEl.innerHTML = msg; else msgEl.textContent = msg;
+  host.appendChild(el);
+  // 3s 后淡出移除；reduced-motion 下过渡被全局降级为瞬隐，不影响功能
+  setTimeout(() => {
+    el.classList.add('toast-out');
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+  }, 3000);
+}
+
 // 授权:弹窗打开对应网盘的授权/登录页
 function openAuth(provider) {
   const path = provider === 'baidu' ? '/auth/baidu/cookie' : '/auth/' + provider;
@@ -73,7 +100,7 @@ async function loadAccounts() {
   const cards = document.getElementById('cards');
   // 先渲染「检查中」占位(避免校验网络耗时期间空白)
   const names = ['百度网盘', '夸克网盘', '迅雷网盘'];
-  cards.innerHTML = names.map((n) => `<div class="card"><div class="name">${n}</div><div class="status">${statusHTML('off', '检查中…')}</div></div>`).join('');
+  cards.innerHTML = names.map((n) => `<div class="card"><div class="name">${n}</div><div class="status">${statusHTML('off', '检测中…')}</div></div>`).join('');
   try {
     const r = await fetch('/api/accounts');
     const d = await r.json();
@@ -541,7 +568,7 @@ document.addEventListener('click', async (e) => {
     });
     const d = await r.json();
     if (d.ok) { loadTasks(); }
-    else { alert('重试失败: ' + (d.error || '')); btn.disabled = false; btn.textContent = old; }
+    else { toast('重试失败: ' + (d.error || ''), 'err'); btn.disabled = false; btn.textContent = old; }
   } catch (err) { btn.disabled = false; btn.textContent = old; }
 });
 
@@ -613,7 +640,7 @@ async function loadVersion() {
       ? '由工具箱统一管理，更新请通过工具箱'
       : '独立运行模式';
     verBadge.classList.add('readonly');
-  } catch (e) { verBadge.innerHTML = statusHTML('off', 'v?'); }
+  } catch (e) { verBadge.innerHTML = statusHTML('off', 'v—'); }
 }
 
 // ── 转存目录选择(网页选目录,选完持久化,下次不再选) ──
@@ -703,7 +730,7 @@ async function confirmDir() {
       body: JSON.stringify({ id, name }),
     });
     const d = await r.json();
-    if (!d.ok) { alert('保存失败: ' + (d.error || '')); return; }
+    if (!d.ok) { toast('保存失败: ' + (d.error || ''), 'err'); return; }
     closeDirPicker();
     loadAccounts();
   } catch (e) {

@@ -5,7 +5,7 @@ const clearBtn = $("clearBtn");
 const preview = $("preview"), previewContent = $("previewContent");
 const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $("autoSummary"), autoLog = $("autoLog"), kdocsViewBtn = $("kdocsViewBtn");
 const retryCoverBtn = $("retryCoverBtn");
-const toast = $("toast"), chipKdocs = $("chipKdocs"), chipBl = $("chipBl"), kdocsBtn = $("kdocsBtn");
+const chipKdocs = $("chipKdocs"), chipBl = $("chipBl"), kdocsBtn = $("kdocsBtn"), toastHost = $("toastHost");
 
 // ── 统一执行按钮 loading 切换（macOS 线性图标风格：执行中显示 spinner + 执行中…）──
 function setExec(btn, on) {
@@ -79,11 +79,27 @@ function openKdocsView() {
 kdocsBtn.onclick = openKdocsView;
 kdocsViewBtn.onclick = openKdocsView;
 
-// ── Toast ──
+// ── Toast（与 biliup/netdisk 统一：玻璃 .toast-host + 子节点，3s 自动消失，复用 pop-in 入场）──
 function toastMsg(msg, type) {
-  toast.innerHTML = statusHTML(type === "err" ? "err" : "ok", msg);
-  toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 2500);
+  let host = toastHost;
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toastHost";
+    host.className = "toast-host";
+    document.body.appendChild(host);
+  }
+  const isErr = type === "err";
+  const el = document.createElement("div");
+  el.className = "toast pop-in";
+  el.setAttribute("role", "status");
+  el.innerHTML = '<span class="toast-ico"></span><span class="toast-msg"></span>';
+  el.querySelector(".toast-ico").innerHTML = isErr ? ico("cross") : ico("check");
+  el.querySelector(".toast-msg").textContent = msg;
+  host.appendChild(el);
+  setTimeout(() => {
+    el.classList.add("toast-out");
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+  }, 3000);
 }
 
 function setChip(el, ok, label) {
@@ -563,7 +579,7 @@ async function loadVersion() {
       ? "由工具箱统一管理，更新请通过工具箱"
       : "独立运行模式";
     verBadge.classList.add("readonly");
-  } catch { verBadge.innerHTML = statusHTML('off', "v?"); }
+  } catch { verBadge.innerHTML = statusHTML('off', "v—"); }
 }
 loadVersion();
 

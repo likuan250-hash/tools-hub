@@ -46,6 +46,14 @@ test('pin: top 非 0 码抛错 (如 12011)', async () => {
   );
 });
 
+test('pin: -404（评论资源不存在/风控秒删）仍抛错且信息明确（外部限制，非致命）', async () => {
+  const fetchFn = async () => fakeResp({ code: -404, message: '啥都木有' });
+  await assert.rejects(
+    async () => await comment.pin(1, 555, 'csrf', 'c', { deps: { fetchFn, sleep: async () => {} } }),
+    /评论置顶失败/
+  );
+});
+
 test('pin: fetch 网络错误抛错', async () => {
   const fetchFn = async () => { throw new Error('network down'); };
   await assert.rejects(

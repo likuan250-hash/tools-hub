@@ -187,9 +187,11 @@
   // ── 合集/分集级联下拉（#H）──
   // seasonSections: seasonId -> [{ id, title }]，供分集下拉级联填充。
   let seasonSections = Object.create(null);
-  function fillSections(seasonId) {
+  // prevSection: 用户/历史已选分集（优先保留其有效选择）；不传则按当前下拉值。
+  function fillSections(seasonId, prevSection) {
     const selSection = $("cfgSection");
-    if (!selSection) return;
+    if (!selSection) return null;
+    const prev = (prevSection != null) ? String(prevSection) : selSection.value;
     selSection.length = 1; // 仅保留默认空项「不指定分集」
     const secs = seasonSections[seasonId] || [];
     for (const sec of secs) {
@@ -198,6 +200,17 @@
       opt.textContent = (sec.title != null && sec.title !== "") ? sec.title : sec.id;
       selSection.appendChild(opt);
     }
+    // 1) 用户/历史已有明确分集选择 → 优先保留（前提是该分集仍属于当前合集）。
+    if (prev) {
+      selectPreserve(selSection, prev);
+      if (selSection.value === prev) return prev;
+    }
+    // 2) 字段对齐（#问题1 修复）：合集仅一个分集时自动选中，
+    //    使「用户只填合集」也能正确对齐到 config.sectionId（后端据此触发合集后置）。
+    //    多分集需用户明确选择（不猜测，避免加错分集）；无分集则无需后置。
+    const auto = (typeof autoSelectSection === 'function') ? autoSelectSection(secs) : null;
+    if (auto) selSection.value = auto;
+    return auto || "";
   }
   function refreshSeasons() {
     const selSeason = $("cfgSeason");
@@ -223,9 +236,8 @@
         // 回填此前选中的合集（已登录命中真实合集则选中，否则 selectPreserve 追加「其它」）。
         if (prevSeason) selectPreserve(selSeason, prevSeason);
         else selSeason.value = "";
-        fillSections(selSeason.value || prevSeason);
-        if (prevSection) selectPreserve(selSection, prevSection);
-        else selSection.value = "";
+        // 填充分集：fillSections 内部优先保留用户已选分集；无历史选择时由字段对齐自动选中单分集合集。
+        fillSections(selSeason.value || prevSeason, prevSection);
       })
       .catch((e) => {
         // 未登录/接口失败：下拉仅留默认空项（上面已清空），不填任何可选项。
@@ -235,7 +247,8 @@
   // 合集变更 → 级联填充分集（重置为默认空项）。
   const cfgSeasonEl = $("cfgSeason");
   if (cfgSeasonEl) {
-    cfgSeasonEl.addEventListener("change", () => fillSections(cfgSeasonEl.value));
+    // 切换合集时清空旧分集并重新级联；单分集合集会自动对齐到分集（#问题1 修复）。
+    cfgSeasonEl.addEventListener("change", () => fillSections(cfgSeasonEl.value, ''));
   }
 
   // ── 保存配置（#3：不再包含 AIGC 字段）──

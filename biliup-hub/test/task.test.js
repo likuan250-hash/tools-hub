@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const task = require('../lib/task');
+const { autoSelectSection } = require('../public/season-align');
 
 // 建一个真实存在的「视频文件」（仅过 fs.existsSync 检查；extract 已被 mock）。
 function makeVideoFile() {
@@ -207,4 +208,26 @@ test('task.run: 上传 -400 且 loadLoginInfo 无可读文件 → 跳过 refresh
   assert.equal(calls.runUpload, 2, '应重试一次，共 2 次上传');
   assert.equal(calls.refreshToken, 0, '无可读登录态时不应调用 refreshToken');
   assert.equal(calls.ensureFallback, 1, '应直接走 ensureLoginInfo 退路');
+});
+
+// ── 用例7（#问题1 修复）：合集仅单分集 → 字段对齐后 sectionId 存在 → season.add 被调用 ──
+// 还原真实断链：用户只填「合集」(seasonId) 未填「分集」(sectionId)，
+// 前端字段对齐在单分集合集时自动选中分集 → config.sectionId 非空 → task.js 触发 season.add。
+test('task.run: 合集仅单分集经字段对齐 → sectionId 存在 → season.add 被调用', async () => {
+  const video = makeVideoFile();
+  // 模拟前端：用户选了合集 seasonId='123'，其仅有 1 个分集 id='456'。
+  const seasonSections = { '123': [{ id: '456', title: '唯一分集' }] };
+  const alignedSectionId = autoSelectSection(seasonSections['123']);
+  assert.equal(alignedSectionId, '456', '单分集应自动对齐到 sectionId');
+
+  let seasonAddCalled = false;
+  const deps = baseMocks();
+  deps.season.add = async () => { seasonAddCalled = true; };
+  const ctx = makeCtx(deps, alignedSectionId);
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true);
+  assert.equal(seasonAddCalled, true, '字段对齐后 season.add 应被调用（合集不再被跳过）');
+  assert.equal(result.season, true, 'season 标志应为 true');
 });

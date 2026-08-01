@@ -36,8 +36,16 @@ test('mergeDefaults: seasonId/sectionId 空串保持空串（不回退默认值�
   assert.equal(out.sectionId, '');
 });
 
-test('mergeDefaults: 缺失 seasonId/sectionId 回退默认值兜底', () => {
+test('mergeDefaults: 缺失 seasonId/sectionId 回退默认空串（安全性修正，不回退硬编码开发者合集）', () => {
+  // #问题1 安全性修正：新装用户不配置时默认空串，禁止把视频加到开发者合集下。
+  // 缺失（非 null）应回退到 defaultConfig() 的 ''，而非旧的 6918057/7630305。
   const out = store.mergeDefaults({});
-  assert.ok(out.seasonId && out.seasonId !== '');
-  assert.ok(out.sectionId && out.sectionId !== '');
+  assert.equal(out.seasonId, '');
+  assert.equal(out.sectionId, '');
+});
+
+test('mergeDefaults: 显式传 null 的 seasonId/sectionId 同样回退默认空串（不回退硬编码值）', () => {
+  const out = store.mergeDefaults({ seasonId: null, sectionId: null });
+  assert.equal(out.seasonId, '');
+  assert.equal(out.sectionId, '');
 });

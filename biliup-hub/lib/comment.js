@@ -92,7 +92,14 @@ async function pin(aid, rpid, csrf, cookieHeader, opts = {}) {
   });
   const json = await resp.json();
   if (!json || json.code !== 0) {
-    throw new Error('评论置顶失败: code=' + (json && json.code) + ' msg=' + (json && json.message));
+    const code = json && json.code;
+    const msg = (json && json.message) || '';
+    // -404（msg 多为「啥都木有」）：评论/稿件资源不存在。刚发布即被风控秒删或进入审核时常见，
+    // 属 B站侧外部限制；本步骤本就非致命，且重试无法让已删评论复活，故不重试。
+    if (code === -404) {
+      throw new Error('评论置顶失败: code=-404（评论/稿件资源不存在，很可能刚发布即被风控删除或进入审核，属外部限制） msg=' + msg);
+    }
+    throw new Error('评论置顶失败: code=' + code + ' msg=' + msg);
   }
   logger.info('[comment] 评论置顶成功 rpid=', rpid);
   return { ok: true, raw: json };

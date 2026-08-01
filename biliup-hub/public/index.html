@@ -594,7 +594,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
             </select>
           </div>
           <div class="field"><label>合集</label><select id="cfgSeason"><option value="">不使用合集</option></select></div>
-          <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select></div>
+          <div class="field"><label>分集<small style="color:#9aa;font-weight:normal;margin-left:6px;">（合集生效必选；仅选合集不会加合集）</small></label><select id="cfgSection"><option value="">不指定分集</option></select></div>
           <div class="field"><label>线路 line</label>
             <select id="cfgLine">
               <option value="bda2">bda2（默认）</option>
@@ -657,6 +657,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <script src="status-luxe.js"></script>
   <script src="select-preserve.js"></script>
   <script src="coerce-int.js"></script>
+  <script src="season-align.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

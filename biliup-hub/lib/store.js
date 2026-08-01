@@ -20,8 +20,9 @@ const DEFAULT_COOKIES_PATH = path.join(COOKIES_DIR, 'cookies.json');
 const DEFAULT_LOGIN_INFO_PATH = path.join(COOKIES_DIR, 'login_info.json');
 
 // ── 默认配置（带 PRD/设计已知值；其余 UI 可编辑）──
-// 已知常量：tid=17(单机游戏)、seasonId=6918057、sectionId=7630305、copyright=1、
-// noReprint=1、line=bda2、uid=236743002、comment 固定文案。
+// 已知常量：tid=17(单机游戏)、copyright=1、noReprint=1、line=bda2、uid=236743002、comment 固定文案。
+// 注意：seasonId/sectionId 默认空串——合集/分集必须由用户自行配置，禁止硬编码开发者合集，
+// 否则新装用户不配置会把视频加到开发者合集下（#问题1 修复附带的安全性修正）。
 // 注：biliup.exe 路径不再由 UI 配置（#6），改为按运行环境自动解析。
 function defaultConfig() {
   return {
@@ -31,8 +32,8 @@ function defaultConfig() {
     // cookies 路径：与 BILIUP_DATA_DIR 同目录的 cookies.json（登录/手动放置均可）。
     cookiesPath: DEFAULT_COOKIES_PATH,
     tid: 17,
-    seasonId: '6918057',
-    sectionId: '7630305',
+    seasonId: '',
+    sectionId: '',
     copyright: 1,
     noReprint: 1,
     line: 'bda2',

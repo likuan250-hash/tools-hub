@@ -34,13 +34,32 @@ echo "🚀 推送 main + $TAG ..."
 git push origin main "$TAG"
 
 # —— 等 CI 构建完成（约 4-5 分钟，含版本一致性门禁 + 三模块测试）——
+# 关键：按本次推送的 commit SHA 精确匹配 CI 运行，避免抢到上一次构建的陈旧 run 导致误判发版失败
 echo "⏳ 等待 CI 构建（约 4-5 分钟）..."
-RUN_ID="$("$GH" run list --repo "$REPO" --limit 1 --json databaseId --jq '.[0].databaseId')"
+SHA="$(git rev-parse HEAD)"
+RUN_ID=""
+for i in $(seq 1 30); do
+  RUN_ID="$("$GH" run list --repo "$REPO" --commit "$SHA" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
+  [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ] && break
+  sleep 2
+done
+if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+  echo "❌ 未检测到本次推送($SHA)对应的 CI 运行，请检查 Actions 页面"
+  exit 1
+fi
 "$GH" run watch "$RUN_ID" --repo "$REPO" --exit-status
 
 # —— 验证 Release 资产齐全（latest.yml + Setup exe + blockmap）——
+# 构建完成后 electron-builder 发布资产可能略有延迟，重试若干次避免误判
 echo "🔍 验证 Release 资产..."
-ASSETS="$("$GH" release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')"
+ASSETS=""
+for i in $(seq 1 15); do
+  ASSETS="$("$GH" release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' 2>/dev/null)"
+  if echo "$ASSETS" | grep -q "latest.yml" && echo "$ASSETS" | grep -q "Setup"; then
+    break
+  fi
+  sleep 5
+done
 echo "$ASSETS"
 if echo "$ASSETS" | grep -q "latest.yml" && echo "$ASSETS" | grep -q "Setup"; then
   echo "✅ 发版成功：$TAG"

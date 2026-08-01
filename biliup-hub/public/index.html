@@ -595,6 +595,9 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     }
     .icon-btn .ib-ico { width: 17px; height: 17px; flex-shrink: 0; display: block; }
     .icon-btn .ib-label { line-height: 1; }
+    .app-ico { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; flex-shrink: 0; }
+    .app-ico-lg { width: 1.6em; height: 1.6em; }
+    .logo .app-ico { width: 26px; height: 26px; }
     .btn-exec {
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
       min-width: 168px; padding: 11px 22px;
@@ -627,7 +630,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <div class="wrap">
     <header>
       <div class="brand">
-        <div class="logo">📺</div>
+        <div class="logo"><i class="app-ico" data-ico="tv"></i></div>
         <div>
           <h1>B站自动投稿</h1>
           <div class="sub">本地视频 → 自动投稿到 B站（含合集 / 分区）</div>
@@ -638,14 +641,14 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         <div class="account-area" id="accountArea"></div>
         <span id="statusCapsule"></span>
         <button class="ver-badge" id="verBadge" title="由工具箱统一管理">v—</button>
-        <button class="theme-btn" id="themeBtn">🌗 主题</button>
+        <button class="theme-btn" id="themeBtn"><i class="app-ico" data-ico="theme"></i> 主题</button>
       </div>
     </header>
 
     <!-- 选择视频（独立卡片） -->
     <section class="panel">
       <div class="panel-head">
-        <h2>📂 选择视频</h2>
+        <h2><i class="app-ico" data-ico="folder"></i> 选择视频</h2>
         <div class="panel-acts">
           <button class="icon-btn" id="clearBtn" title="清空" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span class="ib-label">清空</span></button>
         </div>
@@ -653,7 +656,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="field">
         <label>本地视频文件（mp4）</label>
         <div class="row">
-          <button class="auth-btn" id="pickBtn" type="button">📂 浏览</button>
+          <button class="auth-btn" id="pickBtn" type="button"><i class="app-ico" data-ico="folder"></i> 浏览</button>
           <span id="videoName" class="file-name"></span>
         </div>
       </div>
@@ -662,7 +665,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <!-- 投稿设置（合并：标签与发布模式 + 投稿参数；高级参数折叠） -->
     <section class="panel">
       <div class="panel-head">
-        <h2>📝 投稿设置</h2>
+        <h2><i class="app-ico" data-ico="edit"></i> 投稿设置</h2>
         <div class="panel-acts">
           <button class="icon-btn" id="advTrigger" title="高级" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="ib-label">高级</span></button>
         </div>
@@ -692,7 +695,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <!-- 投稿 + 日志 -->
     <section class="panel">
       <div class="panel-head">
-        <h2>🚀 投稿</h2>
+        <h2><i class="app-ico" data-ico="rocket"></i> 投稿</h2>
         <div class="panel-acts">
           <button class="icon-btn" id="submitHistoryBtn" title="历史" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span class="ib-label">历史</span></button>
         </div>
@@ -705,7 +708,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <p class="hint" id="submitHint">选择视频后点击投稿（发布前会二次确认模式）</p>
       <!-- #4 日志面板默认隐藏，仅在点击投稿时展示 -->
       <div id="logWrap" style="display:none">
-        <h3 style="font-size:15px;font-weight:700;margin:16px 0 4px;">📜 投稿日志</h3>
+        <h3 style="font-size:15px;font-weight:700;margin:16px 0 4px;"><i class="app-ico" data-ico="history"></i> 投稿日志</h3>
         <div class="log" id="logBox"></div>
         <p class="hint" id="logEmpty">投稿进度与结果会显示在这里</p>
       </div>
@@ -728,7 +731,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <div class="modal-mask" id="loginMask">
     <div class="modal">
       <div class="modal-head">
-        <span>🔑 扫码登录 B站</span>
+        <span><i class="app-ico" data-ico="key"></i> 扫码登录 B站</span>
         <button class="modal-close" id="loginClose" type="button">×</button>
       </div>
       <p class="hint">用 B站手机客户端扫码登录；cookie 仅存于本机数据目录，与投稿上传共用同一份。</p>
@@ -746,7 +749,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <div class="modal-mask glass-mask" id="advMask">
     <div class="modal glass">
       <div class="modal-head">
-        <span>⚙️ 高级参数</span>
+        <span><i class="app-ico" data-ico="settings"></i> 高级参数</span>
         <button class="modal-close" id="advClose" type="button">×</button>
       </div>
       <div class="modal-body">
@@ -796,7 +799,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
           <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
         </div>
         <div style="margin-top:14px">
-          <button class="auth-btn" id="saveCfgBtn" type="button">💾 保存参数</button>
+          <button class="auth-btn" id="saveCfgBtn" type="button"><i class="app-ico" data-ico="save"></i> 保存参数</button>
         </div>
       </div>
     </div>
@@ -806,7 +809,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <div class="modal-mask glass-mask" id="historyMask">
     <div class="modal glass">
       <div class="modal-head">
-        <span>📜 投稿历史</span>
+        <span><i class="app-ico" data-ico="history"></i> 投稿历史</span>
         <button class="modal-close" id="historyClose" type="button" title="关闭">✕</button>
       </div>
       <div class="modal-body">
@@ -825,6 +828,51 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <script src="select-preserve.js"></script>
   <script src="coerce-int.js"></script>
   <script src="season-align.js"></script>
+  <script>
+// 统一图标系统（单一来源；1.75 描边线性风格，跟随 currentColor）
+window.ICONS = {
+  tv: '<rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/>',
+  chart: '<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>',
+  theme: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>',
+  folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>',
+  edit: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  rocket: '<path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2 0-2.8a2 2 0 0 0-3 0Z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.5 12.5 7-7"/><path d="m15 4 3 3"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+  robot: '<path d="M12 2v2"/><path d="M12 4a2 2 0 0 0-2 2v2H8a4 4 0 0 0-4 4v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a4 4 0 0 0-4-4h-2V6a2 2 0 0 0-2-2z"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.6-3.6a2 2 0 0 0-2.8 0L6 20"/>',
+  clipboard: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+  warning: '<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
+  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
+  check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  cross: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+  hourglass: '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4-4.4A2 2 0 0 1 7 6.2V2"/>',
+  ban: '<circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/>',
+  arrowdown: '<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>',
+  gamepad: '<line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="18" y1="11" x2="18.01" y2="11"/><rect x="2" y="6" width="20" height="12" rx="2"/>',
+  tag: '<path d="M12.6 2.6 21 11a2 2 0 0 1 0 2.8l-8 8a2 2 0 0 1-2.8 0l-8-8a2 2 0 0 1 0-2.8l8.4-8.4a2 2 0 0 1 2.8 0z"/><circle cx="7.5" cy="7.5" r="1"/>',
+  skip: '<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>',
+  party: '<path d="M5.8 11.3 2 22l10.7-3.8"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 8.5l-2 3 3 1-2 3 5-1.5a3 3 0 0 0 2-4.5l-2.5 2Z"/><path d="M2 12h.01"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'
+};
+window.ico = function(name){
+  var inner = window.ICONS[name];
+  if(!inner) return '';
+  return '<svg class="app-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+};
+window.hydrateIcons = function(root){
+  (root||document).querySelectorAll('[data-ico]').forEach(function(el){
+    var n = el.getAttribute('data-ico');
+    if(window.ICONS[n]) el.innerHTML = window.ico(n);
+  });
+};
+hydrateIcons(document);
+</script>
   <script src="app.js"></script>
 </body>
 </html>

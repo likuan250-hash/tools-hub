@@ -47,10 +47,10 @@
     }
   }
   function setReady() {
-    if (!running) setCapsule("ok", "投稿状态：✅ 就绪（待投稿）");
+    if (!running) setCapsule("ok", "投稿状态：就绪（待投稿）");
   }
   function setOffline() {
-    if (!running) setCapsule("err", "投稿状态：📴 离线（服务未连接）");
+    if (!running) setCapsule("err", "投稿状态：离线（服务未连接）");
   }
   // 初始：检测中
   setCapsule("info", "投稿状态：检测中…");
@@ -67,8 +67,8 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  // ── 轻量 Toast（A2：明暗自动适配，3s 自动消失，复用 pop-in 入场）──
-  function toast(msg) {
+  // ── 轻量 Toast（A2：明暗自动适配，3s 自动消失，复用 pop-in 入场；图标用 ico() 内联 SVG）──
+  function toast(msg, type) {
     let host = $("toastHost");
     if (!host) {
       host = document.createElement("div");
@@ -76,13 +76,16 @@
       host.className = "toast-host";
       document.body.appendChild(host);
     }
-    const isErr = /^❌/.test(msg || "");
+    const isErr = type === "err";
+    // 消息内已内联 ico() SVG（如错误态显式带 cross）时不再叠加 .toast-ico，避免双图标；并用 innerHTML 渲染 SVG。
+    const hasInlineIcon = typeof msg === "string" && msg.indexOf("ico(") !== -1;
     const el = document.createElement("div");
     el.className = "toast pop-in";
     el.setAttribute("role", "status");
     el.innerHTML = '<span class="toast-ico"></span><span class="toast-msg"></span>';
-    el.querySelector(".toast-ico").textContent = isErr ? "❌" : "✅";
-    el.querySelector(".toast-msg").textContent = msg;
+    el.querySelector(".toast-ico").innerHTML = hasInlineIcon ? "" : (isErr ? ico("cross") : ico("check"));
+    const msgEl = el.querySelector(".toast-msg");
+    if (hasInlineIcon) msgEl.innerHTML = msg; else msgEl.textContent = msg;
     host.appendChild(el);
     // 3s 后淡出移除；reduced-motion 下过渡被全局降级为瞬隐，不影响功能。
     setTimeout(() => {
@@ -141,7 +144,7 @@
         $("videoName").textContent = selectedVideo;
         const base = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
         $("titleInput").value = base; // 不再重复显示一行文件名
-        $("submitHint").textContent = "已选择视频，点击🚀投稿";
+        $("submitHint").textContent = "已选择视频，点击投稿";
         if ($("clearBtn")) $("clearBtn").style.display = ""; // 显示「清空选择」（B）
       }
     } catch (e) {
@@ -203,7 +206,7 @@
       $("cfgDesc").value = cfg.desc || "";
       $("cfgComment").value = cfg.comment || "";
       const ck = cfg.cookiesDetail || { ok: !!cfg.cookiesOk };
-      $("cookiesKpi").textContent = "cookies: " + (ck.ok ? "✅ 有效" : "❌ 缺失 SESSDATA/bili_jct");
+      $("cookiesKpi").textContent = "cookies: " + (ck.ok ? "有效" : "缺失 SESSDATA/bili_jct");
       $("cookiesKpi").style.color = ck.ok ? "" : "#ff8a8a";
     } catch (e) {
       logLine("加载配置失败: " + e.message, "err");
@@ -302,15 +305,15 @@
       const j = await resp.json();
       if (j.ok) {
         logLine("参数已保存", "ok");
-        toast("✅ 参数已保存"); // A2：轻量提示
+        toast("参数已保存", "ok"); // A2：轻量提示
         loadConfig(); // 回填最新值（含转载 noReprint=0 等）
       } else {
         logLine("保存失败: " + (j.error || ""), "err");
-        toast("❌ 保存失败");
+        toast("保存失败", "err");
       }
     } catch (e) {
       logLine("保存配置失败: " + e.message, "err");
-      toast("❌ 保存失败");
+      toast(ico('cross') + ' 保存失败', 'err');
     }
   });
 
@@ -359,7 +362,7 @@
       const btn = document.createElement("button");
       btn.className = "auth-btn";
       btn.id = "loginBtn";
-      btn.textContent = "🔑 登录B站";
+      btn.innerHTML = ico("key") + " 登录B站";
       btn.addEventListener("click", openLogin);
       box.appendChild(btn);
     }
@@ -389,10 +392,10 @@
     try {
       const resp = await fetch("/api/logout", { method: "POST" });
       const j = await resp.json().catch(() => ({}));
-      if (j && j.ok) toast("✅ 已退出登录");
-      else toast("❌ 退出登录失败");
+      if (j && j.ok) toast("已退出登录", "ok");
+      else toast("退出登录失败", "err");
     } catch (e) {
-      toast("❌ 退出登录失败: " + e.message);
+      toast("退出登录失败: " + e.message, "err");
     } finally {
       refreshAccount(); // 重新渲染账号区（显示登录按钮，二维码入口恢复可用）
       refreshSeasons(); // 登录态失效，清空合集/分集级联下拉
@@ -551,12 +554,12 @@
     setCapsule("ok", "成功");
     const d = ev.data || {};
     const ok = d.success !== false;
-    logLine("🎉 投稿完成！aid=" + (d.aid || "?") + " bvid=" + (d.bvid || "?") + " cid=" + (d.cid || "?") + " 合集=" + (d.season ? "已加" : "否"), "ok");
+    logLine("投稿完成！aid=" + (d.aid || "?") + " bvid=" + (d.bvid || "?") + " cid=" + (d.cid || "?") + " 合集=" + (d.season ? "已加" : "否"), "ok");
     // P08：写一条投稿历史（成功/失败 + 稿件标题 + 时间 + 简要状态）
     pushHistory(HISTORY_KEY_BILIUP, ok, $("titleInput").value || "（未命名）", ok ? ("投稿成功" + (d.bvid ? " · " + d.bvid : "")) : (d.error || "投稿未完成"));
   } else if (ev.type === "error") {
     setCapsule("err", "失败");
-    logLine("❌ 失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
+    logLine("失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
     // P08：写一条投稿历史（失败）
     pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", ev.message || "投稿失败");
   }
@@ -598,7 +601,7 @@
 
   function renderBiliupHistory() {
     const list = loadHistoryBiliup(HISTORY_KEY_BILIUP);
-    if (!list.length) { historyListBiliup.innerHTML = '<div class="empty-state"><span class="es-ico">📭</span>还没有投稿记录</div>'; return; }
+    if (!list.length) { historyListBiliup.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('inbox') + '</span>还没有投稿记录</div>'; return; }
     historyListBiliup.innerHTML = list.map((h) => {
       const time = new Date(h.ts).toLocaleString("zh-CN");
       const badge = h.ok ? "成功" : "失败";
@@ -628,7 +631,7 @@
       const resp = await fetch("/api/version");
       const j = await resp.json();
       const v = j && j.version;
-      // O: 与 netdisk/kdocs 一致，用 statusHTML 胶囊渲染（✅ 工具箱 vX.Y.Z）；失败静默保留占位 "v—"。
+      // O: 与 netdisk/kdocs 一致，用 statusHTML 胶囊渲染（check 图标：工具箱 vX.Y.Z）；失败静默保留占位 "v—"。
       if (v) {
         $("verBadge").innerHTML = (typeof window.statusHTML === "function")
           ? window.statusHTML('ok', '工具箱 v' + v, { size: 'sm' })

@@ -37,7 +37,7 @@ let currentCoverPath = null;  // 已下载但上传失败的本地封面路径
 retryCoverBtn.onclick = async () => {
   if (!currentRecordId || !currentCoverPath) return;
   retryCoverBtn.disabled = true;
-  retryCoverBtn.textContent = "⏳ 重传中…";
+  retryCoverBtn.innerHTML = ico("hourglass") + " 重传中…";
   try {
     const r = await fetch("/api/retry-cover", {
       method: "POST",
@@ -47,22 +47,22 @@ retryCoverBtn.onclick = async () => {
     const d = await r.json();
     if (d.success) {
       autoSummary.className = "result-summary ok";
-      autoSummary.textContent = "✅ 封面已补传，记录完整";
-      addLog("ok", "✅ 封面已重新上传并写入记录");
+      autoSummary.textContent = "封面已补传，记录完整";
+      addLog("ok", "封面已重新上传并写入记录");
       retryCoverBtn.style.display = "none";
     } else {
       autoSummary.className = "result-summary fail";
-      autoSummary.textContent = "❌ 封面重传仍失败：" + (d.error || "未知");
-      addLog("err", "❌ 封面重传失败：" + (d.error || ""));
+      autoSummary.textContent = "封面重传仍失败：" + (d.error || "未知");
+      addLog("err", "封面重传失败：" + (d.error || ""));
       retryCoverBtn.disabled = false;
-      retryCoverBtn.textContent = "🔄 仅重传封面";
+      retryCoverBtn.innerHTML = ico("refresh") + " 仅重传封面";
     }
   } catch (e) {
     autoSummary.className = "result-summary fail";
-    autoSummary.textContent = "❌ 重传请求失败：" + e.message;
-    addLog("err", "❌ 重传请求失败：" + e.message);
+      autoSummary.textContent = "重传请求失败：" + e.message;
+      addLog("err", "重传请求失败：" + e.message);
     retryCoverBtn.disabled = false;
-    retryCoverBtn.textContent = "🔄 仅重传封面";
+    retryCoverBtn.innerHTML = ico("refresh") + " 仅重传封面";
   }
 };
 
@@ -91,7 +91,7 @@ function setChip(el, ok, label) {
 }
 
 function setAiChip(ok, label) {
-  setChip(chipBl, ok, label || (ok ? "AI ✅ 可用" : "AI ⚠️ 不可用"));
+  setChip(chipBl, ok, label || (ok ? "AI 可用" : "AI 不可用"));
 }
 
 // ── 启动检查 ──
@@ -99,7 +99,7 @@ async function initCheck() {
   try {
     const r = await fetch("/api/check");
     const d = await r.json();
-    setChip(chipKdocs, d.kdocsReady, d.kdocsReady ? "kdocs ✅ 已配置" : "kdocs ⚠️ 未配置");
+    setChip(chipKdocs, d.kdocsReady, d.kdocsReady ? "kdocs 已配置" : "kdocs 未配置");
     setAiChip(!!d.blAvailable);
     _aiPrev = !!d.blAvailable;
   } catch {
@@ -133,11 +133,11 @@ async function checkAiStatus() {
       if (ok) {
         setAiChip(true);
         hideAiBanner();
-        toastMsg("✅ AI 已恢复在线", "ok");
+        toastMsg("AI 已恢复在线", "ok");
       } else {
         setAiChip(false);
-        showAiBanner("⚠️ AI 已掉线，正在尝试自动重连…");
-        toastMsg("⚠️ AI 已掉线，正在尝试重连", "err");
+        showAiBanner("AI 已掉线，正在尝试自动重连…");
+        toastMsg("AI 已掉线，正在尝试重连", "err");
       }
     }
     _aiPrev = ok;
@@ -145,7 +145,7 @@ async function checkAiStatus() {
   } catch {
     if (_aiPrev === true) {
       setAiChip(false);
-      showAiBanner("⚠️ 与后端失联，无法检测 AI 状态");
+      showAiBanner("与后端失联，无法检测 AI 状态");
     }
     _aiPrev = false;
     return false;
@@ -156,18 +156,18 @@ async function reconnectAi() {
   if (_aiReconnecting) return;
   _aiReconnecting = true;
   if (aiReconnectBtn) aiReconnectBtn.disabled = true;
-  showAiBanner("🔄 正在重新连接 AI…");
+  showAiBanner("正在重新连接 AI…");
   try {
     const r = await fetch("/api/ai/reconnect", { method: "POST" });
     const d = await r.json();
     const ok = !!d.blAvailable;
     _aiPrev = ok;
     setAiChip(ok);
-    if (ok) { hideAiBanner(); toastMsg("✅ AI 已重连", "ok"); }
-    else { showAiBanner("❌ 重连失败，AI 仍不可用，请稍后再试或检查 bl 登录"); toastMsg("❌ AI 重连失败", "err"); }
+    if (ok) { hideAiBanner(); toastMsg("AI 已重连", "ok"); }
+    else { showAiBanner("重连失败，AI 仍不可用，请稍后再试或检查 bl 登录"); toastMsg("AI 重连失败", "err"); }
   } catch (e) {
-    showAiBanner("❌ 重连请求失败：" + e.message);
-    toastMsg("❌ 重连请求失败：" + e.message, "err");
+    showAiBanner("重连请求失败：" + e.message);
+    toastMsg("重连请求失败：" + e.message, "err");
   } finally {
     _aiReconnecting = false;
     if (aiReconnectBtn) aiReconnectBtn.disabled = false;
@@ -269,12 +269,12 @@ function parseInput(text) {
 function renderPreview(p) {
   const th = p.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(" ");
   const rows = [
-    `<span class="label">🎮 游戏</span><span class="value">${esc(p.gameName)}${p.englishName ? "（" + esc(p.englishName) + "）" : ""}</span>`,
-    `<span class="label">🏷️ 标签</span><span class="value">${th}</span>`,
-    p.coverUrl ? `<span class="label">🖼️ 封面</span><span class="value">${esc(p.coverUrl)}</span>` : "",
-    p.baiduUrl ? `<span class="label">🔗 百度</span><span class="value">${esc(p.baiduUrl)}</span>` : "",
-    p.quarkUrl ? `<span class="label">🔗 夸克</span><span class="value">${esc(p.quarkUrl)}</span>` : "",
-    p.xunleiUrl ? `<span class="label">🔗 迅雷</span><span class="value">${esc(p.xunleiUrl)}</span>` : "",
+    `<span class="label">${ico('gamepad')} 游戏</span><span class="value">${esc(p.gameName)}${p.englishName ? "（" + esc(p.englishName) + "）" : ""}</span>`,
+    `<span class="label">${ico('tag')} 标签</span><span class="value">${th}</span>`,
+    p.coverUrl ? `<span class="label">${ico('image')} 封面</span><span class="value">${esc(p.coverUrl)}</span>` : "",
+    p.baiduUrl ? `<span class="label">${ico('link')} 百度</span><span class="value">${esc(p.baiduUrl)}</span>` : "",
+    p.quarkUrl ? `<span class="label">${ico('link')} 夸克</span><span class="value">${esc(p.quarkUrl)}</span>` : "",
+    p.xunleiUrl ? `<span class="label">${ico('link')} 迅雷</span><span class="value">${esc(p.xunleiUrl)}</span>` : "",
   ];
   previewContent.innerHTML = rows.join("");
 }
@@ -299,7 +299,7 @@ function buildStepDetail(s) {
 }
 
 function renderStep(s) {
-  const icon = s.status === "成功" ? "✅" : s.status === "跳过" ? "⏭️" : s.status === "失败" ? "❌" : s.status === "警告" ? "⚠️" : "🔄";
+  const icon = s.status === "成功" ? ico("check") : s.status === "跳过" ? ico("skip") : s.status === "失败" ? ico("cross") : s.status === "警告" ? ico("warning") : ico("refresh");
   const detail = buildStepDetail(s);
   // 状态 → 等级映射（玻璃胶囊三重编码）
   const LEVEL = { "进行中": "info", "成功": "ok", "失败": "err", "跳过": "off", "警告": "warn" };
@@ -315,9 +315,9 @@ function renderStep(s) {
   item.innerHTML = '<span class="step-icon">' + icon + '</span><div class="step-body"><div class="step-name">' + statusHTML(lvl, label) + "</div>" + (detail ? '<div class="step-detail">' + detail + "</div>" : "") + "</div>";
   // 进行中的步骤高亮提示，完成后取消
   if (s.status === "进行中") {
-    addLog("info", "🔄 进行中：" + s.name);
+    addLog("info", "进行中：" + s.name);
   } else {
-    addLog(s.status === "成功" ? "ok" : s.status === "失败" ? "err" : "info", icon + " " + s.name + " — " + s.status);
+    addLog(s.status === "成功" ? "ok" : s.status === "失败" ? "err" : "info", s.name + " — " + s.status);
   }
 }
 
@@ -382,7 +382,7 @@ function showDupModal(text, d) {
   openModal(dupMask);
 }
 
-dupCancel.onclick = () => { closeModal(); addLog("info", "🚫 已取消（保留原记录）"); };
+dupCancel.onclick = () => { closeModal(); addLog("info", "已取消（保留原记录）"); };
 dupContinue.onclick = () => {
   closeModal();
   runAuto(_dupText, { forceAdd: chkForceAdd.checked, updateLinks: chkUpdateLinks.checked });
@@ -399,11 +399,11 @@ async function runAuto(text, opts = {}) {
   kdocsViewBtn.style.display = "none";
   retryCoverBtn.style.display = "none";
   retryCoverBtn.disabled = false;
-  retryCoverBtn.textContent = "🔄 仅重传封面";
+  retryCoverBtn.innerHTML = ico("refresh") + " 仅重传封面";
   stepEls.length = 0;
 
   autoResult.classList.add("show");
-  addLog("info", "🚀 开始一键执行..." + (opts.forceAdd ? "（强制新增）" : opts.updateLinks ? "（更新网盘链接）" : ""));
+  addLog("info", "开始一键执行..." + (opts.forceAdd ? "（强制新增）" : opts.updateLinks ? "（更新网盘链接）" : ""));
 
   try {
     const r = await fetch("/api/auto", {
@@ -413,9 +413,9 @@ async function runAuto(text, opts = {}) {
     });
     if (!r.ok && r.headers.get("content-type")?.includes("application/json")) {
       const d = await r.json();
-      addLog("err", "❌ " + (d.error || r.status));
+      addLog("err", (d.error || r.status));
       autoSummary.className = "result-summary fail";
-      autoSummary.textContent = "❌ 执行失败";
+      autoSummary.textContent = "执行失败";
       return;
     }
 
@@ -439,9 +439,9 @@ async function runAuto(text, opts = {}) {
         if (ev.type === "step") {
           renderStep(ev.step);
         } else if (ev.type === "error") {
-          addLog("err", "❌ " + ev.error);
+          addLog("err", ev.error);
           autoSummary.className = "result-summary fail";
-          autoSummary.textContent = "❌ 执行异常";
+          autoSummary.textContent = "执行异常";
         } else if (ev.type === "done") {
           finished = true;
           const d = ev.result;
@@ -451,37 +451,37 @@ async function runAuto(text, opts = {}) {
           if (d.gameName) { currentParsed = { ...currentParsed, gameName: d.gameName }; preview.style.display = "block"; }
           if (!d.success) {
             autoSummary.className = "result-summary fail";
-            autoSummary.textContent = "⚠️ 部分步骤未成功";
+            autoSummary.textContent = "部分步骤未成功";
             retryCoverBtn.style.display = (d.coverLost && d.coverPath) ? "block" : "none";
           } else if (d.coverStatus === "failed") {
             // 封面缺失但记录已建：显式黄警，不再假装「全部完成」（P0-1 修复）
             autoSummary.className = "result-summary warn";
-            autoSummary.textContent = "⚠️ 已完成，但封面未成功获取/上传（记录无封面）";
-            addLog("info", "⚠️ 封面缺失：" + (d.coverLost ? "已下载但上传失败，可点「仅重传封面」" : "下载失败，无可用封面"));
+            autoSummary.textContent = "已完成，但封面未成功获取/上传（记录无封面）";
+            addLog("info", "封面缺失：" + (d.coverLost ? "已下载但上传失败，可点「仅重传封面」" : "下载失败，无可用封面"));
             retryCoverBtn.style.display = (d.coverLost && d.coverPath) ? "block" : "none";
           } else if (d.action === "skipped") {
             autoSummary.className = "result-summary ok";
-            autoSummary.textContent = "⏭️ 已跳过（文档中已存在）记录 ID: " + (d.recordId || "—");
-            addLog("ok", "⏭️ 已跳过，文档中已存在该游戏（记录 " + (d.recordId || "") + "）");
+            autoSummary.textContent = "已跳过（文档中已存在）记录 ID: " + (d.recordId || "—");
+            addLog("ok", "已跳过，文档中已存在该游戏（记录 " + (d.recordId || "") + "）");
           } else if (d.action === "updated") {
             autoSummary.className = "result-summary ok";
-            autoSummary.textContent = "✅ 已更新网盘链接 记录 ID: " + (d.recordId || "—");
-            addLog("ok", "🔗 记录 " + (d.recordId || "") + " 网盘链接已更新");
+            autoSummary.textContent = "已更新网盘链接 记录 ID: " + (d.recordId || "—");
+            addLog("ok", "记录 " + (d.recordId || "") + " 网盘链接已更新");
           } else {
             autoSummary.className = "result-summary ok";
-            autoSummary.textContent = "✅ 全部完成！记录 ID: " + (d.recordId || "—");
-            addLog("ok", d.recordId ? "🎉 记录 " + d.recordId + " 创建成功！" : "🎉 全部完成！");
+            autoSummary.textContent = "全部完成！记录 ID: " + (d.recordId || "—");
+            addLog("ok", d.recordId ? "记录 " + d.recordId + " 创建成功！" : "全部完成！");
           }
           // 数据溯源：介绍/大小来源（provenance）让正确性可追溯
           const prov = [];
           if (d.introProvenance) prov.push("介绍:" + d.introProvenance);
           if (d.sizeProvenance) prov.push("大小:" + d.sizeProvenance);
-          if (prov.length) addLog("info", "🔎 数据溯源 — " + prov.join(" · "));
+          if (prov.length) addLog("info", "数据溯源 — " + prov.join(" · "));
           // 占位/缺失字段显式标注（不再静默空），提醒人工校对
           if (d.needsReview) {
             autoSummary.className = "result-summary warn";
-            autoSummary.textContent = "⚠️ 已完成，但部分字段为占位/待核对（" + prov.join("，") + "），建议人工补充";
-            addLog("info", "⚠️ 需人工校对：介绍或大小来源不可靠，已占位标注，建议后续补充真实数据");
+            autoSummary.textContent = "已完成，但部分字段为占位/待核对（" + prov.join("，") + "），建议人工补充";
+            addLog("info", "需人工校对：介绍或大小来源不可靠，已占位标注，建议后续补充真实数据");
           }
 
           // 有记录即可查看（创建/更新/跳过/封面缺失均视为有记录可查；整体失败时若已建记录也允许查看）
@@ -505,9 +505,9 @@ async function runAuto(text, opts = {}) {
     const p = parseInput(text);
     const title = (p && p.gameName) || (currentParsed && currentParsed.gameName) || "（未命名）";
     writeKdocsHistory(false, title, "请求异常");
-    addLog("err", "❌ 请求失败: " + e.message);
+    addLog("err", "请求失败: " + e.message);
     autoSummary.className = "result-summary fail";
-    autoSummary.textContent = "❌ 执行异常";
+    autoSummary.textContent = "执行异常";
   } finally {
     setExec(autoBtn, false);
   }
@@ -576,7 +576,7 @@ const historyOpenBtn = $("historyIconBtn"), historyCloseBtn = $("historyClose"),
 
 function renderKdocsHistory() {
   const list = loadHistory(HISTORY_KEY_KDOCS);
-  if (!list.length) { historyList.innerHTML = '<div class="empty-state"><span class="es-ico">📭</span>还没有录入记录</div>'; return; }
+  if (!list.length) { historyList.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('inbox') + '</span>还没有录入记录</div>'; return; }
   historyList.innerHTML = list.map((h) => {
     const time = new Date(h.ts).toLocaleString("zh-CN");
     const badge = h.ok ? "成功" : "失败";

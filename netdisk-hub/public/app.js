@@ -9,18 +9,18 @@ function setBanner(level, msg) {
   banner.innerHTML = statusHTML(level, msg);
 }
 if (params.get('authorized') === 'baidu') {
-  setBanner('ok', '✅ 百度网盘授权成功,可以开始转存了');
+  setBanner('ok', '百度网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('authorized') === 'quark') {
-  setBanner('ok', '✅ 夸克网盘授权成功,可以开始转存了');
+  setBanner('ok', '夸克网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('authorized') === 'xunlei') {
-  setBanner('ok', '✅ 迅雷网盘授权成功,可以开始转存了');
+  setBanner('ok', '迅雷网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('error') === 'no_config') {
-  setBanner('off', '⚠️ 尚未配置百度应用凭证,请在 .env 填写 BAIDU_CLIENT_ID / BAIDU_CLIENT_SECRET 后重启');
+  setBanner('off', '尚未配置百度应用凭证,请在 .env 填写 BAIDU_CLIENT_ID / BAIDU_CLIENT_SECRET 后重启');
 } else if (params.get('error') === 'auth_failed') {
-  setBanner('err', '⚠️ 百度授权失败:' + (params.get('msg') || '未知错误'));
+  setBanner('err', '百度授权失败:' + (params.get('msg') || '未知错误'));
 }
 
 // ── 统一执行按钮 loading 切换（macOS 线性图标风格：执行中显示 spinner + 执行中…）──
@@ -56,15 +56,15 @@ window.addEventListener('message', (e) => {
   if (e.origin !== location.origin) return;
   if (e.data && e.data.provider === 'baidu' && e.data.authorized) {
     loadAccounts();
-    setBanner('ok', '✅ 百度网盘授权成功,可以开始转存了');
+    setBanner('ok', '百度网盘授权成功,可以开始转存了');
   }
   if (e.data && e.data.provider === 'quark' && e.data.authorized) {
     loadAccounts();
-    setBanner('ok', '✅ 夸克网盘授权成功,可以开始转存了');
+    setBanner('ok', '夸克网盘授权成功,可以开始转存了');
   }
   if (e.data && e.data.provider === 'xunlei' && e.data.authorized) {
     loadAccounts();
-    setBanner('ok', '✅ 迅雷网盘授权成功,可以开始转存了');
+    setBanner('ok', '迅雷网盘授权成功,可以开始转存了');
   }
 });
 
@@ -90,7 +90,7 @@ async function loadAccounts() {
         const d = a.detail;
         if (d.startsWith('baidu_errno')) {
           // 真·登录态失效(接口返回错误): 橙色提醒 + 下方仍提供「重新授权」按钮
-          warn = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.85;color:var(--warn,#e0a030)">⚠ 百度返回错误 ${d.slice(12)}(登录态可能失效,可重新授权)</div>`;
+          warn = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.85;color:var(--warn,#e0a030)">百度返回错误 ${d.slice(12)}(登录态可能失效,可重新授权)</div>`;
         } else {
           // 网络/代理探测不通: 仅为参考,不影响实际转存,降级为灰色中性备注
           const reason = d.startsWith('net_error') ? ('网络/代理探测不通: ' + d.slice(10)) : ('联网校验未通过: ' + d);
@@ -112,14 +112,14 @@ async function loadAccounts() {
       // 仅网络探测不通(net_error)不算故障,不弹重授权(重授权救不了网络,反而误导)。
       const reallyBad = connected && a.pingOK === false && a.detail && a.detail.startsWith('baidu_errno');
       const showAuth = !connected || reallyBad;
-      const authBtnText = connected ? `🔄 重新授权${name}` : `🔗 授权${name}`;
+      const authBtnText = connected ? (ico('refresh') + ' 重新授权' + name) : (ico('link') + ' 授权' + name);
       const authLink = showAuth
         ? `<div style="margin-top:10px"><button class="auth-btn" onclick="openAuth('${key}')">${authBtnText}</button></div>` : '';
       // 转存目录行:显示当前目录(已选/默认),已连接时提供「选择目录」按钮
       const dir = a && a.dir;
       let dirRow = '';
       if (dir && dir.effective) {
-        const tag = dir.userSet ? '📁 转存到(已选)' : '📁 转存到(默认)';
+        const tag = dir.userSet ? (ico('folder') + ' 转存到(已选)') : (ico('folder') + ' 转存到(默认)');
         const dirBtn = connected
           ? `<button class="dir-btn" onclick="openDirPicker('${key}')">选择目录</button>`
           : '';
@@ -161,7 +161,7 @@ function renderTasks() {
   if (historyFilter !== 'all') items = items.filter((t) => t.status === historyFilter);
   if (!items.length) {
     const msg = historyFilter === 'failed' ? '暂无异常的转存' : historyFilter === 'success' ? '暂无成功的转存' : '还没有转存记录';
-    box.innerHTML = `<div class="empty-state"><span class="es-ico">📭</span>${msg}</div>`;
+    box.innerHTML = `<div class="empty-state"><span class="es-ico">${ico('inbox')}</span>${msg}</div>`;
     return;
   }
 
@@ -213,7 +213,7 @@ function renderTasks() {
         <span class="group-title">${escapeHtml(title)}</span>
         <span class="group-actions">
           <span class="group-summary">${summaryPill}</span>
-          ${hasOk ? `<button class="group-copy" data-copy-group="${gi}">📋 复制本组</button>` : ''}
+          ${hasOk ? `<button class="group-copy" data-copy-group="${gi}">${ico('clipboard')} 复制本组</button>` : ''}
         </span>
       </div>
       ${rows}
@@ -391,16 +391,16 @@ function renderResults(results) {
   const html = lastResults.map((res) => {
     const name = PROVIDER_NAME[res.provider] || res.provider;
     if (!res.ok) {
-      return `<div class="br-card fail">${statusHTML('err', '失败', { size: 'sm' })}<div class="br-name">${name}</div><div class="br-meta">❌ ${escapeHtml(res.error)}</div></div>`;
+      return `<div class="br-card fail">${statusHTML('err', '失败', { size: 'sm' })}<div class="br-name">${name}</div><div class="br-meta">${escapeHtml(res.error)}</div></div>`;
     }
     const link = res.share && res.share.link ? res.share.link : '';
     const count = res.files ? res.files.length : 0;
     let metaLine, linkArea;
     if (res.needShare) {
       metaLine = '↩ 来自历史,需补生成分享';
-      linkArea = `<div class="br-meta" style="color:#e0941a">⚠ ${escapeHtml(res.message || '请勾选「强制重转」补生成分享')}</div>`;
+      linkArea = `<div class="br-meta" style="color:#e0941a">${escapeHtml(res.message || '请勾选「强制重转」补生成分享')}</div>`;
     } else {
-      metaLine = res.fromCache ? '↩ 来自历史,跳过转存' : `✅ 转存 ${count} 个文件`;
+      metaLine = res.fromCache ? '↩ 来自历史,跳过转存' : `转存 ${count} 个文件`;
       linkArea = `<div class="br-meta" style="display:flex;align-items:flex-start;gap:8px">
         <a href="${escapeHtml(link)}" target="_blank" style="flex:1;word-break:break-all">${escapeHtml(link)}</a>
         <button class="copy" data-copy-text="${escapeHtml(PROVIDER_LABEL[res.provider] + link)}">复制</button>
@@ -415,7 +415,7 @@ function renderResults(results) {
   }).join('');
 
   const copyAll = ok.length
-    ? `<button class="btn ghost copy-all" data-copy-all style="margin-top:14px">📋 一键复制全部</button>`
+    ? `<button class="btn ghost copy-all" data-copy-all style="margin-top:14px">${ico('clipboard')} 一键复制全部</button>`
     : '';
   const preview = parsedState.title && ok.length
     ? `<div class="hint" style="margin-top:12px">复制内容预览:</div><div class="copy-preview">${escapeHtml(buildCopyAllText(lastResults))}</div>`
@@ -459,11 +459,11 @@ batchBtn.onclick = async () => {
       }),
     });
     const d = await r.json();
-    if (!d.ok) { batchErr.className = 'err show'; batchErr.textContent = '❌ ' + d.error; return; }
+    if (!d.ok) { batchErr.className = 'err show'; batchErr.innerHTML = ico('cross') + ' ' + escapeHtml(d.error); return; }
     renderResults(d.results);
     loadTasks();
   } catch (e) {
-    batchErr.className = 'err show'; batchErr.innerHTML = statusHTML('err', '❌ ' + e.message);
+    batchErr.className = 'err show'; batchErr.innerHTML = statusHTML('err', ico('cross') + ' ' + e.message);
   } finally {
     setExec(batchBtn, false);
   }
@@ -631,19 +631,19 @@ async function openDirPicker(provider) {
 
 async function browseDir(parentId) {
   const listEl = document.getElementById('dirList');
-  listEl.innerHTML = '<div class="empty-state"><span class="es-ico">⏳</span>加载中…</div>';
+  listEl.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('hourglass') + '</span>加载中…</div>';
   document.getElementById('dirHint').textContent = '';
   try {
     const r = await fetch('/api/dirs/' + dirCtx.provider + '/browse?parent=' + encodeURIComponent(parentId));
     const d = await r.json();
     if (!r.ok) {
-      listEl.innerHTML = '<div class="empty-state" style="color:var(--err)"><span class="es-ico">⚠️</span>' + escapeHtml(d.error || '加载失败') + '</div>';
+      listEl.innerHTML = '<div class="empty-state" style="color:var(--err)"><span class="es-ico">' + ico('warning') + '</span>' + escapeHtml(d.error || '加载失败') + '</div>';
       return;
     }
     dirCtx.folders = d.folders || [];
     renderDirList();
   } catch (e) {
-    listEl.innerHTML = '<div class="empty-state" style="color:var(--err)"><span class="es-ico">⚠️</span>' + escapeHtml(e.message) + '</div>';
+    listEl.innerHTML = '<div class="empty-state" style="color:var(--err)"><span class="es-ico">' + ico('warning') + '</span>' + escapeHtml(e.message) + '</div>';
   }
 }
 
@@ -651,11 +651,11 @@ function renderDirList() {
   const listEl = document.getElementById('dirList');
   const folders = dirCtx.folders;
   if (!folders.length) {
-    listEl.innerHTML = '<div class="empty-state"><span class="es-ico">📂</span>此目录没有子文件夹</div>';
+    listEl.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('folder') + '</span>此目录没有子文件夹</div>';
     return;
   }
   listEl.innerHTML = folders.map((f) => `<div class="dir-item" onclick="enterDir('${escapeHtml(f.id)}','${escapeHtml(f.name)}')">
-    <span class="dir-ico">📁</span><span class="dir-name">${escapeHtml(f.name)}</span><span class="dir-go">›</span>
+    <span class="dir-ico">${ico('folder')}</span><span class="dir-name">${escapeHtml(f.name)}</span><span class="dir-go">›</span>
   </div>`).join('');
 }
 
@@ -718,7 +718,7 @@ document.getElementById('dirModal').addEventListener('click', (e) => {
 });
 
 // ── 格式化分享文本:乱序原帖 → 标准「标题 + 百度/迅雷/夸克」格式(可编辑,缺盘省略) ──
-// 触发已迁移至转存中心 header 的 📋 图标按钮（openModal(#fmtMask)），见上方统一弹窗机制
+// 触发已迁移至转存中心 header 的图标按钮（openModal(#fmtMask)），见上方统一弹窗机制
 const fmtInput = document.getElementById('fmtInput');
 const fmtResult = document.getElementById('fmtResult');
 const fmtCopy = document.getElementById('fmtCopy');

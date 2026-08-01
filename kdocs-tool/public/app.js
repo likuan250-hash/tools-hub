@@ -558,7 +558,7 @@ const historyOpenBtn = $("historyIconBtn"), historyCloseBtn = $("historyClose"),
 
 function renderKdocsHistory() {
   const list = loadHistory(HISTORY_KEY_KDOCS);
-  if (!list.length) { historyList.innerHTML = '<div class="history-empty">还没有录入记录</div>'; return; }
+  if (!list.length) { historyList.innerHTML = '<div class="empty-state"><span class="es-ico">📭</span>还没有录入记录</div>'; return; }
   historyList.innerHTML = list.map((h) => {
     const time = new Date(h.ts).toLocaleString("zh-CN");
     const badge = h.ok ? "成功" : "失败";

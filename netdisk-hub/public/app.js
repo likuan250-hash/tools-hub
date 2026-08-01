@@ -139,7 +139,7 @@ function renderTasks() {
   if (historyFilter !== 'all') items = items.filter((t) => t.status === historyFilter);
   if (!items.length) {
     const msg = historyFilter === 'failed' ? '暂无异常的转存' : historyFilter === 'success' ? '暂无成功的转存' : '还没有转存记录';
-    box.innerHTML = `<div class="empty">${msg}</div>`;
+    box.innerHTML = `<div class="empty-state"><span class="es-ico">📭</span>${msg}</div>`;
     return;
   }
 
@@ -609,19 +609,19 @@ async function openDirPicker(provider) {
 
 async function browseDir(parentId) {
   const listEl = document.getElementById('dirList');
-  listEl.innerHTML = '<div class="empty">加载中…</div>';
+  listEl.innerHTML = '<div class="empty-state"><span class="es-ico">⏳</span>加载中…</div>';
   document.getElementById('dirHint').textContent = '';
   try {
     const r = await fetch('/api/dirs/' + dirCtx.provider + '/browse?parent=' + encodeURIComponent(parentId));
     const d = await r.json();
     if (!r.ok) {
-      listEl.innerHTML = '<div class="empty" style="color:var(--err)">' + escapeHtml(d.error || '加载失败') + '</div>';
+      listEl.innerHTML = '<div class="empty-state" style="color:var(--err)"><span class="es-ico">⚠️</span>' + escapeHtml(d.error || '加载失败') + '</div>';
       return;
     }
     dirCtx.folders = d.folders || [];
     renderDirList();
   } catch (e) {
-    listEl.innerHTML = '<div class="empty" style="color:var(--err)">' + escapeHtml(e.message) + '</div>';
+    listEl.innerHTML = '<div class="empty-state" style="color:var(--err)"><span class="es-ico">⚠️</span>' + escapeHtml(e.message) + '</div>';
   }
 }
 
@@ -629,7 +629,7 @@ function renderDirList() {
   const listEl = document.getElementById('dirList');
   const folders = dirCtx.folders;
   if (!folders.length) {
-    listEl.innerHTML = '<div class="empty">此目录没有子文件夹</div>';
+    listEl.innerHTML = '<div class="empty-state"><span class="es-ico">📂</span>此目录没有子文件夹</div>';
     return;
   }
   listEl.innerHTML = folders.map((f) => `<div class="dir-item" onclick="enterDir('${escapeHtml(f.id)}','${escapeHtml(f.name)}')">

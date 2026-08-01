@@ -576,7 +576,7 @@
 
   function renderBiliupHistory() {
     const list = loadHistoryBiliup(HISTORY_KEY_BILIUP);
-    if (!list.length) { historyListBiliup.innerHTML = '<div class="history-empty">还没有投稿记录</div>'; return; }
+    if (!list.length) { historyListBiliup.innerHTML = '<div class="empty-state"><span class="es-ico">📭</span>还没有投稿记录</div>'; return; }
     historyListBiliup.innerHTML = list.map((h) => {
       const time = new Date(h.ts).toLocaleString("zh-CN");
       const badge = h.ok ? "成功" : "失败";

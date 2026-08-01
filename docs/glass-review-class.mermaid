@@ -1,0 +1,59 @@
+classDiagram
+    %% 厚玻璃弹窗组件结构（原生 HTML/CSS/JS，无框架）
+
+    class GlassMask {
+        +String class = "modal-mask glass-mask"
+        +background var(--glass-mask-bg)
+        +backdrop-filter blur(4px)
+        +show : 控制显隐(.show)
+        +点击空白 -> closeModal()
+    }
+
+    class GlassModal {
+        +String class = "modal glass"
+        +background var(--glass-modal-bg)
+        +backdrop-filter blur(40px) saturate(2.0)
+        +border var(--glass-modal-border)
+        +shadow var(--shadow-modal) + 顶光
+    }
+
+    class ModalHead {
+        +标题(全局措辞)
+        +.modal-close (✕)
+    }
+    class ModalBody {
+        +承载 history / adv / fmt 内容
+    }
+    class ModalActions {
+        +.btn.ghost 操作(清空历史等)
+    }
+
+    class CardHeader {
+        +String class = "panel-head" (flex)
+        +h2 标题
+        +panel-acts 右槽
+    }
+    class IconBtn {
+        +String class = "icon-btn"
+        +title 显式语义(查看全部...历史)
+    }
+
+    class OpenClose {
+        +openModal(modalEl)
+        +closeModal()
+        +复用三模块既有约定
+    }
+
+    GlassMask "1" *-- "1" GlassModal : 包含
+    GlassModal "1" *-- "1" ModalHead
+    GlassModal "1" *-- "1" ModalBody
+    GlassModal "1" *-- "1" ModalActions
+    CardHeader "1" *-- "0..2" IconBtn : panel-acts 内
+
+    IconBtn ..> OpenClose : click -> openModal(#mask)
+    ModalHead ..> OpenClose : .modal-close -> closeModal()
+    GlassMask ..> OpenClose : 点空白 -> closeModal()
+
+    note for GlassModal "暗色: rgba(20,24,55,.55)\n亮色: rgba(255,255,255,.62)"
+    note for GlassMask "overlay 压暗背景凸显厚玻璃"
+    note for IconBtn "biliup/kdocs 需补该类\nnetdisk 已有"

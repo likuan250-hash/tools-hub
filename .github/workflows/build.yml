@@ -15,6 +15,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG="${{ github.ref_name }}"
+          TAG_VERSION="${TAG#v}"
+          echo "package.json version: $PKG_VERSION"
+          echo "git tag version:     $TAG_VERSION"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ 版本不一致：package.json($PKG_VERSION) != tag($TAG_VERSION)"
+            echo "   请先 bump package.json 的 version 再打 tag，否则 electron-builder 会静默跳过上传 Release 资产。"
+            exit 1
+          fi
+          echo "✅ 版本一致，继续构建"
+
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:

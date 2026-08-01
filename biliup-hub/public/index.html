@@ -537,6 +537,30 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     .modal.glass .modal-close   { color: var(--text-dim); }
     .modal.glass .modal-close:hover { color: var(--text); }
 
+    /* —— 高级设置弹窗：对齐 + 表单控件美化 —— */
+    .modal.glass { max-width: 520px; }
+    .modal.glass .grid-2 { margin-top: 4px; }
+    .grid-2 > .field:last-child { grid-column: 1 / -1; }
+    .field-hint { font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 9px 12px; border-radius: 10px;
+      background: var(--field-bg); border: 1px solid var(--glass-border);
+      color: var(--text); font-size: 14px;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,.06);
+      transition: border .2s, box-shadow .2s, background .2s;
+    }
+    .field select {
+      appearance: none; -webkit-appearance: none;
+      padding-right: 34px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239aa0b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .25);
+    }
+
     /* —— a11y 护栏：并入既有 @supports / reduced-transparency（必补） —— */
     @supports not (backdrop-filter: blur(1px)) {
       .modal.glass { -webkit-backdrop-filter: none; backdrop-filter: none;
@@ -556,13 +580,22 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     .panel-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
     .icon-btn {
-      border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text);
-      width: 34px; height: 34px; border-radius: 10px; cursor: pointer;
-      font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
-      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 7px 12px; border-radius: 9px;
+      border: 1px solid var(--glass-border);
+      background: var(--field-bg); color: var(--text);
+      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
       box-shadow: var(--shadow-card);
+      cursor: pointer; font-size: 13px; font-weight: 500; line-height: 1;
+      transition: border .2s ease, box-shadow .2s ease, background .2s ease, color .2s ease;
     }
-    .icon-btn:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18); }
+    .icon-btn:hover {
+      border-color: var(--accent); background: rgba(var(--accent-rgb), .10);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .18);
+    }
+    .icon-btn .ib-ico { width: 17px; height: 17px; flex-shrink: 0; display: block; }
+    .icon-btn .ib-label { line-height: 1; }
+    @media (max-width: 560px) { .icon-btn { padding: 7px; } .ib-label { display: none; } }
   </style>
 </head>
 <body>
@@ -589,7 +622,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="panel-head">
         <h2>📂 选择视频</h2>
         <div class="panel-acts">
-          <button class="icon-btn" id="clearBtn" title="清空已选视频 🗑️" type="button">🗑️</button>
+          <button class="icon-btn" id="clearBtn" title="清空" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span class="ib-label">清空</span></button>
         </div>
       </div>
       <div class="field">
@@ -606,7 +639,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="panel-head">
         <h2>📝 投稿设置</h2>
         <div class="panel-acts">
-          <button class="icon-btn" id="advTrigger" title="高级参数 ⚙️" type="button">⚙️</button>
+          <button class="icon-btn" id="advTrigger" title="高级" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="ib-label">高级</span></button>
         </div>
       </div>
       <div class="field">
@@ -636,7 +669,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="panel-head">
         <h2>🚀 投稿</h2>
         <div class="panel-acts">
-          <button class="icon-btn" id="submitHistoryBtn" title="查看全部投稿历史 📜" type="button">📜</button>
+          <button class="icon-btn" id="submitHistoryBtn" title="历史" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span class="ib-label">历史</span></button>
         </div>
       </div>
       <button class="btn" id="submitBtn" type="button">🚀 投稿</button>
@@ -699,7 +732,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
             </select>
           </div>
           <div class="field"><label>合集</label><select id="cfgSeason"><option value="">不使用合集</option></select></div>
-          <div class="field"><label>分集<small style="color:#9aa;font-weight:normal;margin-left:6px;">（合集生效必选；仅选合集不会加合集）</small></label><select id="cfgSection"><option value="">不指定分集</option></select></div>
+          <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select><div class="field-hint">（合集生效必选；仅选合集不会加合集）</div></div>
           <div class="field"><label>线路 line</label>
             <select id="cfgLine">
               <option value="bda2">bda2（默认）</option>

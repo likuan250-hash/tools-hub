@@ -642,13 +642,22 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     .panel-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
     .icon-btn {
-      border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text);
-      width: 34px; height: 34px; border-radius: 10px; cursor: pointer;
-      font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
-      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 7px 12px; border-radius: 9px;
+      border: 1px solid var(--glass-border);
+      background: var(--field-bg); color: var(--text);
+      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
       box-shadow: var(--shadow-card);
+      cursor: pointer; font-size: 13px; font-weight: 500; line-height: 1;
+      transition: border .2s ease, box-shadow .2s ease, background .2s ease, color .2s ease;
     }
-    .icon-btn:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18); }
+    .icon-btn:hover {
+      border-color: var(--accent); background: rgba(var(--accent-rgb), .10);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .18);
+    }
+    .icon-btn .ib-ico { width: 17px; height: 17px; flex-shrink: 0; display: block; }
+    .icon-btn .ib-label { line-height: 1; }
+    @media (max-width: 560px) { .icon-btn { padding: 7px; } .ib-label { display: none; } }
   </style>
 </head>
 <body>
@@ -677,8 +686,8 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="panel-head">
         <h2>🚀 转存中心</h2>
         <div class="panel-acts">
-          <button class="icon-btn" id="fmtIconBtn" title="格式化分享文本 📋" type="button">📋</button>
-          <button class="icon-btn" id="historyIconBtn" title="查看全部转存任务历史 📜" type="button">📜</button>
+          <button class="icon-btn" id="fmtIconBtn" title="格式化" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="ib-label">格式化</span></button>
+          <button class="icon-btn" id="historyIconBtn" title="历史" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span class="ib-label">历史</span></button>
         </div>
       </div>
       <div class="hint" style="margin-bottom:14px">粘贴单条或三段式分享文本,自动识别标题、网盘链接与提取码;勾选要转的网盘,一键生成你的分享链接。</div>

@@ -49,6 +49,23 @@ test('account.fetchAccount: nav 抛错 → isLogin:false（不抛异常）', asy
   assert.strictEqual(info.isLogin, false);
 });
 
+// ── 补充断言（QA 严过关）：验证「退出登录」链路中 account.invalidate() 使 5 分钟缓存真正失效。
+// 这是 logout 后 /api/account 能立即反映未登录态（前端恢复二维码入口）的关键。 ──
+test('account.invalidate: 使已登录缓存失效（logout 后重新查询返回未登录）', async () => {
+  const p = writeCookieFile({ SESSDATA: 'abc', bili_jct: 'xyz' });
+  account.invalidate(); // 清理任何历史缓存，确保从干净态开始
+  // 第一次查询：nav 返回已登录，记入缓存。
+  const loggedIn = async () => ({ json: async () => ({ code: 0, data: { isLogin: true } }) });
+  const info1 = await account.getAccount({ cookiesPath: p, deps: { fetchFn: loggedIn } });
+  assert.strictEqual(info1.isLogin, true, '首次查询应命中已登录');
+  // 模拟「退出登录」调用 invalidate()。
+  account.invalidate();
+  // 缓存失效后第二次查询用「未登录」nav：不应再返回旧的 isLogin:true，而应重新拉取得到未登录。
+  const loggedOut = async () => ({ json: async () => ({ code: 0, data: { isLogin: false } }) });
+  const info2 = await account.getAccount({ cookiesPath: p, deps: { fetchFn: loggedOut } });
+  assert.strictEqual(info2.isLogin, false, 'invalidate 后缓存应失效，重新查询返回未登录');
+});
+
 test('auth.generateQrcode: 返回 qrcodeKey + qrDataUrl', async () => {
   const fetchFn = async () => ({
     json: async () => ({ code: 0, data: { url: 'https://passport.bilibili.com/qrcode/xxx', qrcode_key: 'KEY123' } }),

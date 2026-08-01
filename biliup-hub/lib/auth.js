@@ -7,22 +7,28 @@
 //   2) 后端用 qrcode 库把 url 渲染成 PNG dataURL 交给前端 <img> 展示
 //   3) poll 轮询状态；成功后从 Set-Cookie 取出 SESSDATA/bili_jct 等写入 BILIUP_DATA_DIR/cookies.json
 //
-// 【v0.2.4 适配】biliup 的 -u 要求自己的 LoginInfo 结构（含 cookie_info/token_info/sso），
-// 不接受扁平 web cookie（实测报 missing field cookie_info）。故扫码拿到 SESSDATA 后，
-// 这里补「token 换取」步骤：调用 B站 web/cookie/info 接口换取 app access_token 并包成
-// LoginInfo 写入 login_info.json（与 cookies.json 分离）。用户视角仍是扫一次码。
+// 【v0.2.4 适配】biliup 的 -u 要求自己的 LoginInfo 结构（含 cookie_info/token_info/sso）。
+// 经实测：原 web/cookie/info 兑换接口只返回 {refresh:false,timestamp}，不返回 token（根因），
+// 导致生成的 access_token 为空 → 上传报 code=-400 鉴权失败，用户重登无效。
+// 改为复刻 biliup-rs credential.rs 的 TV 登录流程：用已有的 web 登录态（SESSDATA+bili_jct）
+// 静默自动确认一个 TV 登录二维码，从而拿到 TV 端真正的 access_token（用户视角仍只扫一次 web 码）。
+// 流程：get_qrcode → web_confirm_qrcode → login_by_qrcode（轮询）。任何一步失败回落本地兜底拼装。
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const store = require('./store');
-const cookies = require('./cookies');
 const logger = require('./logger');
 
 const GEN_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/generate';
 const POLL_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/poll';
-// web cookie → biliup LoginInfo 换取接口（返回含 app access_token 的 LoginInfo）。
-const COOKIE_INFO_URL = 'https://passport.bilibili.com/x/passport-login/web/cookie/info';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1';
 const REFERER = 'https://passport.bilibili.com/';
+
+// ── TV 登录流程常量（复刻 biliup-rs AppKeyStore::BiliTV / credential.rs）──
+const TV_APPKEY = '4409e2ce8ffd12b8';
+const TV_APPSEC = '59b43e04ad6965f34319062b478f83dd';
+const TV_UA = 'Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0 Iceweasel/38.2.1 BiliApp';
+const PASSPORT = 'https://passport.bilibili.com';
 
 // qrcode 库（可选依赖）；缺失时回退到第三方图床生成二维码图。
 let _qrcode;
@@ -33,6 +39,27 @@ function getFetch() {
   if (_fetch) return _fetch;
   try { _fetch = require('undici').fetch; } catch (e) { _fetch = (globalThis.fetch || global.fetch); }
   return _fetch;
+}
+
+/**
+ * 计算 B站接口签名（复刻 biliup-rs credential.rs 的 sign）。
+ * sign = md5(param + TV_APPSEC)，小写 hex（对应 Rust 的 {:x}）。
+ * @param {string} param 已按 key=value&... 拼接的请求体
+ * @returns {string} 32 位小写 md5 hex
+ */
+function sign(param) {
+  return crypto.createHash('md5').update(param + TV_APPSEC).digest('hex');
+}
+
+/**
+ * 延时工具；deps.sleep 可注入（单测），不存在则回退 setTimeout。
+ * @param {number} ms
+ * @param {Object} [deps] 通常取 opts.deps
+ * @returns {Promise<void>}
+ */
+function sleep(ms, deps) {
+  if (deps && typeof deps.sleep === 'function') return deps.sleep(ms);
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -175,28 +202,109 @@ function buildLoginInfoFromWebCookies(webCookies) {
 }
 
 /**
- * 调用 B站 web/cookie/info 接口，用 web cookie 换取 biliup 的 LoginInfo（含 app access_token/sso）。
- * 成功返回 LoginInfo 对象；任何失败（网络/未登录/非 0 码）返回 null（交由本地兜底拼装）。
- * @param {Object} webCookies 扁平 web cookie
- * @param {{deps?:Object}} [opts] opts.deps.fetchFn 可注入（单测）
+ * TV 登录流程第①步：申请 TV auth_code。
+ * 复刻 biliup-rs credential.rs 的 get_qrcode。
+ * @param {Function} fetchFn
+ * @param {Object} deps
+ * @returns {Promise<string|null>} 成功返回 auth_code，失败返回 null
+ */
+async function tvGetQrcodeAuthCode(fetchFn, deps) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  const form = { appkey: TV_APPKEY, local_id: '0', ts };
+  const body = new URLSearchParams(form).toString();
+  const sign1 = sign(body);
+  const resp = await fetchFn(`${PASSPORT}/x/passport-tv-login/qrcode/auth_code`, {
+    method: 'POST',
+    headers: { 'User-Agent': TV_UA, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(Object.assign({}, form, { sign: sign1 })).toString(),
+  });
+  const json = await resp.json();
+  if (!json || json.code !== 0 || !json.data || !json.data.auth_code) return null;
+  return json.data.auth_code;
+}
+
+/**
+ * TV 登录流程第②步：用已有 web 登录态静默自动确认 TV 二维码。
+ * 复刻 biliup-rs credential.rs 的 web_confirm_qrcode。
+ * @param {Function} fetchFn
+ * @param {Object} webCookies 含 SESSDATA / bili_jct
+ * @param {string} authCode
+ * @returns {Promise<boolean>} 确认成功返回 true，否则 false
+ */
+async function tvWebConfirmQrcode(fetchFn, webCookies, authCode) {
+  const resp = await fetchFn(`${PASSPORT}/x/passport-tv-login/h5/qrcode/confirm`, {
+    method: 'POST',
+    headers: {
+      'User-Agent': TV_UA,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Cookie': `SESSDATA=${webCookies.SESSDATA}; bili_jct=${webCookies.bili_jct}`,
+    },
+    body: new URLSearchParams({
+      auth_code: authCode,
+      csrf: webCookies.bili_jct,
+      scanning_type: '3',
+    }).toString(),
+  });
+  const json = await resp.json();
+  if (!json || json.code !== 0) return false;
+  return true;
+}
+
+/**
+ * TV 登录流程第③步：轮询换取 TV 端真正的 LoginInfo（含 token_info.access_token）。
+ * 复刻 biliup-rs credential.rs 的 login_by_qrcode。最多轮询 15 次，间隔 1s。
+ * @param {Function} fetchFn
+ * @param {string} authCode
+ * @param {Object} deps opts.deps（含可注入 sleep）
+ * @returns {Promise<Object|null>} 成功返回 LoginInfo，失败返回 null
+ */
+async function tvLoginByQrcode(fetchFn, authCode, deps) {
+  for (let i = 0; i < 15; i++) {
+    const ts = String(Math.floor(Date.now() / 1000));
+    const form = { appkey: TV_APPKEY, auth_code: authCode, local_id: '0', ts };
+    const body = new URLSearchParams(form).toString();
+    const sign3 = sign(body);
+    const resp = await fetchFn(`${PASSPORT}/x/passport-tv-login/qrcode/poll`, {
+      method: 'POST',
+      headers: { 'User-Agent': TV_UA, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(Object.assign({}, form, { sign: sign3 })).toString(),
+    });
+    const json = await resp.json();
+    if (json && json.code === 0 && json.data) {
+      const info = json.data; // biliup 的 LoginInfo（cookie_info + token_info + sso + platform）
+      if (!info.platform) info.platform = 'BiliTV';
+      if (!info.sso && info.cookie_info && info.cookie_info.cookies) {
+        info.sso = info.cookie_info.cookies.map((c) => c.name + '=' + c.value);
+      }
+      return info;
+    }
+    if (json && json.code === 86039) { await sleep(1000, deps); continue; } // 尚未确认，继续轮询
+    return null; // 其他错误码（含过期/失败），回落兜底
+  }
+  return null;
+}
+
+/**
+ * 用 web 登录态换取 biliup 的 TV LoginInfo（含真正的 token_info.access_token）。
+ * 复刻 biliup-rs 的 login_by_web_cookies：申请 TV 码 → web 静默确认 → 轮询拿 token。
+ * 任何一步失败（网络/web cookie 过期/非 0 码/超时）返回 null（交由本地兜底拼装）。
+ * @param {Object} webCookies 扁平 web cookie（含 SESSDATA/bili_jct）
+ * @param {{deps?:Object}} [opts] opts.deps.fetchFn / opts.deps.sleep 可注入（单测）
  * @returns {Promise<Object|null>}
  */
 async function exchangeLoginInfo(webCookies, opts = {}) {
   const deps = opts.deps || {};
   const fetchFn = deps.fetchFn || getFetch();
-  const cookieHeader = cookies.toHeader(webCookies);
-  if (!cookieHeader) return null;
+  // 空 web cookie 短路：无 SESSDATA/bili_jct 无法静默确认 TV 码，直接回落兜底（且不发请求）。
+  if (!webCookies || !webCookies.SESSDATA || !webCookies.bili_jct) return null;
   try {
-    const resp = await fetchFn(COOKIE_INFO_URL, {
-      method: 'GET',
-      headers: { 'User-Agent': USER_AGENT, 'Referer': REFERER, 'Cookie': cookieHeader },
-    });
-    const json = await resp.json();
-    // 成功：data 即为 biliup LoginInfo 结构（cookie_info + token_info + sso）。
-    if (json && json.code === 0 && json.data && json.data.cookie_info) {
-      return json.data;
-    }
-    return null;
+    const authCode = await tvGetQrcodeAuthCode(fetchFn, deps);
+    if (!authCode) return null;
+    const confirmed = await tvWebConfirmQrcode(fetchFn, webCookies, authCode);
+    if (!confirmed) return null;
+    const info = await tvLoginByQrcode(fetchFn, authCode, deps);
+    if (!info) return null;
+    return info;
   } catch (e) {
     return null;
   }
@@ -218,7 +326,7 @@ function saveLoginInfo(loginInfo, opts = {}) {
 }
 
 /**
- * 确保 login_info.json 存在且为最新：优先用 web/cookie/info 接口换取（拿真实 app token），
+ * 确保 login_info.json 存在且为最新：优先用 TV 登录流程换取（拿真实 TV access_token），
  * 失败则本地用 web cookie 兜底拼装。用户只需扫一次码。
  * @param {Object} webCookies 扁平 web cookie（扫码所得）
  * @param {{path?:string, deps?:Object}} [opts]
@@ -268,5 +376,13 @@ module.exports = {
   saveLoginInfo,
   ensureLoginInfo,
   clearSession,
-  COOKIE_INFO_URL,
+  // TV 登录流程相关（复刻 biliup-rs credential.rs）：供单测与上层复用
+  sign,
+  tvGetQrcodeAuthCode,
+  tvWebConfirmQrcode,
+  tvLoginByQrcode,
+  TV_APPKEY,
+  TV_APPSEC,
+  TV_UA,
+  PASSPORT,
 };

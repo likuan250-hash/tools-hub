@@ -282,3 +282,102 @@ test('exchangeLoginInfo: 任意步抛异常 → catch 返回 null（失败安全
   assert.equal(threw, false, '不应向上抛异常');
   assert.equal(r, null);
 });
+
+// ── refreshToken（access_token 自动刷新，治本 -400 鉴权失败）──
+
+test('refreshToken: 成功用例 → 返回更新后的 loginInfo、新 token 写盘、cookie 一并续上（不污染真实磁盘）', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_refresh_' + Date.now() + '.json');
+  const old = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'OLD' }] },
+    token_info: { access_token: 'OLD_AT', refresh_token: 'OLD_RT', expires_in: 1, token_created_at: 1 },
+    sso: ['SESSDATA=OLD'],
+  };
+  const fetchFn = async (url, init) => {
+    assert.ok(String(url).includes('/api/v2/oauth2/refresh_token'), '应使用权威 refresh_token 端点');
+    const body = init && init.body;
+    assert.ok(/access_key=OLD_AT/.test(body), 'body 应带旧 access_key');
+    assert.ok(/refresh_token=OLD_RT/.test(body), 'body 应带旧 refresh_token');
+    assert.ok(/sign=/.test(body), 'body 应带 TV 签名 sign');
+    assert.ok((init.headers['Content-Type'] || '').includes('x-www-form-urlencoded'));
+    return {
+      json: async () => ({
+        code: 0,
+        data: {
+          token_info: { access_token: 'NEW', refresh_token: 'NEWRT', expires_in: 2592000 },
+          cookie_info: { cookies: [{ name: 'SESSDATA', value: 'X' }] },
+        },
+      }),
+    };
+  };
+  const r = await auth.refreshToken(old, { path: tmp, deps: { fetchFn } });
+  assert.ok(r, '应返回更新后的 loginInfo');
+  assert.equal(r.token_info.access_token, 'NEW');
+  assert.equal(r.token_info.refresh_token, 'NEWRT');
+  assert.equal(r.token_info.expires_in, 2592000);
+  assert.ok(r.token_info.token_created_at > 0, 'token_created_at 应刷新为当前时间');
+  // 刷新接口顺带返回新 cookie（含新 SESSDATA），一并续上。
+  assert.equal(r.cookie_info.cookies[0].value, 'X');
+  assert.deepStrictEqual(r.sso, ['SESSDATA=X']);
+  // 写盘验证 saveLoginInfo 被调用（用 tmpdir 避免污染真实磁盘）。
+  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  assert.equal(written.token_info.access_token, 'NEW');
+  fs.unlinkSync(tmp);
+});
+
+test('refreshToken: 接口返回 code!=0 → 返回 null 且不写盘', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_refresh_fail_' + Date.now() + '.json');
+  const old = { token_info: { access_token: 'A', refresh_token: 'R' } };
+  const fetchFn = async () => ({ json: async () => ({ code: 1, message: 'invalid' }) });
+  const r = await auth.refreshToken(old, { path: tmp, deps: { fetchFn } });
+  assert.equal(r, null);
+  assert.equal(fs.existsSync(tmp), false, '失败不应写盘');
+});
+
+test('refreshToken: 网络异常 → 返回 null（try/catch 兜底，不向上抛）', async () => {
+  const old = { token_info: { access_token: 'A', refresh_token: 'R' } };
+  const fetchFn = async () => { throw new Error('network down'); };
+  let threw = false;
+  let r;
+  try {
+    r = await auth.refreshToken(old, { path: os.tmpdir(), deps: { fetchFn } });
+  } catch (e) {
+    threw = true;
+  }
+  assert.equal(threw, false, '不应向上抛异常');
+  assert.equal(r, null);
+});
+
+test('refreshToken: 缺 access_token / refresh_token → 返回 null 且不发起请求', async () => {
+  let fetchCalled = false;
+  const fetchFn = async () => { fetchCalled = true; return { json: async () => ({}) }; };
+  assert.equal(await auth.refreshToken({}, { deps: { fetchFn } }), null);
+  assert.equal(await auth.refreshToken({ token_info: {} }, { deps: { fetchFn } }), null);
+  assert.equal(await auth.refreshToken({ token_info: { access_token: 'A' } }, { deps: { fetchFn } }), null);
+  assert.equal(fetchCalled, false, '缺 token 不应发起请求');
+});
+
+// ── loadLoginInfo（task.js 重试刷新时读回 LoginInfo）──
+
+test('loadLoginInfo: 存在文件 → 返回解析对象；不存在 → null', () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_load_' + Date.now() + '.json');
+  const obj = { token_info: { access_token: 'A', refresh_token: 'R' } };
+  fs.writeFileSync(tmp, JSON.stringify(obj));
+  assert.deepStrictEqual(auth.loadLoginInfo(tmp), obj);
+  assert.equal(auth.loadLoginInfo(path.join(os.tmpdir(), 'nope_' + Date.now() + '.json')), null);
+  fs.unlinkSync(tmp);
+});
+
+test('loadLoginInfo: 损坏 JSON → 返回 null（失败安全，不抛异常）', () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_bad_' + Date.now() + '.json');
+  fs.writeFileSync(tmp, '{not valid json');
+  let threw = false;
+  let r;
+  try {
+    r = auth.loadLoginInfo(tmp);
+  } catch (e) {
+    threw = true;
+  }
+  assert.equal(threw, false);
+  assert.equal(r, null);
+  fs.unlinkSync(tmp);
+});

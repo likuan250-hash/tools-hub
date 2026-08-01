@@ -339,6 +339,92 @@ async function ensureLoginInfo(webCookies, opts = {}) {
 }
 
 /**
+ * 刷新 TV access_token（用户要求「治本」解决反复出现的上传 -400 鉴权失败：
+ * 根因是 TV 登录 token 过期）。
+ * 端点：POST https://passport.bilibili.com/api/v2/oauth2/refresh_token
+ *   （与 TV 登录同一套 appkey/secret 密钥体系，已权威确认，禁止臆造其他路径）
+ * 刷新成功后顺带返回新 cookie（含新 SESSDATA），一并续上并写回磁盘。
+ *
+ * @param {Object} loginInfo 现有 LoginInfo（需含 token_info.access_token / token_info.refresh_token）
+ * @param {{path?:string, deps?:Object}} [opts]
+ *   - opts.path 写回路径（默认 store.getLoginInfoPath）；刷新成功后 saveLoginInfo 写盘到此
+ *   - opts.deps.fetchFn 可注入（单测）；默认走 getFetch()
+ * @returns {Promise<Object|null>}
+ *   成功返回更新后的 loginInfo（已写盘新 token）；
+ *   任一前置条件缺失（缺 access/refresh_token）/ 接口非 0 / 缺 token_info / 网络异常 → 返回 null
+ */
+async function refreshToken(loginInfo, opts = {}) {
+  const deps = opts.deps || {};
+  const fetchFn = deps.fetchFn || getFetch();
+
+  const tokenInfo = (loginInfo && loginInfo.token_info) || {};
+  const accessToken = tokenInfo.access_token;
+  const refreshTokenVal = tokenInfo.refresh_token;
+  // 任一缺失 → 无法刷新（如首次 web cookie 兜底拼装出来的空 token）
+  if (!accessToken || !refreshTokenVal) return null;
+
+  // 按 TV 签名规则拼请求体
+  const form = {
+    access_key: accessToken,
+    appkey: TV_APPKEY,
+    refresh_token: refreshTokenVal,
+    ts: String(Math.floor(Date.now() / 1000)),
+  };
+  const sortedForm = Object.keys(form).sort().map((k) => k + '=' + form[k]).join('&');
+  const sign1 = sign(sortedForm);
+  const body = new URLSearchParams(Object.assign({}, form, { sign: sign1 })).toString();
+
+  let json;
+  try {
+    const resp = await fetchFn('https://passport.bilibili.com/api/v2/oauth2/refresh_token', {
+      method: 'POST',
+      headers: { 'User-Agent': TV_UA, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    json = await resp.json();
+  } catch (e) {
+    // 网络异常 → 刷新失败（失败安全，不向上抛）
+    return null;
+  }
+
+  // 接口返回非 0 或缺少 token_info → 刷新失败（如 refresh_token 也失效）
+  if (!json || json.code !== 0 || !json.data || !json.data.token_info) return null;
+
+  const newTi = json.data.token_info;
+  loginInfo.token_info.access_token = newTi.access_token;
+  loginInfo.token_info.refresh_token = newTi.refresh_token;
+  loginInfo.token_info.expires_in = newTi.expires_in || 0;
+  loginInfo.token_info.token_created_at = Math.floor(Date.now() / 1000);
+
+  // 刷新接口顺带返回新 cookie（含新 SESSDATA），一并续上。
+  if (json.data.cookie_info && json.data.cookie_info.cookies) {
+    loginInfo.cookie_info = json.data.cookie_info;
+    loginInfo.sso = json.data.cookie_info.cookies.map((c) => c.name + '=' + c.value);
+  }
+
+  // 写回磁盘（与 biliup -u 指向同一文件，重试时 biliup 会读到新 token）
+  saveLoginInfo(loginInfo, opts);
+  return loginInfo;
+}
+
+/**
+ * 读取 login_info.json（供 task.js 在上传 -400 后重试刷新时读回当前 LoginInfo）。
+ * @param {string} filePath login_info.json 完整路径（通常来自 store.getLoginInfoPath()）
+ * @param {{fs?:Object}} [opts] opts.fs 覆盖文件系统实现（单测 mock）；默认真实 fs
+ * @returns {Object|null} 解析成功返回对象；文件不存在 / 解析失败 → 返回 null（失败安全）
+ */
+function loadLoginInfo(filePath, opts = {}) {
+  const f = opts.fs || fs;
+  try {
+    if (!filePath || !f.existsSync(filePath)) return null;
+    const raw = f.readFileSync(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * 清除登录态（退出登录）：best-effort 删除 credentials 文件。
  *
  * 仅删凭证，不动 config.json：
@@ -375,6 +461,8 @@ module.exports = {
   exchangeLoginInfo,
   saveLoginInfo,
   ensureLoginInfo,
+  refreshToken,
+  loadLoginInfo,
   clearSession,
   // TV 登录流程相关（复刻 biliup-rs credential.rs）：供单测与上层复用
   sign,

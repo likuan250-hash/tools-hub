@@ -12,6 +12,7 @@ const comment = require('./comment');
 const cookies = require('./cookies');
 const auth = require('./auth');
 const biliupBin = require('./biliupBin');
+const store = require('./store');
 const logger = require('./logger');
 
 const STAGES = ['pending', 'extracting_cover', 'uploading', 'adding_season', 'commenting', 'done', 'error'];
@@ -32,19 +33,31 @@ async function run(req, ctx) {
   const onEvent = typeof ctx.onEvent === 'function' ? ctx.onEvent : () => {};
   const subDeps = ctx.deps || {};
 
+  // 依赖模块解析：允许单测通过 ctx.deps 完整注入（auth/biliup/cover/season/...），
+  // 默认回落真实实现。与下游子模块「deps 仅含 fetchFn/sleep」的约定不冲突——
+  // 这里把整个 subDeps 透传给子模块作为 deps，子模块只读取其中自己关心的字段。
+  const authM = subDeps.auth || auth;
+  const biliupM = subDeps.biliup || biliup;
+  const coverM = subDeps.cover || cover;
+  const commandM = subDeps.command || command;
+  const seasonM = subDeps.season || season;
+  const commentM = subDeps.comment || comment;
+  const cookiesM = subDeps.cookies || cookies;
+  const biliupBinM = subDeps.biliupBin || biliupBin;
+
   const emit = (ev) => { try { onEvent(ev); } catch (e) {} };
   const log = (stage, message) => emit({ type: 'log', stage, message: message || '' });
   const setStage = (stage, message) => emit({ type: 'status', stage, message: message || '' });
 
   // biliup.exe 路径按运行环境解析（#6），确保打包/开发都能命中正确位置。
-  config.biliupExePath = biliupBin.resolveBiliupBin();
+  config.biliupExePath = biliupBinM.resolveBiliupBin();
 
   const videoPath = req && req.videoPath;
   if (!videoPath || !fs.existsSync(videoPath)) {
     emit({ type: 'error', stage: 'pending', message: '视频文件不存在: ' + videoPath });
     return { ok: false, error: '视频文件不存在' };
   }
-  if (!cookiesFile || !cookies.validate(cookiesFile)) {
+  if (!cookiesFile || !cookiesM.validate(cookiesFile)) {
     emit({ type: 'error', stage: 'pending', message: 'cookies 无效：缺少 SESSDATA 或 bili_jct' });
     return { ok: false, error: 'cookies 无效' };
   }
@@ -52,7 +65,7 @@ async function run(req, ctx) {
   // 生成/刷新 biliup 的 LoginInfo 文件（web cookie + token 换取；本地兜底不依赖网络）。
   // 必须在上传前完成：biliup -u 指向该文件，缺失会直接报 open cookies file 错误。
   try {
-    await auth.ensureLoginInfo(cookiesFile, { path: config.loginInfoPath });
+    await authM.ensureLoginInfo(cookiesFile, { path: config.loginInfoPath });
   } catch (e) {
     logger.error('[task] 生成 biliup LoginInfo 失败:', e.message);
     emit({ type: 'error', stage: 'pending', message: '生成 biliup 登录信息失败: ' + e.message });
@@ -82,24 +95,61 @@ async function run(req, ctx) {
 
     // 2) extracting_cover
     setStage('extracting_cover', '抽封面帧');
-    const ffmpeg = cover.resolveFfmpeg({ ffmpegPath: config.ffmpegPath, biliupExePath: config.biliupExePath });
-    const coverPath = await cover.extract(videoPath, ffmpeg, {
+    const ffmpeg = coverM.resolveFfmpeg({ ffmpegPath: config.ffmpegPath, biliupExePath: config.biliupExePath });
+    const coverPath = await coverM.extract(videoPath, ffmpeg, {
       onLog: (m) => log('extracting_cover', m),
       deps: subDeps,
     });
     log('extracting_cover', coverPath ? '抽封面帧1 ... ok' : '抽封面失败，继续（biliup 将用默认封面）');
 
-    // 3) uploading
+    // 3) uploading —— 含 token 过期自愈：上传失败且为 -400 鉴权错误时，刷新/重换 token 后重试一次。
     setStage('uploading', '上传中');
-    const script = command.buildPs1(
+    const script = commandM.buildPs1(
       { videoPath, title, tags, desc: fullDesc, publishMode, dtime },
       config,
       coverPath
     );
-    const ref = await biliup.runUpload(script, {
-      onLog: (line) => log('uploading', line.trim()),
-      deps: subDeps,
-    });
+
+    let ref;
+    try {
+      ref = await biliupM.runUpload(script, {
+        onLog: (line) => log('uploading', line.trim()),
+        deps: subDeps,
+      });
+    } catch (uploadErr) {
+      const msg = (uploadErr && uploadErr.message) || '';
+      // 仅针对 -400 鉴权失败自愈（其他上传错误不重试，避免掩盖真实故障）。
+      if (/code=-400/.test(msg)) {
+        const liPath = store.getLoginInfoPath();
+        const loginInfo = authM.loadLoginInfo(liPath);
+        let refreshed = false;
+        if (loginInfo) {
+          // 退路①：用 refresh_token 静默刷新 access_token（写盘新 token）。
+          const updated = await authM.refreshToken(loginInfo, { path: liPath, deps: subDeps });
+          if (updated) {
+            refreshed = true;
+            log('uploading', 'access_token 已刷新，重试上传');
+          }
+        }
+        if (!refreshed) {
+          // 退路②：refresh_token 也失效时，用 web cookie 重新换 TV token（已验证可用逻辑）。
+          try {
+            await authM.ensureLoginInfo(cookiesFile, { path: liPath, deps: subDeps });
+            log('uploading', '已用 web cookie 重新换取登录态，重试上传');
+          } catch (e2) {
+            logger.warn('[task] 重新生成 biliup LoginInfo 失败:', e2.message);
+          }
+        }
+        // 重试仅 1 次（最多 2 次总上传），避免死循环；仍抛 -400 则向上抛，由外层 catch 判失败。
+        ref = await biliupM.runUpload(script, {
+          onLog: (line) => log('uploading', line.trim()),
+          deps: subDeps,
+        });
+      } else {
+        throw uploadErr;
+      }
+    }
+
     if (ref.bvid || ref.aid) {
       log('uploading', '上传完成 bvid=' + (ref.bvid || '?') + ' aid=' + (ref.aid || '?'));
     } else {
@@ -109,7 +159,7 @@ async function run(req, ctx) {
 
     // 4) getVideoInfo（重试应对 -404）
     setStage('uploading', '等待稿件索引');
-    const videoInfo = await biliup.getVideoInfo(ref, {
+    const videoInfo = await biliupM.getVideoInfo(ref, {
       onLog: (m) => log('uploading', m),
       deps: subDeps,
     });
@@ -119,7 +169,7 @@ async function run(req, ctx) {
     // H: sectionId 为空串（用户未指定分集）时跳过合集后置，避免向后端传空 sectionId 报错。
     if (config.sectionId) {
       setStage('adding_season', '合集后置中');
-      await season.add(config.sectionId, videoInfo.aid, videoInfo.cid, title, csrf, cookieHeader, {
+      await seasonM.add(config.sectionId, videoInfo.aid, videoInfo.cid, title, csrf, cookieHeader, {
         onLog: (m) => log('adding_season', m),
         deps: subDeps,
       });
@@ -133,8 +183,8 @@ async function run(req, ctx) {
     setStage('commenting', '评论置顶中');
     let rpid;
     try {
-      rpid = await comment.post(videoInfo.aid, config.comment, csrf, cookieHeader, { deps: subDeps });
-      await comment.pin(videoInfo.aid, rpid, csrf, cookieHeader, { deps: subDeps });
+      rpid = await commentM.post(videoInfo.aid, config.comment, csrf, cookieHeader, { deps: subDeps });
+      await commentM.pin(videoInfo.aid, rpid, csrf, cookieHeader, { deps: subDeps });
       log('commenting', '评论已发布并置顶 rpid=' + rpid);
     } catch (commentErr) {
       // 评论置顶为非关键步骤：失败仅记录警告，投稿任务仍算成功（继续 to done）。
@@ -142,14 +192,15 @@ async function run(req, ctx) {
       log('commenting', '评论发布/置顶失败（非致命，已跳过）: ' + commentErr.message);
     }
 
-    // 7) done
+    // 7) done —— season 真实反映：仅当 config.sectionId 存在（即实际执行了合集后置）才为 true。
+    const seasonAdded = !!config.sectionId;
     setStage('done', '投稿完成');
     emit({
       type: 'done',
       stage: 'done',
-      data: { aid: videoInfo.aid, bvid: ref.bvid, cid: videoInfo.cid, season: true, rpid },
+      data: { aid: videoInfo.aid, bvid: ref.bvid, cid: videoInfo.cid, season: seasonAdded, rpid },
     });
-    return { ok: true, aid: videoInfo.aid, bvid: ref.bvid, cid: videoInfo.cid, season: true, rpid };
+    return { ok: true, aid: videoInfo.aid, bvid: ref.bvid, cid: videoInfo.cid, season: seasonAdded, rpid };
   } catch (e) {
     const stage = (e && e.stage) || 'error';
     logger.error('[task] 投稿失败 @' + stage + ':', e.message);

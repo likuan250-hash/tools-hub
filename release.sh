@@ -38,10 +38,12 @@ git push origin main "$TAG"
 echo "⏳ 等待 CI 构建（约 4-5 分钟）..."
 SHA="$(git rev-parse HEAD)"
 RUN_ID=""
-for i in $(seq 1 30); do
+i=0
+while [ $i -lt 30 ]; do
   RUN_ID="$("$GH" run list --repo "$REPO" --commit "$SHA" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
   [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ] && break
   sleep 2
+  i=$((i+1))
 done
 if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
   echo "❌ 未检测到本次推送($SHA)对应的 CI 运行，请检查 Actions 页面"
@@ -53,12 +55,14 @@ fi
 # 构建完成后 electron-builder 发布资产可能略有延迟，重试若干次避免误判
 echo "🔍 验证 Release 资产..."
 ASSETS=""
-for i in $(seq 1 15); do
+i=0
+while [ $i -lt 15 ]; do
   ASSETS="$("$GH" release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' 2>/dev/null)"
   if echo "$ASSETS" | grep -q "latest.yml" && echo "$ASSETS" | grep -q "Setup"; then
     break
   fi
   sleep 5
+  i=$((i+1))
 done
 echo "$ASSETS"
 if echo "$ASSETS" | grep -q "latest.yml" && echo "$ASSETS" | grep -q "Setup"; then

@@ -76,7 +76,7 @@ function toast(msg, type) {
 function openAuth(provider) {
   const path = provider === 'baidu' ? '/auth/baidu/cookie' : '/auth/' + provider;
   const w = window.open(path, provider + 'Auth', 'width=520,height=720');
-  if (!w) alert('浏览器拦截了弹窗,请允许本站弹窗后重试');
+  if (!w) toast('浏览器拦截了弹窗,请允许本站弹窗后重试', 'err');
 }
 // 监听弹窗回传:授权成功后自动刷新账号状态并显示成功提示
 window.addEventListener('message', (e) => {
@@ -734,7 +734,7 @@ async function confirmDir() {
     closeDirPicker();
     loadAccounts();
   } catch (e) {
-    alert('保存失败: ' + e.message);
+    toast('保存失败: ' + e.message, 'err');
   } finally {
     btn.disabled = false;
   }

@@ -23,6 +23,28 @@ if (params.get('authorized') === 'baidu') {
   setBanner('err', '⚠️ 百度授权失败:' + (params.get('msg') || '未知错误'));
 }
 
+// ── 统一执行按钮 loading 切换（macOS 线性图标风格：执行中显示 spinner + 执行中…）──
+function setExec(btn, on) {
+  if (!btn) return;
+  if (on) {
+    if (btn.dataset.label === undefined) {
+      var l = btn.querySelector('.bx-label');
+      btn.dataset.label = l ? l.textContent : btn.textContent;
+    }
+    btn.classList.add('is-loading');
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    var lbl = btn.querySelector('.bx-label');
+    if (lbl) lbl.textContent = '执行中…';
+  } else {
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+    var lbl2 = btn.querySelector('.bx-label');
+    if (lbl2 && btn.dataset.label !== undefined) lbl2.textContent = btn.dataset.label;
+  }
+}
+
 // 授权:弹窗打开对应网盘的授权/登录页
 function openAuth(provider) {
   const path = provider === 'baidu' ? '/auth/baidu/cookie' : '/auth/' + provider;
@@ -424,7 +446,7 @@ batchBtn.onclick = async () => {
     batchErr.innerHTML = statusHTML('err', parsedState.order.length ? '请至少勾选 1 个网盘' : '没识别到任何网盘链接');
     return;
   }
-  batchBtn.disabled = true; batchBtn.textContent = '转存中…';
+  setExec(batchBtn, true);
   try {
     const r = await fetch('/api/transfer/batch', {
       method: 'POST',
@@ -443,7 +465,7 @@ batchBtn.onclick = async () => {
   } catch (e) {
     batchErr.className = 'err show'; batchErr.innerHTML = statusHTML('err', '❌ ' + e.message);
   } finally {
-    batchBtn.disabled = false; batchBtn.textContent = '🚀 转存选中并生成分享';
+    setExec(batchBtn, false);
   }
 };
 

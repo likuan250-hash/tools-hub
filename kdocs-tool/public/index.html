@@ -567,6 +567,31 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     }
     .icon-btn .ib-ico { width: 17px; height: 17px; flex-shrink: 0; display: block; }
     .icon-btn .ib-label { line-height: 1; }
+    .btn-exec {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-width: 168px; padding: 11px 22px;
+      font-size: 14px; font-weight: 600; line-height: 1; white-space: nowrap;
+      color: #fff; background: var(--accent); border: 1px solid transparent; border-radius: 11px;
+      cursor: pointer; user-select: none;
+      box-shadow: 0 8px 20px rgba(var(--accent-rgb), .28);
+      transition: filter .2s ease, transform .12s ease, box-shadow .2s ease, background .2s ease;
+    }
+    .btn-exec:hover:not(:disabled) { filter: brightness(1.07); }
+    .btn-exec:active:not(:disabled) { transform: translateY(1px); }
+    .btn-exec:disabled { cursor: default; opacity: .82; }
+    .btn-exec .bx-ico { width: 18px; height: 18px; flex-shrink: 0; display: block; }
+    .btn-exec .bx-label { line-height: 1; }
+    .btn-exec .bx-spin {
+      width: 16px; height: 16px; flex-shrink: 0; display: none;
+      border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%;
+      animation: bx-spin .7s linear infinite;
+    }
+    .btn-exec.is-loading .bx-spin { display: inline-block; }
+    @keyframes bx-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .btn-exec .bx-spin { animation: none; }
+      .btn-exec:active:not(:disabled) { transform: none; }
+    }
     @media (max-width: 560px) { .icon-btn { padding: 7px; } .ib-label { display: none; } }
   </style>
 </head>
@@ -628,7 +653,11 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     </div>
 
     <div class="toolbar">
-      <button class="btn" id="autoBtn">🤖 一键执行</button>
+      <button class="btn-exec" id="autoBtn" type="button">
+        <svg class="bx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span class="bx-label">一键执行</span>
+        <span class="bx-spin" role="status" aria-hidden="true"></span>
+      </button>
     </div>
   </div>
 

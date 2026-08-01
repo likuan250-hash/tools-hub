@@ -6,6 +6,28 @@
   const api = window.electronAPI;
   const $ = (id) => document.getElementById(id);
 
+  // ── 统一执行按钮 loading 切换（macOS 线性图标风格：执行中显示 spinner + 执行中…）──
+  function setExec(btn, on) {
+    if (!btn) return;
+    if (on) {
+      if (btn.dataset.label === undefined) {
+        var l = btn.querySelector('.bx-label');
+        btn.dataset.label = l ? l.textContent : btn.textContent;
+      }
+      btn.classList.add('is-loading');
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      var lbl = btn.querySelector('.bx-label');
+      if (lbl) lbl.textContent = '执行中…';
+    } else {
+      btn.classList.remove('is-loading');
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+      var lbl2 = btn.querySelector('.bx-label');
+      if (lbl2 && btn.dataset.label !== undefined) lbl2.textContent = btn.dataset.label;
+    }
+  }
+
   // ── 状态胶囊（#1：清晰状态文案 + 前缀）──
   const STAGE_LABEL = {
     pending: ["info", "准备中"],
@@ -462,7 +484,7 @@
     };
 
     running = true;
-    $("submitBtn").disabled = true;
+    setExec($("submitBtn"), true);
     // #4 展示日志面板（含标题与空状态）
     $("logWrap").style.display = "";
     $("logBox").innerHTML = "";
@@ -487,9 +509,9 @@
     logLine("投稿异常: " + e.message, "err");
     setCapsule("err", "失败");
     pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", "投稿异常");
-  } finally {
+    } finally {
       running = false;
-      $("submitBtn").disabled = false;
+      setExec($("submitBtn"), false);
       refreshHealth(); // 投稿结束后刷新状态为就绪
     }
   }

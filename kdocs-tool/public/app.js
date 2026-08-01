@@ -7,6 +7,28 @@ const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $(
 const retryCoverBtn = $("retryCoverBtn");
 const toast = $("toast"), chipKdocs = $("chipKdocs"), chipBl = $("chipBl"), kdocsBtn = $("kdocsBtn");
 
+// ── 统一执行按钮 loading 切换（macOS 线性图标风格：执行中显示 spinner + 执行中…）──
+function setExec(btn, on) {
+  if (!btn) return;
+  if (on) {
+    if (btn.dataset.label === undefined) {
+      var l = btn.querySelector('.bx-label');
+      btn.dataset.label = l ? l.textContent : btn.textContent;
+    }
+    btn.classList.add('is-loading');
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    var lbl = btn.querySelector('.bx-label');
+    if (lbl) lbl.textContent = '执行中…';
+  } else {
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+    var lbl2 = btn.querySelector('.bx-label');
+    if (lbl2 && btn.dataset.label !== undefined) lbl2.textContent = btn.dataset.label;
+  }
+}
+
 let currentParsed = null;
 let currentRecordId = null;   // 供「仅重传封面」补传
 let currentCoverPath = null;  // 已下载但上传失败的本地封面路径
@@ -369,8 +391,7 @@ dupContinue.onclick = () => {
 // ── 一键执行（SSE 流式进度，实时看到每一步）──
 // 真正执行（可选 forceAdd / updateLinks）
 async function runAuto(text, opts = {}) {
-  autoBtn.disabled = true;
-  autoBtn.textContent = "⏳ 执行中...";
+  setExec(autoBtn, true);
   autoResult.classList.remove("show");
   autoSteps.innerHTML = "";
   autoLog.innerHTML = "";
@@ -488,17 +509,15 @@ async function runAuto(text, opts = {}) {
     autoSummary.className = "result-summary fail";
     autoSummary.textContent = "❌ 执行异常";
   } finally {
-    autoBtn.disabled = false;
-    autoBtn.textContent = "🤖 一键执行";
+    setExec(autoBtn, false);
   }
 }
 
 autoBtn.onclick = async () => {
   const text = gameInput.value.trim();
   if (!text) { toastMsg("请先粘贴游戏信息", "err"); return; }
-  // 执行前先查重，命中重复则弹确认框
-  autoBtn.disabled = true;
-  autoBtn.textContent = "🔍 查重中...";
+  // 执行前先查重，命中重复则弹确认框（统一走 setExec，不再直接写 textContent 以免破坏 macOS 线性图标结构）
+  setExec(autoBtn, true);
   try {
     const r = await fetch("/api/check-exists", {
       method: "POST",
@@ -511,8 +530,7 @@ autoBtn.onclick = async () => {
     }
   } catch { /* 查重接口异常不阻断，直接执行 */ }
   finally {
-    autoBtn.disabled = false;
-    autoBtn.textContent = "🤖 一键执行";
+    setExec(autoBtn, false);
   }
   runAuto(text);
 };

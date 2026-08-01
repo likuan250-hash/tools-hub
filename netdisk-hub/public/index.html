@@ -152,7 +152,7 @@
     .badge.fail { background: rgba(var(--err-rgb),0.2); color: var(--err); }
     .empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 20px; }
 
-    .panel-head { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
     .panel-head h2 { margin: 0; }
     .chevron { transition: transform 0.25s ease; font-size: 14px; color: var(--text-dim); }
     .chevron.open { transform: rotate(90deg); }
@@ -259,6 +259,8 @@
       border: 1px solid var(--glass-border); background: var(--bg-2);
       box-shadow: 0 30px 80px rgba(0,0,0,0.5); max-height: 80vh; display: flex; flex-direction: column;
     }
+    /* 弹窗正文区：在 modal 固定 max-height 内独立滚动（玻璃弹窗内容容器） */
+    .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 14px; padding-right: 4px; }
     .modal-head { display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 600; }
     .modal-close { border: none; background: transparent; color: var(--text-dim); font-size: 18px; cursor: pointer; line-height: 1; }
     .modal-close:hover { color: var(--text); }
@@ -556,6 +558,78 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     }
   </style>
   <link rel="stylesheet" href="status-luxe.css" />
+
+  <!-- T01：厚玻璃弹窗统一规范（单一真源，三模块逐字节一致）+ 卡片 header 图标按钮槽 -->
+  <style>
+    /* ===== 厚玻璃弹窗（单一真源，三模块逐字节一致）===== */
+    /* —— token：暗色用深色半透明玻璃保证亮字可读；亮色用浅半透明玻璃保证暗字可读 —— */
+    :root {
+      --glass-modal-bg:     rgba(20, 24, 55, 0.55);   /* 暗色：中性深半透明 */
+      --glass-modal-border: rgba(255, 255, 255, 0.45);
+      --glass-modal-divider: rgba(255, 255, 255, 0.42);
+      --glass-mask-bg:      rgba(6, 8, 20, 0.62);     /* overlay 深色基底 */
+    }
+    [data-theme="light"] {
+      --glass-modal-bg:     rgba(255, 255, 255, 0.62);
+      --glass-modal-border: rgba(90, 95, 150, 0.45);
+      --glass-modal-divider: rgba(90, 95, 150, 0.42);
+      --glass-mask-bg:      rgba(20, 24, 55, 0.40);
+    }
+
+    /* —— overlay（遮罩层） —— */
+    .modal-mask.glass-mask {
+      background: var(--glass-mask-bg);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    /* —— 厚玻璃卡片本体（用户指定规格） —— */
+    .modal.glass {
+      background: var(--glass-modal-bg);
+      -webkit-backdrop-filter: blur(40px) saturate(2.0);
+      backdrop-filter: blur(40px) saturate(2.0);
+      border: 1px solid var(--glass-modal-border);
+      box-shadow: var(--shadow-modal), inset 0 1px 0 rgba(255, 255, 255, 0.28); /* 顶部高光勾边，强化玻璃感 */
+      color: var(--text);
+    }
+
+    /* —— 文字 / 分隔线高对比约定（回应关注点 #5） —— */
+    .modal.glass .modal-head,
+    .modal.glass .modal-title,
+    .modal.glass h2, .modal.glass h3 {
+      color: var(--text);
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.28);   /* 标题加投影，强饱和下仍立得住 */
+    }
+    .modal.glass .history-title { color: var(--text); font-weight: 600; }
+    .modal.glass .history-meta  { color: var(--text-dim); }
+    .modal.glass .history-item  { border-bottom: 1px solid var(--glass-modal-divider); } /* 比 --glass-border 更亮，分隔更清晰 */
+    .modal.glass .hint          { color: var(--text-dim); }
+    .modal.glass .modal-close   { color: var(--text-dim); }
+    .modal.glass .modal-close:hover { color: var(--text); }
+
+    /* —— a11y 护栏：并入既有 @supports / reduced-transparency（必补） —— */
+    @supports not (backdrop-filter: blur(1px)) {
+      .modal.glass { -webkit-backdrop-filter: none; backdrop-filter: none;
+                     background: var(--bg-2); }            /* 暗色回退实色 */
+      [data-theme="light"] .modal.glass { background: #e7ecf8; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .modal.glass { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+    }
+
+    /* ===== 卡片 header：标题 + 右上角图标按钮槽（全站统一）===== */
+    /* 注：netdisk 的 .panel-head 已在上方首个 <style> 定义，此处仅补 .panel-acts / .icon-btn */
+    .panel-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    .icon-btn {
+      border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text);
+      width: 34px; height: 34px; border-radius: 10px; cursor: pointer;
+      font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      box-shadow: var(--shadow-card);
+    }
+    .icon-btn:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18); }
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -577,34 +651,16 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
 
     <div class="cards" id="cards"></div>
 
-    <!-- 格式化分享文本(默认收起,页面保持简洁) -->
-    <div class="panel">
-      <div class="panel-head" id="fmtToggle">
-        <h2>📋 格式化分享文本</h2>
-        <span class="chevron" id="fmtChevron">▸</span>
-      </div>
-      <div class="fmt-body" id="fmtBody" style="display:none">
-        <div class="hint" style="margin:14px 0">粘贴任意排版的论坛分享帖,自动整理成「标题 + 百度/迅雷/夸克」标准格式;结果可直接修改,再复制或一键填入下方转存。</div>
-        <div class="field">
-          <div class="field-head">
-            <label>原帖文本</label>
-            <button type="button" class="clear-input" id="fmtClear">清空</button>
-          </div>
-          <textarea id="fmtInput" rows="6" placeholder="把乱序的分享帖粘到这里,例如含《》书名号、游戏介绍、各种提取码的原文…"></textarea>
-        </div>
-        <div class="field">
-          <label>格式化结果(可编辑)</label>
-          <textarea id="fmtResult" rows="6" placeholder="整理后的标准格式会在这里生成…"></textarea>
-        </div>
-        <div class="fmt-actions">
-          <button class="btn ghost" id="fmtCopy">📋 复制</button>
-          <button class="auth-btn" id="fmtFill">⬇ 填入转存框</button>
-        </div>
-      </div>
-    </div>
+    <!-- 格式化分享文本：已收敛为转存中心右上角 📋 图标按钮触发的厚玻璃弹窗（见 #fmtMask） -->
 
     <div class="panel">
-      <h2>🚀 转存中心</h2>
+      <div class="panel-head">
+        <h2>🚀 转存中心</h2>
+        <div class="panel-acts">
+          <button class="icon-btn" id="fmtIconBtn" title="格式化分享文本 📋" type="button">📋</button>
+          <button class="icon-btn" id="historyIconBtn" title="查看全部转存任务历史 📜" type="button">📜</button>
+        </div>
+      </div>
       <div class="hint" style="margin-bottom:14px">粘贴单条或三段式分享文本,自动识别标题、网盘链接与提取码;勾选要转的网盘,一键生成你的分享链接。</div>
       <div class="field">
         <div class="field-head">
@@ -639,21 +695,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="batch-result" id="batchResult"></div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head" id="historyToggle">
-        <h2>📜 转存任务历史</h2>
-        <span class="chevron" id="historyChevron">▸</span>
-      </div>
-      <div class="tasks-wrap" id="historyBody" style="display:none">
-        <div class="tabs" id="historyTabs">
-          <button class="tab" data-filter="all">全部<span class="cnt" id="cntAll">0</span></button>
-          <button class="tab active" data-filter="success">成功<span class="cnt" id="cntSuccess">0</span></button>
-          <button class="tab" data-filter="failed">异常<span class="cnt" id="cntFailed">0</span></button>
-          <button class="btn ghost clear-failed" id="clearFailed">清空异常</button>
-        </div>
-        <div class="tasks" id="tasks"></div>
-      </div>
-    </div>
+    <!-- 转存任务历史：已收敛为转存中心右上角 📜 图标按钮触发的厚玻璃弹窗（见 #historyMask） -->
 
   </div>
 
@@ -686,6 +728,57 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="modal-foot">
         <button class="btn ghost" onclick="closeCopyGroupModal()">取消</button>
         <button class="auth-btn" id="copyGroupConfirm">📋 确认复制</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 转存任务历史弹窗（原 #historyBody 整块面板 → 厚玻璃弹窗；渲染逻辑不变） -->
+  <div class="modal-mask glass-mask" id="historyMask">
+    <div class="modal glass">
+      <div class="modal-head">
+        <span>📜 转存任务历史</span>
+        <button class="modal-close" id="historyClose" type="button" title="关闭">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="tasks-wrap" id="historyBody">
+          <div class="tabs" id="historyTabs">
+            <button class="tab" data-filter="all">全部<span class="cnt" id="cntAll">0</span></button>
+            <button class="tab active" data-filter="success">成功<span class="cnt" id="cntSuccess">0</span></button>
+            <button class="tab" data-filter="failed">异常<span class="cnt" id="cntFailed">0</span></button>
+            <button class="btn ghost clear-failed" id="clearFailed">清空异常</button>
+          </div>
+          <div class="tasks" id="tasks"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 格式化分享文本弹窗（原 #fmtBody 整块面板 → 厚玻璃弹窗；渲染逻辑不变） -->
+  <div class="modal-mask glass-mask" id="fmtMask">
+    <div class="modal glass">
+      <div class="modal-head">
+        <span>📋 格式化分享文本</span>
+        <button class="modal-close" id="fmtClose" type="button" title="关闭">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="fmt-body">
+          <div class="hint" style="margin:14px 0">粘贴任意排版的论坛分享帖,自动整理成「标题 + 百度/迅雷/夸克」标准格式;结果可直接修改,再复制或一键填入下方转存。</div>
+          <div class="field">
+            <div class="field-head">
+              <label>原帖文本</label>
+              <button type="button" class="clear-input" id="fmtClear">清空</button>
+            </div>
+            <textarea id="fmtInput" rows="6" placeholder="把乱序的分享帖粘到这里,例如含《》书名号、游戏介绍、各种提取码的原文…"></textarea>
+          </div>
+          <div class="field">
+            <label>格式化结果(可编辑)</label>
+            <textarea id="fmtResult" rows="6" placeholder="整理后的标准格式会在这里生成…"></textarea>
+          </div>
+          <div class="fmt-actions">
+            <button class="btn ghost" id="fmtCopy">📋 复制</button>
+            <button class="auth-btn" id="fmtFill">⬇ 填入转存框</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

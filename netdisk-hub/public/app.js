@@ -523,14 +523,36 @@ document.addEventListener('click', async (e) => {
   } catch (err) { btn.disabled = false; btn.textContent = old; }
 });
 
-// 历史面板折叠 / Tab 过滤 / 清空异常
-document.getElementById('historyToggle').addEventListener('click', () => {
-  const body = document.getElementById('historyBody');
-  const chev = document.getElementById('historyChevron');
-  const open = body.style.display === 'none';
-  body.style.display = open ? 'block' : 'none';
-  chev.classList.toggle('open', open);
-});
+// ── 统一弹窗机制（openModal/closeModal，对齐 biliup/kdocs，来去一致、回到原页、不丢上下文）──
+let activeModal = null;
+function openModal(modalEl) {
+  if (!modalEl) return;
+  activeModal = modalEl; // 记录当前浮层，关闭即回到下层原页（不切路由、不重置表单）
+  const panel = modalEl.querySelector('.modal');
+  if (panel) {
+    panel.classList.remove('pop-in');
+    void panel.offsetWidth; // 强制 reflow 以重放入场动画
+    panel.classList.add('pop-in'); // 复用 macos-motion 的 popIn（reduced-motion 下自动降级）
+  }
+  modalEl.classList.add('show');
+}
+function closeModal() {
+  if (!activeModal) return;
+  activeModal.classList.remove('show');
+  const panel = activeModal.querySelector('.modal');
+  if (panel) panel.classList.remove('pop-in');
+  activeModal = null;
+}
+
+// 历史 / 格式化：由卡片 header 右上角图标按钮触发厚玻璃弹窗（渲染逻辑不变，仅触发方式改）
+const historyMaskEl = document.getElementById('historyMask');
+const fmtMaskEl = document.getElementById('fmtMask');
+document.getElementById('historyIconBtn').addEventListener('click', () => { openModal(historyMaskEl); });
+document.getElementById('fmtIconBtn').addEventListener('click', () => { openModal(fmtMaskEl); });
+document.getElementById('historyClose').addEventListener('click', closeModal);
+document.getElementById('fmtClose').addEventListener('click', closeModal);
+if (historyMaskEl) historyMaskEl.addEventListener('click', (e) => { if (e.target === historyMaskEl) closeModal(); });
+if (fmtMaskEl) fmtMaskEl.addEventListener('click', (e) => { if (e.target === fmtMaskEl) closeModal(); });
 
 document.getElementById('historyTabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab');
@@ -674,20 +696,12 @@ document.getElementById('dirModal').addEventListener('click', (e) => {
 });
 
 // ── 格式化分享文本:乱序原帖 → 标准「标题 + 百度/迅雷/夸克」格式(可编辑,缺盘省略) ──
-const fmtToggle = document.getElementById('fmtToggle');
-const fmtChevron = document.getElementById('fmtChevron');
-const fmtBody = document.getElementById('fmtBody');
+// 触发已迁移至转存中心 header 的 📋 图标按钮（openModal(#fmtMask)），见上方统一弹窗机制
 const fmtInput = document.getElementById('fmtInput');
 const fmtResult = document.getElementById('fmtResult');
 const fmtCopy = document.getElementById('fmtCopy');
 const fmtFill = document.getElementById('fmtFill');
 const fmtClear = document.getElementById('fmtClear');
-
-fmtToggle.addEventListener('click', () => {
-  const open = fmtBody.style.display === 'none';
-  fmtBody.style.display = open ? 'block' : 'none';
-  fmtChevron.classList.toggle('open', open);
-});
 
 // 把任意排版的分享帖整理成标准格式。链接用正则硬抓(顺序/位置无关),标题尽力猜,结果可改。
 function formatPost(text) {

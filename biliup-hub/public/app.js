@@ -131,9 +131,13 @@
   const clearBtnEl = $("clearBtn");
   if (clearBtnEl) {
     clearBtnEl.addEventListener("click", () => {
+      if (!selectedVideo) {
+        // #3：未选视频时为安全空操作（轻提示），不报错、不隐藏（常驻于卡片右上角）
+        toast("当前没有已选择的视频");
+        return;
+      }
       selectedVideo = "";
       $("videoName").textContent = "";
-      clearBtnEl.style.display = "none";
       $("titleInput").value = "";
       $("submitHint").textContent = "选择视频后点击投稿（发布前会二次确认模式）";
     });
@@ -551,7 +555,7 @@
   }
 
   // ── 高级参数弹窗（A4：点击小按钮弹出独立弹窗页，关闭后回到投稿设置页）──
-  const advToggle = $("advToggle");
+  const advToggle = $("advTrigger");
   const advMask = $("advMask");
   if (advToggle && advMask) {
     advToggle.addEventListener("click", () => openModal(advMask));
@@ -566,7 +570,7 @@
   // ── P08：投稿历史展示（复用 P09 统一弹窗机制）──
   const historyMaskBiliup = $("historyMask");
   const historyListBiliup = $("historyList");
-  const historyBtnBiliup = $("historyBtn");
+  const historyBtnBiliup = $("submitHistoryBtn");
   const historyCloseBiliup = $("historyClose");
   const historyClearBiliup = $("historyClear");
 

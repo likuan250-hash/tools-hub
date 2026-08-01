@@ -554,7 +554,7 @@ if (typeof bindStatusCursor === "function") bindStatusCursor(document);
 
 // ── P08：历史展示（接入 P09 统一弹窗机制）──
 const historyMask = $("historyMask"), historyList = $("historyList");
-const historyOpenBtn = $("historyBtn"), historyCloseBtn = $("historyClose"), historyClearBtn = $("historyClear");
+const historyOpenBtn = $("historyIconBtn"), historyCloseBtn = $("historyClose"), historyClearBtn = $("historyClear");
 
 function renderKdocsHistory() {
   const list = loadHistory(HISTORY_KEY_KDOCS);

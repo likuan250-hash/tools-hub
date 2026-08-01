@@ -464,6 +464,82 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     .status-row .chip .st-luxe--info { --c: var(--accent-2); --txt: var(--text); }
   </style>
   <link rel="stylesheet" href="status-luxe.css" />
+
+  <!-- T01：厚玻璃弹窗统一规范（单一真源，三模块逐字节一致）+ 卡片 header 图标按钮槽 -->
+  <style>
+    /* ===== 厚玻璃弹窗（单一真源，三模块逐字节一致）===== */
+    /* —— token：暗色用深色半透明玻璃保证亮字可读；亮色用浅半透明玻璃保证暗字可读 —— */
+    :root {
+      --glass-modal-bg:     rgba(20, 24, 55, 0.55);   /* 暗色：中性深半透明 */
+      --glass-modal-border: rgba(255, 255, 255, 0.45);
+      --glass-modal-divider: rgba(255, 255, 255, 0.42);
+      --glass-mask-bg:      rgba(6, 8, 20, 0.62);     /* overlay 深色基底 */
+    }
+    [data-theme="light"] {
+      --glass-modal-bg:     rgba(255, 255, 255, 0.62);
+      --glass-modal-border: rgba(90, 95, 150, 0.45);
+      --glass-modal-divider: rgba(90, 95, 150, 0.42);
+      --glass-mask-bg:      rgba(20, 24, 55, 0.40);
+    }
+
+    /* —— overlay（遮罩层） —— */
+    .modal-mask.glass-mask {
+      background: var(--glass-mask-bg);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    /* —— 厚玻璃卡片本体（用户指定规格） —— */
+    .modal.glass {
+      background: var(--glass-modal-bg);
+      -webkit-backdrop-filter: blur(40px) saturate(2.0);
+      backdrop-filter: blur(40px) saturate(2.0);
+      border: 1px solid var(--glass-modal-border);
+      box-shadow: var(--shadow-modal), inset 0 1px 0 rgba(255, 255, 255, 0.28); /* 顶部高光勾边，强化玻璃感 */
+      color: var(--text);
+    }
+
+    /* —— 文字 / 分隔线高对比约定（回应关注点 #5） —— */
+    .modal.glass .modal-head,
+    .modal.glass .modal-title,
+    .modal.glass h2, .modal.glass h3 {
+      color: var(--text);
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.28);   /* 标题加投影，强饱和下仍立得住 */
+    }
+    .modal.glass .history-title { color: var(--text); font-weight: 600; }
+    .modal.glass .history-meta  { color: var(--text-dim); }
+    .modal.glass .history-item  { border-bottom: 1px solid var(--glass-modal-divider); } /* 比 --glass-border 更亮，分隔更清晰 */
+    .modal.glass .hint          { color: var(--text-dim); }
+    .modal.glass .modal-close   { color: var(--text-dim); }
+    .modal.glass .modal-close:hover { color: var(--text); }
+
+    /* —— a11y 护栏：并入既有 @supports / reduced-transparency（必补） —— */
+    @supports not (backdrop-filter: blur(1px)) {
+      .modal.glass { -webkit-backdrop-filter: none; backdrop-filter: none;
+                     background: var(--bg-2); }            /* 暗色回退实色 */
+      [data-theme="light"] .modal.glass { background: #e7ecf8; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .modal.glass { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+    }
+
+    /* ===== 卡片 header：标题 + 右上角图标按钮槽（全站统一）===== */
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; margin-bottom: 18px;
+    }
+    .panel-head h2 { margin: 0; }
+    .panel-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    .icon-btn {
+      border: 1px solid var(--glass-border); background: var(--field-bg); color: var(--text);
+      width: 34px; height: 34px; border-radius: 10px; cursor: pointer;
+      font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      box-shadow: var(--shadow-card);
+    }
+    .icon-btn:hover { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18); }
+  </style>
 </head>
 <body>
 <div class="wrap">
@@ -478,7 +554,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     </div>
     <div class="header-actions">
       <button class="ver-badge" id="verBadge" title="由工具箱统一管理">v?</button>
-      <button class="theme-btn" id="historyBtn" title="查看录入历史">📜 历史</button>
       <button class="theme-btn" id="kdocsBtn" title="在浏览器打开金山文档多维表">📄 金山文档</button>
       <button class="theme-btn" id="themeBtn">🌗 主题</button>
     </div>
@@ -497,7 +572,12 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   </div>
 
   <div class="panel">
-    <h2>📝 游戏信息</h2>
+    <div class="panel-head">
+      <h2>📝 游戏信息</h2>
+      <div class="panel-acts">
+        <button class="icon-btn" id="historyIconBtn" title="查看全部录入历史 📜" type="button">📜</button>
+      </div>
+    </div>
     <div class="hint" style="margin-bottom:14px">粘贴第一行「游戏名称 + 描述 + 标签」，后续行各网盘链接。非 Steam 游戏请务必在下方填写「封面链接」，否则不会生成宣传图。</div>
     <div class="field">
       <div class="field-head">
@@ -554,11 +634,11 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
 </div>
 
 <!-- 任务历史弹窗（P08，接入 P09 统一弹窗机制） -->
-<div class="modal-mask" id="historyMask">
-  <div class="modal">
+<div class="modal-mask glass-mask" id="historyMask">
+  <div class="modal glass">
     <div class="modal-head">
       <span>📜 录入历史</span>
-      <button class="modal-close" id="historyClose" type="button">✕</button>
+      <button class="modal-close" id="historyClose" type="button" title="关闭">✕</button>
     </div>
     <div class="history-list" id="historyList"></div>
     <div class="modal-actions">

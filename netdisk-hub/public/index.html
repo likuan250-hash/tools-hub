@@ -37,11 +37,11 @@
     .theme-btn {
       border: 1px solid var(--glass-border); background: var(--glass-bg);
       color: var(--text); border-radius: 12px; padding: 8px 14px;
-      cursor: pointer; font-size: 13px; backdrop-filter: blur(16px);
+      cursor: pointer; font-size: 13px; backdrop-filter: blur(16px) saturate(160%);
       box-shadow: var(--shadow-card);
       transition: transform 0.2s ease, background 0.2s ease;
     }
-    .theme-btn:hover { transform: translateY(-2px); background: rgba(255,255,255,0.14); }
+    .theme-btn:hover { background: rgba(255,255,255,0.14); }
 
     .header-actions { display: flex; align-items: center; gap: 10px; }
     .ver-badge {
@@ -56,7 +56,7 @@
     .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 26px; }
     .card {
       border: 1px solid var(--glass-border); border-radius: 18px;
-      background: var(--glass-bg); backdrop-filter: blur(22px) saturate(160%);
+      background: var(--glass-bg); backdrop-filter: blur(16px) saturate(160%);
       box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
       padding: 18px; position: relative; overflow: hidden;
     }
@@ -115,7 +115,7 @@
       box-shadow: 0 10px 30px rgba(var(--accent-rgb), 0.35);
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(var(--accent-rgb), 0.5); }
+    .btn:hover { box-shadow: 0 14px 40px rgba(var(--accent-rgb), 0.5); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
     .btn.ghost { background: var(--field-bg); border: 1px solid var(--glass-border); color: var(--text); box-shadow: var(--shadow-card); }
     .auth-btn {
@@ -124,7 +124,7 @@
       box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.3);
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    .auth-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(var(--accent-rgb), 0.45); }
+    .auth-btn:hover { box-shadow: 0 10px 26px rgba(var(--accent-rgb), 0.45); }
 
     .result {
       margin-top: 18px; padding: 16px; border-radius: 14px;
@@ -150,7 +150,11 @@
     .badge { font-size: 11px; padding: 2px 8px; border-radius: 8px; }
     .badge.ok { background: rgba(var(--ok-rgb),0.2); color: var(--ok); }
     .badge.fail { background: rgba(var(--err-rgb),0.2); color: var(--err); }
-    .empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 20px; }
+    .empty-state, .empty, .history-empty {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 8px; color: var(--text-dim); font-size: 13px; text-align: center; padding: 28px 12px;
+    }
+    .empty-state .es-ico { font-size: 28px; line-height: 1; opacity: 0.7; }
 
     .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
     .panel-head h2 { margin: 0; }
@@ -420,6 +424,22 @@
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* 键盘可达性：统一 focus-visible 高亮环（accent 色 outline 2px / offset 2px） */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 微交互：轻动效（仅在不减少动效时生效；reduced-motion 偏好下由下方 reduce 块关闭） */
+@media (prefers-reduced-motion: no-preference) {
+  .btn:hover, .auth-btn:hover, .theme-btn:hover, .adv-toggle:hover, .seg-item:hover { transform: translateY(-2px); }
+  .history-item, .step-item { animation: itemIn 0.4s var(--ease-out) both; }
+  @keyframes itemIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

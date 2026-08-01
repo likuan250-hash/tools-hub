@@ -71,7 +71,7 @@ test('getVideoInfo: 始终 -404 则重试耗尽抛错', async () => {
     async () => await biliup.getVideoInfo({ bvid: 'BVx' }, { deps: { fetchFn, sleep: async () => {} } }),
     /重试耗尽/
   );
-  assert.strictEqual(calls, 20, '应重试满 20 次');
+  assert.strictEqual(calls, 120, '应重试满 120 次');
 });
 
 test('getVideoInfo: 非 -404 错误码立即失败（不重试）', async () => {
@@ -82,6 +82,25 @@ test('getVideoInfo: 非 -404 错误码立即失败（不重试）', async () => 
     /未登录/
   );
   assert.strictEqual(calls, 1, '非 -404 应立即失败');
+});
+
+test('getVideoInfo: 指数退避间隔符合 5s/7s 且封顶 30s', async () => {
+  const waits = [];
+  const sleep = async (ms) => { waits.push(ms); };
+  let calls = 0;
+  // 前两次 -404 触发退避，第三次成功（仅消费前两次等待记录）。
+  const fetchFn = async () => {
+    calls += 1;
+    if (calls < 3) return { json: async () => ({ code: -404 }) };
+    return { json: async () => ({ code: 0, data: { aid: 1, cid: 2, title: 't' } }) };
+  };
+  await biliup.getVideoInfo({ bvid: 'BVx' }, { deps: { fetchFn, sleep }, onLog: () => {} });
+  assert.strictEqual(waits.length, 2, '应等待 2 次后退避成功');
+  assert.strictEqual(waits[0], 5000, '第 1 次等待应为 5s（BASE_INTERVAL）');
+  assert.strictEqual(waits[1], 7000, '第 2 次等待应为 7s（5000×1.4）');
+  for (const w of waits) {
+    assert.ok(w <= 30000, '退避间隔不应超过封顶 30s，实际 ' + w);
+  }
 });
 
 // ── P03 低风险改进新增用例 ──

@@ -142,7 +142,8 @@ async function runUpload(scriptFile, opts = {}) {
 
 /**
  * 取稿件信息（aid/cid/title）。
- * 坑点4：B站 API 可能延迟索引，返回 code=-404 → 重试 ≤20 次、间隔 10s。
+ * 坑点4：B站 API 可能延迟索引，返回 code=-404 → 采用指数退避重试，最多 120 次。
+ *   起始间隔 5s，每轮 ×1.4，封顶 30s（最坏约 60 分钟，覆盖绝大多数转码+审核延迟）。
  * @param {{bvid?:string, aid?:number}} ref
  * @param {{onLog?:Function, deps?:Object}} [opts]
  *   opts.deps.fetchFn 可注入（单测 mock）；opts.deps.sleep 可注入瞬时（单测）。
@@ -152,8 +153,10 @@ async function getVideoInfo(ref, opts = {}) {
   const deps = Object.assign({}, DEFAULT_DEPS, opts.deps || {});
   const fetchFn = deps.fetchFn || deps.getFetch();
   const onLog = typeof opts.onLog === 'function' ? opts.onLog : () => {};
-  const MAX = 20;
-  const INTERVAL = 10000;
+  const MAX = 120;
+  const BASE_INTERVAL = 5000;
+  const FACTOR = 1.4;
+  const MAX_INTERVAL = 30000;
   const bvid = ref && ref.bvid;
   const aid = ref && ref.aid;
   if (!bvid && !aid) {
@@ -161,6 +164,7 @@ async function getVideoInfo(ref, opts = {}) {
   }
   let lastErr = null;
   for (let i = 1; i <= MAX; i++) {
+    const wait = Math.min(MAX_INTERVAL, Math.round(BASE_INTERVAL * Math.pow(FACTOR, i - 1)));
     try {
       const url = bvid
         ? 'https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bvid)
@@ -176,7 +180,7 @@ async function getVideoInfo(ref, opts = {}) {
         // 尚未索引，等待重试
         lastErr = new Error('稿件尚未索引 (code=-404)');
         onLog('getVideoInfo 重试 ' + i + '/' + MAX + ' (-404) ...');
-        if (i < MAX) await deps.sleep(INTERVAL);
+        if (i < MAX) await deps.sleep(wait);
         continue;
       }
       // 其他非 0 码：立即失败（如 -101 未登录 / -404 之外的错误）
@@ -188,13 +192,13 @@ async function getVideoInfo(ref, opts = {}) {
       lastErr = e;
       if (i < MAX && retryable) {
         onLog('getVideoInfo 重试 ' + i + '/' + MAX + ' (' + e.message + ') ...');
-        await deps.sleep(INTERVAL);
+        await deps.sleep(wait);
         continue;
       }
       break;
     }
   }
-  throw new Error('getVideoInfo 重试耗尽(20/10s)：' + (lastErr && lastErr.message));
+  throw new Error('getVideoInfo 重试耗尽(' + MAX + '/指数退避 5s→30s)：' + (lastErr && lastErr.message));
 }
 
 module.exports = { runUpload, getVideoInfo, parseUploadOutput, writeUploadLog, detectBiliupApiFailure, DEFAULT_DEPS, USER_AGENT };

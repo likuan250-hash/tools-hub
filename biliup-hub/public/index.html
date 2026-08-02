@@ -250,14 +250,14 @@
 
     /* 历史列表（P08） */
     .history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-    .history-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
+    .history-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
     .history-item:last-child { border-bottom: none; }
     .history-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
     .history-dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
     .history-dot.err { background: var(--err); box-shadow: 0 0 8px var(--err); }
     .history-main { flex: 1; min-width: 0; }
-    .history-title { font-weight: 600; word-break: break-all; }
-    .history-meta { color: var(--text-dim); font-size: 12px; margin-top: 2px; word-break: break-all; }
+    .history-title { font-size: 14px; font-weight: 600; line-height: 1.5; color: var(--text); word-break: break-word; overflow-wrap: anywhere; }
+    .history-meta { color: var(--hist-meta); font-size: 13px; line-height: 1.55; margin-top: 4px; word-break: break-word; overflow-wrap: anywhere; }
     .empty-state, .empty, .history-empty {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 8px; color: var(--text-dim); font-size: 13px; text-align: center; padding: 28px 12px;
@@ -353,6 +353,9 @@
   --ok-rgb: 52, 211, 153; --err-rgb: 248, 113, 113;
   --success: var(--ok); --danger: var(--err);
 
+  /* 历史弹窗次级文字：复用 netdisk 同语义变量（暗色亮蓝灰），对比度约 11:1，达 WCAG AA */
+  --hist-meta: #c8cff0;
+
   /* 开关 / 遮罩 */
   --switch-off: #4b4f6b; --switch-thumb: #ffffff;
   --modal-mask: rgba(8, 10, 24, 0.6);
@@ -398,6 +401,8 @@
 
   --fg: #1d1d1f; --fg-2: #424245; --muted: #6e6e73;
   --text: var(--fg); --text-dim: var(--fg-2);
+  /* 历史弹窗次级文字：亮色深中蓝灰，对比度约 8:1，达 WCAG AA（与暗色 --hist-meta 呼应） */
+  --hist-meta: #3f456b;
 
   --surface: rgba(255, 255, 255, 0.55);
   --surface-2: rgba(0, 0, 0, 0.04);
@@ -640,7 +645,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       text-shadow: 0 1px 8px rgba(0, 0, 0, 0.28);   /* 标题加投影，强饱和下仍立得住 */
     }
     .modal.glass .history-title { color: var(--text); font-weight: 600; }
-    .modal.glass .history-meta  { color: var(--text-dim); }
+    .modal.glass .history-meta  { color: var(--hist-meta); line-height: 1.55; }
     .modal.glass .history-item  { border-bottom: 1px solid var(--glass-modal-divider); } /* 比 --glass-border 更亮，分隔更清晰 */
     .modal.glass .hint          { color: var(--text-dim); }
     .modal.glass .modal-close   { color: var(--text-dim); }

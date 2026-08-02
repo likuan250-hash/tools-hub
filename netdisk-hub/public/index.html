@@ -718,9 +718,11 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     /* 次级文字（meta / hint）改用高对比 --hist-meta，浅色主题下清晰可辨 */
     #historyMask .modal .task .meta,
     #historyMask .modal .hint,
-    #historyMask .modal .modal-hint { color: var(--hist-meta); line-height: 1.65; }
+    #historyMask .modal .modal-hint { color: var(--hist-meta); font-size: 13px; line-height: 1.65; }
     /* 链接文字清晰可辨（沿用 --accent-2，明暗两态均保证对比） */
-    #historyMask .modal a { color: var(--accent-2); text-underline-offset: 2px; }
+    #historyMask .modal a { color: var(--accent-2); text-decoration: underline; text-underline-offset: 2px; }
+    /* 标题层级强化：与次级 meta（--hist-meta）拉开字重/字号，玻璃背景上主次分明 */
+    #historyMask .modal .task .top b { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.4; letter-spacing: .2px; }
 
     /* —— a11y 护栏：并入既有 @supports / reduced-transparency（必补） —— */
     @supports not (backdrop-filter: blur(1px)) {

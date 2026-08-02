@@ -135,7 +135,7 @@
     }
   }
   function setReady() {
-    if (!running) setCapsule("ok", "投稿状态：就绪（待投稿）");
+    if (!running) setCapsule("warn", "投稿状态：就绪（待投稿）");
   }
   function setOffline() {
     if (!running) setCapsule("err", "投稿状态：离线（服务未连接）");

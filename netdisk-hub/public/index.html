@@ -385,6 +385,8 @@
   --ok: #34d399; --warn: #fbbf24; --err: #f87171;
   --ok-rgb: 52, 211, 153; --err-rgb: 248, 113, 113;
   --success: var(--ok); --danger: var(--err);
+  /* 历史弹窗次级文字（默认随 --text-dim；浅色主题下单独加深以提升对比度，见下方 [data-theme="light"]） */
+  --hist-meta: #c8cff0;
 
   /* 开关 / 遮罩 */
   --switch-off: #4b4f6b; --switch-thumb: #ffffff;
@@ -448,6 +450,8 @@
   --ok: #10b981; --warn: #b7791f; --err: #e2483d;
   --ok-rgb: 16, 185, 129; --err-rgb: 226, 72, 61;
   --success: var(--ok); --danger: var(--err);
+  /* 历史弹窗次级文字：浅色主题下用更深的中蓝灰，避免文字过淡（对比度达标） */
+  --hist-meta: #3f456b;
 
   --switch-off: #c7c9d8; --switch-thumb: #ffffff;
   --modal-mask: rgba(20, 24, 55, 0.4);
@@ -703,6 +707,20 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     .modal.glass .hint          { color: var(--text-dim); }
     .modal.glass .modal-close   { color: var(--text-dim); }
     .modal.glass .modal-close:hover { color: var(--text); }
+
+    /* ===== 转存历史弹窗：加宽 + 文字可读性（v2.1.8 多维度打磨） ===== */
+    /* 历史弹窗更宽，分享链接 / 标题不再被挤压换行 */
+    #historyMask .modal { max-width: 720px; }
+    /* 正文行高放宽，阅读更轻松 */
+    #historyMask .modal .modal-body { line-height: 1.65; }
+    /* 任务卡片字号加大、行高放宽 */
+    #historyMask .modal .task { font-size: 14px; line-height: 1.6; }
+    /* 次级文字（meta / hint）改用高对比 --hist-meta，浅色主题下清晰可辨 */
+    #historyMask .modal .task .meta,
+    #historyMask .modal .hint,
+    #historyMask .modal .modal-hint { color: var(--hist-meta); line-height: 1.65; }
+    /* 链接文字清晰可辨（沿用 --accent-2，明暗两态均保证对比） */
+    #historyMask .modal a { color: var(--accent-2); text-underline-offset: 2px; }
 
     /* —— a11y 护栏：并入既有 @supports / reduced-transparency（必补） —— */
     @supports not (backdrop-filter: blur(1px)) {

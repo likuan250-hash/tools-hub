@@ -1,6 +1,10 @@
 @import url("../shared/tokens.css");
 @import url("../shared/macos-motion.css");
 
+/* ===== v2.1.8：版本号徽章专用靛蓝变量（与状态绿 / 投稿琥珀区分，明暗两态分别定义） ===== */
+:root { --ver: #6366f1; --ver-rgb: 99, 102, 241; }
+[data-theme="light"] { --ver: #4f46e5; --ver-rgb: 79, 70, 229; }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
@@ -48,15 +52,15 @@ body {
 .icon-btn { width: 36px; }
 .update-btn {
   height: auto; padding: 4px 12px; font-size: 12px; border-radius: 14px; gap: 6px;
-  color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 14%, var(--glass-bg));
-  border-color: color-mix(in srgb, var(--ok) 30%, var(--glass-border));
+  color: var(--ver);
+  background: color-mix(in srgb, var(--ver) 14%, var(--glass-bg));
+  border-color: color-mix(in srgb, var(--ver) 32%, var(--glass-border));
   box-shadow: none;
 }
 .icon-btn:hover { border-color: var(--accent); }
 .update-btn:hover:not(:disabled) {
-  border-color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 22%, var(--glass-bg));
+  border-color: var(--ver);
+  background: color-mix(in srgb, var(--ver) 22%, var(--glass-bg));
 }
 .update-btn:disabled { opacity: .6; cursor: not-allowed; }
 .agg, .update-status { color: var(--text-dim); font-size: 13px; }
@@ -257,6 +261,27 @@ body {
 }
 .card-open:hover { transform: translateY(-2px); box-shadow: 0 12px 34px rgba(var(--accent-rgb), 0.5); }
 
+/* ===== v2.1.8：入口卡片品牌色（各工具用自身品牌色；文字仍走 --text/--text-dim 保证可读） ===== */
+.card[data-key="biliup"]  { --card-brand: #FB7299; --card-brand-rgb: 251, 114, 153; }  /* B站粉 */
+.card[data-key="kdocs"]   { --card-brand: #1677FF; --card-brand-rgb: 22, 119, 255; }   /* 文档蓝 */
+.card[data-key="netdisk"] { --card-brand: #00A870; --card-brand-rgb: 0, 168, 112; }    /* 网盘绿 */
+/* 图标渐变背景改用品牌色（向白提亮生成第二色阶），与厚玻璃风格一致 */
+.card-icon {
+  background: linear-gradient(135deg, var(--card-brand, var(--accent)), color-mix(in srgb, var(--card-brand, var(--accent)) 62%, #ffffff));
+  box-shadow: 0 10px 30px rgba(var(--card-brand-rgb, var(--accent-rgb)), 0.4);
+}
+/* 打开按钮同步品牌色 */
+.card-open {
+  background: linear-gradient(135deg, var(--card-brand, var(--accent)), color-mix(in srgb, var(--card-brand, var(--accent)) 62%, #ffffff));
+  box-shadow: 0 8px 24px rgba(var(--card-brand-rgb, var(--accent-rgb)), 0.35);
+}
+.card-open:hover { box-shadow: 0 12px 34px rgba(var(--card-brand-rgb, var(--accent-rgb)), 0.5); }
+/* hover 描边 / 投影用品牌色 */
+.card:hover {
+  border-color: var(--card-brand, var(--accent));
+  box-shadow: var(--shadow-card), 0 18px 50px rgba(var(--card-brand-rgb, var(--accent-rgb)), 0.25);
+}
+
 /* ── 卡片排序模式 ── */
 .sort-hint {
   margin-top: 26px; font-size: 13px; color: var(--text-dim);
@@ -283,7 +308,7 @@ body {
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .cards.sorting .card.dragging {
-  box-shadow: var(--shadow-modal), 0 24px 60px rgba(var(--accent-rgb), .35);
+  box-shadow: var(--shadow-modal), 0 24px 60px rgba(var(--card-brand-rgb, var(--accent-rgb)), .35);
   will-change: transform;
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }

@@ -97,13 +97,41 @@
     textarea { resize: vertical; min-height: 84px; font-family: var(--mono-font); font-size: 13px; }
     textarea::placeholder, input::placeholder { color: var(--muted); opacity: .8; }
 
-    /* select 统一去原生箭头 + 灰色 chevron（三模块一致） */
+    /* select 现代化重做（v2.1.8）：圆角 + 充足内边距 + 清晰发丝边 + hover/focus 反馈；
+       背景沿用厚玻璃字段表面，chevron 随主题变色（暗灰 / 亮深灰）。 */
     select {
-      appearance: none; -webkit-appearance: none;
-      padding-right: 34px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2398989d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
+      width: 100%;
+      /* 充足内边距：上下略加大、右侧预留 chevron 空间 */
+      padding: 10px 38px 10px 12px;
+      border-radius: var(--field-radius);
+      border: 1px solid var(--field-border);
+      background-color: var(--field-bg);
+      color: var(--fg);
+      font-size: 14px; line-height: 1.5;
+      cursor: pointer;
+      outline: none;
+      box-shadow: var(--field-inset);
+      /* 暗色主题 chevron（中性灰，与半透明字段底对比清晰） */
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239a9aa0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
       background-position: right 12px center;
+      background-size: 16px 16px;
+      transition:
+        border-color var(--motion-base) var(--ease-standard),
+        box-shadow   var(--motion-base) var(--ease-standard),
+        background-color var(--motion-base) var(--ease-standard);
+    }
+    /* hover：边框轻微染上强调色，给出可交互反馈 */
+    select:hover { border-color: color-mix(in oklab, var(--accent) 50%, var(--field-border)); }
+    /* focus：沿用全局强调色焦点环（与 input/textarea 一致） */
+    select:focus { border-color: var(--accent); box-shadow: var(--field-inset), var(--field-focus-ring); }
+    select:disabled { opacity: .55; cursor: not-allowed; }
+    /* 原生下拉列表项尽量跟随主题（webkit 受限，firefox 表现更佳） */
+    select option { color: var(--fg); background: var(--bg-2); }
+    /* 亮色主题：chevron 加深，确保与浅底对比清晰 */
+    [data-theme="light"] select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236e6e73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
     }
     input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     .field { margin-bottom: 16px; }
@@ -216,7 +244,9 @@
       max-height: 80vh; display: flex; flex-direction: column;
     }
     /* 弹窗正文区：在 modal 固定 max-height 内独立滚动（A4 高级参数弹窗） */
-    .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 14px; padding-right: 4px; }
+    .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 14px; padding-right: 4px; font-size: 14px; line-height: 1.65; }
+    /* 高级参数弹窗略加宽，2 列网格与长选项不再拥挤（v2.1.8 可读性） */
+    #advMask .modal { max-width: 560px; }
 
     /* 历史列表（P08） */
     .history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }

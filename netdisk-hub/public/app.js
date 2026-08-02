@@ -469,10 +469,8 @@ batchBtn.onclick = async () => {
   refreshUI();
   const jobs = getSelectedJobs();
   if (!jobs.length) {
-    // 空点校验：可见横幅（batchErr）+ 可见 toast（与 biliup/kdocs 三端一致），文案对齐统一句式。
+    // 空点校验：仅保留轻量 toast 反馈，去掉红色边框横幅（v2.1.8：用户反馈此处不需要红色提示）
     const msg = parsedState.order.length ? '请先勾选要转存的网盘' : '请先粘贴网盘分享链接';
-    batchErr.className = 'err show';
-    batchErr.innerHTML = statusHTML('err', msg);
     toast(msg, 'err');
     return;
   }

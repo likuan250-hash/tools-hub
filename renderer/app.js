@@ -9,7 +9,6 @@
   const landingEl = document.getElementById("landing");
   const cardsEl = document.getElementById("toolCards");
   const aggEl = document.getElementById("aggStatus");
-  const versionEl = document.getElementById("version");
   const themeBtn = document.getElementById("themeBtn");
   const sortBtn = document.getElementById("sortBtn");
   const sortHintEl = document.getElementById("sortHint");
@@ -69,11 +68,6 @@
         try { wv.send("sync-theme", t); } catch (e) {}
       }
     });
-  }
-
-  // ── 版本 ──
-  if (api && api.getVersion) {
-    api.getVersion().then((v) => { versionEl.textContent = "v" + v; }).catch(() => {});
   }
 
   // ── 工具注册表 ──
@@ -602,7 +596,7 @@
     winMax.onclick = () => api.windowControl("maximize");
     winClose.onclick = () => api.windowControl("close");
     // 双击标题区（居中标题）最大化/还原
-    const titleEl = document.querySelector(".top-center");
+    const titleEl = document.querySelector(".top-left");
     if (titleEl) titleEl.addEventListener("dblclick", () => api.windowControl("maximize"));
   }
 

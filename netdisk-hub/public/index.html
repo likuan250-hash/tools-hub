@@ -76,11 +76,6 @@
       font-size: 17px; font-weight: 700; margin-bottom: 18px;
       display: flex; align-items: center; gap: 8px; letter-spacing: 0.2px;
     }
-    .panel h2::before {
-      content: ""; display: inline-block; width: 6px; height: 18px;
-      border-radius: 4px; background: linear-gradient(180deg, var(--accent), var(--accent-2));
-    }
-
     label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
     input[type="text"], input[type="password"], input[type="number"],
     input[type="datetime-local"], select, textarea {
@@ -781,7 +776,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         </div>
       </div>
       <div class="header-actions">
-        <button class="ver-badge" id="verBadge" title="由工具箱统一管理">v—</button>
         <button class="theme-btn" id="themeBtn"><i class="app-ico" data-ico="theme"></i> 主题</button>
       </div>
     </header>

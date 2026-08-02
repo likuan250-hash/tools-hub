@@ -805,27 +805,11 @@
     }
   });
 
-  // ── 版本号（#B：拉 /api/version 填 verBadge，失败静默保持 "v—"）──
-  async function refreshVersion() {
-    try {
-      const resp = await fetch("/api/version");
-      const j = await resp.json();
-      const v = j && j.version;
-      // O: 与 netdisk/kdocs 一致，用 statusHTML 胶囊渲染（check 图标：工具箱 vX.Y.Z）；失败静默保留占位 "v—"。
-      if (v) {
-        $("verBadge").innerHTML = (typeof window.statusHTML === "function")
-          ? window.statusHTML('ok', '工具箱 v' + v, { size: 'sm' })
-          : ('工具箱 v' + v);
-      }
-    } catch (e) { /* 失败静默：保留占位 "v—" */ }
-  }
-
   // ── 初始化 ──
   loadConfig();
   refreshSeasons(); // 登录态下拉级联：populate 后排回 loadConfig 已设值
   refreshAccount();
   refreshHealth();
-  refreshVersion();
   setInterval(refreshHealth, 20000); // 每 20s 探活
   if (typeof window.bindStatusCursor === "function") window.bindStatusCursor(document);
 

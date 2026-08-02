@@ -30,12 +30,7 @@ body {
   backdrop-filter: blur(22px) saturate(160%);
   -webkit-app-region: drag; /* 自定义标题栏：此区域可拖动窗口 */
 }
-.top-left { display: inline-flex; align-items: center; }
-.top-center {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 10px;
-  -webkit-app-region: drag;
-}
+.top-left { display: inline-flex; align-items: center; gap: 8px; }
 .logo { font-size: 22px; }
 .title { font-size: 16px; font-weight: 600; letter-spacing: .5px; }
 .version {
@@ -51,8 +46,18 @@ body {
   box-shadow: var(--shadow-card);
 }
 .icon-btn { width: 36px; }
-.update-btn { padding: 0 14px; }
-.icon-btn:hover, .update-btn:hover:not(:disabled) { border-color: var(--accent); }
+.update-btn {
+  height: auto; padding: 4px 12px; font-size: 12px; border-radius: 14px; gap: 6px;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, var(--glass-bg));
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--glass-border));
+  box-shadow: none;
+}
+.icon-btn:hover { border-color: var(--accent); }
+.update-btn:hover:not(:disabled) {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 22%, var(--glass-bg));
+}
 .update-btn:disabled { opacity: .6; cursor: not-allowed; }
 .agg, .update-status { color: var(--text-dim); font-size: 13px; }
 .update-status.ok { color: var(--ok); }

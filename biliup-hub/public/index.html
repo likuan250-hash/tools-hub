@@ -72,11 +72,6 @@
       font-size: 17px; font-weight: 700; margin-bottom: 18px;
       display: flex; align-items: center; gap: 8px; letter-spacing: 0.2px;
     }
-    .panel h2::before {
-      content: ""; display: inline-block; width: 6px; height: 18px;
-      border-radius: 4px; background: linear-gradient(180deg, var(--accent), var(--accent-2));
-    }
-
     /* ===== 表单控件（统一：半透明微妙表面 + 发丝边 + 12px 圆角 + 内阴影 + 4px 焦点环） ===== */
     label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
     input[type="text"], input[type="password"], input[type="number"],
@@ -737,7 +732,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="header-actions">
         <!-- #7 账号区：头像(圆形)+昵称 / 登录按钮（由 app.js 动态渲染） -->
         <div class="account-area" id="accountArea"></div>
-        <button class="ver-badge" id="verBadge" title="由工具箱统一管理">v—</button>
         <button class="theme-btn" id="themeBtn"><i class="app-ico" data-ico="theme"></i> 主题</button>
       </div>
     </header>

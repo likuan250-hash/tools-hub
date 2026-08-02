@@ -559,30 +559,6 @@ function addLog(type, msg) {
   autoLog.scrollTop = autoLog.scrollHeight;
 }
 
-// ── 右上角版本徽章（只读，更新由工具箱统一管理）──
-const verBadge = $("verBadge");
-async function loadVersion() {
-  // 版本数据加载中：先给出「检测中」视觉反馈（蓝 info 呼吸态），避免请求期间空白
-  verBadge.innerHTML = statusHTML('info', '检测中…');
-  try {
-    const r = await fetch("/api/version");
-    const d = await r.json();
-    const prefix = d.source === "tools-hub" ? "工具箱 " : "独立 ";
-    if (d.updatable === true) {
-      // 有新版本：琥珀 warn（当前服务端固定返回 updatable:false，分支结构保留，数据可判定时自然触发）
-      verBadge.innerHTML = statusHTML('warn', '有新版本');
-    } else {
-      // 最新：绿 ok
-      verBadge.innerHTML = statusHTML('ok', prefix + "v" + d.version);
-    }
-    verBadge.title = d.source === "tools-hub"
-      ? "由工具箱统一管理，更新请通过工具箱"
-      : "独立运行模式";
-    verBadge.classList.add("readonly");
-  } catch { verBadge.innerHTML = statusHTML('off', "v—"); }
-}
-loadVersion();
-
 // 状态胶囊光标光斑（info 态 hover 随动）
 if (typeof bindStatusCursor === "function") bindStatusCursor(document);
 

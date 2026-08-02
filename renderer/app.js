@@ -181,7 +181,7 @@
     sortMode = !sortMode;
     if (sortBtn) {
       sortBtn.classList.toggle("active", sortMode);
-      sortBtn.textContent = sortMode ? "✓" : "⇅";
+      sortBtn.textContent = sortMode ? "✓ 完成" : "⇅ 调整顺序";
       sortBtn.title = sortMode ? "完成排序" : "调整卡片顺序";
       sortBtn.setAttribute("aria-pressed", sortMode ? "true" : "false");
     }

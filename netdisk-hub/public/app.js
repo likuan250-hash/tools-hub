@@ -469,8 +469,11 @@ batchBtn.onclick = async () => {
   refreshUI();
   const jobs = getSelectedJobs();
   if (!jobs.length) {
+    // 空点校验：可见横幅（batchErr）+ 可见 toast（与 biliup/kdocs 三端一致），文案对齐统一句式。
+    const msg = parsedState.order.length ? '请先勾选要转存的网盘' : '请先粘贴网盘分享链接';
     batchErr.className = 'err show';
-    batchErr.innerHTML = statusHTML('err', parsedState.order.length ? '请至少勾选 1 个网盘' : '没识别到任何网盘链接');
+    batchErr.innerHTML = statusHTML('err', msg);
+    toast(msg, 'err');
     return;
   }
   setExec(batchBtn, true);

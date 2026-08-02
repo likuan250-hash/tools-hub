@@ -30,10 +30,14 @@ function getSeasonSectionFetch() {
   try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
 }
 
+// 标签推荐代理用的 fetch（需求②：调 B站 x/tag/suggest）；便于单测注入 app.locals.tagSuggestFetch。
+function getTagSuggestFetch() {
+  try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
+}
+
 // 合集分集补拉：部分账号的 seasons 列表接口不返回 sections（分集下拉空），
 // 需单独调 season/section 详情接口补齐（需求①：保证「选合集即生效」在分集缺失时也能补齐）。
 // 上游返回结构不稳定，做多层兼容：data.sections / data.meta.sections。
-// @param {string|number} seasonId 合集 id
 // @param {Object} cf cookies 扁平对象
 // @param {Function} [fetchFnOverride] 注入的 fetch（单测用）
 // @returns {Promise<Array<{id:string, title:string}>>}
@@ -62,6 +66,48 @@ async function fetchSeasonSections(seasonId, cf, fetchFnOverride) {
       id: String(sec.id),
       title: (sec.title != null ? sec.title : sec.name) || '',
     }));
+}
+
+// ── 标签推荐（需求②）：从 B站 x/tag/suggest 响应中提取 tag_name，做多层结构容错 ──
+// 兼容 data.tag[].tag_name / data.tags[].tag_name / data[].tag_name（数组在 data 内任意层级）。
+const TAG_SUGGEST_BLACKLIST = new Set([
+  '广告', '推广', '官方', 'bilibili', 'b站', 'b站官方', '番剧', '直播', 'av', 'av号',
+]);
+const TAG_SUGGEST_MAX = 5;
+
+// 递归收集所有 tag_name（任意嵌套层级），去重保留首次出现顺序。
+function collectTagNames(node, out, depth) {
+  if (out.length >= 100) return; // 安全阀：响应体很小，避免极端结构无限膨胀
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const item of node) collectTagNames(item, out, depth + 1);
+    return;
+  }
+  if (typeof node.tag_name === 'string' && node.tag_name.trim()) {
+    out.push(node.tag_name.trim());
+  }
+  for (const key of Object.keys(node)) {
+    const val = node[key];
+    if (val && typeof val === 'object') collectTagNames(val, out, depth + 1);
+  }
+}
+
+// 过滤无意义/广告标签 + 去重 + 限长，返回干净的字符串数组（前 N 个）。
+function filterSuggestedTags(names) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of names) {
+    const t = String(raw).trim();
+    if (!t) continue;
+    if (t.length > 20) continue; // 过长视为异常/无意义
+    const key = t.toLowerCase();
+    if (TAG_SUGGEST_BLACKLIST.has(t) || TAG_SUGGEST_BLACKLIST.has(key)) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+    if (out.length >= TAG_SUGGEST_MAX) break;
+  }
+  return out;
 }
 
 const app = express();
@@ -189,10 +235,15 @@ app.get('/api/seasons', async (req, res) => {
     const mapped = [];
     for (const s of seasons) {
       if (!s || !s.season || s.season.state !== 0) continue;
+      // no_section：B站声明该合集「无分集」（合集本身不含分集结构，是正常现象，非接口故障）；
+      // 前端据以区分「真·无分集」与「分集列表未返回 / 补拉失败」，给出不同提示。
+      const noSection = Number(s.season.no_section) === 1;
       let sections = Array.isArray(s.season.sections)
         ? s.season.sections.map((sec) => ({ id: String(sec.id), title: sec.title }))
         : [];
-      if (sections.length === 0) {
+      // 仅当 no_section 为假且上游未返回分集时，才补拉 season/section 详情补齐（需求①「选合集即生效」）；
+      // 真·无分集无需补拉（避免一次必然为空的请求）。补拉失败降级空数组，不阻断其它合集。
+      if (!noSection && sections.length === 0) {
         try {
           sections = await fetchSeasonSections(
             s.season.id,
@@ -208,6 +259,7 @@ app.get('/api/seasons', async (req, res) => {
         id: String(s.season.id),
         title: s.season.title,
         sections,
+        no_section: noSection,
       });
     }
     res.json({ seasons: mapped });
@@ -244,6 +296,36 @@ app.get('/api/avatar', async (req, res) => {
   } catch (e) {
     logger.error('[avatar] 代理失败:', e.message);
     res.status(500).json({ error: 'avatar proxy failed' });
+  }
+});
+
+// ── 标签推荐（需求②：调 B站 x/tag/suggest，同源代理避免 CORS；离线/失败降级 {tags:[]}）──
+// 仅做关键词透传 + 响应提取，不抛 500、不阻断前端；前端拿到空数组时走 genTags fallback。
+app.get('/api/tags/suggest', async (req, res) => {
+  const kw = (req.query && req.query.keyword) || '';
+  if (typeof kw !== 'string' || !kw.trim()) {
+    return res.json({ tags: [] });
+  }
+  try {
+    const fetchFn = (app.locals && app.locals.tagSuggestFetch) || getTagSuggestFetch();
+    const url = 'https://api.bilibili.com/x/tag/suggest?keyword=' + encodeURIComponent(kw.trim());
+    const upstream = await fetchFn(url, {
+      headers: {
+        'Referer': 'https://www.bilibili.com/',
+        'User-Agent': USER_AGENT,
+      },
+    });
+    if (!upstream.ok) {
+      return res.json({ tags: [] });
+    }
+    const json = await upstream.json().catch(() => null);
+    const names = [];
+    collectTagNames(json, names, 0);
+    const tags = filterSuggestedTags(names);
+    res.json({ tags });
+  } catch (e) {
+    logger.warn('[tags/suggest] 标签推荐失败（降级空数组）: ' + e.message);
+    res.json({ tags: [] });
   }
 });
 

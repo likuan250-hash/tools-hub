@@ -171,11 +171,20 @@ async function run(req, ctx) {
     // H: sectionId 为空串（用户未指定分集）时跳过合集后置，避免向后端传空 sectionId 报错。
     if (config.sectionId) {
       setStage('adding_season', '合集后置中');
-      await seasonM.add(config.sectionId, videoInfo.aid, videoInfo.cid, title, csrf, cookieHeader, {
-        onLog: (m) => log('adding_season', m),
-        deps: subDeps,
-      });
-      log('adding_season', '合集后置完成');
+      // 合集后置为非关键步骤（类比评论置顶，#③）：失败仅记录警告，不阻断投稿整体流程，
+      // 也不影响后续评论置顶与 done。season.add 内部已含 -404 重试/传输重试，此处仅兜底其最终失败。
+      try {
+        await seasonM.add(config.sectionId, videoInfo.aid, videoInfo.cid, title, csrf, cookieHeader, {
+          onLog: (m) => log('adding_season', m),
+          deps: subDeps,
+        });
+        log('adding_season', '合集后置完成');
+      } catch (seasonErr) {
+        // 尽量带上 B站返回的 code/message（season.add 抛错信息已含 code=... msg=... 或重试耗尽原因）。
+        const msg = (seasonErr && seasonErr.message) ? seasonErr.message : '未知错误';
+        logger.warn('[task] 合集后置失败（非致命）: ' + msg);
+        log('adding_season', '合集后置失败（非致命，已跳过）: ' + msg);
+      }
     } else {
       setStage('adding_season', '跳过合集后置（未指定分集）');
       log('adding_season', '未指定分集，跳过合集后置');

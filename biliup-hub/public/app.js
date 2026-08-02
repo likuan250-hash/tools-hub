@@ -64,16 +64,54 @@
     return out.slice(0, 10).join(','); // 限长 ≤10
   }
 
-  // 选入视频或标题变化时，若用户未手动改过标签，则自动生成并填入 tagsInput。
-  function maybeAutoTag() {
+  // 推荐标签与默认标签合并去重（限长 ≤10，与 genTags 一致）。
+  function mergeTags(suggested, defaultTags) {
+    const seen = new Set();
+    const out = [];
+    const add = (t) => {
+      t = (t || "").trim();
+      if (!t) return;
+      const key = t.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(t);
+    };
+    for (const s of Array.isArray(suggested) ? suggested : []) add(s);
+    const defaults = String(defaultTags || "")
+      .split(/[，,]/).map((s) => s.trim()).filter(Boolean);
+    for (const d of defaults) add(d);
+    return out.slice(0, 10).join(",");
+  }
+
+  // 选入视频或标题变化时，若用户未手动改过标签，则尝试从 B站标签推荐接口（/api/tags/suggest，
+  // 同源代理避免 CORS）生成并填入 tagsInput；接口失败/无推荐时 fallback 到 genTags（文件名分词兜底，离线可用）。
+  // 全程自捕获异常：绝不向上抛未捕获异常，也不阻塞交互（调用处 fire-and-forget）。
+  async function maybeAutoTag() {
     const tagsEl = $("tagsInput");
     if (!tagsEl) return;
     if (tagsEl.dataset.userEdited === "1") return; // 用户手动改过，尊重用户不覆盖
     if (tagsEl.value.trim()) return; // 已有内容不覆盖
     const fileName = (selectedVideo || "").split(/[\\/]/).pop();
     const title = $("titleInput") ? $("titleInput").value : "";
+    const kw = (title && title.trim()) ? title.trim() : fileName;
+    if (!kw) return; // 无标题也无文件名，跳过（避免无意义请求）
     const dt = (window.__defaultTags && typeof window.__defaultTags.trim === "function" && window.__defaultTags.trim())
       ? window.__defaultTags : "";
+    try {
+      const resp = await fetch("/api/tags/suggest?keyword=" + encodeURIComponent(kw));
+      if (resp.ok) {
+        const j = await resp.json().catch(() => ({ tags: [] }));
+        const suggested = Array.isArray(j && j.tags) ? j.tags.filter((t) => typeof t === "string" && t.trim()) : [];
+        if (suggested.length) {
+          const merged = mergeTags(suggested, dt);
+          if (merged) tagsEl.value = merged;
+          return;
+        }
+      }
+    } catch (e) {
+      // 接口异常（网络/解析/CORS）→ 走 fallback，不阻断交互
+    }
+    // fallback：文件名/标题分词兜底（genTags 保留为离线兜底）
     const tags = genTags(fileName, title, dt);
     if (tags) tagsEl.value = tags;
   }
@@ -302,12 +340,9 @@
       selectPreserve(selSection, prev);
       if (selSection.value === prev) chosen = prev;
     }
-    // 2) 字段对齐（需求①「选即生效」）：合集含分集时自动选第一个（多/单分集均默认选首），
-    //    用户若想换分集仍可手动改；无分集则无需后置（前端提示暂无可选分集）。
-    if (!chosen) {
-      const auto = (typeof autoSelectSection === 'function') ? autoSelectSection(secs) : null;
-      if (auto) { selSection.value = auto; chosen = auto; }
-    }
+    // 注：不再强制自动选分集——上面已优先保留用户/历史已选分集；若用户未选，分集下拉保持
+    // 「不指定分集」。用户手动选了哪个分集，投稿就用哪个 sectionId（见 saveCfg）。合集无分集
+    // 时仅做温和提示，不阻断投稿。
     updateSectionHint(seasonId, secs);
     return chosen;
   }
@@ -316,9 +351,9 @@
     const hint = $("sectionHint");
     if (!hint) return;
     if (seasonId && (!secs || secs.length === 0)) {
-      hint.textContent = "该合集暂无可选分集，无法后置（已尝试补拉仍未获取到分集）";
+      hint.textContent = "该合集暂无可选分集（可不指定，直接上传）";
     } else {
-      hint.textContent = "（选合集将自动生效：自动选第一个分集）";
+      hint.textContent = "（可选：选中分集后，上传将归入该分集）";
     }
   }
   function refreshSeasons() {
@@ -612,14 +647,14 @@
   // ── 投稿（SSE）──
   async function submit() {
     if (running) return;
-    if (!selectedVideo) { logLine("请先选择视频文件", "err"); return; }
+    if (!selectedVideo) { logLine("请先选择视频文件", "err"); toast("请先选择视频文件", "err"); return; }
     const mode = document.querySelector('input[name="mode"]:checked').value;
     let dtime = 0;
     if (mode === "dtime") {
       const v = $("dtimeInput").value;
-      if (!v) { logLine("请填写定时发布时间", "err"); return; }
+      if (!v) { logLine("请填写定时发布时间", "err"); toast("请填写定时发布时间", "err"); return; }
       dtime = Math.floor(new Date(v).getTime() / 1000);
-      if (!dtime || isNaN(dtime)) { logLine("定时时间无效", "err"); return; }
+      if (!dtime || isNaN(dtime)) { logLine("定时时间无效", "err"); toast("定时时间无效", "err"); return; }
     }
     const tags = ($("tagsInput").value || "")
       .split(/[，,]/).map((s) => s.trim()).filter(Boolean);

@@ -132,7 +132,7 @@
     }
     .radio .seg-item {
       display: inline-flex; align-items: center; justify-content: center;
-      padding: 12px 20px; min-width: 120px; font-size: 16px; cursor: pointer;
+      padding: 8px 16px; min-width: 92px; font-size: 14px; cursor: pointer;
       color: var(--text); background: var(--field-bg);
       border: 1px solid var(--glass-border); border-radius: 12px;
       transition:
@@ -150,7 +150,7 @@
       border-color: var(--accent);
       box-shadow: 0 8px 24px rgba(var(--accent-rgb), 0.35);
     }
-    .radio.seg { gap: 10px; }
+    .radio.seg { gap: 8px; }
 
     /* ===== 按钮（与网盘转存完全一致） ===== */
     .btn {
@@ -772,7 +772,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         <input type="text" id="titleInput" placeholder="默认取文件名，可覆盖" />
       </div>
       <div class="field">
-        <label>标签（选入视频后自动生成，可手动覆盖；默认标签见下方设置）</label>
+        <label>标签（选入视频后自动从 B站推荐生成，可手动覆盖；默认标签见设置）</label>
         <input type="text" id="tagsInput" placeholder="辐射4,单机游戏,RPG" />
       </div>
       <div class="field">
@@ -864,7 +864,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
             </select>
           </div>
           <div class="field"><label>合集</label><select id="cfgSeason"><option value="">不使用合集</option></select></div>
-          <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select><div class="field-hint" id="sectionHint">（选合集将自动生效：自动选第一个分集）</div></div>
+          <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select><div class="field-hint" id="sectionHint">（可选：选中分集后，上传将归入该分集）</div></div>
           <div class="field"><label>线路 line</label>
             <select id="cfgLine">
               <option value="bda2">bda2（默认）</option>

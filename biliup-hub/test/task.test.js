@@ -305,3 +305,37 @@ test('task.run: 登录态彻底失效（空 token + 无效 cookie）→ 上传�
     '错误信息应直白指出登录态失效请重新扫码, 实际: ' + result.error);
   assert.ok(!result.stage, '失败应发生在投稿前(尚未进入具体 stage)');
 });
+
+// ── 用例10（需求③：合集后置失败降级为非致命）──
+// 注入 season.add 抛错（模拟 B站合集接口返回非 0 码），验证：
+//   1) runTask 不抛、不进入 error，仍走到 done 且 ok:true；
+//   2) 日志含「合集后置失败（非致命」提示（便于真机贴日志定位根因）；
+//   3) 后续评论置顶仍执行（season 失败不应阻断 commenting/done）。
+test('task.run: 合集后置失败（非致命）→ 不阻断投稿，仍 done 且 ok:true，日志含非致命提示', async () => {
+  const video = makeVideoFile();
+  let doneEvent = null;
+  const logs = [];
+  const deps = baseMocks();
+  deps.season.add = async () => {
+    throw new Error('合集添加失败: code=11002 msg=合集不存在或状态异常');
+  };
+  const ctx = makeCtx(deps, '7630305');
+  ctx.onEvent = (ev) => {
+    if (ev.type === 'log') logs.push(ev.message);
+    if (ev.type === 'done') doneEvent = ev;
+  };
+
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true, '合集失败不应阻断投稿（应为 ok:true）');
+  assert.ok(doneEvent, '应正常发出 done 事件（未因合集失败而中断）');
+  assert.ok(
+    logs.some((m) => /合集后置失败（非致命/.test(m)),
+    '日志应含非致命提示，实际日志: ' + JSON.stringify(logs)
+  );
+  // season 语义保持：仍反映「执行了合集后置尝试」（不改为成功与否）
+  assert.equal(result.season, true, 'season 仍应反映曾尝试合集后置（保持原语义）');
+  // 评论置顶阶段未受合集失败影响（baseMocks 中 comment 成功）
+  assert.ok(logs.some((m) => /评论已发布并置顶/.test(m)), '评论置顶应在合集失败后继续执行');
+});

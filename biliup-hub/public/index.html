@@ -176,6 +176,31 @@
     }
     .radio.seg { gap: 8px; }
 
+    /* ===== 发布模式 · 定时发布时间选择器对齐（v2.1.12，对齐原型） =====
+       让 datetime-local 与分段控件同高、同圆角、同边框语言；所在 .row 已
+       align-items:center，两者垂直居中到同一条线。仅改样式，不改 app.js 显隐逻辑。 */
+    #dtimeInput {
+      height: 38px; box-sizing: border-box; padding: 0 14px;
+      font: inherit; font-size: 14px; color: var(--text);
+      background: var(--field-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;            /* 与 .seg-item 圆角一致 */
+      outline: none;
+      width: auto;                     /* 覆盖全局 input 的 width:100%，保留 inline min-width:220px */
+      transition:
+        border-color var(--motion-base) var(--ease-standard),
+        box-shadow   var(--motion-base) var(--ease-standard),
+        background-color var(--motion-base) var(--ease-standard);
+    }
+    #dtimeInput:focus {
+      border-color: var(--apple-accent);
+      box-shadow: var(--field-inset), 0 0 0 3px color-mix(in oklab, var(--apple-accent) 40%, transparent);
+    }
+    /* 衔接文字「计划于」：仅在选择定时发布（#dtimeInput 显示）时出现。
+       纯 CSS 用 :has() 探测；不支持 :has() 的 webview 下自动隐藏，不影响对齐。 */
+    #dtimeConnector { font-size: 13px; color: var(--text-dim); white-space: nowrap; display: none; }
+    .row:has(#dtimeInput:not([style*="display: none"])) #dtimeConnector { display: inline; }
+
     /* ===== 按钮（与网盘转存完全一致） ===== */
     .btn {
       width: 100%; padding: 14px; border: none; border-radius: var(--r-lg); cursor: pointer;
@@ -826,6 +851,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
             <input type="radio" class="seg-input" id="modeDtime" name="mode" value="dtime" />
             <label class="seg-item" for="modeDtime">定时发布</label>
           </div>
+          <span id="dtimeConnector">计划于</span>
           <input type="datetime-local" id="dtimeInput" style="display:none; width:auto; min-width:220px;" />
         </div>
       </div>

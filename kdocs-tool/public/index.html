@@ -50,7 +50,7 @@
     }
     .ver-badge:hover { color: var(--text); }
 
-    .status-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+    .status-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
     .chip {
       display: flex; align-items: center; gap: 8px; padding: 6px 10px;
       font-size: 13px; color: var(--text-dim);
@@ -98,13 +98,35 @@
     textarea { min-height: 150px; padding: 14px; font-family: var(--mono-font); line-height: 1.7; resize: vertical; }
     textarea::placeholder, input::placeholder { color: var(--muted); opacity: .8; }
 
-    /* select 统一去原生箭头 + 灰色 chevron（三模块一致） */
+    /* select：Apple 风格重做（v2.1.10），与 netdisk/biliup 统一视觉语言
+       去原生箭头 + 自定义 chevron（暗/亮两套对比度均 ≥3:1）；
+       清晰发丝边 + hover 染强调边 + 聚焦态用 --apple-accent 聚焦环 + 选中项高亮。 */
     select {
-      appearance: none; -webkit-appearance: none;
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
       padding-right: 34px;
+      font-size: 14px; line-height: 1.5; cursor: pointer; outline: none;
+      transition:
+        border-color var(--motion-base) var(--ease-standard),
+        box-shadow   var(--motion-base) var(--ease-standard);
+      /* 暗色 chevron：中性灰，与半透明字段底对比清晰（≥3:1） */
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2398989d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
       background-position: right 12px center;
+    }
+    /* hover：边框轻微染上强调色，给出可交互反馈 */
+    select:hover { border-color: color-mix(in oklab, var(--accent) 50%, var(--field-border)); }
+    /* focus：Apple HIG 统一聚焦环（--apple-accent） */
+    select:focus {
+      border-color: var(--apple-accent);
+      box-shadow: var(--field-inset), 0 0 0 3px color-mix(in oklab, var(--apple-accent) 40%, transparent);
+    }
+    select:disabled { opacity: .55; cursor: not-allowed; }
+    /* 原生下拉项：选中/悬停用强调蓝高亮（webkit 受限，firefox 表现更佳） */
+    select option { color: var(--fg); background: var(--field-bg); }
+    select option:checked, select option:hover { background: var(--apple-accent); color: #fff; }
+    /* 亮色主题：chevron 加深为 #6e6e73，确保与浅底对比 ≥3:1（原 #98989d 仅 ~2.5:1） */
+    [data-theme="light"] select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236e6e73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
     }
     input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 
@@ -212,7 +234,7 @@
     .modal-body .lk { display: inline-block; margin: 4px 4px 0 0; padding: 2px 8px; border-radius: 6px; background: rgba(var(--accent-rgb),0.15); color: var(--accent-3); font-size: 12px; word-break: break-all; }
     .modal-check { display: flex; align-items: flex-start; gap: 9px; font-size: 14px; margin: 14px 0 4px; cursor: pointer; color: var(--text); }
     .modal-check input { margin-top: 2px; width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
-    .modal-actions { display: flex; gap: 10px; margin-top: 22px; }
+    .modal-actions { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
     .modal-actions .btn { flex: 1; padding: 12px; }
 
     /* 历史列表（P08） */
@@ -284,6 +306,8 @@
 
   /* 强调色（保留分模块品牌色；见规范决策点#1 备选方案） */
   --accent: #7c5cff; --accent-2: #21d4fd; --accent-3: #c4b5ff;
+  /* Apple HIG 强调蓝：聚焦环 / 选中高亮统一变量（暗 #2997FF） */
+  --apple-accent: #2997FF;
   --accent-hover: #9279ff; --accent-active: #6a48e6;
   --accent-rgb: 124, 92, 255; --accent2-rgb: 33, 212, 253;
 
@@ -353,6 +377,8 @@
   --field-border: var(--border);
 
   --accent: #7c5cff; --accent-2: #21d4fd; --accent-3: #5b3df0;
+  /* Apple HIG 强调蓝（亮 #0071E3） */
+  --apple-accent: #0071E3;
   --accent-hover: #9279ff; --accent-active: #6a48e6;
   --accent-rgb: 124, 92, 255; --accent2-rgb: 33, 212, 253;
 

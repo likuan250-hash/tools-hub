@@ -29,6 +29,9 @@
   --ok-rgb: 52, 211, 153;
   --err-rgb: 248, 113, 113;
 
+  /* Apple HIG 强调蓝：聚焦环 / 选中高亮统一色（暗 #2997FF / 亮 #0071E3） */
+  --apple-accent: #2997FF;
+
   /* 控件 */
   --switch-off: #4b4f6b;
   --switch-thumb: #ffffff;
@@ -64,6 +67,9 @@
   --accent2-rgb: 33, 212, 253;
   --ok-rgb: 16, 185, 129;
   --err-rgb: 226, 72, 61;
+
+  /* Apple HIG 强调蓝（亮色主题） */
+  --apple-accent: #0071E3;
 
   --switch-off: #c7c9d8;
   --switch-thumb: #ffffff;

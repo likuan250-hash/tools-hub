@@ -2,8 +2,8 @@
 @import url("../shared/macos-motion.css");
 
 /* ===== v2.1.8：版本号徽章专用靛蓝变量（与状态绿 / 投稿琥珀区分，明暗两态分别定义） ===== */
-:root { --ver: #6366f1; --ver-rgb: 99, 102, 241; }
-[data-theme="light"] { --ver: #4f46e5; --ver-rgb: 79, 70, 229; }
+:root { --ver: #6366f1; --ver-rgb: 99, 102, 241; --apple-accent: #2997FF; }
+[data-theme="light"] { --ver: #4f46e5; --ver-rgb: 79, 70, 229; --apple-accent: #0071E3; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -102,7 +102,7 @@ body {
 }
 .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
 .modal-msg { font-size: 14px; color: var(--text-dim); line-height: 1.6; margin-bottom: 20px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.modal-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .modal-actions button {
   height: 38px; padding: 0 18px; border-radius: 10px; cursor: pointer; font-size: 14px;
   border: 1px solid var(--glass-border); background: var(--bg-2); color: var(--text);
@@ -112,7 +112,7 @@ body {
 .modal-actions .btn-danger { background: var(--err); border-color: var(--err); color: #fff; }
 .modal-actions .btn-danger:hover { filter: brightness(1.06); }
 
-.tabs { display: flex; gap: 6px; padding: 10px 16px 0; background: var(--bg-2); }
+.tabs { display: flex; align-items: center; gap: 6px; padding: 10px 16px 0; background: var(--bg-2); }
 .tab {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 9px 12px 9px 16px; border: 1px solid transparent; border-bottom: none;
@@ -188,7 +188,7 @@ body {
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.2);
 }
 .landing-head {
-  display: flex; align-items: flex-start; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
   gap: 16px; width: 100%; margin-bottom: 32px;
 }
 .landing-titles { display: flex; flex-direction: column; }
@@ -196,7 +196,6 @@ body {
 .sort-toggle {
   flex: 0 0 auto;
   display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 6px;
   padding: 9px 16px; border-radius: 12px; cursor: pointer;
   font-size: 14px; font-weight: 600;
   color: var(--text);

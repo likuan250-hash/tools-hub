@@ -124,11 +124,12 @@
     }
     /* hover：边框轻微染上强调色，给出可交互反馈 */
     select:hover { border-color: color-mix(in oklab, var(--accent) 50%, var(--field-border)); }
-    /* focus：沿用全局强调色焦点环（与 input/textarea 一致） */
-    select:focus { border-color: var(--accent); box-shadow: var(--field-inset), var(--field-focus-ring); }
+    /* focus：Apple HIG 统一聚焦环（--apple-accent） */
+    select:focus { border-color: var(--apple-accent); box-shadow: var(--field-inset), 0 0 0 3px color-mix(in oklab, var(--apple-accent) 40%, transparent); }
     select:disabled { opacity: .55; cursor: not-allowed; }
-    /* 原生下拉列表项尽量跟随主题（webkit 受限，firefox 表现更佳） */
+    /* 原生下拉列表项：选中/悬停用强调蓝高亮（webkit 受限，firefox 表现更佳） */
     select option { color: var(--fg); background: var(--bg-2); }
+    select option:checked, select option:hover { background: var(--apple-accent); color: #fff; }
     /* 亮色主题：chevron 加深，确保与浅底对比清晰 */
     [data-theme="light"] select {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236e6e73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
@@ -214,7 +215,7 @@
 
     .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; padding-left: 10px; border-left: 2px solid var(--glass-border); }
 
-    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .kpis { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
     .kpi { font-size: 11px; opacity: .85; background: var(--field-bg); border: 1px solid var(--glass-border); border-radius: 8px; padding: 5px 10px; }
 
     /* log */
@@ -267,7 +268,7 @@
     .modal-close { border: none; background: transparent; color: var(--text-dim); font-size: 18px; cursor: pointer; line-height: 1; }
     .modal-close:hover { color: var(--text); }
     .modal h3 { margin: 0 0 14px; font-size: 16px; }
-    .modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+    .modal .modal-actions { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 18px; }
     .modal .modal-actions .btn { width: auto; padding: 10px 20px; font-size: 14px; }
     .modal-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
     .modal-foot .modal-hint { flex: 1; font-size: 12px; color: var(--text-dim); word-break: break-all; }
@@ -345,6 +346,8 @@
 
   /* 强调色（保留分模块品牌色；见规范决策点#1 备选方案） */
   --accent: #fb7299; --accent-2: #00aeec; --accent-3: #c4b5ff;
+  /* Apple HIG 强调蓝：聚焦环 / 选中高亮统一变量（暗 #2997FF） */
+  --apple-accent: #2997FF;
   --accent-hover: #fc8aab; --accent-active: #e85c83;
   --accent-rgb: 251, 114, 153; --accent2-rgb: 0, 174, 236;
 
@@ -414,6 +417,8 @@
   --field-border: var(--border);
 
   --accent: #fb7299; --accent-2: #00aeec; --accent-3: #5b3df0;
+  /* Apple HIG 强调蓝（亮 #0071E3） */
+  --apple-accent: #0071E3;
   --accent-hover: #fc8aab; --accent-active: #e85c83;
   --accent-rgb: 251, 114, 153; --accent2-rgb: 0, 174, 236;
 

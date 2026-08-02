@@ -97,23 +97,23 @@
     textarea { resize: vertical; min-height: 84px; font-family: var(--mono-font); font-size: 13px; }
     textarea::placeholder, input::placeholder { color: var(--muted); opacity: .8; }
 
-    /* select 现代化重做（v2.1.8）：圆角 + 充足内边距 + 清晰发丝边 + hover/focus 反馈；
-       背景沿用厚玻璃字段表面，chevron 随主题变色（暗灰 / 亮深灰）。 */
+    /* select 现代化重做：圆角 + 与 input 一致内边距 + 更实背景（--select-bg）+ 更清晰边框（--select-border）+ hover/focus 反馈；
+       chevron 随主题变色（暗亮灰 / 亮深灰），修复高级参数弹窗 select 发虚（v2.1.11）。 */
     select {
       appearance: none; -webkit-appearance: none; -moz-appearance: none;
       width: 100%;
-      /* 充足内边距：上下略加大、右侧预留 chevron 空间 */
-      padding: 10px 38px 10px 12px;
+      /* 内边距与同弹窗 input 一致：上下用 --field-pad-y、左侧 --field-pad-x，右侧预留 chevron 空间 */
+      padding: var(--field-pad-y) 38px var(--field-pad-y) var(--field-pad-x);
       border-radius: var(--field-radius);
-      border: 1px solid var(--field-border);
-      background-color: var(--field-bg);
+      border: 1px solid var(--select-border);
+      background-color: var(--select-bg);
       color: var(--fg);
       font-size: 14px; line-height: 1.5;
       cursor: pointer;
       outline: none;
       box-shadow: var(--field-inset);
-      /* 暗色主题 chevron（中性灰，与半透明字段底对比清晰） */
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239a9aa0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      /* 暗色主题 chevron（亮灰，在更实深底上对比清晰） */
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23c7c7cc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
       background-position: right 12px center;
       background-size: 16px 16px;
@@ -132,14 +132,14 @@
     select option:checked, select option:hover { background: var(--apple-accent); color: #fff; }
     /* 亮色主题：chevron 加深，确保与浅底对比清晰 */
     [data-theme="light"] select {
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236e6e73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2348484a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
     }
     input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
     .field { margin-bottom: 16px; }
     .field:last-child { margin-bottom: 0; }
     .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 18px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 18px; align-items: start; }
     @media (max-width: 680px) { .grid-2 { grid-template-columns: 1fr; } }
 
     .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -341,8 +341,12 @@
   /* 边框：--border 为字段发丝边；--glass-border 继续用于面板 */
   --border: #3a3a3c;
   --border-soft: rgba(255, 255, 255, 0.12);
-  --glass-border: rgba(255, 255, 255, 0.42);
-  --field-border: var(--border);
+      --glass-border: rgba(255, 255, 255, 0.42);
+      --field-border: var(--border);
+      /* select 专用更实背景与更清晰边框：修复高级参数 select 发虚（v2.1.11）。
+         暗色用半实深底，使近白文字清晰可读，同时保留一点玻璃质感。 */
+      --select-bg: rgba(30, 32, 50, 0.82);
+      --select-border: #7c7c82;
 
   /* 强调色（保留分模块品牌色；见规范决策点#1 备选方案） */
   --accent: #fb7299; --accent-2: #00aeec; --accent-3: #c4b5ff;
@@ -413,8 +417,12 @@
   --glass-bg: var(--surface);
 
   --border: #d2d2d7; --border-soft: rgba(0, 0, 0, 0.08);
-  --glass-border: rgba(90, 95, 150, 0.35);
-  --field-border: var(--border);
+      --glass-border: rgba(90, 95, 150, 0.35);
+      --field-border: var(--border);
+      /* select 专用更实背景与更清晰边框：修复高级参数 select 发虚（v2.1.11）。
+         亮色用近实白底，使深色文字清晰可读。 */
+      --select-bg: rgba(255, 255, 255, 0.92);
+      --select-border: #8c8c92;
 
   --accent: #fb7299; --accent-2: #00aeec; --accent-3: #5b3df0;
   /* Apple HIG 强调蓝（亮 #0071E3） */
@@ -660,7 +668,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     .modal.glass { max-width: 520px; }
     .modal.glass .grid-2 { margin-top: 4px; }
     .grid-2 > .field:last-child { grid-column: 1 / -1; }
-    .field-hint { font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
+    .field-hint { font-size: 11px; color: var(--text-dim); margin-top: 3px; line-height: 1.4; }
 
     /* —— a11y 护栏：并入既有 @supports / reduced-transparency（必补） —— */
     @supports not (backdrop-filter: blur(1px)) {

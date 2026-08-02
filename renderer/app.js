@@ -13,6 +13,12 @@
   const sortBtn = document.getElementById("sortBtn");
   const sortHintEl = document.getElementById("sortHint");
   const updateBtn = document.getElementById("updateBtn");
+  let currentVersion = "";
+  if (api && api.getVersion) {
+    api.getVersion()
+      .then((v) => { currentVersion = v; updateBtn.textContent = "v" + v; })
+      .catch(() => { updateBtn.textContent = "v?"; });
+  }
   const updateStatusEl = document.getElementById("updateStatus");
   const winMin = document.getElementById("winMin");
   const winMax = document.getElementById("winMax");
@@ -549,7 +555,7 @@
       ? ((typeof statusHTML === "function") ? statusHTML(level, text || "") : (text || ""))
       : (text || "");
     updateBtn.disabled = !!busy;
-    updateBtn.textContent = busy ? "⏳ 检查中…" : "🔄 检测更新";
+    updateBtn.textContent = busy ? "⏳ 检查中…" : (currentVersion ? "v" + currentVersion : "🔄 检测更新");
   }
   if (api && api.onUpdateStatus) {
     api.onUpdateStatus((p) => {

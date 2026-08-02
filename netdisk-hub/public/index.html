@@ -236,18 +236,19 @@
     .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; padding-left: 10px; border-left: 2px solid var(--glass-border); }
     textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.25); }
 
-    .batch-preview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+    /* 执行/结果区：统一为与 kdocs 一致的玻璃卡片语言（18px 间距 + 12px 圆角 + --field-bg 底 + --glass-border 边；id 与内部类不变，DOM 契约不变） */
+    .batch-preview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 18px; }
     .bp-card, .br-card {
       border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px;
       background: var(--field-bg); font-size: 12px;
     }
     .bp-card.off { opacity: 0.5; }
     .bp-name, .br-name { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
-    .bp-meta { color: var(--text-dim); font-size: 11px; word-break: break-all; margin-top: 4px; }
-    .batch-result { margin-top: 16px; display: none; }
+    .bp-meta { color: var(--text-dim); font-size: 13px; word-break: break-all; margin-top: 4px; }
+    .batch-result { margin-top: 18px; display: none; }
     .batch-result.show { display: block; animation: pop 0.4s ease; }
     .br-card.fail { border-color: rgba(var(--err-rgb),0.4); background: rgba(var(--err-rgb),0.06); }
-    .br-meta { color: var(--text-dim); font-size: 12px; word-break: break-all; margin-top: 6px; }
+    .br-meta { color: var(--text-dim); font-size: 13px; word-break: break-all; margin-top: 6px; }
     .br-meta a { color: var(--accent-2); }
 
     .provider-checks { display: grid; gap: 8px; margin-top: 4px; }

@@ -31,6 +31,8 @@ function defaultConfig() {
     ffmpegPath: '', // 空 = 自动探测（biliup 同目录 → PATH → 失败告警）
     // cookies 路径：与 BILIUP_DATA_DIR 同目录的 cookies.json（登录/手动放置均可）。
     cookiesPath: DEFAULT_COOKIES_PATH,
+    // 默认标签（需求②）：用户预设的兜底标签，标签提取时叠加；逗号分隔，默认空串。
+    defaultTags: '',
     tid: 17,
     seasonId: '',
     sectionId: '',
@@ -84,6 +86,7 @@ function mergeDefaults(obj) {
   out.cookiesPath = DEFAULT_COOKIES_PATH;
   out.loginInfoPath = DEFAULT_LOGIN_INFO_PATH;
   if (typeof out.ffmpegPath !== 'string') out.ffmpegPath = def.ffmpegPath;
+  if (typeof out.defaultTags !== 'string') out.defaultTags = def.defaultTags;
   return out;
 }
 

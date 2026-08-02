@@ -49,3 +49,18 @@ test('mergeDefaults: 显式传 null 的 seasonId/sectionId 同样回退默认空
   assert.equal(out.seasonId, '');
   assert.equal(out.sectionId, '');
 });
+
+test('mergeDefaults: 默认 defaultTags 为空串（需求②）', () => {
+  const out = store.mergeDefaults({});
+  assert.equal(out.defaultTags, '', 'defaultTags 默认应为空串');
+});
+
+test('mergeDefaults: defaultTags 字符串原样保留（需求②）', () => {
+  const out = store.mergeDefaults({ defaultTags: '单机游戏,RPG' });
+  assert.equal(out.defaultTags, '单机游戏,RPG');
+});
+
+test('mergeDefaults: defaultTags 非字符串回退默认空串（需求②）', () => {
+  const out = store.mergeDefaults({ defaultTags: 123 });
+  assert.equal(out.defaultTags, '');
+});

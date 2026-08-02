@@ -28,6 +28,56 @@
     }
   }
 
+  // ── 标签自动生成（#②：选入视频/标题变化时基于文件名或标题提取，叠加默认标签兜底）──
+  // 纯函数：取文件名(去扩展名)或标题 → 分词 → 去停用词/短词 → 叠加默认标签 → 去重 → 限长。
+  // 自包含（停用词内联），便于单测独立抽取；不依赖模块作用域变量。
+  function genTags(fileName, title, defaultTags) {
+    const STOP_WORDS = new Set([
+      '的', '了', '是', '在', '和', '与', '及', '也', '都', '就', '而', '吗', '呢', '啊',
+      '吧', '哦', '啦', '嘛', '我们', '你们', '他们', '我', '你', '他', '她', '它', '这',
+      '那', '这个', '那个', '视频', '投稿', '高清', '完整', '版', 'hd', 'video', 'mp4',
+      'mkv', 'avi', 'flv', 'mov', 'webm', 'bilibili', 'b站', 'the', 'a', 'an', 'of', 'to',
+      'and', 'or', 'on', 'in', 'at', 'by', 'with', 'my', 'your', 'for', '1080p', '720p',
+      'game', 'play', 'part', 'ep', 'episode',
+    ]);
+    const text = (title && String(title).trim()) ? String(title) : (fileName || '');
+    const cleaned = String(text).replace(/\.[a-z0-9]+$/i, ''); // 去扩展名
+    const seps = /[\s\-_·。，、,.\|/\\+]+/; // 空格/-/_/·/。/中文标点等
+    const rawParts = cleaned.split(seps);
+    const seen = new Set();
+    const out = [];
+    function pushToken(t) {
+      t = (t || '').trim();
+      if (!t) return;
+      if (t.length <= 1) return; // 过短词（含单字）过滤
+      const key = t.toLowerCase();
+      if (seen.has(key)) return; // 去重
+      if (STOP_WORDS.has(key)) return; // 停用词过滤
+      seen.add(key);
+      out.push(t);
+    }
+    for (const p of rawParts) pushToken(p);
+    // 叠加默认标签（逗号分隔），与已提取词去重合并
+    const defaults = String(defaultTags || '')
+      .split(/[，,]/).map((s) => s.trim()).filter(Boolean);
+    for (const d of defaults) pushToken(d);
+    return out.slice(0, 10).join(','); // 限长 ≤10
+  }
+
+  // 选入视频或标题变化时，若用户未手动改过标签，则自动生成并填入 tagsInput。
+  function maybeAutoTag() {
+    const tagsEl = $("tagsInput");
+    if (!tagsEl) return;
+    if (tagsEl.dataset.userEdited === "1") return; // 用户手动改过，尊重用户不覆盖
+    if (tagsEl.value.trim()) return; // 已有内容不覆盖
+    const fileName = (selectedVideo || "").split(/[\\/]/).pop();
+    const title = $("titleInput") ? $("titleInput").value : "";
+    const dt = (window.__defaultTags && typeof window.__defaultTags.trim === "function" && window.__defaultTags.trim())
+      ? window.__defaultTags : "";
+    const tags = genTags(fileName, title, dt);
+    if (tags) tagsEl.value = tags;
+  }
+
   // ── 状态胶囊（#1：清晰状态文案 + 前缀）──
   const STAGE_LABEL = {
     pending: ["info", "准备中"],
@@ -146,6 +196,7 @@
         $("titleInput").value = base; // 不再重复显示一行文件名
         $("submitHint").textContent = "已选择视频，点击投稿";
         if ($("clearBtn")) $("clearBtn").style.display = ""; // 显示「清空选择」（B）
+        maybeAutoTag(); // #② 选入视频后自动生成标签（用户未手动填时）
       }
     } catch (e) {
       logLine("选择文件失败: " + e.message, "err");
@@ -164,8 +215,21 @@
       selectedVideo = "";
       $("videoName").textContent = "";
       $("titleInput").value = "";
+      const ti = $("tagsInput");
+      if (ti) { ti.value = ""; ti.dataset.userEdited = ""; } // 重置标签（含手动编辑标记）
       $("submitHint").textContent = "选择视频后点击投稿（发布前会二次确认模式）";
     });
+  }
+
+  // ── 标签输入：用户手动编辑后标记，避免自动生成覆盖（#②）──
+  const tagsInputEl = $("tagsInput");
+  if (tagsInputEl) {
+    tagsInputEl.addEventListener("input", () => { tagsInputEl.dataset.userEdited = "1"; });
+  }
+  // 标题变化也可能改变自动标签（用户未手动填标签时）
+  const titleInputEl = $("titleInput");
+  if (titleInputEl) {
+    titleInputEl.addEventListener("input", maybeAutoTag);
   }
 
   // ── 发布模式切换（#C：根据选中显隐 dtimeInput；切到定时发布默认填 +1h）──
@@ -205,6 +269,9 @@
       $("cfgUid").value = cfg.uid != null ? cfg.uid : "";
       $("cfgDesc").value = cfg.desc || "";
       $("cfgComment").value = cfg.comment || "";
+      // #② 默认标签：读入 settings 输入框 + 缓存到 window，供 maybeAutoTag 叠加。
+      if ($("defaultTagsInput")) $("defaultTagsInput").value = cfg.defaultTags || "";
+      window.__defaultTags = cfg.defaultTags || "";
       const ck = cfg.cookiesDetail || { ok: !!cfg.cookiesOk };
       $("cookiesKpi").textContent = "cookies: " + (ck.ok ? "有效" : "缺失 SESSDATA/bili_jct");
       $("cookiesKpi").style.color = ck.ok ? "" : "#ff8a8a";
@@ -230,16 +297,29 @@
       selSection.appendChild(opt);
     }
     // 1) 用户/历史已有明确分集选择 → 优先保留（前提是该分集仍属于当前合集）。
+    let chosen = "";
     if (prev) {
       selectPreserve(selSection, prev);
-      if (selSection.value === prev) return prev;
+      if (selSection.value === prev) chosen = prev;
     }
-    // 2) 字段对齐（#问题1 修复）：合集仅一个分集时自动选中，
-    //    使「用户只填合集」也能正确对齐到 config.sectionId（后端据此触发合集后置）。
-    //    多分集需用户明确选择（不猜测，避免加错分集）；无分集则无需后置。
-    const auto = (typeof autoSelectSection === 'function') ? autoSelectSection(secs) : null;
-    if (auto) selSection.value = auto;
-    return auto || "";
+    // 2) 字段对齐（需求①「选即生效」）：合集含分集时自动选第一个（多/单分集均默认选首），
+    //    用户若想换分集仍可手动改；无分集则无需后置（前端提示暂无可选分集）。
+    if (!chosen) {
+      const auto = (typeof autoSelectSection === 'function') ? autoSelectSection(secs) : null;
+      if (auto) { selSection.value = auto; chosen = auto; }
+    }
+    updateSectionHint(seasonId, secs);
+    return chosen;
+  }
+  // 分集下拉为空时给明确提示，避免「选合集却静默不后置」的困惑（需求①）。
+  function updateSectionHint(seasonId, secs) {
+    const hint = $("sectionHint");
+    if (!hint) return;
+    if (seasonId && (!secs || secs.length === 0)) {
+      hint.textContent = "该合集暂无可选分集，无法后置（已尝试补拉仍未获取到分集）";
+    } else {
+      hint.textContent = "（选合集将自动生效：自动选第一个分集）";
+    }
   }
   function refreshSeasons() {
     const selSeason = $("cfgSeason");
@@ -295,6 +375,7 @@
       uid: Number($("cfgUid").value) || 236743002,
       desc: $("cfgDesc").value,
       comment: $("cfgComment").value,
+      defaultTags: ($("defaultTagsInput") ? $("defaultTagsInput").value : "") || "", // #② 默认标签
     };
     try {
       const resp = await fetch("/api/config", {
@@ -330,6 +411,7 @@
     const box = $("accountArea");
     if (!box) return;
     box.innerHTML = "";
+    closeAccountMenu();
     if (info && info.isLogin) {
       const img = document.createElement("img");
       img.className = "avatar";
@@ -339,25 +421,19 @@
       img.referrerPolicy = 'no-referrer';
       img.src = face ? ('/api/avatar?face=' + encodeURIComponent(face)) : DEFAULT_AVATAR_SVG;
       img.alt = info.uname || "用户";
-      img.title = (info.uname || "") + "（点击进入个人空间）";
+      img.title = (info.uname || "") + "（点击打开菜单）";
       img.onerror = () => { img.onerror = null; img.src = DEFAULT_AVATAR_SVG; };
-      img.addEventListener("click", () => openSpace(info.mid));
+      // #③ 头像点击 → 弹出二级菜单（个人中心 / 退出登录），不再平铺退出按钮。
+      img.addEventListener("click", (e) => { e.stopPropagation(); toggleAccountMenu(info, img); });
       const name = document.createElement("span");
       name.className = "nick-name";
       name.id = "nickName";
       name.textContent = info.uname || "用户";
-      name.title = "点击进入个人空间";
-      name.addEventListener("click", () => openSpace(info.mid));
+      name.title = "点击打开菜单";
+      name.addEventListener("click", (e) => { e.stopPropagation(); toggleAccountMenu(info, name); });
       box.appendChild(img);
       box.appendChild(name);
-      // 退出登录按钮（Catch 修复：允许用户自助清除过期登录态，避免卡死）
-      const logoutBtn = document.createElement("button");
-      logoutBtn.className = "auth-btn";
-      logoutBtn.id = "logoutBtn";
-      logoutBtn.textContent = "退出登录";
-      logoutBtn.title = "清除本机登录凭证并退出登录";
-      logoutBtn.addEventListener("click", doLogout);
-      box.appendChild(logoutBtn);
+      buildAccountMenu(info); // 构建二级菜单（个人中心 / 退出登录）
     } else {
       const btn = document.createElement("button");
       btn.className = "auth-btn";
@@ -365,6 +441,75 @@
       btn.innerHTML = ico("key") + " 登录B站";
       btn.addEventListener("click", openLogin);
       box.appendChild(btn);
+    }
+  }
+
+  // ── 账号二级菜单（#③：头像/昵称点击弹出「个人中心 / 退出登录」）──
+  // 个人中心：复用 openSpace(mid) → 优先 shell.openExternal，回退 window.open。
+  // 退出登录：复用 doLogout（原平铺按钮改由菜单项触发）。点击外部/失焦关闭。
+  const ACCT_MENU_ICON_USER = '<svg class="app-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  const ACCT_MENU_ICON_LOGOUT = '<svg class="app-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>';
+
+  let accountMenuEl = null;
+  function ensureAccountMenu() {
+    if (accountMenuEl) return accountMenuEl;
+    const menu = document.createElement("div");
+    menu.className = "acct-menu";
+    menu.id = "accountMenu";
+    menu.style.display = "none";
+    menu.setAttribute("role", "menu");
+    if (document.body) document.body.appendChild(menu);
+    accountMenuEl = menu;
+    return menu;
+  }
+  function buildAccountMenu(info) {
+    const menu = ensureAccountMenu();
+    menu.innerHTML = "";
+    const itemProfile = document.createElement("button");
+    itemProfile.type = "button";
+    itemProfile.className = "acct-menu-item";
+    itemProfile.setAttribute("role", "menuitem");
+    itemProfile.innerHTML = ACCT_MENU_ICON_USER + "<span>个人中心</span>";
+    itemProfile.addEventListener("click", () => { closeAccountMenu(); openSpace(info.mid); });
+    const itemLogout = document.createElement("button");
+    itemLogout.type = "button";
+    itemLogout.className = "acct-menu-item acct-menu-item--danger";
+    itemLogout.setAttribute("role", "menuitem");
+    itemLogout.innerHTML = ACCT_MENU_ICON_LOGOUT + "<span>退出登录</span>";
+    itemLogout.addEventListener("click", () => { closeAccountMenu(); doLogout(); });
+    menu.appendChild(itemProfile);
+    menu.appendChild(itemLogout);
+  }
+  function toggleAccountMenu(info, anchor) {
+    const menu = ensureAccountMenu();
+    if (menu.style.display === "block") { closeAccountMenu(); return; }
+    const r = (anchor && typeof anchor.getBoundingClientRect === "function")
+      ? anchor.getBoundingClientRect() : { bottom: 0, right: 0 };
+    menu.style.top = (r.bottom + 6) + "px";
+    menu.style.left = Math.max(8, r.right - menu.offsetWidth) + "px";
+    menu.style.display = "block";
+    menu._mid = info.mid;
+    // 点击外部/失焦关闭（capture 阶段监听，避免冒泡干扰菜单内点击）。
+    setTimeout(() => {
+      if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+        document.addEventListener("click", onDocClickCloseMenu, true);
+      }
+    }, 0);
+  }
+  function onDocClickCloseMenu(e) {
+    const menu = accountMenuEl;
+    if (!menu) return;
+    if (menu.contains(e.target)) return; // 点击菜单项由各自 handler 处理
+    const area = (typeof document !== "undefined" && typeof document.getElementById === "function")
+      ? document.getElementById("accountArea") : null;
+    if (area && area.contains(e.target)) return; // 点击头像/昵称交给 toggle 处理
+    closeAccountMenu();
+  }
+  function closeAccountMenu() {
+    const menu = accountMenuEl;
+    if (menu) menu.style.display = "none";
+    if (typeof document !== "undefined" && typeof document.removeEventListener === "function") {
+      document.removeEventListener("click", onDocClickCloseMenu, true);
     }
   }
 

@@ -690,6 +690,38 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       .btn-exec:active:not(:disabled) { transform: none; }
     }
     @media (max-width: 560px) { .icon-btn { padding: 7px; } .ib-label { display: none; } }
+
+  /* ===== 投稿按钮 + 状态胶囊同行（#④） ===== */
+  .submit-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .submit-row .btn-exec { flex: 0 0 auto; }
+  .submit-row #statusCapsule { flex: 1 1 auto; min-width: 0; }
+
+  /* ===== 账号二级菜单（#③：头像点击弹出的 dropdown） ===== */
+  /* 复用现有 Apple HIG token：--surface / --glass-border / --accent / --err / 圆角 / 发丝边 */
+  .acct-menu {
+    position: fixed; z-index: 60; min-width: 136px; padding: 6px;
+    border: 1px solid var(--glass-border);
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    backdrop-filter: blur(20px) saturate(160%);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    display: none;
+  }
+  .acct-menu-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 8px 10px; border: none; background: transparent; cursor: pointer;
+    color: var(--text); font-size: 13px; font-weight: 500; border-radius: 9px;
+    font-family: inherit; text-align: left; line-height: 1;
+    transition: background var(--motion-base) var(--ease-standard);
+  }
+  .acct-menu-item:hover { background: rgba(var(--accent-rgb), 0.12); }
+  .acct-menu-item .app-ico { width: 16px; height: 16px; flex: none; display: block; }
+  .acct-menu-item--danger { color: var(--err); }
+  .acct-menu-item--danger:hover { background: rgba(var(--err-rgb), 0.14); }
+  @media (prefers-reduced-motion: reduce) {
+    .acct-menu-item { transition: none; }
+  }
   </style>
 </head>
 <body>
@@ -705,7 +737,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="header-actions">
         <!-- #7 账号区：头像(圆形)+昵称 / 登录按钮（由 app.js 动态渲染） -->
         <div class="account-area" id="accountArea"></div>
-        <span id="statusCapsule"></span>
         <button class="ver-badge" id="verBadge" title="由工具箱统一管理">v—</button>
         <button class="theme-btn" id="themeBtn"><i class="app-ico" data-ico="theme"></i> 主题</button>
       </div>
@@ -741,7 +772,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         <input type="text" id="titleInput" placeholder="默认取文件名，可覆盖" />
       </div>
       <div class="field">
-        <label>标签（逗号分隔，一般按视频内容自动生成，可手动覆盖）</label>
+        <label>标签（选入视频后自动生成，可手动覆盖；默认标签见下方设置）</label>
         <input type="text" id="tagsInput" placeholder="辐射4,单机游戏,RPG" />
       </div>
       <div class="field">
@@ -766,11 +797,14 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
           <button class="icon-btn" id="submitHistoryBtn" title="历史" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span class="ib-label">历史</span></button>
         </div>
       </div>
-      <button class="btn-exec" id="submitBtn" type="button">
-        <svg class="bx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <span class="bx-label">投稿</span>
-        <span class="bx-spin" role="status" aria-hidden="true"></span>
-      </button>
+      <div class="submit-row">
+        <button class="btn-exec" id="submitBtn" type="button">
+          <svg class="bx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="bx-label">投稿</span>
+          <span class="bx-spin" role="status" aria-hidden="true"></span>
+        </button>
+        <span id="statusCapsule"></span>
+      </div>
       <p class="hint" id="submitHint">选择视频后点击投稿（发布前会二次确认模式）</p>
       <!-- #4 日志面板默认隐藏，仅在点击投稿时展示 -->
       <div id="logWrap" style="display:none">
@@ -830,7 +864,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
             </select>
           </div>
           <div class="field"><label>合集</label><select id="cfgSeason"><option value="">不使用合集</option></select></div>
-          <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select><div class="field-hint">（合集生效必选；仅选合集不会加合集）</div></div>
+          <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select><div class="field-hint" id="sectionHint">（选合集将自动生效：自动选第一个分集）</div></div>
           <div class="field"><label>线路 line</label>
             <select id="cfgLine">
               <option value="bda2">bda2（默认）</option>
@@ -851,6 +885,9 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
               <option value="1">允许转载</option>
               <option value="0">禁止转载</option>
             </select>
+          </div>
+          <div class="field"><label>默认标签（逗号分隔，标签自动生成时叠加兜底）</label>
+            <input type="text" id="defaultTagsInput" placeholder="单机游戏,RPG" />
           </div>
         </div>
         <div class="field" style="margin-top:16px">

@@ -24,6 +24,46 @@ function getSeasonsFetch() {
   try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
 }
 
+// 合集分集补拉代理用的 fetch（需求①：上游 seasons 列表不返回分集时单独补拉）；
+// 便于单测注入 app.locals.seasonSectionFetch。
+function getSeasonSectionFetch() {
+  try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
+}
+
+// 合集分集补拉：部分账号的 seasons 列表接口不返回 sections（分集下拉空），
+// 需单独调 season/section 详情接口补齐（需求①：保证「选合集即生效」在分集缺失时也能补齐）。
+// 上游返回结构不稳定，做多层兼容：data.sections / data.meta.sections。
+// @param {string|number} seasonId 合集 id
+// @param {Object} cf cookies 扁平对象
+// @param {Function} [fetchFnOverride] 注入的 fetch（单测用）
+// @returns {Promise<Array<{id:string, title:string}>>}
+async function fetchSeasonSections(seasonId, cf, fetchFnOverride) {
+  const fetchFn = fetchFnOverride || getSeasonSectionFetch();
+  const url = 'https://member.bilibili.com/x2/creative/web/season/section?season_id='
+    + encodeURIComponent(String(seasonId));
+  const resp = await fetchFn(url, {
+    headers: {
+      'Cookie': cookies.toHeader(cf),
+      'Referer': 'https://www.bilibili.com/',
+      'User-Agent': USER_AGENT,
+    },
+  });
+  if (!resp.ok) return [];
+  const json = await resp.json();
+  if (!json || json.code !== 0) return [];
+  const data = json.data || {};
+  const list = Array.isArray(data.sections)
+    ? data.sections
+    : (data.meta && Array.isArray(data.meta.sections) ? data.meta.sections : []);
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((sec) => sec && sec.id != null)
+    .map((sec) => ({
+      id: String(sec.id),
+      title: (sec.title != null ? sec.title : sec.name) || '',
+    }));
+}
+
 const app = express();
 const PORT = process.env.BILIUP_PORT || 3600;
 
@@ -144,15 +184,32 @@ app.get('/api/seasons', async (req, res) => {
     const json = await upstream.json();
     const seasons = Array.isArray(json && json.data && json.data.seasons) ? json.data.seasons : [];
     // 仅保留 state===0 的合集，映射为前端级联所需的 [{id,title,sections:[{id,title}]}]。
-    const mapped = seasons
-      .filter((s) => s && s.season && s.season.state === 0)
-      .map((s) => ({
+    // 若上游 seasons 列表未返回 sections（分集下拉空），单独补拉 season/section 详情补齐，
+    // 使前端「选合集即生效」。补拉失败/无网络降级空数组，不影响其它合集。
+    const mapped = [];
+    for (const s of seasons) {
+      if (!s || !s.season || s.season.state !== 0) continue;
+      let sections = Array.isArray(s.season.sections)
+        ? s.season.sections.map((sec) => ({ id: String(sec.id), title: sec.title }))
+        : [];
+      if (sections.length === 0) {
+        try {
+          sections = await fetchSeasonSections(
+            s.season.id,
+            cf,
+            app.locals && app.locals.seasonSectionFetch
+          );
+        } catch (e) {
+          logger.warn('[seasons] 补拉分集失败 seasonId=' + s.season.id + ':', e.message);
+          sections = [];
+        }
+      }
+      mapped.push({
         id: String(s.season.id),
         title: s.season.title,
-        sections: Array.isArray(s.season.sections)
-          ? s.season.sections.map((sec) => ({ id: String(sec.id), title: sec.title }))
-          : [],
-      }));
+        sections,
+      });
+    }
     res.json({ seasons: mapped });
   } catch (e) {
     logger.error('[seasons] 查询失败:', e.message);

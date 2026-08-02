@@ -30,6 +30,10 @@ const TV_APPSEC = '59b43e04ad6965f34319062b478f83dd';
 const TV_UA = 'Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0 Iceweasel/38.2.1 BiliApp';
 const PASSPORT = 'https://passport.bilibili.com';
 
+// 登录态复用安全缓冲：剩余有效期 > 该值才视为「新鲜可复用」，避免在有效期边缘仍去换取/上传导致 -400。
+// 选 6 小时：TV access_token 过期前预留足够时间完成一次投稿，避免「刚复用就过期」。
+const LOGIN_INFO_SAFE_BUFFER_SECONDS = 6 * 60 * 60;
+
 // qrcode 库（可选依赖）；缺失时回退到第三方图床生成二维码图。
 let _qrcode;
 try { _qrcode = require('qrcode'); } catch (e) { _qrcode = null; }
@@ -326,15 +330,68 @@ function saveLoginInfo(loginInfo, opts = {}) {
 }
 
 /**
- * 确保 login_info.json 存在且为最新：优先用 TV 登录流程换取（拿真实 TV access_token），
- * 失败则本地用 web cookie 兜底拼装。用户只需扫一次码。
+ * 判断已有 LoginInfo 是否「新鲜可复用」——有效且未临近过期。
+ * 复用优先级（根因A 修复）：用户扫码一次后，后续投稿直接复用持久化的有效 token，
+ * 不再每次投稿都重换 TV 登录态。
+ *
+ * 判定：
+ *   - 结构缺失（无 token_info / 无对象）→ 不可复用。
+ *   - token_info.access_token 为空 → 不可复用（排除首次兜底拼装 / 换取失败的空 token，
+ *     禁止让空 token 流到 biliup 造成迷惑性 code=-400）。
+ *   - expires_in <= 0 → 视为长期有效（无法推算过期时间），允许复用（前提 access_token 非空）。
+ *   - expires_in > 0 但 token_created_at 为 0/缺失 → 无法判定过期，保守视为临期，触发刷新/重换。
+ *   - 正常情况：剩余有效期 = token_created_at + expires_in - now，剩余 > 安全缓冲即新鲜。
+ *
+ * @param {Object|null} loginInfo 现有 LoginInfo（或 null）
+ * @param {{now?:number, safeBufferSeconds?:number}} [opts]
+ *   - opts.now 覆盖当前时间戳（单测可注入固定值）
+ *   - opts.safeBufferSeconds 覆盖安全缓冲秒数（默认 LOGIN_INFO_SAFE_BUFFER_SECONDS）
+ * @returns {boolean}
+ */
+function isLoginInfoFresh(loginInfo, opts = {}) {
+  if (!loginInfo || !loginInfo.token_info) return false;
+  const ti = loginInfo.token_info;
+  // 空 token 必须被排除（首次兜底拼装 / 换取失败），禁止复用。
+  if (!ti.access_token) return false;
+  const expiresIn = typeof ti.expires_in === 'number' ? ti.expires_in : 0;
+  // expires_in<=0：视为长期有效（无法推算过期时间），允许复用（前提 access_token 非空）。
+  if (expiresIn <= 0) return true;
+  const createdAt = typeof ti.token_created_at === 'number' ? ti.token_created_at : 0;
+  // token_created_at 缺失（0）→ 无法判定过期，保守视临期，触发刷新/重换。
+  if (!createdAt) return false;
+  const now = typeof opts.now === 'number' ? opts.now : Math.floor(Date.now() / 1000);
+  const safeBuffer = typeof opts.safeBufferSeconds === 'number'
+    ? opts.safeBufferSeconds
+    : LOGIN_INFO_SAFE_BUFFER_SECONDS;
+  const remaining = createdAt + expiresIn - now;
+  return remaining > safeBuffer;
+}
+
+/**
+ * 确保 login_info.json 存在且为最新：复用优先（根因A 修复）。
+ *   1) 若已有 login_info.json 且 token 新鲜（isLoginInfoFresh）→ 直接返回该路径，
+ *      不再发起任何 TV 请求（用户扫码一次后后续投稿直接复用持久化有效 token）。
+ *   2) 否则走 TV 登录流程换取（拿真实 TV access_token），失败则本地用 web cookie 兜底拼装。
  * @param {Object} webCookies 扁平 web cookie（扫码所得）
  * @param {{path?:string, deps?:Object}} [opts]
  * @returns {Promise<string>} 写入的 login_info.json 路径
  */
 async function ensureLoginInfo(webCookies, opts = {}) {
+  // 根因A 修复：复用优先——已有未过期有效 token 直接复用，不再发起 TV 换取。
+  const path0 = opts.path || store.getLoginInfoPath();
+  const existing = loadLoginInfo(path0, opts);
+  if (isLoginInfoFresh(existing)) {
+    logger.info('[auth] 复用已持久化的有效登录态（未过期），跳过 TV 换取:', path0);
+    return path0;
+  }
   const exchanged = await exchangeLoginInfo(webCookies, opts);
-  const loginInfo = exchanged || buildLoginInfoFromWebCookies(webCookies);
+  let loginInfo = exchanged || buildLoginInfoFromWebCookies(webCookies);
+  // TV 换取成功但未带 token_created_at（部分环境 B站不返回该字段）：
+  // 补写当前时间戳，便于下次复用推算过期，且不影响 biliup -u 兼容。
+  if (loginInfo && loginInfo.token_info && loginInfo.token_info.access_token &&
+      !loginInfo.token_info.token_created_at && loginInfo.token_info.expires_in > 0) {
+    loginInfo.token_info.token_created_at = Math.floor(Date.now() / 1000);
+  }
   return saveLoginInfo(loginInfo, opts);
 }
 
@@ -408,6 +465,55 @@ async function refreshToken(loginInfo, opts = {}) {
 }
 
 /**
+ * 上传前确保 token 新鲜（主动续期，治本 -400 鉴权失败，根因C 修复）。
+ * 与 ensureLoginInfo 的区别：ensureLoginInfo 只「没有就换、有就复用」；
+ * 本函数在「有但临期」时会在上传【前】主动刷新，而不是等上传 -400 后才事后重试。
+ *
+ * 流程：
+ *   1) 读取已有 login_info.json；若已新鲜（isLoginInfoFresh）→ 直接复用，不刷新不重换。
+ *   2) 若已存在但临期（剩余 < 安全缓冲）或 token_created_at 为 0/空（兜底空 token 或从未续期）
+ *      → 先 refreshToken（需同时持有 access_token + refresh_token）；
+ *        refresh 成功且刷新后新鲜 → 直接复用写回的新 token。
+ *   3) 无可用登录态 / 刷新失败 → 用 web cookie 重新换取 TV token（兜底拼装）；
+ *      若最终落盘的 token 仍为空 → 抛清晰错误「登录态失效,请重新扫码登录」，
+ *      禁止静默把空 token 流到 biliup 造成迷惑性 code=-400（根因B 修复：失败明确化）。
+ *
+ * @param {Object} webCookies 扁平 web cookie（扫码所得）
+ * @param {{path?:string, deps?:Object}} [opts] opts.deps.fetchFn / opts.deps.sleep 可注入（单测）
+ * @returns {Promise<string>} 写入的 login_info.json 路径
+ * @throws {Error} 最终拿不到有效 access_token 时抛清晰错误「登录态失效,请重新扫码登录」
+ */
+async function ensureFreshLoginInfo(webCookies, opts = {}) {
+  const path0 = opts.path || store.getLoginInfoPath();
+  const loginInfo = loadLoginInfo(path0, opts);
+
+  // 情况1：已有可复用的有效 token → 直接复用（不刷新也不重换）。
+  if (isLoginInfoFresh(loginInfo)) {
+    logger.info('[auth] 检测到已持久化的有效登录态（未过期），直接复用:', path0);
+    return path0;
+  }
+
+  // 情况2：已有登录态但临期（或从未续期/兜底空 token）→ 主动续期。
+  if (loginInfo && loginInfo.token_info && loginInfo.token_info.access_token && loginInfo.token_info.refresh_token) {
+    const refreshed = await refreshToken(loginInfo, Object.assign({}, opts, { path: path0 }));
+    if (refreshed && isLoginInfoFresh(refreshed)) {
+      logger.info('[auth] 上传前主动续期成功:', path0);
+      return path0;
+    }
+  }
+
+  // 情况3：无可用登录态 / 续期失败 → 用 web cookie 重新换取 TV token（兜底拼装）。
+  await ensureLoginInfo(webCookies, Object.assign({}, opts, { path: path0 }));
+
+  // 失败明确化（根因B）：最终落盘的 token 必须非空，否则直白抛错，禁止静默传空 token。
+  const finalInfo = loadLoginInfo(path0, opts);
+  if (!finalInfo || !finalInfo.token_info || !finalInfo.token_info.access_token) {
+    throw new Error('登录态失效，请重新扫码登录（web cookie 也无法换取有效 token）');
+  }
+  return path0;
+}
+
+/**
  * 读取 login_info.json（供 task.js 在上传 -400 后重试刷新时读回当前 LoginInfo）。
  * @param {string} filePath login_info.json 完整路径（通常来自 store.getLoginInfoPath()）
  * @param {{fs?:Object}} [opts] opts.fs 覆盖文件系统实现（单测 mock）；默认真实 fs
@@ -461,9 +567,12 @@ module.exports = {
   exchangeLoginInfo,
   saveLoginInfo,
   ensureLoginInfo,
+  ensureFreshLoginInfo,
+  isLoginInfoFresh,
   refreshToken,
   loadLoginInfo,
   clearSession,
+  LOGIN_INFO_SAFE_BUFFER_SECONDS,
   // TV 登录流程相关（复刻 biliup-rs credential.rs）：供单测与上层复用
   sign,
   tvGetQrcodeAuthCode,

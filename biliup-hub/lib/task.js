@@ -64,12 +64,14 @@ async function run(req, ctx) {
 
   // 生成/刷新 biliup 的 LoginInfo 文件（web cookie + token 换取；本地兜底不依赖网络）。
   // 必须在上传前完成：biliup -u 指向该文件，缺失会直接报 open cookies file 错误。
+  // 改用 ensureFreshLoginInfo：复用持久化有效 token，临期主动续期（治本 -400 鉴权失败）。
   try {
-    await authM.ensureLoginInfo(cookiesFile, { path: config.loginInfoPath });
+    await authM.ensureFreshLoginInfo(cookiesFile, { path: config.loginInfoPath, deps: subDeps });
   } catch (e) {
-    logger.error('[task] 生成 biliup LoginInfo 失败:', e.message);
-    emit({ type: 'error', stage: 'pending', message: '生成 biliup 登录信息失败: ' + e.message });
-    return { ok: false, error: '生成 biliup 登录信息失败' };
+    logger.error('[task] 确保 biliup 登录态失败:', e.message);
+    const msg = (e && e.message) ? e.message : '登录态失效，请重新扫码登录';
+    emit({ type: 'error', stage: 'pending', message: msg });
+    return { ok: false, error: msg };
   }
 
   // 标题：请求给定优先；否则 mp4 去扩展名

@@ -381,3 +381,212 @@ test('loadLoginInfo: 损坏 JSON → 返回 null（失败安全，不抛异常�
   assert.equal(r, null);
   fs.unlinkSync(tmp);
 });
+
+// ── 根因A 修复：ensureLoginInfo「复用优先」──
+
+test('ensureLoginInfo: 已有未过期有效 token → 复用，不发起任何 TV 换取请求（fetchFn 计数）', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_reuse_' + Date.now() + '.json');
+  const now = Math.floor(Date.now() / 1000);
+  const fresh = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'v' }] },
+    token_info: { access_token: 'EXISTING_AT', refresh_token: 'RT', expires_in: 3600 * 24 * 30, token_created_at: now },
+    sso: ['SESSDATA=v'],
+  };
+  fs.writeFileSync(tmp, JSON.stringify(fresh));
+  let fetchCount = 0;
+  const fetchFn = async () => { fetchCount++; return { json: async () => ({}) }; };
+  const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
+  assert.equal(p, tmp, '应返回同一路径（直接复用）');
+  assert.equal(fetchCount, 0, '复用有效 token 时不应发起任何 TV 请求');
+  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  assert.equal(written.token_info.access_token, 'EXISTING_AT', '应保留原有效 token，未被重换覆盖');
+  fs.unlinkSync(tmp);
+});
+
+test('ensureLoginInfo: token 已过期 → 重新发起 TV 换取并落盘新 token', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_expired_' + Date.now() + '.json');
+  const old = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'old' }] },
+    token_info: { access_token: 'OLD_AT', refresh_token: 'RT', expires_in: 3600, token_created_at: 1 }, // token_created_at=1 很久以前 → 过期
+    sso: ['SESSDATA=old'],
+  };
+  fs.writeFileSync(tmp, JSON.stringify(old));
+  const finalData = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'tv-sess' }] },
+    token_info: { access_token: 'NEW_TV_AT', refresh_token: 'NEWRT', expires_in: 3600 * 24 * 30, token_created_at: Math.floor(Date.now() / 1000) },
+    sso: ['SESSDATA=tv-sess'],
+  };
+  let exchanged = false;
+  const tvFetch = makeTvSuccessFetch(finalData);
+  const fetchFn = async (url) => {
+    if (String(url).includes('qrcode/auth_code')) exchanged = true;
+    return tvFetch(url);
+  };
+  const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
+  assert.equal(p, tmp);
+  assert.equal(exchanged, true, '过期 token 应触发 TV 换取');
+  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  assert.equal(written.token_info.access_token, 'NEW_TV_AT', '过期 token 应被重新换取的新 token 覆盖');
+  fs.unlinkSync(tmp);
+});
+
+test('ensureLoginInfo: 兜底空 token（access_token 为空）→ 仍走 TV 换取（排除空 token 复用）', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_empty_' + Date.now() + '.json');
+  const emptyTok = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'x' }] },
+    token_info: { access_token: '', refresh_token: '', expires_in: 0, token_created_at: 0 },
+    sso: ['SESSDATA=x'],
+  };
+  fs.writeFileSync(tmp, JSON.stringify(emptyTok));
+  const finalData = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'tv-sess' }] },
+    token_info: { access_token: 'EXCHANGED_AT', refresh_token: 'RT', expires_in: 3600 * 24 * 30, token_created_at: Math.floor(Date.now() / 1000) },
+    sso: ['SESSDATA=tv-sess'],
+  };
+  let exchanged = false;
+  const tvFetch = makeTvSuccessFetch(finalData);
+  const fetchFn = async (url) => {
+    if (String(url).includes('qrcode/auth_code')) exchanged = true;
+    return tvFetch(url);
+  };
+  const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
+  assert.equal(p, tmp);
+  assert.equal(exchanged, true, '空 token 应触发 TV 换取，不得复用');
+  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  assert.equal(written.token_info.access_token, 'EXCHANGED_AT', '应落盘换取得到的新 token');
+  fs.unlinkSync(tmp);
+});
+
+test('isLoginInfoFresh: 各边界判定', () => {
+  const now = 1_000_000;
+  // 空 token → false（排除兜底空 token 复用）
+  assert.equal(auth.isLoginInfoFresh({ token_info: { access_token: '', expires_in: 9999, token_created_at: now } }), false);
+  // null / 无 token_info → false
+  assert.equal(auth.isLoginInfoFresh(null), false);
+  assert.equal(auth.isLoginInfoFresh({}), false);
+  // expires_in<=0 且 access_token 非空 → 视为长期有效，true
+  assert.equal(auth.isLoginInfoFresh({ token_info: { access_token: 'X', expires_in: 0, token_created_at: 0 } }), true);
+  // 正常：剩余远大于缓冲 → true
+  assert.equal(auth.isLoginInfoFresh(
+    { token_info: { access_token: 'X', expires_in: 3600 * 24 * 30, token_created_at: now } },
+    { now, safeBufferSeconds: 6 * 3600 },
+  ), true);
+  // 临期：剩余 < 缓冲 → false
+  assert.equal(auth.isLoginInfoFresh(
+    { token_info: { access_token: 'X', expires_in: 3600, token_created_at: now } },
+    { now, safeBufferSeconds: 6 * 3600 },
+  ), false);
+  // 已过期 → false
+  assert.equal(auth.isLoginInfoFresh(
+    { token_info: { access_token: 'X', expires_in: 100, token_created_at: now - 1000 } },
+    { now, safeBufferSeconds: 6 * 3600 },
+  ), false);
+  // expires_in>0 但 token_created_at 缺失(0) → 无法判定，false
+  assert.equal(auth.isLoginInfoFresh(
+    { token_info: { access_token: 'X', expires_in: 9999, token_created_at: 0 } },
+    { now, safeBufferSeconds: 6 * 3600 },
+  ), false);
+});
+
+// ── 根因C 修复 + 失败明确化：ensureFreshLoginInfo（上传前主动续期）──
+
+test('ensureFreshLoginInfo: 临期 token → 主动 refreshToken 成功后复用（不重换、写回新 token）', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_refresh_trigger_' + Date.now() + '.json');
+  const now = Math.floor(Date.now() / 1000);
+  const nearExpiry = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'v' }] },
+    token_info: { access_token: 'OLD_AT', refresh_token: 'OLD_RT', expires_in: 3600, token_created_at: now - 3600 }, // 已过期
+    sso: ['SESSDATA=v'],
+  };
+  fs.writeFileSync(tmp, JSON.stringify(nearExpiry));
+  let refreshEndpointHit = false;
+  let exchangeCalled = false;
+  const fetchFn = async (url) => {
+    const u = String(url);
+    if (u.includes('/api/v2/oauth2/refresh_token')) {
+      refreshEndpointHit = true;
+      return { json: async () => ({ code: 0, data: { token_info: { access_token: 'REFRESHED_AT', refresh_token: 'NEWRT', expires_in: 3600 * 24 * 30 } } }) };
+    }
+    if (u.includes('passport-tv-login')) exchangeCalled = true;
+    return { json: async () => ({ code: -1 }) };
+  };
+  const p = await auth.ensureFreshLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
+  assert.equal(p, tmp);
+  assert.equal(refreshEndpointHit, true, '临期应触发 refresh');
+  assert.equal(exchangeCalled, false, 'refresh 成功不应再走 TV 换取');
+  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  assert.equal(written.token_info.access_token, 'REFRESHED_AT', '应写回刷新后的新 token');
+  fs.unlinkSync(tmp);
+});
+
+test('ensureFreshLoginInfo: 已有新鲜 token → 直接复用，不 refresh 不重换', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_fresh_' + Date.now() + '.json');
+  const now = Math.floor(Date.now() / 1000);
+  const fresh = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'v' }] },
+    token_info: { access_token: 'CUR_AT', refresh_token: 'RT', expires_in: 3600 * 24 * 30, token_created_at: now },
+    sso: ['SESSDATA=v'],
+  };
+  fs.writeFileSync(tmp, JSON.stringify(fresh));
+  let anyHit = false;
+  const fetchFn = async (url) => { anyHit = true; return { json: async () => ({ code: -1 }) }; };
+  const p = await auth.ensureFreshLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
+  assert.equal(p, tmp);
+  assert.equal(anyHit, false, '新鲜 token 应直接复用，不发任何请求');
+  fs.unlinkSync(tmp);
+});
+
+test('ensureFreshLoginInfo: refresh 失败 → 回退 TV 换取（exchange）', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_refresh_fallback_' + Date.now() + '.json');
+  const now = Math.floor(Date.now() / 1000);
+  const nearExpiry = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'v' }] },
+    token_info: { access_token: 'OLD_AT', refresh_token: 'OLD_RT', expires_in: 3600, token_created_at: now - 3600 },
+    sso: ['SESSDATA=v'],
+  };
+  fs.writeFileSync(tmp, JSON.stringify(nearExpiry));
+  const finalData = {
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'tv-sess' }] },
+    token_info: { access_token: 'EXCHANGED_AT', refresh_token: 'RT', expires_in: 3600 * 24 * 30, token_created_at: Math.floor(Date.now() / 1000) },
+    sso: ['SESSDATA=tv-sess'],
+  };
+  let refreshEndpointHit = false;
+  let exchangeCalled = false;
+  const fetchFn = async (url) => {
+    const u = String(url);
+    if (u.includes('/api/v2/oauth2/refresh_token')) { refreshEndpointHit = true; return { json: async () => ({ code: 1, message: 'invalid' }) }; } // refresh 失败
+    if (u.includes('passport-tv-login')) { exchangeCalled = true; return makeTvSuccessFetch(finalData)(u); }
+    return { json: async () => ({ code: -1 }) };
+  };
+  const p = await auth.ensureFreshLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
+  assert.equal(p, tmp);
+  assert.equal(refreshEndpointHit, true, '应尝试 refresh');
+  assert.equal(exchangeCalled, true, 'refresh 失败应回退 TV 换取');
+  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  assert.equal(written.token_info.access_token, 'EXCHANGED_AT', '应落盘换取得到的新 token');
+  fs.unlinkSync(tmp);
+});
+
+test('ensureFreshLoginInfo: web cookie 无效 + 无可用 token → 抛清晰错误「登录态失效,请重新扫码」', async () => {
+  const tmp = path.join(os.tmpdir(), 'biliup_li_allfail_' + Date.now() + '.json');
+  // 已有兜底空 token（access_token 空，无 refresh_token）→ refresh 跳过；
+  // web cookie 无效（无 SESSDATA）→ exchange 短路返回 null → buildLoginInfoFromWebCookies 又产出空 token → 最终抛错。
+  const emptyTok = {
+    cookie_info: { cookies: [] },
+    token_info: { access_token: '', refresh_token: '', expires_in: 0, token_created_at: 0 },
+    sso: [],
+  };
+  fs.writeFileSync(tmp, JSON.stringify(emptyTok));
+  let threw = false;
+  let errMsg = '';
+  try {
+    await auth.ensureFreshLoginInfo({}, { path: tmp, deps: { fetchFn: async () => ({ json: async () => ({ code: -1 }) }) } });
+  } catch (e) {
+    threw = true;
+    errMsg = e.message;
+  }
+  assert.equal(threw, true, '拿不到有效 token 应抛错');
+  assert.ok(/登录态失效/.test(errMsg) && /扫码/.test(errMsg),
+    '错误信息应直白指出登录态失效请重新扫码，实际: ' + errMsg);
+  fs.unlinkSync(tmp);
+});

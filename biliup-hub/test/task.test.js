@@ -21,6 +21,7 @@ function baseMocks() {
   return {
     auth: {
       ensureLoginInfo: async () => {},
+      ensureFreshLoginInfo: async () => {},
       loadLoginInfo: () => ({ token_info: { access_token: 'OLD', refresh_token: 'RT' } }),
       refreshToken: async () => ({ token_info: { access_token: 'NEW' } }),
     },
@@ -230,4 +231,77 @@ test('task.run: 合集仅单分集经字段对齐 → sectionId 存在 → seaso
   assert.equal(result.ok, true);
   assert.equal(seasonAddCalled, true, '字段对齐后 season.add 应被调用（合集不再被跳过）');
   assert.equal(result.season, true, 'season 标志应为 true');
+});
+
+// ── 用例8（本 Bug 修复）：上传前 ensureFreshLoginInfo 临期触发 refreshToken（治本 -400，避免事后重试）──
+// 用真实 auth 模块（确保 ensureFreshLoginInfo 实际行为），注入 mock fetchFn 模拟 refresh 成功。
+// 验证：临期 token 在上传前被主动刷新写盘、不重换 TV、投稿成功（runUpload 仅 1 次，无 -400 自愈）。
+test('task.run: 上传前 ensureFreshLoginInfo 临期主动 refresh（不重换 TV、投稿成功、无 -400 自愈）', async () => {
+  const video = makeVideoFile();
+  const liPath = path.join(os.tmpdir(), 'biliup_li_prerefresh_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.json');
+  const now = Math.floor(Date.now() / 1000);
+  // 预先写入一个「已过期/临期」的 token（token_created_at 很久以前）。
+  fs.writeFileSync(liPath, JSON.stringify({
+    cookie_info: { cookies: [{ name: 'SESSDATA', value: 'v' }] },
+    token_info: { access_token: 'OLD_AT', refresh_token: 'OLD_RT', expires_in: 3600, token_created_at: now - 3600 },
+    sso: ['SESSDATA=v'],
+  }));
+
+  let refreshHit = false;
+  let exchangeHit = false;
+  const deps = baseMocks();
+  deps.auth = require('../lib/auth'); // 用真实 auth 模块验证 ensureFreshLoginInfo 真实行为
+  // 注入 fetchFn：refresh_token 端点成功；passport-tv-login（TV 换取）不应被调用。
+  deps.fetchFn = async (url) => {
+    const u = String(url);
+    if (u.includes('/api/v2/oauth2/refresh_token')) {
+      refreshHit = true;
+      return { json: async () => ({ code: 0, data: { token_info: { access_token: 'REFRESHED_AT', refresh_token: 'NEWRT', expires_in: 3600 * 24 * 30 } } }) };
+    }
+    if (u.includes('passport-tv-login')) { exchangeHit = true; }
+    return { json: async () => ({ code: -1 }) };
+  };
+
+  const ctx = makeCtx(deps);
+  ctx.config.loginInfoPath = liPath; // 让 task 指向我们的临时登录态文件
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true, '临期刷新成功后应投稿成功');
+  assert.equal(refreshHit, true, '临期应触发 refreshToken');
+  assert.equal(exchangeHit, false, 'refresh 成功不应再走 TV 换取');
+  // 验证写盘已刷新为最新 token。
+  const written = JSON.parse(fs.readFileSync(liPath, 'utf8'));
+  assert.equal(written.token_info.access_token, 'REFRESHED_AT', '登录态文件应被刷新为新 token');
+  assert.ok(written.token_info.token_created_at > 0, '刷新后 token_created_at 应更新');
+  fs.unlinkSync(liPath);
+});
+
+// ── 用例9（失败明确化）：web cookie 无效 + 无可用 token → 上传前抛清晰错误「登录态失效,请重新扫码」 ──
+test('task.run: 登录态彻底失效（空 token + 无效 cookie）→ 上传前抛清晰错误,不静默传空 token', async () => {
+  const video = makeVideoFile();
+  const liPath = path.join(os.tmpdir(), 'biliup_li_dead_' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.json');
+  // 预先写入兜底空 token（access_token 为空）。
+  fs.writeFileSync(liPath, JSON.stringify({
+    cookie_info: { cookies: [] },
+    token_info: { access_token: '', refresh_token: '', expires_in: 0, token_created_at: 0 },
+    sso: [],
+  }));
+
+  const deps = baseMocks();
+  deps.auth = require('../lib/auth'); // 用真实 auth 模块
+  // web cookie 无效（无 SESSDATA/bili_jct）→ exchange 短路；refresh 无 refresh_token 跳过；最终无有效 token。
+  deps.fetchFn = async () => ({ json: async () => ({ code: -1 }) });
+
+  const ctx = makeCtx(deps);
+  ctx.cookiesFile = {}; // 无效 web cookie
+  ctx.config.loginInfoPath = liPath;
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+  fs.unlinkSync(liPath);
+
+  assert.equal(result.ok, false, '登录态失效应判失败');
+  assert.ok(/登录态失效/.test(result.error || '') && /扫码/.test(result.error || ''),
+    '错误信息应直白指出登录态失效请重新扫码, 实际: ' + result.error);
+  assert.ok(!result.stage, '失败应发生在投稿前(尚未进入具体 stage)');
 });

@@ -361,3 +361,27 @@ body {
 @media (max-width: 620px) {
   .done-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 重找复选框 ── */
+.force-options {
+  display: flex;
+  gap: 18px;
+  margin-top: 10px;
+  align-items: center;
+}
+.force-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.force-label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--apple-accent);
+  margin: 0;
+  cursor: pointer;
+}

@@ -78,6 +78,8 @@ app.get('/api/version', (req, res) => {
 app.post('/api/collect', (req, res) => {
   const body = req.body || {};
   const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const forceTrailer = body.forceTrailer === true;
+  const forceCover = body.forceCover === true;
   if (!name) {
     return res.status(400).json({ error: '缺少 name（游戏名）' });
   }
@@ -109,7 +111,7 @@ app.post('/api/collect', (req, res) => {
 
   const service = (app.locals && app.locals.collectService) || new CollectService();
   logger.info('[collect] 开始：' + name + ' → ' + getOutputDir());
-  service.run({ name, outDir: getOutputDir() }, { onEvent: send })
+  service.run({ name, outDir: getOutputDir(), forceTrailer, forceCover }, { onEvent: send })
     .catch((e) => {
       logger.error('[collect] 流程异常:', e && e.message);
       send({

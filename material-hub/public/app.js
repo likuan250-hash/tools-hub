@@ -13,6 +13,8 @@ function $(id) { return document.getElementById(id); }
 const gameName = $("gameName");
 const collectBtn = $("collectBtn");
 const formError = $("formError");
+const forceTrailerCb = $("forceTrailer");
+const forceCoverCb = $("forceCover");
 const stateTabs = $("stateTabs");
 const autoSteps = $("autoSteps");
 const autoLog = $("autoLog");
@@ -337,7 +339,11 @@ async function runCollect(name) {
     const r = await fetch("/api/collect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name }),
+      body: JSON.stringify({
+        name: name,
+        forceTrailer: forceTrailerCb.checked,
+        forceCover: forceCoverCb.checked,
+      }),
     });
     const ctype = r.headers.get("content-type") || "";
     if (!r.ok && ctype.indexOf("application/json") >= 0) {
@@ -383,6 +389,8 @@ async function runCollect(name) {
     running = false;
     collectBtn.disabled = false;
     collectBtn.textContent = "开始搜集";
+    forceTrailerCb.checked = false;
+    forceCoverCb.checked = false;
   }
 }
 

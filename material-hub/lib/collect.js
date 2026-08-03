@@ -108,7 +108,8 @@ class CollectService {
    * @param {{
    *   name: string, outDir?: string, coverUrl?: string,
    *   englishName?: string, developer?: string, versionDesc?: string,
-   *   kind?: string, force?: boolean
+   *   kind?: string, force?: boolean, forceTrailer?: boolean, forceCover?: boolean
+   * }} opts 入参；forceTrailer/forceCover 针对单类强制重下，force=true 等价于两者都 true
    * }} opts 入参；force=true 时忽略复用文件夹里的既有产物强制重下
    * @param {{onEvent?: (ev: object) => void}} [handlers] 事件回调（SSE 发送器）
    * @returns {Promise<{
@@ -136,6 +137,8 @@ class CollectService {
     const gameName = String(opts.name == null ? '' : opts.name).trim();
     const outDir = opts.outDir || DEFAULT_OUTPUT_DIR;
     const force = opts.force === true;
+    const forceTrailer = force || opts.forceTrailer === true;
+    const forceCover = force || opts.forceCover === true;
     const result = {
       folder: '',
       index: 0,
@@ -203,7 +206,7 @@ class CollectService {
     let trailerInfo = null;
     let videoPath = '';
 
-    const existingVideo = !force && result.reused ? this.findExistingVideo(reserved.folder) : null;
+    const existingVideo = !forceTrailer && result.reused ? this.findExistingVideo(reserved.folder) : null;
     if (existingVideo) {
       result.trailerOk = true;
       result.trailer = { file: existingVideo.file, path: existingVideo.path, title: '', reused: true };
@@ -272,7 +275,7 @@ class CollectService {
     }
 
     // ── 3. cover：规范六级来源依次降级 ──
-    const existingCover = !force && result.reused ? this.findExistingCover(reserved.folder) : null;
+    const existingCover = !forceCover && result.reused ? this.findExistingCover(reserved.folder) : null;
     let coverRes = { ok: false, error: '未执行' };
 
     if (existingCover) {

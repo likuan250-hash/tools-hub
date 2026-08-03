@@ -21,7 +21,7 @@ test("集成[真实bl]：介绍不编造、大小非空、封面为合法URL", {
   assert.ok(/^https?:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(r.coverUrl), "封面应为合法图片URL（符合需求）");
 });
 
-test("集成[真实Steam]：cloudflare 源能下载到封面文件", { skip: !RUN_INTEGRATION }, async () => {
+test("集成[真实Steam]：官方 CDN（首选 fastly library_600x900_2x）能下载到封面文件", { skip: !RUN_INTEGRATION }, async () => {
   const { downloadCover } = require("../lib/steam");
   const fp = await downloadCover("Counter-Strike 2", "730", os.tmpdir());
   assert.ok(fs.existsSync(fp), "封面文件应存在");

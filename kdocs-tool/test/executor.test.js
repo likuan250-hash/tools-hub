@@ -63,7 +63,7 @@ test("正常流程字段映射正确", async () => {
   assert.strictEqual(res.recordId, "r1");
   assert.strictEqual(lastCreate["游戏名称"], "双影奇境（Split Fiction）");
   assert.strictEqual(lastCreate["游戏介绍"], "Hazelight 开发的双人合作冒险游戏。");
-  assert.strictEqual(lastCreate["游戏大小"], "30.7GB", "大小经归一化：30.7G → 30.7GB");
+  assert.strictEqual(lastCreate["游戏大小"], "30.7G", "大小经归一化：30.7G → 30.7G");
   assert.strictEqual(lastCreate["夸克网盘"][0].address, "https://pan.quark.cn/s/x");
 });
 
@@ -71,12 +71,12 @@ test("游戏大小优先级：ai.size > parsed.size（归一化）", async () =>
   // ai 优先
   let deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "10G", coverUrl: "" }) });
   await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "10GB", "ai 优先且归一化");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "10G", "ai 优先且归一化");
 
   // ai 空 → parsed 优先
   deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "", coverUrl: "" }) });
   await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "5GB", "ai 空时 parsed 优先且归一化");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "5G", "ai 空时 parsed 优先且归一化");
 });
 
 test("含免责声明的介绍被丢弃，改为占位「介绍待补充」+ needsReview（非标题兜底）", async () => {
@@ -271,17 +271,17 @@ test("查重未命中 → 正常创建（action=created），list_records 先于
 
 // ── 重构后纯函数单测（2026-07-30 评审+重构演练新增）──
 test("resolveGameSize 优先级：真实字节(夸克>百度>迅雷) > bl > 文本 > 空（并归一化）", () => {
-  assert.strictEqual(resolveGameSize({ quark: "30.7G" }, "", ""), "30.7GB", "夸克真实字节最准，应优先且归一化");
-  assert.strictEqual(resolveGameSize({ baidu: "25G" }, "", ""), "25GB", "无夸克时百度真实优先");
-  assert.strictEqual(resolveGameSize({ xunlei: "12G" }, "", ""), "12GB", "无夸克/百度时迅雷真实优先");
-  assert.strictEqual(resolveGameSize({}, "25G", "5G"), "25GB", "无真实大小时 bl 优先于文本");
-  assert.strictEqual(resolveGameSize({}, "", "20G"), "20GB", "文本识别兜底且归一化");
+  assert.strictEqual(resolveGameSize({ quark: "30.7G" }, "", ""), "30.7G", "夸克真实字节最准，应优先且归一化");
+  assert.strictEqual(resolveGameSize({ baidu: "25G" }, "", ""), "25G", "无夸克时百度真实优先");
+  assert.strictEqual(resolveGameSize({ xunlei: "12G" }, "", ""), "12G", "无夸克/百度时迅雷真实优先");
+  assert.strictEqual(resolveGameSize({}, "25G", "5G"), "25G", "无真实大小时 bl 优先于文本");
+  assert.strictEqual(resolveGameSize({}, "", "20G"), "20G", "文本识别兜底且归一化");
   assert.strictEqual(resolveGameSize({}, "", ""), "", "全空返回空串（不写字段）");
 });
 
 test("resolveGameSize 真实大小严格优先于 bl 猜测（即使 bl 也有值）", () => {
   // 真实字节求和最准，不应被 bl 猜测覆盖
-  assert.strictEqual(resolveGameSize({ quark: "30.7GB" }, "99G", "88G"), "30.7GB");
+  assert.strictEqual(resolveGameSize({ quark: "30.7GB" }, "99G", "88G"), "30.7G");
 });
 
 // ── 游戏介绍兜底（v0.1.48：Steam 官方主源 + bl 降次级 + 占位待核对）──
@@ -344,7 +344,7 @@ test("百度/迅雷真实大小参与优先级（百度真实 > bl 猜测）", a
     getBaiduSize: async () => ({ bytes: 30_700_000_000, text: "30.7GB", files: 3 }),
   });
   await autoExecute(baseParsed({ baiduUrl: "https://pan.baidu.com/s/b" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "30.7GB", "百度真实大小应优先于 bl 猜测");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "30.7G", "百度真实大小应优先于 bl 猜测");
 });
 
 // ── buildRecordFields 写入溯源/校对标签 ──

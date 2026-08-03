@@ -233,7 +233,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   }
 
   // 5.5 真实分享页大小（夸克/百度/迅雷，真实字节求和，严格优先于 bl 猜测与文本识别）
-  const realSizes = {}; // { quark:"30.7GB", baidu:"...", xunlei:"..." }
+  const realSizes = {}; // { quark:"30.7G", baidu:"...", xunlei:"..." }
   if (parsed.quarkUrl) {
     doing({ name: "夸克分享页大小抓取" });
     try {
@@ -312,7 +312,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 
 // ── 纯函数（不依赖外部 IO，可单测）──
 // 游戏大小优先级：真实字节求和（夸克>百度>迅雷）严格优先，其次 bl 简介附带，再次文本识别，全无则空。
-// 所有候选均经 normalizeSize 统一为规范形式（"30.7G"→"30.7GB"）。
+// 所有候选均经 normalizeSize 统一为短格式（"30.7GB"→"30.7G"，规范文档 §2.5）。
 function resolveGameSize(realSizes = {}, aiSize = "", parsedSize = "") {
   const order = ["quark", "baidu", "xunlei"];
   for (const k of order) {

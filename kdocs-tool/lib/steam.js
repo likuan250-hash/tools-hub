@@ -46,7 +46,7 @@ function tryDownload(url, fp) {
   });
 }
 
-/** 下载 Steam 封面到指定目录（多源 fallback：优先 cloudflare，国内最稳） */
+/** 下载 Steam 封面到指定目录（多源 fallback：首选 fastly 竖版 library_600x900_2x，规范文档 §1.2 指定直链） */
 function downloadCover(gameName, appid, coverDir) {
   coverDir = coverDir || DEFAULT_COVER_DIR;
   if (!fs.existsSync(coverDir)) fs.mkdirSync(coverDir, { recursive: true });
@@ -56,11 +56,11 @@ function downloadCover(gameName, appid, coverDir) {
   const fas = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}`;
   const aka = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}`;
   const candidates = [
-    `${cdn}/library_600x900_2x.jpg`,  // 竖版大图，最像"宣传图"
-    `${cdn}/header.jpg`,
-    `${fas}/library_600x900_2x.jpg`,
+    `${fas}/library_600x900_2x.jpg`, // 规范文档 §1.2 指定的官方直链（竖版 600x900@2x），首选
+    `${cdn}/library_600x900_2x.jpg`, // cloudflare 同款竖版，fallback
+    `${cdn}/header.jpg`,             // 横版 header，最后兜底（比例不佳）
     `${fas}/header.jpg`,
-    `${aka}/header.jpg`,             // 原 akamai，兜底
+    `${aka}/header.jpg`,
   ];
   return (async () => {
     let lastErr;

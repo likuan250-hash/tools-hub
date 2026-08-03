@@ -1,0 +1,77 @@
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant FE as 前端 app.js
+    participant S as server.js (/api/collect · SSE)
+    participant C as CollectService
+    participant N as NameResolver
+    participant E as EnvDetector
+    participant SC as SteamCover
+    participant T as TrailerDownloader
+    participant FS as 文件系统 E:\素材\
+
+    U->>FE: 输入游戏名 → 点「开始搜集」
+    FE->>S: POST /api/collect { name }
+    S->>S: 开启 SSE (text/event-stream + 心跳)
+    S->>C: run({ name, outDir, env }, { onEvent: send })
+
+    Note over C,N,FS: ① 扫描编号并建文件夹
+    C->>N: scanMaxIndex(outDir)
+    N->>FS: 列目录【游戏NNN】*
+    FS-->>N: 最大编号 255
+    N-->>C: 256
+    C->>S: onEvent(scan, ok:null) 解析→256
+    C->>FS: mkdir 【游戏256】游戏名
+    C->>S: onEvent(scan, ok:true) 文件夹已建
+
+    Note over C,SC,FS: ② 封面（Steam 主路径 + YouTube 缩略图回退）
+    C->>SC: fetchCover(term, outDir)
+    C->>S: onEvent(cover_search, ok:null)
+    SC->>SC: searchAppId(term) → appid
+    SC->>S: onEvent(cover_search, ok:null, detail:{appid})
+    SC->>FS: GET library_hero.jpg (1920×1080)
+    C->>S: onEvent(cover_download, ok:null)
+    alt Steam 命中且≥1920×1080
+        FS-->>SC: 图片 OK
+        C->>S: onEvent(cover_download, ok:true, detail:{file:封面.jpg})
+    else Steam 失败 → 回退 YouTube 缩略图(需 yt-dlp)
+        SC->>T: yt-dlp 取官方宣传片 maxres 缩略图
+        alt 回退成功
+            C->>S: onEvent(cover_download, ok:true, detail:{file:封面.png})
+        else 都失败
+            C->>S: onEvent(error, step:cover, ok:false) 报错（不静默）
+            Note over C: coverOk=false，仍继续宣传片步骤
+        end
+    end
+
+    Note over C,E,T,FS: ③ 宣传片（依赖本机 yt-dlp/ffmpeg）
+    C->>E: detect()
+    E-->>C: { ytDlp, ffmpeg, guidance }
+    alt yt-dlp 缺失
+        C->>S: onEvent(error, step:trailer, ok:false, detail:{ guidance })
+        Note over C: 仅宣传片报错 + 安装引导；封面已落盘；不崩溃、不阻塞
+    else yt-dlp 可用
+        C->>T: searchTrailer(name)
+        C->>S: onEvent(trailer_search, ok:null)
+        T-->>C: { title, url }
+        C->>T: download(name, dir, env)
+        C->>S: onEvent(trailer_download, ok:null)
+        T->>FS: 下载 mp4 / webm（保留原始英文名）
+        alt 落盘 .webm 且 ffmpeg 可用
+            C->>T: transcodeIfNeeded()
+            C->>S: onEvent(trailer_transcode, ok:null)
+            T->>FS: ffmpeg webm→mp4
+        else .webm 且 ffmpeg 缺失
+            C->>S: onEvent(error, step:trailer_transcode, ok:false, detail:{ guidance })
+        end
+        C->>S: onEvent(trailer_download, ok:true, detail:{ file })
+    end
+
+    C-->>S: Result { folder, cover, trailer, success }
+    S->>FE: onEvent(done, ok:true, detail:{...})
+    S->>S: 结束 SSE (res.end)
+    FE->>U: 渲染完成态（封面预览 + 视频卡 + 落盘路径）
+
+    Note over U,S: 端口防抢占握手（启动后主进程 verifyChildBoot）
+    Note right of S: GET /api/version → 回显 bootToken
+    Note right of U: 主进程比对 BOOT_TOKEN 校验端口归属

@@ -1,5 +1,5 @@
 // tools-hub 主进程（Electron）
-// 职责：单实例锁、fork 三个 node 子进程(kdocs/netdisk/biliup)、原生文件对话框、状态推送、看门狗、自动更新。
+// 职责：单实例锁、fork 四个 node 子进程(kdocs/netdisk/biliup/material)、原生文件对话框、状态推送、看门狗、自动更新。
 // 启动后渲染进程显示入口页；点击卡片后在同一窗口内以 <webview> 标签打开工具。
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
@@ -16,6 +16,7 @@ const RES = process.resourcesPath; // 开发时=项目根，打包后=resources 
 const KDOCS_DIR = path.join(RES, "kdocs-tool");
 const NETDISK_DIR = path.join(RES, "netdisk-hub");
 const BILIUP_DIR = path.join(RES, "biliup-hub");
+const MATERIAL_DIR = path.join(RES, "material-hub");
 
 // Node 运行时：打包后自带 resources/node/node.exe；开发时回退系统 PATH 的 node
 const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
@@ -79,6 +80,24 @@ const CHILDREN = {
     env: Object.assign({}, process.env, {
       TOOLSHUB_VERSION: app.getVersion(),
       BILIUP_PORT: "3600",
+    }),
+    proc: null,
+    running: false,
+    attempts: 0,
+    startedAt: 0,
+    lastError: null,
+  },
+  material: {
+    key: "material",
+    name: "素材搜集",
+    script: path.join(MATERIAL_DIR, "server.js"),
+    cwd: MATERIAL_DIR,
+    url: "http://localhost:3700",
+    env: Object.assign({}, process.env, {
+      TOOLSHUB_VERSION: app.getVersion(),
+      MATERIAL_PORT: "3700",
+      // 素材落盘根目录（不存在时由子进程自动 mkdir -p，见 lib/name.js）
+      MATERIAL_OUTPUT_DIR: "E:\\素材\\",
     }),
     proc: null,
     running: false,
@@ -571,6 +590,7 @@ app.whenReady().then(() => {
   cleanupStaleBackups();
   startChild(CHILDREN.netdisk);
   startChild(CHILDREN.biliup);
+  startChild(CHILDREN.material);
   setupAutoUpdater();
   // 子进程启动需要一点时间，稍后推一次状态
   setTimeout(pushStatus, 1500);

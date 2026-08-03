@@ -99,6 +99,13 @@
     url: "http://localhost:3600",
     icon: "📺",
   },
+  material: {
+    key: "material",
+    name: "素材搜集",
+    desc: "输入游戏名 → 自动建号文件夹 → 官方封面 + 宣传片落盘素材库",
+    url: "http://localhost:3700",
+    icon: "🎮",
+  },
 };
 
   let serviceStatus = {};
@@ -509,8 +516,9 @@
       const kdocsLevel = (serviceStatus.kdocs && serviceStatus.kdocs.running) ? 'ok' : 'off';
       const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
       const biliupLevel = (serviceStatus.biliup && serviceStatus.biliup.running) ? 'ok' : 'off';
+      const materialLevel = (serviceStatus.material && serviceStatus.material.running) ? 'ok' : 'off';
       const agg = (typeof aggregateStatus === "function")
-        ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel])
+        ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel, materialLevel])
         : 'off';
       const colorLevel = (typeof aggColorLevel === "function") ? aggColorLevel(agg) : agg;
       aggEl.innerHTML = (typeof statusHTML === "function")

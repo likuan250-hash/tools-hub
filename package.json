@@ -1,6 +1,6 @@
 {
   "name": "tools-hub",
-  "version": "2.1.13",
+  "version": "2.2.0",
   "description": "工具统一桌面应用：集成 kdocs-tool 与 netdisk-hub，单启动器、单安装包",
   "main": "main.js",
   "private": true,
@@ -11,7 +11,7 @@
     "verify:build": "node scripts/verify-build-assets.js",
     "verify:status-luxe": "node scripts/verify-status-luxe-sync.js",
     "sync-status-luxe": "node scripts/sync-status-luxe.js",
-    "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js",
+    "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && npm --prefix material-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.js\"",
     "prepare": "simple-git-hooks"
@@ -79,6 +79,18 @@
           "!node_modules/**/.cache",
           "!**/*.log",
           "!data/**",
+          "!logs/**",
+          "!**/.env",
+          "!.tmp/**"
+        ]
+      },
+      {
+        "from": "material-hub",
+        "to": "material-hub",
+        "filter": [
+          "**/*",
+          "!node_modules/**/.cache",
+          "!**/*.log",
           "!logs/**",
           "!**/.env",
           "!.tmp/**"

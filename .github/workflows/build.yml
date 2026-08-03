@@ -88,6 +88,10 @@ jobs:
         working-directory: biliup-hub
         run: npm install --no-audit --no-fund
 
+      - name: Install material-hub deps
+        working-directory: material-hub
+        run: npm install --no-audit --no-fund
+
       # #6 内置 biliup.exe：从 biliup-rs 官方 Release 下载 Windows 预编译包，
       # 解压取出 biliup.exe 放到 biliup-hub/bin/，由 electron-builder extraResources
       # 一并打进安装包（运行时路径 resources/biliup-hub/bin/biliup.exe）。
@@ -137,6 +141,10 @@ jobs:
 
       - name: Run biliup-hub tests (CI 门禁，失败则不出包)
         working-directory: biliup-hub
+        run: npm test
+
+      - name: Run material-hub tests (CI 门禁，失败则不出包)
+        working-directory: material-hub
         run: npm test
 
       - name: Verify status-luxe sync (三处副本逐字节一致)

@@ -12,3 +12,7 @@ logs/
 
 # 运行时落盘目录不在本仓库内（默认 E:\素材\），此处仅排除可能的本地覆盖
 data/
+
+# 内置外部二进制（yt-dlp.exe ≈17MB）：由 scripts/prepare-material-bins.js 下载，
+# electron-builder extraResources 打包时一并带上，不进 git（与 biliup-hub/bin 同策略）
+bin/

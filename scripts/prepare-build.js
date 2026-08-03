@@ -8,11 +8,14 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 
+// 路径一律基于 ROOT（仓库根），不要用 __dirname —— 本文件在 scripts/ 下，
+// 用 __dirname 会把目录建到 scripts/resources/*，而 NODE_DEST 指向的是仓库根的
+// resources/node/，父目录从未创建，下面的 copyFileSync 必 ENOENT（本地 build 长期崩在这）。
 for (const d of ["resources/node", "resources/bin"]) {
-  fs.mkdirSync(path.join(__dirname, d), { recursive: true });
+  fs.mkdirSync(path.join(ROOT, d), { recursive: true });
 }
 
-const NODE_DEST = path.join(__dirname, "../resources/node/node.exe");
+const NODE_DEST = path.join(ROOT, "resources/node/node.exe");
 
 function findNodeSrc() {
   // 优先当前运行进程所用的 node.exe（本机/CI/npm run 均可靠，不依赖写死路径）
@@ -103,4 +106,34 @@ function inlineSharedStyles() {
 inlineSharedStyles();
 
 require("./prune-bailian");
-console.log("[prepare-build] done");
+
+// ── 内置 material-hub 外部二进制（yt-dlp.exe）──
+// 素材搜集模块的宣传片下载强依赖 yt-dlp；用户机器不保证装过、更不保证在 PATH。
+// 这里在打包前确保 material-hub/bin/yt-dlp.exe 就位，由 extraResources 一并进安装包。
+// 下载失败必须让构建失败（exit 1），避免无声出一个「点运行必失败」的包。
+// 注意：ffmpeg/ffprobe 走 npm 包（@ffmpeg-installer / @ffprobe-installer），
+// 由 npm --prefix material-hub install 装进 node_modules，无需在此处理。
+const prepareMaterialBins = require("./prepare-material-bins");
+
+// ── 内置 biliup-hub 外部二进制（biliup.exe）──
+// B 站投稿模块的每一次投稿都要 fork biliup.exe；此前只有 CI 会下载它，
+// 本地构建因此会静默产出缺该 exe 的残包（装上后投稿必失败）。
+// 串进同一条 Promise 链：两个二进制都就位才算 done，任一失败都 exit 1。
+const prepareBiliupBin = require("./prepare-biliup-bin");
+
+prepareMaterialBins
+  .main()
+  .then(() => {
+    console.log("[prepare-build] material-hub 二进制就位");
+    return prepareBiliupBin.main();
+  })
+  .then(() => {
+    console.log("[prepare-build] biliup-hub 二进制就位");
+    console.log("[prepare-build] done");
+  })
+  .catch((e) => {
+    console.error(
+      "[prepare-build] 外部二进制准备失败：" + (e && e.message ? e.message : String(e)),
+    );
+    process.exit(1);
+  });

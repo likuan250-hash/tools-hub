@@ -1,12 +1,23 @@
-// lib/filename.js —— 文件名/文件夹名清洗（素材准备规则：宣传片「保留原始英文文件名」）
-// 主理人裁定 ⑦：非法字符 (/ \ : * ? " < > |) → `_`，限长 180，保留可读英文原名。
-// 空白折叠为 `_`（与原型 God_of_War_2018_Launch_Trailer_1080p.mp4 一致）；
-// 文件夹名可经 opts.space='keep' 保留空格，避免 "Elden Ring" 变成 "Elden_Ring" 影响可读性。
+// lib/filename.js —— 文件名/文件夹名清洗 + 规范要求的视频命名构造
+// 非法字符 (/ \ : * ? " < > |) → `_`，限长 180。
+// 空白折叠为 `_`（宣传片原始英文名场景）；opts.space='keep' 保留空格（文件夹名 / 中文命名场景）。
+//
+// 规范《素材搜集规则》「视频命名规范」：
+//   Launch Trailer：【游戏XXX】游戏名 英文版名 Launch Trailer 免费学习版下载.mp4
+//   主视频        ：【游戏XXX】游戏名 版本描述 免费学习版下载.mp4
 
 /** Windows 非法文件名字符（含控制字符）。 */
 const ILLEGAL_RE = /[/\\:*?"<>|\u0000-\u001f]/g;
 /** 文件名最大长度（不含扩展名）。 */
 const MAX_LEN = 180;
+/** 编号最小位宽（与规范示例 【游戏255】 对齐）；lib/name.js 复用本常量避免两处漂移。 */
+const INDEX_PAD = 3;
+/** 规范固定后缀（所有视频文件名结尾）。 */
+const FREE_SUFFIX = '免费学习版下载';
+/** Launch Trailer 类型标识（规范示例：… The Two Masters Launch Trailer 免费学习版下载.mp4）。 */
+const LAUNCH_MARK = 'Launch Trailer';
+/** 主视频默认版本描述（规范：官方中文 / 全DLC / 免安装硬盘版）。 */
+const DEFAULT_VERSION_DESC = '官方中文+全DLC+免安装硬盘版';
 /** yt-dlp 常见容器格式 → 扩展名。 */
 const FORMAT_EXT = {
   mp4: '.mp4',
@@ -41,7 +52,7 @@ class FilenameSanitizer {
    * 清洗为合法且可读的文件/文件夹基名。
    * @param {string} raw 原始名（可能来自 yt-dlp 标题）
    * @param {{space?: '_'|'keep', max?: number}} [opts]
-   *   space: '_' 空白转下划线（默认，用于文件名）；'keep' 保留空格（用于文件夹名）
+   *   space: '_' 空白转下划线（默认，用于英文原名）；'keep' 保留空格（用于文件夹名/中文命名）
    * @returns {string} 清洗后的基名（永不为空）
    */
   sanitize(raw, opts = {}) {
@@ -77,6 +88,82 @@ class FilenameSanitizer {
     const ext = this.extForFormat(fmt);
     return this.sanitize(rawTitle, { max: MAX_LEN - ext.length }) + ext;
   }
+
+  /**
+   * 编号前缀（与 NameResolver.buildFolderName 同源，保证文件名与文件夹名编号一致）。
+   * @param {number} index 编号
+   * @returns {string} 如 '【游戏267】'
+   */
+  indexPrefix(index) {
+    const n = Number.isFinite(Number(index)) ? Math.max(0, Math.floor(Number(index))) : 0;
+    return '【游戏' + String(n).padStart(INDEX_PAD, '0') + '】';
+  }
+
+  /**
+   * 用空格拼接若干片段，自动丢弃空片段并折叠多余空格。
+   * @param {Array<string>} parts 片段
+   * @returns {string}
+   */
+  joinParts(parts) {
+    return (Array.isArray(parts) ? parts : [])
+      .map((p) => String(p == null ? '' : p).trim())
+      .filter((p) => p.length > 0)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * 构造 Launch Trailer 文件名。
+   * 规范格式：`【游戏XXX】游戏名 英文版名 Launch Trailer 免费学习版下载.mp4`
+   * 规范同时给出无英文名的示例（`【游戏264】光环：战役进化 免费学习版下载.mp4`），
+   * 故 englishName 为空且 mark 显式置空时可省略类型标识。
+   * @param {number} index 素材编号
+   * @param {string} gameName 游戏名（中文名优先）
+   * @param {{englishName?: string, mark?: string, ext?: string}} [opts]
+   *   englishName 英文版名（如 'The Two Masters'）；mark 类型标识，默认 'Launch Trailer'，传 '' 省略
+   * @returns {string} 如 '【游戏267】忍者龙剑传4 The Two Masters Launch Trailer 免费学习版下载.mp4'
+   */
+  buildLaunchTrailerName(index, gameName, opts = {}) {
+    const ext = this.extForFormat(opts.ext == null ? 'mp4' : opts.ext);
+    const mark = opts.mark === undefined ? LAUNCH_MARK : String(opts.mark || '');
+    const body = this.joinParts([
+      this.indexPrefix(index) + this.sanitize(gameName, { space: 'keep', max: 80 }),
+      opts.englishName ? this.sanitize(opts.englishName, { space: 'keep', max: 60 }) : '',
+      mark,
+      FREE_SUFFIX,
+    ]);
+    return this.sanitize(body, { space: 'keep', max: MAX_LEN - ext.length }) + ext;
+  }
+
+  /**
+   * 构造主视频（游戏版本素材）文件名。
+   * 规范格式：`【游戏XXX】游戏名 版本描述 免费学习版下载.mp4`
+   * @param {number} index 素材编号
+   * @param {string} gameName 游戏名
+   * @param {{versionDesc?: string, ext?: string}} [opts] versionDesc 默认 '官方中文+全DLC+免安装硬盘版'
+   * @returns {string} 如 '【游戏265】模拟人生4 官方中文+全DLC+免安装硬盘版 免费学习版下载.mp4'
+   */
+  buildMainVideoName(index, gameName, opts = {}) {
+    const ext = this.extForFormat(opts.ext == null ? 'mp4' : opts.ext);
+    const desc = opts.versionDesc === undefined ? DEFAULT_VERSION_DESC : String(opts.versionDesc || '');
+    const body = this.joinParts([
+      this.indexPrefix(index) + this.sanitize(gameName, { space: 'keep', max: 80 }),
+      desc ? this.sanitize(desc, { space: 'keep', max: 60 }) : '',
+      FREE_SUFFIX,
+    ]);
+    return this.sanitize(body, { space: 'keep', max: MAX_LEN - ext.length }) + ext;
+  }
 }
 
-module.exports = { FilenameSanitizer, ILLEGAL_RE, MAX_LEN, FORMAT_EXT, FALLBACK_BASE };
+module.exports = {
+  FilenameSanitizer,
+  ILLEGAL_RE,
+  MAX_LEN,
+  INDEX_PAD,
+  FORMAT_EXT,
+  FALLBACK_BASE,
+  FREE_SUFFIX,
+  LAUNCH_MARK,
+  DEFAULT_VERSION_DESC,
+};

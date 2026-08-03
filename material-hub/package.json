@@ -1,6 +1,6 @@
 {
   "name": "material-hub",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "素材搜集工具（tools-hub 第四个子工具）：输入游戏名 → 建号文件夹 → 官方封面 + 官方宣传片落盘素材库",
   "main": "server.js",
   "scripts": {
@@ -11,6 +11,8 @@
   "keywords": ["material", "steam", "yt-dlp", "trailer", "tools-hub"],
   "license": "ISC",
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "dotenv": "^17.4.2",
     "express": "^5.2.1"
   }

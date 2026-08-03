@@ -2,6 +2,7 @@
 // 全部注入 fs 替身，不触碰真实磁盘，不依赖 E:\素材\ 是否存在。
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const { NameResolver, FOLDER_RE, MAX_RESERVE_ATTEMPTS } = require('../lib/name');
 
 /**
@@ -135,4 +136,103 @@ test('reserveFolder 重试耗尽抛 ERESERVE，非 EEXIST 错误直接冒泡', (
   });
   const r2 = new NameResolver({ fs: denied });
   assert.throws(() => r2.reserveFolder('E:\\素材\\', 'x'), (e) => e.code === 'EPERM');
+});
+
+// ─────────────────── Bug A 回归：同名游戏不得重复建文件夹 ───────────────────
+// 现场表现：连点「运行」产出 【游戏268】正当防卫4 / 【游戏269】正当防卫4 / 【游戏270】正当防卫4。
+// 规范《完整流程》第 2 步：已存在 → 跳过创建，直接进入下一步。
+
+test('parseGameNameFromFolder 剥离【游戏NNN】前缀取游戏名', () => {
+  const r = new NameResolver({ fs: fakeFs() });
+  assert.equal(r.parseGameNameFromFolder('【游戏268】正当防卫4'), '正当防卫4');
+  assert.equal(r.parseGameNameFromFolder('【游戏007】Elden Ring'), 'Elden Ring');
+  assert.equal(r.parseGameNameFromFolder('杂项'), null);
+  assert.equal(r.parseGameNameFromFolder(null), null);
+});
+
+test('normalizeGameName 忽略大小写/空白/中英标点差异', () => {
+  const r = new NameResolver({ fs: fakeFs() });
+  assert.equal(r.normalizeGameName('正当防卫 4'), r.normalizeGameName('正当防卫4'));
+  assert.equal(r.normalizeGameName('Elden Ring'), r.normalizeGameName('elden  ring'));
+  assert.equal(r.normalizeGameName('黑神话：悟空'), r.normalizeGameName('黑神话:悟空'));
+  assert.equal(r.normalizeGameName('Ratchet—Clank'), r.normalizeGameName('Ratchet-Clank'));
+  assert.equal(r.normalizeGameName(''), '');
+  assert.equal(r.normalizeGameName(null), '');
+});
+
+test('findExistingFolder 命中同名游戏，多个同名时取最小编号（最早建立的为准）', () => {
+  // 这就是 Bug A 的现场目录状态
+  const r = new NameResolver({
+    fs: fakeFs({ entries: ['【游戏270】正当防卫4', '【游戏268】正当防卫4', '【游戏269】正当防卫4', '【游戏100】其它游戏'] }),
+  });
+  const hit = r.findExistingFolder('E:\\素材\\', '正当防卫4');
+  assert.equal(hit.index, 268);
+  assert.equal(hit.folderName, '【游戏268】正当防卫4');
+  assert.equal(hit.folder, path.join('E:\\素材\\', '【游戏268】正当防卫4'));
+
+  // 空格差异不影响判定
+  assert.equal(r.findExistingFolder('E:\\素材\\', '正当防卫 4').index, 268);
+});
+
+test('findExistingFolder 大小写不敏感，且能匹配被清洗过的磁盘目录名', () => {
+  const r1 = new NameResolver({ fs: fakeFs({ entries: ['【游戏010】Elden Ring'] }) });
+  assert.equal(r1.findExistingFolder('E:\\素材\\', 'elden ring').index, 10);
+
+  // 磁盘上的目录名是 sanitize 过的（冒号 → 下划线），输入的是原始名
+  const r2 = new NameResolver({ fs: fakeFs({ entries: ['【游戏011】黑神话_悟空'] }) });
+  assert.equal(r2.findExistingFolder('E:\\素材\\', '黑神话:悟空').index, 11);
+});
+
+test('findExistingFolder 未命中 / 无编号前缀 / 空名一律返回 null', () => {
+  const r = new NameResolver({ fs: fakeFs({ entries: ['【游戏268】正当防卫4', '正当防卫5'] }) });
+  assert.equal(r.findExistingFolder('E:\\素材\\', '正当防卫3'), null);
+  // 无【游戏NNN】前缀的目录不参与判定
+  assert.equal(r.findExistingFolder('E:\\素材\\', '正当防卫5'), null);
+  assert.equal(r.findExistingFolder('E:\\素材\\', ''), null);
+  assert.equal(r.findExistingFolder('E:\\素材\\', null), null);
+
+  const missing = new NameResolver({ fs: fakeFs({ exists: false }) });
+  assert.equal(missing.findExistingFolder('E:\\素材\\', '正当防卫4'), null);
+});
+
+test('reserveFolder 命中同名时复用且完全不 mkdir 新目录（Bug A 核心回归）', () => {
+  const fs = fakeFs({
+    entries: ['【游戏268】正当防卫4', '【游戏269】正当防卫4', '【游戏270】正当防卫4'],
+    onMkdir(p, o) {
+      // 非递归 mkdir 出现 = 又建了一个同名新编号目录 = Bug A 复发
+      if (!o || !o.recursive) throw new Error('不应新建目录：' + p);
+    },
+  });
+  const r = new NameResolver({ fs });
+  const res = r.reserveFolder('E:\\素材\\', '正当防卫4');
+  assert.equal(res.reused, true);
+  assert.equal(res.index, 268);
+  assert.equal(res.folderName, '【游戏268】正当防卫4');
+  // 只有 ensureOutputDir 那一次 recursive mkdir
+  assert.equal(fs.calls.length, 1);
+  assert.deepEqual(fs.calls[0].options, { recursive: true });
+
+  // 连续调用三次仍然稳定复用同一个编号，不再逐次 +1
+  assert.equal(r.reserveFolder('E:\\素材\\', '正当防卫4').index, 268);
+  assert.equal(r.reserveFolder('E:\\素材\\', '正当防卫 4').index, 268);
+});
+
+test('reserveFolder 无同名时正常新建并返回 reused=false', () => {
+  const fs = fakeFs({ entries: ['【游戏268】正当防卫4'] });
+  const r = new NameResolver({ fs });
+  const res = r.reserveFolder('E:\\素材\\', '战神4');
+  assert.equal(res.reused, false);
+  assert.equal(res.index, 269);
+  assert.equal(res.folderName, '【游戏269】战神4');
+  // ensureOutputDir + 一次非递归占位
+  assert.equal(fs.calls.length, 2);
+  assert.equal(fs.calls[1].options, undefined);
+});
+
+test('reserveFolder reuseExisting=false 可强制新建（force 重下场景）', () => {
+  const fs = fakeFs({ entries: ['【游戏268】正当防卫4'] });
+  const r = new NameResolver({ fs });
+  const res = r.reserveFolder('E:\\素材\\', '正当防卫4', { reuseExisting: false });
+  assert.equal(res.reused, false);
+  assert.equal(res.index, 269);
 });

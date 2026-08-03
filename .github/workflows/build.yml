@@ -129,6 +129,27 @@ jobs:
           if (-not (Test-Path (Join-Path $outDir "biliup.exe"))) { Write-Error "biliup.exe 未就位"; exit 1 }
           Write-Host "✅ biliup.exe 已就位: $(Join-Path $outDir 'biliup.exe')"
 
+      # 内置 yt-dlp.exe：素材搜集模块的宣传片下载强依赖 yt-dlp，用户机器不保证装过、
+      # 更不保证在 PATH。这里从 yt-dlp 官方 Release 下载 Windows 单文件 exe 放到
+      # material-hub/bin/，由 electron-builder extraResources（from: "material-hub"）
+      # 一并打进安装包（运行时路径 resources/material-hub/bin/yt-dlp.exe）。
+      # ffmpeg/ffprobe 走 npm 包（@ffmpeg-installer / @ffprobe-installer），上一步 npm install 已装好。
+      # 下载失败必须让 CI 报错（exit 1），避免无声出一个「点运行必失败」的包。
+      - name: Download & bundle yt-dlp.exe (material-hub)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+          $outDir = "material-hub/bin"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $dest = Join-Path $outDir "yt-dlp.exe"
+          Write-Host "下载 yt-dlp.exe: $url"
+          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+          if (-not (Test-Path $dest)) { Write-Error "yt-dlp.exe 未就位"; exit 1 }
+          $size = (Get-Item $dest).Length
+          if ($size -lt 1MB) { Write-Error "yt-dlp.exe 体积异常 ($size bytes)，疑似下载失败页"; exit 1 }
+          Write-Host "✅ yt-dlp.exe 已就位: $dest ($([math]::Round($size/1MB,1))MB)"
+
       - name: Run kdocs-tool tests (CI 门禁，失败则不出包)
         working-directory: kdocs-tool
         run: npm test

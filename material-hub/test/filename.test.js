@@ -2,7 +2,14 @@
 // 对应主理人裁定⑦：非法字符 (/ \ : * ? " < > |) → `_`，限长 180，保留可读英文原名。
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { FilenameSanitizer, MAX_LEN, FALLBACK_BASE } = require('../lib/filename');
+const {
+  FilenameSanitizer,
+  MAX_LEN,
+  FALLBACK_BASE,
+  FREE_SUFFIX,
+  LAUNCH_MARK,
+  DEFAULT_VERSION_DESC,
+} = require('../lib/filename');
 
 const s = new FilenameSanitizer();
 
@@ -74,4 +81,82 @@ test('buildFileName 组合清洗基名与扩展名且总长不超 180', () => {
   const name = s.buildFileName('y'.repeat(400), 'webm');
   assert.equal(name.length, MAX_LEN);
   assert.ok(name.endsWith('.webm'));
+});
+
+// ─────────────────── 规范《视频命名规范》构造 ───────────────────
+// Launch Trailer：【游戏XXX】游戏名 英文版名 Launch Trailer 免费学习版下载.mp4
+// 主视频        ：【游戏XXX】游戏名 版本描述 免费学习版下载.mp4
+
+test('indexPrefix 与文件夹编号同源，补零到 3 位', () => {
+  assert.equal(s.indexPrefix(267), '【游戏267】');
+  assert.equal(s.indexPrefix(7), '【游戏007】');
+  assert.equal(s.indexPrefix(1234), '【游戏1234】');
+  assert.equal(s.indexPrefix(NaN), '【游戏000】');
+  assert.equal(s.indexPrefix(-5), '【游戏000】');
+  assert.equal(s.indexPrefix(undefined), '【游戏000】');
+});
+
+test('joinParts 丢弃空片段并折叠多余空格', () => {
+  assert.equal(s.joinParts(['a', '', '  b  ', null, 'c']), 'a b c');
+  assert.equal(s.joinParts(['单段']), '单段');
+  assert.equal(s.joinParts([]), '');
+  assert.equal(s.joinParts(null), '');
+});
+
+test('buildLaunchTrailerName 生成规范示例同款文件名', () => {
+  assert.equal(
+    s.buildLaunchTrailerName(267, '忍者龙剑传4', { englishName: 'The Two Masters' }),
+    '【游戏267】忍者龙剑传4 The Two Masters Launch Trailer 免费学习版下载.mp4'
+  );
+  // 无英文版名时该段省略，不留双空格
+  assert.equal(
+    s.buildLaunchTrailerName(264, '光环：战役进化'),
+    '【游戏264】光环：战役进化 ' + LAUNCH_MARK + ' ' + FREE_SUFFIX + '.mp4'
+  );
+  // 规范另一示例：mark 显式置空则省略类型标识
+  assert.equal(
+    s.buildLaunchTrailerName(264, '光环：战役进化', { mark: '' }),
+    '【游戏264】光环：战役进化 免费学习版下载.mp4'
+  );
+});
+
+test('buildLaunchTrailerName 清洗非法字符并支持自定义扩展名', () => {
+  assert.equal(
+    s.buildLaunchTrailerName(3, 'Ratchet & Clank: Rift Apart', { englishName: 'Rift Apart' }),
+    '【游戏003】Ratchet & Clank_ Rift Apart Rift Apart Launch Trailer 免费学习版下载.mp4'
+  );
+  assert.ok(s.buildLaunchTrailerName(1, 'x', { ext: 'webm' }).endsWith('.webm'));
+  assert.ok(s.buildLaunchTrailerName(1, 'x', { ext: 'unknown' }).endsWith('.mp4'));
+  // 超长输入仍不超过 180
+  const long = s.buildLaunchTrailerName(1, 'g'.repeat(300), { englishName: 'e'.repeat(300) });
+  assert.ok(long.length <= MAX_LEN);
+  assert.ok(long.endsWith('.mp4'));
+});
+
+test('buildMainVideoName 默认带规范版本描述，可自定义或省略', () => {
+  assert.equal(
+    s.buildMainVideoName(265, '模拟人生4'),
+    '【游戏265】模拟人生4 ' + DEFAULT_VERSION_DESC + ' ' + FREE_SUFFIX + '.mp4'
+  );
+  assert.equal(
+    s.buildMainVideoName(265, '模拟人生4'),
+    '【游戏265】模拟人生4 官方中文+全DLC+免安装硬盘版 免费学习版下载.mp4'
+  );
+  assert.equal(
+    s.buildMainVideoName(265, '模拟人生4', { versionDesc: '中文豪华版' }),
+    '【游戏265】模拟人生4 中文豪华版 免费学习版下载.mp4'
+  );
+  assert.equal(
+    s.buildMainVideoName(265, '模拟人生4', { versionDesc: '' }),
+    '【游戏265】模拟人生4 免费学习版下载.mp4'
+  );
+});
+
+test('两种命名的编号前缀与文件夹编号严格一致，且都以规范后缀收尾', () => {
+  const launch = s.buildLaunchTrailerName(268, '正当防卫4');
+  const main = s.buildMainVideoName(268, '正当防卫4');
+  assert.ok(launch.startsWith('【游戏268】'));
+  assert.ok(main.startsWith('【游戏268】'));
+  assert.ok(launch.includes(FREE_SUFFIX + '.'));
+  assert.ok(main.includes(FREE_SUFFIX + '.'));
 });

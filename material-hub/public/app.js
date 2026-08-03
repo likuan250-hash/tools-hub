@@ -40,21 +40,56 @@ const GROUP_OF_TYPE = {
   scan: "scan",
   cover_search: "cover",
   cover_download: "cover",
+  cover_extract: "cover",
   trailer_search: "trailer",
   trailer_download: "trailer",
   trailer_transcode: "trailer",
+  trailer_probe: "trailer",
 };
-/** 状态等级 → 中文标签。 */
-const LEVEL_LABEL = { ok: "✓ 完成", err: "✕ 失败", info: "● 进行中", warn: "! 注意", off: "待执行" };
+/** 状态等级 → 中文标签（无符号，状态由步骤徽标 SVG 与配色承载，全站零 emoji / 零字符符号）。 */
+const LEVEL_LABEL = { ok: "完成", err: "失败", info: "进行中", warn: "注意", off: "待执行" };
 
-/** 步骤徽标图标（与原型一致：完成打勾 / 失败叉 / 进行中下载 / 待执行圆点）。 */
+/** 封面来源标识 → 中文展示名（与 lib/cover.js SOURCE_LABEL 对齐）。 */
+const COVER_SOURCE_LABEL = {
+  "4kwallpapers": "4kwallpapers.com",
+  alphacoders: "alphacoders.com",
+  wallhaven: "wallhaven.cc",
+  user: "用户指定 URL",
+  nintendo: "Nintendo 官网",
+  youtube: "YouTube 缩略图",
+  "ffmpeg-frame": "主视频抽帧",
+  reused: "复用已有封面",
+  unknown: "未知来源",
+};
+/**
+ * 封面来源展示名。
+ * @param {string} source 来源标识
+ * @returns {string}
+ */
+function coverSourceLabel(source) {
+  return COVER_SOURCE_LABEL[source] || source || "未知来源";
+}
+
+/** 步骤徽标图标（统一 SVG 系统，零 emoji）。 */
 const ICONS = {
   ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   err: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round"/></svg>',
   info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 3v9" stroke-linecap="round"/><path d="M7 12a5 5 0 1 0 10 0" stroke-linecap="round"/></svg>',
   warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 7v6" stroke-linecap="round"/><path d="M12 17h.01" stroke-linecap="round"/></svg>',
-  off: "●",
+  off: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>',
 };
+
+/**
+ * 结果摘要前置状态图标（零 emoji，统一 SVG 系统）。
+ * @param {string} level ok|warn|fail
+ * @returns {string} SVG 片段
+ */
+function summaryIcon(level) {
+  if (level === "ok") return window.ico("check");
+  if (level === "warn") return window.ico("warning");
+  if (level === "fail") return window.ico("cross");
+  return window.ico("dot");
+}
 
 /** 步骤运行时状态：group → {level, detail}。 */
 const stepState = {};
@@ -207,13 +242,13 @@ function renderDone(ev) {
   // 摘要：封面是硬指标（缺封面 = 整体失败）；封面在但宣传片缺 = 黄警，不假装全绿
   if (ev.ok === true && d.trailerOk) {
     doneSummary.className = "result-summary ok";
-    doneSummary.textContent = "✓ " + (ev.step || "素材搜集完成") + " · " + (ev.msg || "");
+    doneSummary.innerHTML = summaryIcon("ok") + " " + esc((ev.step || "素材搜集完成") + " · " + (ev.msg || ""));
   } else if (ev.ok === true) {
     doneSummary.className = "result-summary warn";
-    doneSummary.textContent = "! " + (ev.step || "素材搜集完成") + " · " + (ev.msg || "");
+    doneSummary.innerHTML = summaryIcon("warn") + " " + esc((ev.step || "素材搜集完成") + " · " + (ev.msg || ""));
   } else {
     doneSummary.className = "result-summary fail";
-    doneSummary.textContent = "✕ " + (ev.step || "素材搜集未完成") + " · " + (ev.msg || "");
+    doneSummary.innerHTML = summaryIcon("fail") + " " + esc((ev.step || "素材搜集未完成") + " · " + (ev.msg || ""));
   }
 
   // 封面预览（本地磁盘文件不能经 http origin 直读，按原型以占位卡呈现元数据）
@@ -221,45 +256,50 @@ function renderDone(ev) {
     coverPreview.classList.remove("missing");
     coverName.textContent = cover.file;
     coverDim.textContent = (cover.width || "?") + " × " + (cover.height || "?") +
-      (cover.source === "youtube" ? " · YouTube 回退" : " · Steam 官方图");
+      " · " + coverSourceLabel(cover.source) +
+      (cover.degraded ? "（降级图）" : "") +
+      (cover.reused ? "（复用）" : "");
   } else {
     coverPreview.classList.add("missing");
     coverName.textContent = "封面缺失";
-    coverDim.textContent = "Steam 与 YouTube 均未取到";
+    coverDim.textContent = "所有封面来源均未取到";
   }
 
   // 产物卡片
   const cards = [];
   if (trailer && trailer.file) {
     cards.push(
-      '<div class="file-card"><div class="play">▶</div><div class="meta">' +
+      '<div class="file-card"><div class="play"><i class="app-ico" data-ico="play"></i></div><div class="meta">' +
       '<div class="fname">' + esc(trailer.file) + "</div>" +
       '<div class="fsub">' + esc(trailer.title || "官方宣传片") + (trailer.converted ? " · 已转码 .webm → .mp4" : "") + "</div>" +
       "</div></div>"
     );
   } else {
     cards.push(
-      '<div class="file-card"><div class="play missing">✕</div><div class="meta">' +
+      '<div class="file-card"><div class="play missing"><i class="app-ico" data-ico="cross"></i></div><div class="meta">' +
       '<div class="fname">宣传片未获取</div><div class="fsub">见「执行中」面板的失败原因与安装引导</div>' +
       "</div></div>"
     );
   }
   if (cover && cover.file) {
     cards.push(
-      '<div class="file-card"><div class="play cover">🖼</div><div class="meta">' +
+      '<div class="file-card"><div class="play cover"><i class="app-ico" data-ico="image"></i></div><div class="meta">' +
       '<div class="fname">' + esc(cover.file) + "</div>" +
-      '<div class="fsub">' + esc(cover.source === "youtube" ? "YouTube maxres 回退" : "Steam library_hero") +
+      '<div class="fsub">' + esc(coverSourceLabel(cover.source)) +
+      (cover.degraded ? " · 降级图" : "") +
+      (cover.reused ? " · 复用" : "") +
       " · " + esc((cover.width || "?") + " × " + (cover.height || "?")) + "</div>" +
       "</div></div>"
     );
   } else {
     cards.push(
-      '<div class="file-card"><div class="play missing">✕</div><div class="meta">' +
-      '<div class="fname">封面未获取</div><div class="fsub">Steam 与 YouTube 缩略图均获取失败</div>' +
+      '<div class="file-card"><div class="play missing"><i class="app-ico" data-ico="cross"></i></div><div class="meta">' +
+      '<div class="fname">封面未获取</div><div class="fsub">所有封面来源（壁纸站 / 官网 / YouTube / 主视频抽帧）均获取失败</div>' +
       "</div></div>"
     );
   }
   doneFiles.innerHTML = cards.join("");
+  window.hydrateIcons(doneFiles);
 
   // 落盘路径
   const files = [];
@@ -305,7 +345,7 @@ async function runCollect(name) {
       addLog("err", d.error || ("HTTP " + r.status));
       formError.textContent = d.error || ("请求失败：HTTP " + r.status);
       doneSummary.className = "result-summary fail";
-      doneSummary.textContent = "✕ 执行失败：" + (d.error || r.status);
+      doneSummary.innerHTML = summaryIcon("fail") + " " + esc("执行失败：" + (d.error || r.status));
       enableTab("done");
       return;
     }
@@ -337,7 +377,7 @@ async function runCollect(name) {
     addLog("err", "请求失败：" + e.message);
     formError.textContent = "请求失败：" + e.message;
     doneSummary.className = "result-summary fail";
-    doneSummary.textContent = "✕ 执行异常：" + e.message;
+    doneSummary.innerHTML = summaryIcon("fail") + " " + esc("执行异常：" + e.message);
     enableTab("done");
   } finally {
     running = false;

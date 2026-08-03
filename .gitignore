@@ -6,6 +6,9 @@ dist/
 # 构建期准备的运行时资源（含 node.exe 与 bl/bailian 私有依赖），不进 git
 resources/node/
 resources/bin/node_modules/
+# prune-bailian.js 的 npm 兜底逻辑在构建时生成的副产物，不进 git
+# （只忽略这一个文件；resources/bin/bl.cmd 是必要文件，必须保持被 git 跟踪）
+resources/bin/package.json
 # 含凭证的本地配置文件，绝不进 git（.env.example 模板保留）
 .env
 # 网盘凭证加密主密钥（v0.1.27 起 AES-256-GCM 用），绝不可进 git，否则加密形同虚设

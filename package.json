@@ -1,6 +1,6 @@
 {
   "name": "tools-hub",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "工具统一桌面应用：集成 kdocs-tool 与 netdisk-hub，单启动器、单安装包",
   "main": "main.js",
   "private": true,
@@ -9,9 +9,11 @@
     "build": "node scripts/prepare-build.js && electron-builder --dir && node scripts/verify-build-assets.js",
     "dist": "node scripts/prepare-build.js && electron-builder --win nsis -p always && node scripts/verify-build-assets.js",
     "verify:build": "node scripts/verify-build-assets.js",
+    "prepare:material-bins": "node scripts/prepare-material-bins.js",
+    "prepare:biliup-bin": "node scripts/prepare-biliup-bin.js",
     "verify:status-luxe": "node scripts/verify-status-luxe-sync.js",
     "sync-status-luxe": "node scripts/sync-status-luxe.js",
-    "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && npm --prefix material-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js",
+    "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && npm --prefix material-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js test/verify-build-assets.test.js test/prepare-biliup-bin.test.js test/extra-resources-filter.test.js",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.js\"",
     "prepare": "simple-git-hooks"
@@ -56,7 +58,9 @@
         "filter": [
           "**/*",
           "!node_modules/**/.cache",
-          "!**/*.log"
+          "!**/*.log",
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
         ]
       },
       {
@@ -68,7 +72,9 @@
           "!**/*.log",
           "!data/**",
           "!logs/**",
-          "!**/.env"
+          "!**/.env",
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
         ]
       },
       {
@@ -81,7 +87,9 @@
           "!data/**",
           "!logs/**",
           "!**/.env",
-          "!.tmp/**"
+          "!.tmp/**",
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
         ]
       },
       {
@@ -93,7 +101,9 @@
           "!**/*.log",
           "!logs/**",
           "!**/.env",
-          "!.tmp/**"
+          "!.tmp/**",
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
         ]
       },
       {

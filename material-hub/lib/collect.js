@@ -18,7 +18,7 @@ const path = require('path');
 const fsDefault = require('fs');
 const { NameResolver } = require('./name');
 const { CoverFetcher, COVER_FILE } = require('./cover');
-const { TrailerDownloader } = require('./trailer');
+const { TrailerDownloader, extractEnglishName: trailerExtractEnglishName } = require('./trailer');
 const { MediaProbe } = require('./probe');
 const { EnvDetector, YT_DLP_GUIDANCE } = require('./env');
 const { meetsMinSize, MIN_WIDTH, MIN_HEIGHT } = require('./imagesize');
@@ -286,8 +286,11 @@ class CollectService {
           emit,
           coverUrl: opts.coverUrl,
           // 缺陷 3：4kwallpapers / alphacoders / wallhaven 都是纯英文站，中文名喂进去必然 0 结果。
-          // 调用方给了英文版名就直接用；没给时 CoverFetcher 会自己经 Steam 反查，查不到再退回原名。
-          englishTitle: opts.englishName,
+          // 英文名优先级：调用方显式给的 > 宣传片标题里提取的 > Steam 反查 > 退回原名。
+          //   中间这一档是本次加的兜底 —— Steam 国区经常搜不到中文名对应的英文标题
+          //   （如「正当防卫4」→ Steam storesearch 无结果），但宣传片搜索结果可能已经拿到了。
+          englishTitle: opts.englishName
+            || (trailerInfo ? trailerExtractEnglishName(trailerInfo.title) : ''),
           videoId: trailerInfo && trailerInfo.id ? trailerInfo.id : '',
         });
       } catch (e) {

@@ -21,6 +21,33 @@ const { FilenameSanitizer } = require('./filename');
 const { runCommand } = require('./runner');
 const { resolveProxy, toProxyUrl } = require('./http');
 
+/**
+ * 从宣传片标题里提取英文游戏名，作为封面检索的 fallback。
+ *
+ * 场景：Steam 国区 storesearch 搜不到中文名对应的 appid 时，
+ * resolverEnglishTitle 只能退回原名；但此时宣传片搜索结果可能已经拿到了
+ * 诸如 "Just Cause 4 - Launch Trailer | PS4" 的 YouTube 标题——
+ * 这里面藏着准确的英文名，白嫖比什么都不做强。
+ *
+ * 策略：YouTube 宣传片标题的典型格式是 "{游戏名} - {trailer 类型} [| {频道}]"。
+ * 取第一个 " - " 之前的部分，过一遍基础检查即可。
+ *
+ * @param {string} title YouTube 视频标题
+ * @returns {string|null} 提取的英文游戏名；标题结构不对或中文为主时返回 null
+ */
+function extractEnglishName(title) {
+  if (!title || typeof title !== 'string') return null;
+  const idx = title.indexOf(' - ');
+  if (idx <= 0) return null;
+  const name = title.slice(0, idx).trim();
+  // 必须以拉丁字母开头且含至少 2 个字母（排除纯中文/纯日文标题，
+  // 也排除 "Go" / "Ar 2" 这类短名被错杀的情况）。
+  if (!/^[a-zA-Z]/.test(name)) return null;
+  if (!/[a-zA-Z]{2}/.test(name)) return null;
+  if (name.length < 2 || name.length > 80) return null;
+  return name;
+}
+
 /** 检索关键词后缀（规范原文：{游戏名} official launch trailer）。 */
 const SEARCH_SUFFIX = 'official launch trailer';
 /** 规范指定的检索条数：ytsearch10。 */
@@ -661,4 +688,5 @@ module.exports = {
   PLATFORM_CHANNELS,
   AGGREGATOR_CHANNELS,
   TYPE_RULES,
+  extractEnglishName,
 };

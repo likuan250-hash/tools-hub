@@ -17,6 +17,7 @@ const {
   DURATION_MIN,
   DURATION_MAX,
   PROXY_PROBE_URL,
+  extractEnglishName,
 } = require('../lib/trailer');
 const { resolveProxy, toProxyUrl } = require('../lib/http');
 
@@ -697,4 +698,38 @@ test('无代理环境时 searchTrailer / download 都不带 --proxy', async () =
   const t = make({ plan: { stdout }, calls, env: {} });
   await t.searchTrailer('Elden Ring');
   assert.ok(!calls[0].args.includes('--proxy'));
+});
+
+// ── extractEnglishName ──
+test('extractEnglishName: 标准 YouTube 标题 "Just Cause 4 - Launch Trailer | PS4"', () => {
+  assert.equal(extractEnglishName('Just Cause 4 - Launch Trailer | PS4'), 'Just Cause 4');
+});
+test('extractEnglishName: "Elden Ring - Official Launch Trailer"', () => {
+  assert.equal(extractEnglishName('Elden Ring - Official Launch Trailer'), 'Elden Ring');
+});
+test('extractEnglishName: "Nioh 2 - The Complete Edition | Launch Trailer"（游戏名含 " - " 子标题，只能提取到 "Nioh 2"）', () => {
+  // 客观限制：无法区分游戏名内部的 " - " 与 YouTube 标题的 " - " 分隔符。
+  // "Nioh 2" 虽漏了子标题，但仍比什么都不做强——至少能命中英文章。
+  assert.equal(extractEnglishName('Nioh 2 - The Complete Edition | Launch Trailer'), 'Nioh 2');
+});
+test('extractEnglishName: 纯中文标题返回 null', () => {
+  assert.equal(extractEnglishName('仁王2 Complete Edition - Launch Trailer'), null);
+});
+test('extractEnglishName: 无 " - " 分隔符返回 null', () => {
+  assert.equal(extractEnglishName('Just Cause 4 Launch Trailer'), null);
+});
+test('extractEnglishName: 空字符串返回 null', () => {
+  assert.equal(extractEnglishName(''), null);
+});
+test('extractEnglishName: null 返回 null', () => {
+  assert.equal(extractEnglishName(null), null);
+});
+test('extractEnglishName: undefined 返回 null', () => {
+  assert.equal(extractEnglishName(undefined), null);
+});
+test('extractEnglishName: 只有两个字母的英文名也提取', () => {
+  assert.equal(extractEnglishName('Go - Launch Trailer'), 'Go');
+});
+test('extractEnglishName: 标题只有 " - " 前面是空白', () => {
+  assert.equal(extractEnglishName(' - Launch Trailer'), null);
 });

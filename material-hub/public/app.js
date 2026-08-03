@@ -15,6 +15,7 @@ const collectBtn = $("collectBtn");
 const formError = $("formError");
 const forceTrailerCb = $("forceTrailer");
 const forceCoverCb = $("forceCover");
+const coverUrlInput = $("coverUrl");
 const stateTabs = $("stateTabs");
 const autoSteps = $("autoSteps");
 const autoLog = $("autoLog");
@@ -343,6 +344,7 @@ async function runCollect(name) {
         name: name,
         forceTrailer: forceTrailerCb.checked,
         forceCover: forceCoverCb.checked,
+        coverUrl: coverUrlInput.value.trim(),
       }),
     });
     const ctype = r.headers.get("content-type") || "";
@@ -391,6 +393,7 @@ async function runCollect(name) {
     collectBtn.textContent = "开始搜集";
     forceTrailerCb.checked = false;
     forceCoverCb.checked = false;
+    coverUrlInput.value = "";
   }
 }
 

@@ -385,3 +385,16 @@ body {
   margin: 0;
   cursor: pointer;
 }
+.cover-url-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-primary);
+  outline: none;
+}
+.cover-url-input:focus { border-color: var(--apple-accent); }
+.cover-url-input::placeholder { color: var(--text-dim); }

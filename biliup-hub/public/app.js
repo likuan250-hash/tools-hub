@@ -32,6 +32,8 @@
   // 纯函数：取文件名(去扩展名)或标题 → 分词 → 去停用词/短词 → 叠加默认标签 → 去重 → 限长。
   // 自包含（停用词内联），便于单测独立抽取；不依赖模块作用域变量。
   function genTags(fileName, title, defaultTags) {
+    // 停用词：中文虚词/泛化词/格式后缀 + 游戏分享场景常见"版本描述词"（纯版本描述、非内容关键词，防进 B 站标签）。
+    // 注意：保留 全DLC / DLC / 官方 等可能作为内容关键词的词。
     const STOP_WORDS = new Set([
       '的', '了', '是', '在', '和', '与', '及', '也', '都', '就', '而', '吗', '呢', '啊',
       '吧', '哦', '啦', '嘛', '我们', '你们', '他们', '我', '你', '他', '她', '它', '这',
@@ -39,10 +41,18 @@
       'mkv', 'avi', 'flv', 'mov', 'webm', 'bilibili', 'b站', 'the', 'a', 'an', 'of', 'to',
       'and', 'or', 'on', 'in', 'at', 'by', 'with', 'my', 'your', 'for', '1080p', '720p',
       'game', 'play', 'part', 'ep', 'episode',
+      // 游戏分享场景常见"版本描述词"（纯版本描述，非内容关键词）
+      '学习版', '免费学习版', '免费学习版下载', '学习版下载', '破解版', '官方中文',
+      '硬盘版', '免安装', '免安装硬盘版', '中文版', '官方中文版', '完整版', '绿色版',
+      '安装版', '便携版',
     ]);
+    // 绝对敏感词：token 只要包含即整体丢弃（B 站审核会因 学习版/破解版/盗版 拒稿）。
+    const ABS_SENSITIVE = ['学习版', '破解版', '盗版'];
     const text = (title && String(title).trim()) ? String(title) : (fileName || '');
-    const cleaned = String(text).replace(/\.[a-z0-9]+$/i, ''); // 去扩展名
-    const seps = /[\s\-_·。，、,.\|/\\+]+/; // 空格/-/_/·/。/中文标点等
+    const cleaned = String(text)
+      .replace(/\.[a-z0-9]+$/i, '') // 去扩展名
+      .replace(/^【[^】]*】/, ''); // 剥离开头序号/索引前缀（素材库常见 【游戏268】、【268】 等）
+    const seps = /[\s\-_·。，、,.\|/\\+【】（）《》：「」；！？…\x22\x27]+/; // 空格/-/_/·/。/中文标点 + 全角/中文符号与引号
     const rawParts = cleaned.split(seps);
     const seen = new Set();
     const out = [];
@@ -50,9 +60,11 @@
       t = (t || '').trim();
       if (!t) return;
       if (t.length <= 1) return; // 过短词（含单字）过滤
+      if (t.length > 12) return; // 超长 token 过滤（防序号/描述粘连残留）
       const key = t.toLowerCase();
       if (seen.has(key)) return; // 去重
       if (STOP_WORDS.has(key)) return; // 停用词过滤
+      if (ABS_SENSITIVE.some((s) => key.includes(s))) return; // 敏感词子串过滤（学习版/破解版/盗版）
       seen.add(key);
       out.push(t);
     }

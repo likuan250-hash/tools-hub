@@ -72,7 +72,13 @@ async function fetchSeasonSections(seasonId, cf, fetchFnOverride) {
 // 兼容 data.tag[].tag_name / data.tags[].tag_name / data[].tag_name（数组在 data 内任意层级）。
 const TAG_SUGGEST_BLACKLIST = new Set([
   '广告', '推广', '官方', 'bilibili', 'b站', 'b站官方', '番剧', '直播', 'av', 'av号',
+  // 游戏分享场景敏感/版本描述词（防 suggest 接口推荐回来时漏网，与前端 genTags 保持一致）
+  '学习版', '免费学习版', '免费学习版下载', '学习版下载', '破解版', '官方中文',
+  '硬盘版', '免安装', '免安装硬盘版', '中文版', '官方中文版', '完整版', '绿色版',
+  '安装版', '便携版',
 ]);
+// 绝对敏感词：tag 只要包含即整体丢弃（与前端 genTags 的 ABS_SENSITIVE 保持一致）。
+const TAG_SUGGEST_SENSITIVE = ['学习版', '破解版', '盗版'];
 const TAG_SUGGEST_MAX = 5;
 
 // 递归收集所有 tag_name（任意嵌套层级），去重保留首次出现顺序。
@@ -102,6 +108,7 @@ function filterSuggestedTags(names) {
     if (t.length > 20) continue; // 过长视为异常/无意义
     const key = t.toLowerCase();
     if (TAG_SUGGEST_BLACKLIST.has(t) || TAG_SUGGEST_BLACKLIST.has(key)) continue;
+    if (TAG_SUGGEST_SENSITIVE.some((s) => key.includes(s))) continue; // 敏感词子串过滤
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(t);

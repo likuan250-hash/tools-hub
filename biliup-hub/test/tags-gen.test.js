@@ -105,3 +105,52 @@ test('genTags: 优先用标题（标题非空时忽略文件名）', () => {
   assert.ok(parts.includes('默认标签'), '应叠加默认标签');
   assert.ok(!parts.includes('unused'), '不应混入文件名（标题优先）');
 });
+
+test('genTags: 序号前缀剥离 + 敏感词过滤（正当防卫4 场景）', () => {
+  const genTags = makeGenTags();
+  const r = genTags('【游戏268】正当防卫4 官方中文+全DLC+免安装硬盘版 免费学习版下载.mp4', '', '');
+  const parts = r.split(',');
+  assert.ok(parts.includes('正当防卫4'), '应含 正当防卫4（序号前缀剥离后）');
+  assert.ok(parts.includes('全DLC'), '应保留 全DLC（内容关键词）');
+  assert.ok(!parts.some((p) => p.includes('【') || p.includes('】')), '不应含方括号残留');
+  assert.ok(!parts.some((p) => p.includes('游戏268')), '不应含序号前缀 游戏268');
+  assert.ok(!parts.some((p) => p.includes('学习版')), '不应含敏感词 学习版 子串');
+  assert.ok(!parts.some((p) => p.includes('官方中文')), '不应含版本描述词 官方中文');
+  assert.ok(!parts.some((p) => p.includes('免安装')), '不应含版本描述词 免安装');
+});
+
+test('genTags: 纯英文标题分词合理（Elden Ring Official Launch Trailer）', () => {
+  const genTags = makeGenTags();
+  const r = genTags('', 'Elden Ring Official Launch Trailer', '');
+  const parts = r.split(',');
+  assert.ok(parts.includes('Elden') && parts.includes('Ring'), '应含 Elden/Ring');
+  assert.ok(parts.includes('Official'), '应含 Official');
+  assert.ok(parts.includes('Launch') && parts.includes('Trailer'), '应含 Launch/Trailer');
+});
+
+test('genTags: 中英混合分隔符切分（战神4-God of War）', () => {
+  const genTags = makeGenTags();
+  const r = genTags('战神4-God of War.mp4', '', '');
+  const parts = r.split(',');
+  assert.ok(parts.includes('战神4'), '应含 战神4');
+  assert.ok(parts.includes('God') && parts.includes('War'), '应含 God/War');
+  assert.ok(!parts.includes('of'), 'of 为停用词应过滤');
+});
+
+test('genTags: 敏感词子串整体丢弃（xx学习版）', () => {
+  const genTags = makeGenTags();
+  const r = genTags('xx学习版下载 测试', '', '');
+  const parts = r.split(',');
+  assert.ok(!parts.some((p) => p.includes('学习版')), '含 学习版 子串的 token 应整体丢弃');
+  assert.ok(parts.includes('测试'), '其余正常 token 应保留');
+});
+
+test('genTags: 长度上限（>12 丢弃，正当防卫4 剥离后保留）', () => {
+  const genTags = makeGenTags();
+  // 【游戏268】剥离后剩 正当防卫4（5 字符），保留
+  const r = genTags('【游戏268】正当防卫4', '', '');
+  assert.ok(r.split(',').includes('正当防卫4'), '剥离序号前缀后 正当防卫4 应保留');
+  // 无分隔符超长粘连串（26 字符 > 12）应整串丢弃
+  const long = '这是一个超级无敌非常非常长的没有任何意义的内容标签测试串';
+  assert.equal(genTags(long, '', ''), '', '超长 token 应被过滤');
+});

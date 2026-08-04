@@ -321,6 +321,24 @@ test('GET /api/tags/suggest 过滤黑名单/无意义标签（广告/bilibili �
   }
 });
 
+test('GET /api/tags/suggest 过滤敏感词（学习版/破解版 子串，与前端 genTags 一致）', async () => {
+  app.locals.tagSuggestFetch = async () => ({
+    ok: true,
+    json: async () => ({
+      code: 0,
+      data: { tag: [{ tag_name: '正当防卫4' }, { tag_name: '免费学习版下载' }, { tag_name: '全DLC' }, { tag_name: '破解版' }] },
+    }),
+  });
+  const srv = await startServer();
+  try {
+    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
+    assert.deepEqual(body, { tags: ['正当防卫4', '全DLC'] });
+  } finally {
+    app.locals.tagSuggestFetch = undefined;
+    srv.close();
+  }
+});
+
 test('GET /api/tags/suggest fetch 抛异常：降级 {tags:[]}（不抛 500）', async () => {
   app.locals.tagSuggestFetch = async () => { throw new Error('network down'); };
   const srv = await startServer();

@@ -212,7 +212,8 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: "0"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 不签名（无证书），安装时会有“未知发布者”提示，属正常
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          # 不签名（无证书），安装时会有"未知发布者"提示，属正常
         run: npm run dist
 
       - name: Upload installer artifact

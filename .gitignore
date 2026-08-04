@@ -16,3 +16,8 @@ resources/bin/package.json
 # 构建期内联生成的 renderer 临时文件（由 scripts/prepare-build.js 生成，不进 git）
 renderer/style.inline.css
 renderer/index.inline.html
+# 机器特定的代理配置（用户本地 .proxy / proxy-default），绝不进 git
+.proxy
+proxy-default
+**/.proxy
+**/proxy-default

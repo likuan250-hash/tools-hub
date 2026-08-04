@@ -6,7 +6,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName, cleanGameName, stripSubtitle, tryDownload, isImageMagic,
-  extractEnglishNameFromWikiSnippet, extractEnglishNameFromWikiInfobox, fetchEnglishNameFromWikipedia, detectEditionSuffix, augmentWithEdition } = require("../lib/steam");
+  extractEnglishNameFromWikiSnippet, extractEnglishNameFromWikiInfobox, fetchEnglishNameFromWikipedia, fetchEnglishNameFromBangumi, isLatinName, cnNameSimilarity,
+  detectEditionSuffix, augmentWithEdition } = require("../lib/steam");
 const { lookupEnglishNameOffline, normZh } = require("../lib/gamemap");
 
 test("parseSteamAppDetails 提取官方 short_description / genres / type", () => {
@@ -157,8 +158,9 @@ test("stripSubtitle 无副标题原样返回", () => {
 // ── resolveEnglishName 多源管道（Wikidata → Wikipedia → 百度）+ 版本词增强 ──
 // URL 感知 mock：按请求 URL 区分 Wikidata / Wikipedia 搜索 / Wikipedia infobox / 百度，便于离线断言。
 function urlAwareDeps(opts) {
-  const calls = { wikidataSearch: 0, wikidataEntities: 0, wikiSearch: 0, wikiInfobox: 0, baidu: 0 };
+  const calls = { wikidataSearch: 0, wikidataEntities: 0, wikiSearch: 0, wikiInfobox: 0, baidu: 0, bangumi: 0 };
   const httpGetJson = async (url) => {
+    if (url.includes("api.bgm.tv")) { calls.bangumi++; return opts.bangumi ? opts.bangumi(url) : { list: [] }; }
     if (url.includes("wikidata.org") && url.includes("wbsearchentities")) { calls.wikidataSearch++; return opts.wikidataSearch ? opts.wikidataSearch(url) : { search: [] }; }
     if (url.includes("wikidata.org") && url.includes("wbgetentities")) { calls.wikidataEntities++; return opts.wikidataEntities ? opts.wikidataEntities(url) : {}; }
     if (url.includes("wikipedia.org") && url.includes("list=search")) { calls.wikiSearch++; return opts.wikiSearch ? opts.wikiSearch(url) : { query: { search: [] } }; }
@@ -287,6 +289,86 @@ test("resolveEnglishName 所有候选都失败返回空", async () => {
     { httpGetJson: fakeHttpJson, httpGetText: fakeHttpText, disableOffline: true }
   );
   assert.strictEqual(en, "");
+});
+
+// ── Bangumi 国内源（isLatinName / cnNameSimilarity / fetchEnglishNameFromBangumi）──
+test("isLatinName 过滤日文原名、保留拉丁英文名", () => {
+  assert.strictEqual(isLatinName("The Witcher 3: Wild Hunt"), true);
+  assert.strictEqual(isLatinName("Black Myth: Wukong"), true);
+  assert.strictEqual(isLatinName("ペルソナ5 ザ・ロイヤル"), false, "日文原名不可用");
+  assert.strictEqual(isLatinName("巫师3"), false, "中文名不是拉丁");
+  assert.strictEqual(isLatinName(""), false);
+});
+
+test("cnNameSimilarity 完全匹配 / 包含 / 无关", () => {
+  assert.strictEqual(cnNameSimilarity("巫师3", "巫师3"), 1);
+  assert.strictEqual(cnNameSimilarity("巫师3", "巫师3：狂猎"), 0.9, "输入含候选（副标题差异）");
+  assert.strictEqual(cnNameSimilarity("黑神话", "黑神话：悟空"), 0.9);
+  assert.strictEqual(cnNameSimilarity("最后的生还者2", "只狼"), 0);
+});
+
+test("fetchEnglishNameFromBangumi 命中（name_cn 匹配 + 拉丁原名）", async () => {
+  const httpGetJson = async () => ({
+    list: [
+      { name: "The Witcher 3: Wild Hunt", name_cn: "巫师3：狂猎" },
+      { name: "Some Other", name_cn: "无关游戏" },
+    ],
+  });
+  assert.strictEqual(await fetchEnglishNameFromBangumi("巫师3", httpGetJson), "The Witcher 3: Wild Hunt");
+});
+
+test("fetchEnglishNameFromBangumi 日文原名被过滤（宁可返回空也不误用日文）", async () => {
+  const httpGetJson = async () => ({
+    list: [{ name: "ペルソナ5 ザ・ロイヤル", name_cn: "女神异闻录5 皇家版" }],
+  });
+  assert.strictEqual(await fetchEnglishNameFromBangumi("女神异闻录5", httpGetJson), "");
+});
+
+test("fetchEnglishNameFromBangumi name_cn 不匹配输入时跳过", async () => {
+  const httpGetJson = async () => ({
+    list: [{ name: "Hollow Knight", name_cn: "空洞骑士" }],
+  });
+  // 输入是「巫师3」，与「空洞骑士」相似度低 → 跳过返回空
+  assert.strictEqual(await fetchEnglishNameFromBangumi("巫师3", httpGetJson), "");
+});
+
+test("fetchEnglishNameFromBangumi 网络/异常静默返回空", async () => {
+  const httpGetJson = async () => { throw new Error("net"); };
+  assert.strictEqual(await fetchEnglishNameFromBangumi("巫师3", httpGetJson), "");
+});
+
+test("resolveEnglishName 离线关闭 + Bangumi 命中（不触发 Wikidata/Wikipedia/百度）", async () => {
+  const deps = urlAwareDeps({
+    disableOffline: true,
+    bangumi: () => ({
+      list: [
+        { name: "The Witcher 3: Wild Hunt", name_cn: "巫师3：狂猎" },
+      ],
+    }),
+  });
+  const en = await resolveEnglishName(
+    "巫师3 v1.6 官方中文",
+    deps
+  );
+  assert.strictEqual(en, "The Witcher 3: Wild Hunt");
+  assert.strictEqual(deps.calls.bangumi, 1, "Bangumi 应被查询");
+  assert.strictEqual(deps.calls.wikidataSearch, 0, "Bangumi 命中后不应再查 Wikidata");
+  assert.strictEqual(deps.calls.baidu, 0);
+});
+
+test("resolveEnglishName Bangumi 仅返回日文原名 → 跳过 → 回落百度命中", async () => {
+  const deps = urlAwareDeps({
+    disableOffline: true,
+    bangumi: () => ({ list: [{ name: "ペルソナ5 ザ・ロイヤル", name_cn: "女神异闻录5 皇家版" }] }),
+    baidu: () => "<th>英文名</th><td>Persona 5 Royal</td>",
+  });
+  const en = await resolveEnglishName(
+    "女神异闻录5 皇家版",
+    deps
+  );
+  assert.strictEqual(en, "Persona 5 Royal");
+  assert.strictEqual(deps.calls.bangumi, 1, "Bangumi 应被查询");
+  assert.strictEqual(deps.calls.baidu, 1, "Bangumi 误判后应回落百度");
 });
 
 // ── 离线静态库（内置中文名→英文名映射，无需联网）──

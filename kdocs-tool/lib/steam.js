@@ -6,6 +6,7 @@ const path = require("path");
 const { DEFAULT_COVER_DIR } = require("./config");
 const { cleanGameName, stripSubtitle, parseSteamAppIdFromText } = require("./nameutil");
 const { lookupEnglishNameOffline } = require("./gamemap");
+const { fetchTextProxy, fetchJsonProxy } = require("./proxyHttp");
 
 /** 搜索 Steam AppID（10 秒超时，避免网络不畅时卡死整流程） */
 function searchSteamAppId(gameName) {
@@ -164,61 +165,15 @@ function downloadCoverFromUrl(gameName, url, coverDir) {
 }
 
 // ────────────────────── AppID 多源取拿（维基 / 百度 / 网页兜底）──────────────────────
-// 通用 GET（文本 / JSON），带超时、UA、单跳重定向跟随；任何异常 / 非 200 / 超时一律返回兜底值，绝不抛错打断流程。
+// 通用 GET（文本 / JSON）：经 lib/proxyHttp 的代理感知层，无代理时退化为直连，行为不变。
+// 任何异常 / 非 200 / 超时一律返回兜底值，绝不抛错打断流程。
+// depth 参数保留仅为兼容旧调用签名，重定向由代理层内部处理（封顶 3 跳）。
 function httpGetText(url, timeoutMs = 10000, depth = 0) {
-  return new Promise((resolve) => {
-    const finish = (v) => resolve(v);
-    if (depth > 3) return finish("");
-    let req;
-    try {
-      const mod = url.startsWith("http://") ? http : https;
-      req = mod.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: timeoutMs }, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          const loc = res.headers.location;
-          res.destroy();
-          if (!loc) return finish("");
-          const next = loc.startsWith("http") ? loc : new URL(loc, url).href;
-          return finish(httpGetText(next, timeoutMs, depth + 1));
-        }
-        if (res.statusCode !== 200) { res.destroy(); return finish(""); }
-        let d = "";
-        res.setEncoding("utf8");
-        res.on("data", (c) => (d += c));
-        res.on("end", () => finish(d));
-        res.on("error", () => finish(""));
-      });
-    } catch { return finish(""); }
-    req.on("error", () => finish(""));
-    req.on("timeout", () => { try { req.destroy(); } catch {} finish(""); });
-  });
+  return fetchTextProxy(url, { timeout: timeoutMs }).then((t) => (t == null ? "" : t));
 }
 
 function httpGetJson(url, timeoutMs = 10000, depth = 0) {
-  return new Promise((resolve) => {
-    const finish = (v) => resolve(v);
-    if (depth > 3) return finish(null);
-    let req;
-    try {
-      const mod = url.startsWith("http://") ? http : https;
-      req = mod.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: timeoutMs }, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          const loc = res.headers.location;
-          res.destroy();
-          if (!loc) return finish(null);
-          const next = loc.startsWith("http") ? loc : new URL(loc, url).href;
-          return finish(httpGetJson(next, timeoutMs, depth + 1));
-        }
-        if (res.statusCode !== 200) { res.destroy(); return finish(null); }
-        let d = "";
-        res.setEncoding("utf8");
-        res.on("data", (c) => (d += c));
-        res.on("end", () => { try { finish(JSON.parse(d)); } catch { finish(null); } });
-        res.on("error", () => finish(null));
-      });
-    } catch { return finish(null); }
-    req.on("error", () => finish(null));
-    req.on("timeout", () => { try { req.destroy(); } catch {} finish(null); });
-  });
+  return fetchJsonProxy(url, { timeout: timeoutMs });
 }
 
 /**
@@ -411,13 +366,69 @@ function augmentWithEdition(baseEn, raw) {
   return `${baseEn} ${suffix}`;
 }
 
+// ── Bangumi（api.bgm.tv，国内必达，无需代理）中文名 → 英文名 ──
+/** 纯函数：判断字符串是否「拉丁字母为主」（可作英文名候选）。含 CJK/假名则视为非拉丁，不可用。可单测。 */
+function isLatinName(s) {
+  if (!s) return false;
+  // 命中任一 CJK / 日文假名 / 全角标点范围 → 非拉丁
+  return !/[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]/.test(s);
+}
+
+/** 纯函数：中文名相似度（归一化后字符 Jaccard + 包含加分）。可单测。 */
+function cnNameSimilarity(a, b) {
+  const norm = (s) => String(s == null ? "" : s).toLowerCase().replace(/[\s'’!.,:：·\-_/()（）]/g, "");
+  const x = norm(a), y = norm(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  if (x.includes(y) || y.includes(x)) return 0.9; // 一方包含另一方：高相似（副标题差异）
+  const sx = new Set(x), sy = new Set(y);
+  let inter = 0;
+  sx.forEach((c) => { if (sy.has(c)) inter++; });
+  const union = sx.size + sy.size - inter;
+  return union ? inter / union : 0;
+}
+
+/**
+ * 从 Bangumi（api.bgm.tv，国内必达）反查英文名。
+ * 对候选名逐级查询：取 name_cn 与输入中文名相似度最高、且 name 为拉丁字母（非日文原名）的条目。
+ * 过滤规则（防错配）：① name_cn 与输入相似度 < 0.5 跳过；② name 是日文原名（非拉丁）跳过。
+ * 失败 / 无匹配 / 超时一律返回 ""（绝不抛错打断流程）。deps.httpGetJson 可注入 mock 单测。
+ */
+async function fetchEnglishNameFromBangumi(name, httpGetJson) {
+  if (!name) return "";
+  const terms = [name, stripSubtitle(name)].filter((t, i, a) => t && a.indexOf(t) === i);
+  try {
+    for (const term of terms) {
+      const url = `https://api.bgm.tv/search/subject/${encodeURIComponent(term)}?type=4&max_results=10`;
+      const data = await httpGetJson(url, 8000);
+      const list = (data && (data.list || (data.data && data.data.list) || [])) || [];
+      let best = "", bestScore = 0;
+      for (const it of list) {
+        const cn = it && it.name_cn ? String(it.name_cn) : "";
+        const orig = it && it.name ? String(it.name) : "";
+        if (!orig) continue;
+        const sim = cnNameSimilarity(term, cn);
+        if (sim < 0.5) continue;          // 中文名对不上的候选跳过，避免错配
+        if (!isLatinName(orig)) continue; // 日文原名不可作英文名（如 ペルソナ5 ザ・ロイヤル）
+        if (sim > bestScore) { bestScore = sim; best = orig; }
+      }
+      if (best) return best;
+    }
+  } catch {}
+  return "";
+}
+
 // ── 清洗 / 副标题剥离 / AppID 抽取：见 lib/nameutil.js（纯函数，parser 与 steam 共享）──
 
 /**
  * 解析游戏英文名（中文名 → 英文名）。多源兜底：
-   *   1) Wikidata 中文 search → 英文 label（最结构化、最可靠）
-   *   2) 百度百科词条页英文段
+   *   0) 离线静态库（内置映射，无需联网，优先命中）
+   *   1) Bangumi（api.bgm.tv，国内必达，无需代理）中文名→英文名
+   *   2) Wikidata 中文 search → 英文 label（最结构化、最可靠）
+   *   3) Wikipedia 中文模糊搜 摘要/infobox 英語/原名
+   *   4) 百度百科词条页英文段
    * 失败/超时/异常一律返回 ""（绝不抛错打断流程），交由上层直接用中文名匹配。
+   * 注：Wikidata/Wikipedia/百度 在「配置了 HTTP 代理」时才能从国内连上；否则退化到 Bangumi/离线库。
    *
    * 每个数据源内部按候选名顺序逐级尝试：
    *   ① cleanGameName(raw) — 保留副标题（重制版/年度版等独立条目更准）
@@ -455,7 +466,12 @@ async function resolveEnglishName(gameName, deps) {
 
     let baseEn = "";
     for (const name of candidates) {
-      // 1) Wikidata zh search → en label（有中文 label 时最结构化、最可靠，优先）
+      // 1) Bangumi（api.bgm.tv，国内必达，无需代理）：中文名→英文名 高覆盖，离线库未命中时首选在线源
+      try {
+        const en = await fetchEnglishNameFromBangumi(name, httpJson);
+        if (en) { baseEn = en; break; }
+      } catch {}
+      // 2) Wikidata zh search → en label（有中文 label 时最结构化、最可靠，离线+Bangumi 未命中时再用）
       try {
         const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(name)}&language=zh&format=json&limit=3`;
         const search = await httpJson(searchUrl, 8000);
@@ -467,12 +483,12 @@ async function resolveEnglishName(gameName, deps) {
           if (label) { baseEn = label; break; }
         }
       } catch {}
-      // 2) Wikipedia 中文模糊搜 → 摘要/infobox 的 英語/原名（覆盖 Wikidata 无中文 label 的游戏）
+      // 3) Wikipedia 中文模糊搜 → 摘要/infobox 的 英語/原名（覆盖 Wikidata 无中文 label 的游戏）
       try {
         const en = await fetchEnglishNameFromWikipedia(name, httpJson);
         if (en) { baseEn = en; break; }
       } catch {}
-      // 3) 百度百科英文段（防御性：遇反爬验证页直接跳过）
+      // 4) 百度百科英文段（防御性：遇反爬验证页直接跳过）
       try {
         const html = await httpText(`https://baike.baidu.com/item/${encodeURIComponent(name)}`, 8000);
         const en = extractEnglishNameFromBaidu(html);
@@ -525,6 +541,7 @@ module.exports = {
   parseSteamAppIdFromText, fetchAppIdFromWikidata, fetchAppIdFromBaiduBaike, fetchAppIdFromWebSearch,
   parseSteamSizeFromRequirements, resolveEnglishName, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu,
   extractEnglishNameFromWikiSnippet, extractEnglishNameFromWikiInfobox, fetchEnglishNameFromWikipedia,
+  fetchEnglishNameFromBangumi, isLatinName, cnNameSimilarity,
   detectEditionSuffix, augmentWithEdition,
   cleanGameName, stripSubtitle, tryDownload, isImageMagic,
 };

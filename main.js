@@ -294,7 +294,17 @@ function startChild(cfg) {
     KDOCS_DATA_DIR: path.join(app.getPath("userData"), "kdocs-tool", "data"),
     BILIUP_DATA_DIR: path.join(app.getPath("userData"), "biliup-hub", "data"),
   } : {};
-  const childEnv = Object.assign({}, cfg.env, dataEnv, { BOOT_TOKEN: BOOT_TOKEN });
+  // #7 透传系统代理环境变量到 fork 子进程。
+  //   背景：kdocs-tool 等子进程是独立 Node 进程，不读系统代理/Windows 证书库，
+  //   若这里不显式继承 process.env 的代理变量，用户在系统/客户端配的 HTTP 代理对子进程无效，
+  //   导致 Wikipedia / Wikidata / 百度百科 等被墙数据源依旧连不上。
+  //   （kdocs-tool/lib/proxyHttp.js 会读取这些变量走 CONNECT 隧道。）
+  const PROXY_ENV_KEYS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"];
+  const proxyEnv = {};
+  for (const k of PROXY_ENV_KEYS) {
+    if (process.env[k]) proxyEnv[k] = process.env[k];
+  }
+  const childEnv = Object.assign({}, cfg.env, dataEnv, proxyEnv, { BOOT_TOKEN: BOOT_TOKEN });
   // #6 注入资源目录，供 fork 子进程解析打包内置的 biliup.exe（子进程无 process.resourcesPath）。
   if (RES) childEnv.TOOLSHUB_RESOURCES_DIR = RES;
 

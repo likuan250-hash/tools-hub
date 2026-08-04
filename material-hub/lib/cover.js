@@ -12,6 +12,7 @@
 //   4 用户指定 URL       opts.coverUrl
 //   5 游戏媒体站（英文）   Nintendo/PlayStation/Xbox/IGN/GameSpot/PCGamer
 //   5.5 中文游戏站         游民星空/3DM/游侠（可能带水印）
+//   5.6 Reddit 壁纸社区   r/gamewallpaper + r/wallpapers（公开 JSON API，无需 key）
 //   6 YouTube 缩略图     maxresdefault.jpg，通常仅 1280×720 → 按「降级候选」处理，不占用达标名额
 //
 // 硬约束：
@@ -93,11 +94,11 @@ const STEAM_SEARCH_API = 'https://store.steampowered.com/api/storesearch/';
 /** Steam 应用详情 API（appid → 英文名；filters=basic 只取基础字段，响应体小很多）。 */
 const STEAM_DETAILS_API = 'https://store.steampowered.com/api/appdetails';
 /** 依赖英文查询词的来源：这几个站没有中文索引，喂中文名必然 0 结果。 */
-const ENGLISH_QUERY_SOURCES = ['4kwallpapers', 'alphacoders', 'wallhaven', 'game-sites'];
+const ENGLISH_QUERY_SOURCES = ['4kwallpapers', 'alphacoders', 'wallhaven', 'game-sites', 'reddit'];
 /** 第 5 级「游戏媒体站」：覆盖主要平台与游戏新闻站，不限任天堂一家。 */
 const GAME_MEDIA_SITES = ['nintendo.com', 'playstation.com', 'xbox.com', 'ign.com', 'gamespot.com', 'pcgamer.com'];
-/** 第 5.5 级「中文游戏站」：游民星空/3DM/游侠（⚠ 可能带水印，谨慎采纳）。 */
-const CHINESE_WALLPAPER_SITES = ['gamersky.com', '3dmgame.com', 'ali213.net'];
+/** 第 5.5 级「中文游戏站」：游民星空/3DM/游侠/网易/腾讯（⚠ 可能带水印，谨慎采纳）。 */
+const CHINESE_WALLPAPER_SITES = ['gamersky.com', '3dmgame.com', 'ali213.net', '163.com', 'qq.com'];
 
 // ─────────────────────── 缺陷 4：相关性校验 ───────────────────────
 
@@ -447,6 +448,7 @@ const SOURCE_LABEL = {
   nintendo: 'Nintendo 官网',
   'game-sites': '游戏媒体站（英文）',
   'chinese-sites': '中文游戏站（可能带水印）',
+  reddit: 'Reddit 壁纸社区',
   youtube: 'YouTube 缩略图',
   'ffmpeg-frame': '主视频抽帧',
 };
@@ -590,10 +592,41 @@ class CoverFetcher {
       }
       const title = String(ll['*']).trim();
       if (title && isLatinTitle(title) && title.length >= 3) {
-        emit('cover_search', STEP_SEARCH, '维基百科英文名：' + title, null, {
-          source: 'wiki', englishTitle: title, zhPage: page.title,
+        // 第三步：尝试从 Wikidata 取 Steam appid（供后续 Steam 视频/封面源使用）
+        let steamAppId = '';
+        try {
+          const enPageUrl = 'https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&titles='
+            + encodeURIComponent(title) + '&format=json';
+          const enPageRes = await this.fetch(enPageUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: this.timeoutSignal(),
+          });
+          if (enPageRes.ok) {
+            const enPageData = await enPageRes.json();
+            const enPages = enPageData.query && enPageData.query.pages || {};
+            const enPg = Object.values(enPages)[0];
+            const wb = enPg && enPg.pageprops && enPg.pageprops.wikibase_item;
+            if (wb) {
+              const wdUrl = 'https://www.wikidata.org/wiki/Special:EntityData/' + wb + '.json';
+              const wdRes = await this.fetch(wdUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                signal: this.timeoutSignal(),
+              });
+              if (wdRes.ok) {
+                const wdData = await wdRes.json();
+                const entity = wdData.entities && wdData.entities[wb];
+                steamAppId = (entity && entity.claims && entity.claims.P1733 || [])
+                  .map((c) => (c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value) || '')
+                  .find(Boolean) || '';
+              }
+            }
+          }
+        } catch (e) { /* Wikidata 失败不影响主链路 */ }
+        emit('cover_search', STEP_SEARCH, '维基百科英文名：' + title
+          + (steamAppId ? '（Steam appid=' + steamAppId + '）' : ''), null, {
+          source: 'wiki', englishTitle: title, zhPage: page.title, steamAppId: steamAppId || undefined,
         });
-        return { title, source: 'wiki', zhPage: page.title };
+        return { title, source: 'wiki', zhPage: page.title, steamAppId: steamAppId || '' };
       }
     } catch (e) {
       // 静默降级
@@ -1405,6 +1438,46 @@ class CoverFetcher {
   }
 
   /**
+   * 第 5.6 级：Reddit 壁纸社区（r/gamewallpaper + r/wallpapers）。
+   * Reddit 公开 JSON API 无需认证，只需带 User-Agent。
+   * 按相关性搜索，取 post 里的直接图片 URL，下载后校验尺寸。
+   */
+  async fromReddit(gameName, outDir, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const query = String(opts.query || gameName || '').trim();
+    if (!query) return { ok: false, error: '无可用查询词', source: 'reddit' };
+    const subreddits = ['gamewallpaper', 'wallpapers'];
+    for (const sub of subreddits) {
+      try {
+        const url = 'https://www.reddit.com/r/' + sub + '/search.json?q='
+          + encodeURIComponent(query) + '&sort=relevance&limit=10&restrict_sr=on';
+        emit('cover_search', STEP_SEARCH, '检索 Reddit r/' + sub + '…', null, { source: 'reddit', url });
+        const res = await this.fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: this.timeoutSignal(),
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const posts = (data.data && data.data.children) || [];
+        const urls = [];
+        for (const p of posts) {
+          const postUrl = (p.data && p.data.url) || '';
+          // 只取直链图片
+          if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(postUrl)) {
+            urls.push(postUrl);
+          }
+        }
+        if (!urls.length) continue;
+        const r = await this.tryCandidates(urls, outDir, { emit, source: 'reddit' });
+        if (r.ok) return Object.assign({}, r, { queryUsed: query, subreddit: sub });
+      } catch (e) {
+        // 静默降级
+      }
+    }
+    return { ok: false, error: 'Reddit 社区未找到封面', source: 'reddit', queryUsed: query };
+  }
+
+  /**
    * 第 6 级：YouTube 官方宣传片缩略图。
    *
    * 规范一边把它列为第 6 级来源，一边在《封面要求》里写死「分辨率：至少 1920×1080」，
@@ -1507,7 +1580,7 @@ class CoverFetcher {
       null, Object.assign({ level: 'info' }, meta));
 
     // 规范《封面来源优先级》表格顺序；userUrlFirst 仅在调用方显式要求时改变位次
-    let order = ['4kwallpapers', 'alphacoders', 'wallhaven', 'user', 'game-sites', 'chinese-sites', 'youtube'];
+    let order = ['4kwallpapers', 'alphacoders', 'wallhaven', 'user', 'game-sites', 'chinese-sites', 'reddit', 'youtube'];
     if (opts.userUrlFirst === true) order = ['user'].concat(order.filter((s) => s !== 'user'));
     if (Array.isArray(opts.sources) && opts.sources.length) {
       order = order.filter((s) => opts.sources.indexOf(s) >= 0);
@@ -1539,6 +1612,7 @@ class CoverFetcher {
           else if (source === 'wallhaven') r = await this.fromWallhaven(name, outDir, { emit, query });
           else if (source === 'game-sites') r = await this.fromGameSites(name, outDir, { emit, query });
           else if (source === 'chinese-sites') r = await this.fromChineseSites(name, outDir, { emit, originalName: opts.originalName });
+          else if (source === 'reddit') r = await this.fromReddit(name, outDir, { emit, query: name });
           else if (source === 'user') r = await this.fromUserUrl(opts.coverUrl, outDir, { emit });
           else if (source === 'youtube') r = await this.fromYouTube(opts.videoId, outDir, { emit });
         } catch (e) {

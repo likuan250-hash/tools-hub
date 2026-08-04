@@ -474,7 +474,7 @@ test('fetchCover 缺少入参的来源被跳过（不计入 tried）', async () 
   const r = await c.fetchCover('X', 'D:\\out');
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'cover-all-sources-failed');
-  assert.deepEqual(r.tried, ['4kwallpapers', 'alphacoders', 'wallhaven', 'game-sites', 'chinese-sites']);
+  assert.deepEqual(r.tried, ['4kwallpapers', 'alphacoders', 'wallhaven', 'game-sites', 'chinese-sites', 'reddit']);
 });
 
 test('第 4 级用户指定 URL：默认排在规范的第 4 位，userUrlFirst 可提前', async () => {
@@ -547,7 +547,7 @@ test('全部来源失败时返回 cover-all-sources-failed 并列出尝试过的
   const r = await c.fetchCover('X', 'D:\\out', { coverUrl: 'https://a.com/x.jpg', videoId: 'v1' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'cover-all-sources-failed');
-  assert.deepEqual(r.tried, ['4kwallpapers', 'alphacoders', 'wallhaven', 'user', 'game-sites', 'chinese-sites', 'youtube']);
+  assert.deepEqual(r.tried, ['4kwallpapers', 'alphacoders', 'wallhaven', 'user', 'game-sites', 'chinese-sites', 'reddit', 'youtube']);
   assert.ok(r.error.includes('wallhaven'));
 });
 
@@ -647,26 +647,32 @@ test('resolveEnglishTitle：原名本身是拉丁标题时直接复用，不打�
 });
 
 test('resolveEnglishTitle：中文名经维基百科反查拿到英文名并缓存', async () => {
-  // 模拟 zh.wikipedia.org 搜索 + langlinks.en 两步
+  // 模拟 zh.wikipedia 搜索 + langlinks.en + en.pageprops + Wikidata 四步
   const zhSearchUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('仁王2') + '&format=json&srlimit=1';
   const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=123&format=json&lllimit=1';
+  const enPagesUrl = 'https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&titles=' + encodeURIComponent('Nioh 2') + '&format=json';
+  const wdUrl = 'https://www.wikidata.org/wiki/Special:EntityData/Q12345.json';
   const calls = [];
   const c = new CoverFetcher({
     fetch: fakeFetch({
       [zhSearchUrl]: { json: { query: { search: [{ pageid: 123, title: '仁王2' }] } } },
       [llUrl]: { json: { query: { pages: { 123: { langlinks: [{ '*': 'Nioh 2' }] } } } } },
+      [enPagesUrl]: { json: { query: { pages: { '-1': { pageprops: { wikibase_item: 'Q12345' } } } } } },
+      [wdUrl]: { json: { entities: { Q12345: { claims: { P1733: [{ mainsnak: { datavalue: { value: '1325200' } } }] } } } } },
     }, calls),
     fs: fakeFs(),
   });
   const r = await c.resolveEnglishTitle('仁王2');
   assert.equal(r.title, 'Nioh 2');
   assert.equal(r.source, 'wiki');
-  assert.equal(calls.length, 2);
+  assert.equal(r.steamAppId, '1325200');
+  assert.equal(calls.length, 4);
 
   // 同名再问一次走缓存
   const again = await c.resolveEnglishTitle('仁王2');
   assert.equal(again.title, 'Nioh 2');
-  assert.equal(calls.length, 2);
+  assert.equal(again.steamAppId, '1325200');
+  assert.equal(calls.length, 4);
 });
 
 test('resolveEnglishTitle：维基百科查不到 / 出错时退回空英文名，绝不报错', async () => {

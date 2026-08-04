@@ -248,8 +248,9 @@ class CollectService {
         '[collect] 英文名获取失败，使用原名检索：' + gameName,
         null, { level: 'warn' });
     }
+    const steamAppId = english.steamAppId || '';
 
-    // ── 2. trailer：先下视频。放在封面之前有两个刚需 ──
+    // ── 2. trailer：先下视频（YouTube 优先，Steam 兜底）──
     //      ① 第 6 级封面来源要用宣传片的 videoId 取缩略图；
     //      ② 第 7 级抽帧兜底必须有视频文件才能执行。
     let trailerInfo = null;
@@ -276,6 +277,22 @@ class CollectService {
         });
         if (!trailerInfo) {
           dl = { ok: false, reason: 'trailer-not-found', error: '未搜索到符合规范的官方宣传片' };
+          // YouTube 没搜到 → 如果有 Steam appid，尝试从 Steam 商店页下载官方预告片
+          if (steamAppId) {
+            try {
+              emit('log', STEP_TRAILER, '尝试 Steam 商店页预告片（appid=' + steamAppId + '）…', null, { level: 'info' });
+              dl = await this.trailer.downloadFromSteam(searchName, reserved.folder, envInfo, {
+                steamAppId,
+                emit,
+                index: reserved.index,
+                kind: opts.kind,
+                englishName: opts.englishName,
+                versionDesc: opts.versionDesc,
+              });
+            } catch (e) {
+              dl = { ok: false, reason: 'steam-trailer-exception', error: e.message };
+            }
+          }
         } else {
           dl = await this.trailer.download(searchName, reserved.folder, envInfo, {
             info: trailerInfo,

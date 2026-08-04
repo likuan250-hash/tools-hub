@@ -666,6 +666,48 @@ class TrailerDownloader {
     emit('trailer_transcode', STEP_TRANSCODE, '已转为 ' + outName, true, { file: outName, converted: true });
     return { file: outName, converted: true };
   }
+
+  /**
+   * 从 Steam 商店页下载官方预告片（yt-dlp Steam extractor）。
+   * 当 YouTube 没搜到合适结果时，如果有 Steam appid 就走这条通路。
+   * yt-dlp 的 Steam 提取器支持直接传商店页 URL，自动解析视频。
+   */
+  async downloadFromSteam(name, dir, env = {}, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const appId = String(opts.steamAppId || '').trim();
+    if (!appId) return { ok: false, reason: 'steam-no-appid', error: '未提供 Steam appid' };
+    const url = 'https://store.steampowered.com/app/' + appId + '/';
+    emit('log', STEP_DOWNLOAD, '[steam] 搜索 Steam 商店页预告片…', null, { level: 'info', url });
+    const r = await runCommand(env.ytDlpPath, [
+      '--no-warnings',
+      '--dump-json',
+      '--playlist-end', '1',
+      url,
+    ], { timeout: 30000 });
+    if (r.code !== 0 || !r.stdout) {
+      return { ok: false, reason: 'steam-extract-failed', error: 'yt-dlp Steam 提取失败' };
+    }
+    // 解析 Steam 提取的 JSON（可能有多行）
+    const lines = r.stdout.split('\n').filter(Boolean);
+    for (const line of lines) {
+      try {
+        const info = JSON.parse(line);
+        if (info.id) {
+          emit('trailer_search', STEP_SEARCH,
+            'Steam 命中：' + (info.title || ''), null, {
+              title: info.title, url, channel: 'Steam', source: 'steam',
+            });
+          // 复用 download 方法去下载
+          return this.download(name, dir, env, {
+            info: Object.assign({}, info, { channel: 'Steam', source: 'steam' }),
+            emit, index: opts.index, kind: opts.kind,
+            englishName: opts.englishName, versionDesc: opts.versionDesc,
+          });
+        }
+      } catch (e) { /* skip bad lines */ }
+    }
+    return { ok: false, reason: 'steam-no-video', error: 'Steam 商店页无明显预告片' };
+  }
 }
 
 module.exports = {

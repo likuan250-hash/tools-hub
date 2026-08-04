@@ -26,7 +26,7 @@ function buildPrompt(parsed, steamAppId, manualCoverUrl) {
 === 游戏信息 ===
 游戏名称：${parsed.raw}
 游戏大小：${sizeLine}
-游戏介绍：【用 web_search 搜真实描述，50-80字，不要自己编】
+游戏介绍：【必须先 web_search 联网搜真实公开资料（Wikipedia/Metacritic/官方新闻稿/权威测评，多源交叉验证）再写，80-110字；必含 开发商/发行年份/类型标签/核心玩法，搜到则加 Metacritic评分/全球销量/权威奖项；禁止以"该游戏"开头（用《》起头）、禁止写"支持中文"、禁止推测评分（搜不到的数字一律不写）、禁止罗列平台、禁止堆砌"精美画面""极致体验""沉浸式"等空泛形容词；严禁凭记忆编造】
 游戏信息标签：${tagStr}
 下载链接：分别填${urls.length ? " " + urls.join("；") : "【无链接请跳过】"}
 ${steamLine}

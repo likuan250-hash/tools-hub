@@ -1,0 +1,79 @@
+sequenceDiagram
+    autonumber
+    participant U as 前端 app.js
+    participant C as CollectService
+    participant F as CoverFetcher
+    participant N as netFetch(直连优先)
+    participant B as Bing cn.bing.com
+    participant S as Steam CDN
+    participant W as wallhaven / Reddit
+    participant P as MediaProbe(ffmpeg)
+
+    U->>C: POST /api/collect {name}
+    C->>F: resolveEnglishTitle(gameName)
+    F->>F: wiki 反查 httpJson(timeout=SEARCH_TIMEOUT 12s)
+    F-->>C: {title, steamAppId}
+    C->>C: 下载宣传片 → videoId / videoPath
+
+    C->>F: fetchCover(searchName, outDir, {steamAppId, videoId, coverUrl, originalName})
+    F->>F: buildQueryPlan → [英文名, 原名]
+    F->>F: resolveSteamAppId(英文名, {steamAppId})
+    alt opts.steamAppId 为空
+        F->>N: GET storesearch?term=..&l=english&cc=US
+        N-->>F: items[]
+        F->>F: pickRelevantSteamAppId(json, queryTokens)
+    end
+
+    rect rgb(232,245,233)
+    note over F,S: ① steam-cdn 达标档 requireMin=true
+    F->>F: buildSteamCdnCandidates(appId, strict)
+    F->>N: GET library_hero_2x.jpg
+    N->>S: 直连(首次探测 8s; 仅传输层异常才置 directFirstOk=false 转代理)
+    S-->>N: 200 3840x1240 或 404
+    alt 达标
+        F->>F: readImageSize + meetsMinSize(1280x720) → saveCover
+        F-->>C: {ok:true, degraded:false, source:'steam-cdn'}
+    else 404 或不达标
+        note right of F: 不占达标名额，干净降级
+    end
+    end
+
+    rect rgb(227,242,253)
+    note over F,W: ② wallhaven → ③ reddit → ④ user
+    F->>W: GET wallhaven API (httpJson, timeout+env 已贯通)
+    F->>W: GET reddit search.json (httpJson) 并过 isRelevantCandidate(title) 闸门
+    end
+
+    rect rgb(255,248,225)
+    note over F,B: ⑤~⑧ Bing 四级，每级仅 1 次请求
+    loop 每个 Bing 来源 x 每轮查询词
+        F->>F: 节流 600ms + 熔断计数(<=12)
+        F->>N: GET buildBingImageUrl(sites, query, extra)
+        N->>B: 直连 + UA / Accept-Language / Referer
+        B-->>N: HTML
+        alt 429 / 5xx / looksLikeBingBlockPage
+            F->>F: sleep(1500) 重试 1 次
+        end
+        F->>F: parseBingImageResults(html)
+        F->>F: filterBingCandidates(items, tokens, {hosts:sites})
+        F->>F: tryCandidates(murls) → 下载 → 实测尺寸 → 落盘
+    end
+    end
+
+    rect rgb(255,235,238)
+    note over F,S: ⑨ steam-cdn-lowres 降级档 requireMin=false
+    F->>N: GET library_hero.jpg
+    N-->>F: 200 1920x620
+    F-->>C: {ok:true, degraded:true, source:'steam-cdn-lowres'}
+    end
+
+    rect rgb(243,229,245)
+    note over F: ⑩ youtube 缩略图，degraded 由实测尺寸判定
+    end
+
+    C->>C: needFallback = (!ok || degraded) && videoPath
+    alt 需要兜底
+        C->>P: extractFrame(videoPath) → 封面.jpg 视频原生分辨率
+        P-->>C: ok
+    end
+    C-->>U: SSE done {cover:{source, width, height, degraded}}

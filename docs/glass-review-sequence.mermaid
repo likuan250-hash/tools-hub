@@ -1,0 +1,34 @@
+sequenceDiagram
+    autonumber
+    participant U as 用户
+    participant B as 卡片右上角图标按钮(.icon-btn)
+    participant JS as openModal()/closeModal()
+    participant M as .modal-mask.glass-mask (overlay)
+    participant G as .modal.glass (厚玻璃卡片)
+    participant D as 弹窗内容(history/adv/fmt)
+
+    Note over U,G: 打开：点击卡片 header 右上角按钮
+    U->>B: 点击 📜 / ⚙️ / 📋
+    B->>JS: addEventListener -> openModal(#xxxMask)
+    JS->>M: classList.add("show")
+    JS->>G: 重放 pop-in 入场动画
+    JS->>D: render 内容(读 localStorage / 渲染列表)
+    M-->>U: 深色半透明 overlay + 轻 blur(4px) 压暗背景
+    G-->>U: backdrop-filter: blur(40px) saturate(2.0) 厚玻璃浮现
+
+    Note over U,G: 关闭：三种一致路径
+    alt 点关闭按钮
+        U->>G: 点 .modal-close (✕)
+        G->>JS: closeModal()
+    else 点遮罩空白处
+        U->>M: 点 overlay (e.target === mask)
+        M->>JS: closeModal()
+    else 按 Esc (建议补齐)
+        U->>JS: keydown Esc
+        JS->>JS: closeModal()
+    end
+    JS->>M: classList.remove("show")
+    JS->>G: 移除 pop-in
+    Note over U,M: 回到原卡片页，不重置表单/不切路由
+
+    Note over B,JS: 三模块复用同一 openModal/closeModal，无新机制

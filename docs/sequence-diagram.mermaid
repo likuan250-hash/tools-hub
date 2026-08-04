@@ -1,0 +1,30 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant App as RendererApp (renderer/app.js)
+    participant WV as ToolWebview (<webview>)
+    participant Page as ToolPage (tool app.js + DOM)
+
+    User->>App: 点击入口卡片 → openTab(key)
+    App->>WV: 创建 <webview>，src=toolURL，追加到 #stage
+    App->>App: switchTab(key)
+    App->>WV: 未 dom-ready → 置 data-pending=1，暂不激活（保持 hidden）
+    App->>App: landing 加 .hidden（淡出，z-index 0）
+
+    Note over WV: 远程 HTML 加载中…<br/>webview 仍 hidden，下方 landing（环境光渐变）可见 → 无黑闪
+
+    WV-->>App: dom-ready 事件
+    App->>WV: wv.send("sync-theme", theme)
+    App->>WV: 若 data-pending → 加 .active（CSS 触发 opacity 0→1 + scale .98→1 淡入微缩放）
+    App->>WV: resizeWebview()（rAF + 60ms 补一次）
+
+    Page->>Page: 脚本在 body 末执行（≈DOMContentLoaded）
+    Page->>Page: applyEntrance() 按文档顺序给首屏块挂 pop-in + --i
+    Note over Page: 首屏 header/.panel/.card 依次 stagger 弹入<br/>（@keyframes popIn，复用 macos-motion.css）
+
+    User-->>App: 看到：webview 平滑淡入（无黑）+ 面板 staggered 入场
+
+    Note over User,Page: ── 切回入口页 ──
+    User->>App: 点击「入口」标签 → switchTab(HOME)
+    App->>WV: 去 .active（淡出，visibility 延迟 var(--dur) 后 hidden）
+    App->>App: landing 去 .hidden（淡入）

@@ -15,10 +15,63 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG="${{ github.ref_name }}"
+          TAG_VERSION="${TAG#v}"
+          echo "package.json version: $PKG_VERSION"
+          echo "git tag version:     $TAG_VERSION"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "❌ 版本不一致：package.json($PKG_VERSION) != tag($TAG_VERSION)"
+            echo "   请先 bump package.json 的 version 再打 tag，否则 electron-builder 会静默跳过上传 Release 资产。"
+            exit 1
+          fi
+          echo "✅ 版本一致，继续构建"
+
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      # ── CI 缓存：加速依赖安装（key 基于 lock 文件，版本号变更不失效）──
+      - name: Cache root node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-root-${{ hashFiles('package-lock.json') }}
+          restore-keys: nm-root-
+
+      - name: Cache kdocs-tool node_modules
+        uses: actions/cache@v4
+        with:
+          path: kdocs-tool/node_modules
+          key: nm-kdocs-${{ hashFiles('kdocs-tool/package-lock.json') }}
+          restore-keys: nm-kdocs-
+
+      - name: Cache netdisk-hub node_modules
+        uses: actions/cache@v4
+        with:
+          path: netdisk-hub/node_modules
+          key: nm-netdisk-${{ hashFiles('netdisk-hub/package-lock.json') }}
+          restore-keys: nm-netdisk-
+
+      - name: Cache biliup-hub node_modules
+        uses: actions/cache@v4
+        with:
+          path: biliup-hub/node_modules
+          key: nm-biliup-${{ hashFiles('biliup-hub/package-lock.json') }}
+          restore-keys: nm-biliup-
+
+      - name: Cache electron + electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-v1
+          restore-keys: electron-${{ runner.os }}-
 
       - name: Install app deps (electron + electron-builder)
         run: npm install --no-audit --no-fund
@@ -31,6 +84,72 @@ jobs:
         working-directory: netdisk-hub
         run: npm install --no-audit --no-fund
 
+      - name: Install biliup-hub deps
+        working-directory: biliup-hub
+        run: npm install --no-audit --no-fund
+
+      - name: Install material-hub deps
+        working-directory: material-hub
+        run: npm install --no-audit --no-fund
+
+      # #6 内置 biliup.exe：从 biliup-rs 官方 Release 下载 Windows 预编译包，
+      # 解压取出 biliup.exe 放到 biliup-hub/bin/，由 electron-builder extraResources
+      # 一并打进安装包（运行时路径 resources/biliup-hub/bin/biliup.exe）。
+      # 若资产名/下载失败，本步骤必须让 CI 报错（exit 1），避免无声缺包。
+      - name: Download & bundle biliup.exe (biliup-rs prebuilt)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $api = "https://api.github.com/repos/biliup/biliup-rs/releases/latest"
+          $headers = @{ Accept = "application/vnd.github+json" }
+          if ($env:GH_TOKEN) { $headers["Authorization"] = "Bearer $env:GH_TOKEN" }
+          Write-Host "查询最新 release: $api"
+          $rel = Invoke-RestMethod -Headers $headers -Uri $api
+          # 选取 Windows x64 资产（如 biliupR-<ver>-x86_64-windows.zip）
+          $asset = $rel.assets | Where-Object { $_.name -match 'x86_64-windows' -or $_.name -match 'windows-x64' } | Select-Object -First 1
+          if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -match '\.zip$' -and $_.name -match 'windows' } | Select-Object -First 1 }
+          if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -match '\.exe$' } | Select-Object -First 1 }
+          if (-not $asset) { Write-Error "未找到 biliup Windows 资产，请检查 release 资产命名"; exit 1 }
+          Write-Host "选定资产: $($asset.name) -> $($asset.browser_download_url)"
+          $outDir = "biliup-hub/bin"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $zip = Join-Path $outDir "biliup-download"
+          Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile $zip
+          if ($asset.name -match '\.zip$') {
+            Expand-Archive -Force -Path $zip -DestinationPath $outDir
+            $exe = Get-ChildItem -Path $outDir -Recurse -Filter "biliup.exe" | Select-Object -First 1
+            if (-not $exe) { $exe = Get-ChildItem -Path $outDir -Recurse -Filter "*.exe" | Select-Object -First 1 }
+            if (-not $exe) { Write-Error "解压后未找到 biliup.exe"; exit 1 }
+            Copy-Item -Force $exe.FullName (Join-Path $outDir "biliup.exe")
+          } else {
+            Move-Item -Force $zip (Join-Path $outDir "biliup.exe")
+          }
+          if (-not (Test-Path (Join-Path $outDir "biliup.exe"))) { Write-Error "biliup.exe 未就位"; exit 1 }
+          Write-Host "✅ biliup.exe 已就位: $(Join-Path $outDir 'biliup.exe')"
+
+      # 内置 yt-dlp.exe：素材搜集模块的宣传片下载强依赖 yt-dlp，用户机器不保证装过、
+      # 更不保证在 PATH。这里从 yt-dlp 官方 Release 下载 Windows 单文件 exe 放到
+      # material-hub/bin/，由 electron-builder extraResources（from: "material-hub"）
+      # 一并打进安装包（运行时路径 resources/material-hub/bin/yt-dlp.exe）。
+      # ffmpeg/ffprobe 走 npm 包（@ffmpeg-installer / @ffprobe-installer），上一步 npm install 已装好。
+      # 下载失败必须让 CI 报错（exit 1），避免无声出一个「点运行必失败」的包。
+      - name: Download & bundle yt-dlp.exe (material-hub)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+          $outDir = "material-hub/bin"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $dest = Join-Path $outDir "yt-dlp.exe"
+          Write-Host "下载 yt-dlp.exe: $url"
+          Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+          if (-not (Test-Path $dest)) { Write-Error "yt-dlp.exe 未就位"; exit 1 }
+          $size = (Get-Item $dest).Length
+          if ($size -lt 1MB) { Write-Error "yt-dlp.exe 体积异常 ($size bytes)，疑似下载失败页"; exit 1 }
+          Write-Host "✅ yt-dlp.exe 已就位: $dest ($([math]::Round($size/1MB,1))MB)"
+
       - name: Run kdocs-tool tests (CI 门禁，失败则不出包)
         working-directory: kdocs-tool
         run: npm test
@@ -39,6 +158,14 @@ jobs:
         working-directory: netdisk-hub
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm test
+
+      - name: Run biliup-hub tests (CI 门禁，失败则不出包)
+        working-directory: biliup-hub
+        run: npm test
+
+      - name: Run material-hub tests (CI 门禁，失败则不出包)
+        working-directory: material-hub
         run: npm test
 
       - name: Verify status-luxe sync (三处副本逐字节一致)
@@ -85,7 +212,8 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: "0"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 不签名（无证书），安装时会有“未知发布者”提示，属正常
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          # 不签名（无证书），安装时会有"未知发布者"提示，属正常
         run: npm run dist
 
       - name: Upload installer artifact
@@ -94,3 +222,30 @@ jobs:
           name: ToolsHub-Setup
           path: dist/*.exe
           if-no-files-found: error
+
+      # ── 发布校验门禁（防 electron-builder 静默发布失败）──
+      # 已知坑：electron-builder --win nsis -p always 的 publish 阶段若遇 GitHub API 瞬时错误，
+      # 可能“构建成功但 Release 没建出来”，CI 仍显示 success、artifact 也上传了，
+      # 但用户点“检测更新”查不到新版（无 latest.yml）。这里显式校验 Release 已存在，
+      # 缺失则让 CI 失败并提示重跑，避免再次静默流出无发布的版本。
+      - name: Verify GitHub release published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "校验 Release 是否存在: $TAG"
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/likuan250-hash/tools-hub/releases/tags/$TAG")
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Release $TAG 已发布"
+              exit 0
+            fi
+            echo "  尝试 $i: HTTP $CODE，10s 后重试…"
+            sleep 10
+          done
+          echo "❌ Release $TAG 未发布（electron-builder 发布阶段可能静默失败）。请到 Actions 重跑本次 workflow。"
+          exit 1

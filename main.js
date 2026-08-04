@@ -1,10 +1,10 @@
 // tools-hub 主进程（Electron）
-// 职责：单实例锁、fork 两个 node 子进程(kdocs/netdisk)、原生文件对话框、状态推送、看门狗、自动更新。
+// 职责：单实例锁、fork 四个 node 子进程(kdocs/netdisk/biliup/material)、原生文件对话框、状态推送、看门狗、自动更新。
 // 启动后渲染进程显示入口页；点击卡片后在同一窗口内以 <webview> 标签打开工具。
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
-const { fork } = require("child_process");
+const { fork, spawnSync } = require("child_process");
 const fs = require("fs");
 const crypto = require("crypto");
 const http = require("http");
@@ -15,6 +15,8 @@ const { safeStr, copyDir } = require("./lib/host-utils");
 const RES = process.resourcesPath; // 开发时=项目根，打包后=resources 目录
 const KDOCS_DIR = path.join(RES, "kdocs-tool");
 const NETDISK_DIR = path.join(RES, "netdisk-hub");
+const BILIUP_DIR = path.join(RES, "biliup-hub");
+const MATERIAL_DIR = path.join(RES, "material-hub");
 
 // Node 运行时：打包后自带 resources/node/node.exe；开发时回退系统 PATH 的 node
 const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
@@ -53,6 +55,8 @@ const CHILDREN = {
     proc: null,
     running: false,
     attempts: 0,
+    startedAt: 0,
+    lastError: null,
   },
   netdisk: {
     key: "netdisk",
@@ -64,6 +68,42 @@ const CHILDREN = {
     proc: null,
     running: false,
     attempts: 0,
+    startedAt: 0,
+    lastError: null,
+  },
+  biliup: {
+    key: "biliup",
+    name: "B站自动投稿",
+    script: path.join(BILIUP_DIR, "server.js"),
+    cwd: BILIUP_DIR,
+    url: "http://localhost:3600",
+    env: Object.assign({}, process.env, {
+      TOOLSHUB_VERSION: app.getVersion(),
+      BILIUP_PORT: "3600",
+    }),
+    proc: null,
+    running: false,
+    attempts: 0,
+    startedAt: 0,
+    lastError: null,
+  },
+  material: {
+    key: "material",
+    name: "素材搜集",
+    script: path.join(MATERIAL_DIR, "server.js"),
+    cwd: MATERIAL_DIR,
+    url: "http://localhost:3700",
+    env: Object.assign({}, process.env, {
+      TOOLSHUB_VERSION: app.getVersion(),
+      MATERIAL_PORT: "3700",
+      // 素材落盘根目录（不存在时由子进程自动 mkdir -p，见 lib/name.js）
+      MATERIAL_OUTPUT_DIR: "E:\\素材\\",
+    }),
+    proc: null,
+    running: false,
+    attempts: 0,
+    startedAt: 0,
+    lastError: null,
   },
 };
 
@@ -81,7 +121,7 @@ let currentTheme = "dark";
 // 方案(已弃用 junction)：曾经用目录 junction 把 resources/netdisk-hub/data 指向 userData，
 //   但 NSIS 升级清理安装目录时会删除 junction 重解析点，连带真实数据被误清 —— 这就是
 //   「升级后网盘全变未连接」反复修不好的根因。
-// 现方案：主进程在 fork 子进程时经环境变量 NETDISK_DATA_DIR / KDOCS_DATA_DIR 注入
+// 现方案：主进程在 fork 子进程时经环境变量 NETDISK_DATA_DIR / KDOCS_DATA_DIR / BILIUP_DATA_DIR 注入
 //   userData 下的真实目录，netdisk 直接读写该目录（见 src/store.js / src/xunlei*.js），
 //   resources 下不再留任何 data 引用，升级清理安装目录时数据毫发无损。
 function relocateNetdiskData() {
@@ -206,28 +246,80 @@ function verifyChildBoot(cfg) {
   req.setTimeout(3000, () => req.destroy());
 }
 
+// ── #5 健康看门狗辅助 ──
+// 探活：访问 /api/version，200 视为存活。
+// 注意：必须用 /api/version 而非 /api/health —— kdocs-tool 仅实现 /api/version，
+// 若用 /api/health 会因其返回 404 被误判为“已死”并被看门狗每 30s 重启一次（违反“不影响网盘/金山”）。
+// 三个子服务(kdocs/netdisk/biliup)均实现 /api/version 且回显 bootToken，是跨服务统一的探活基线。
+function healthCheck(cfg) {
+  return new Promise((resolve) => {
+    const req = http.get(cfg.url + "/api/version", (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
+    req.on("error", () => resolve(false));
+    req.setTimeout(3000, () => { req.destroy(); resolve(false); });
+  });
+}
+
+// 端口占用探测（#5 D：EADDRINUSE 友好提示）。
+// 同样用 /api/version：只要端口上有进程在监听就返回响应，足以判断“端口被占用”。
+function isPortInUse(url) {
+  return new Promise((resolve) => {
+    const req = http.get(url + "/api/version", (res) => { res.resume(); resolve(true); });
+    req.on("error", () => resolve(false));
+    req.setTimeout(2000, () => { req.destroy(); resolve(false); });
+  });
+}
+
+// 端口归属探测（#5 B：启动前清理）。返回 'ours' | 'foreign' | 'empty'。
+function probeChildPort(cfg) {
+  return new Promise((resolve) => {
+    const req = http.get(cfg.url + "/api/version", (res) => {
+      let d = "";
+      res.on("data", (c) => (d += c));
+      res.on("end", () => {
+        try {
+          const j = JSON.parse(d);
+          resolve(j.bootToken === BOOT_TOKEN ? "ours" : "foreign");
+        } catch (e) { resolve("foreign"); }
+      });
+    });
+    req.on("error", () => resolve("empty"));
+    req.setTimeout(2000, () => { req.destroy(); resolve("empty"); });
+  });
+}
+
 function startChild(cfg) {
   if (!fs.existsSync(cfg.script)) {
     log(`子进程脚本不存在，跳过 ${cfg.key}: ${cfg.script}`);
     return;
   }
   log(`启动子进程 ${cfg.key} -> ${cfg.script}`);
-  // 数据目录 env：仅打包后注入。netdisk 读 NETDISK_DATA_DIR，kdocs 读 NETDISK_DATA_DIR(夸克 cookie) + KDOCS_DATA_DIR(browse IPC)。
+  // 数据目录 env：仅打包后注入。netdisk 读 NETDISK_DATA_DIR，kdocs 读 NETDISK_DATA_DIR(夸克 cookie) + KDOCS_DATA_DIR(browse IPC)，
+  // biliup 读 BILIUP_DATA_DIR（cookies/数据，与投稿上传同目录）。
   // 开发模式不注入，子进程回退到各自的安装目录 data/，保持开发兼容。
   const dataEnv = app.isPackaged ? {
     NETDISK_DATA_DIR: path.join(app.getPath("userData"), "netdisk-hub", "data"),
     KDOCS_DATA_DIR: path.join(app.getPath("userData"), "kdocs-tool", "data"),
+    BILIUP_DATA_DIR: path.join(app.getPath("userData"), "biliup-hub", "data"),
   } : {};
+  const childEnv = Object.assign({}, cfg.env, dataEnv, { BOOT_TOKEN: BOOT_TOKEN });
+  // #6 注入资源目录，供 fork 子进程解析打包内置的 biliup.exe（子进程无 process.resourcesPath）。
+  if (RES) childEnv.TOOLSHUB_RESOURCES_DIR = RES;
+
   const proc = fork(cfg.script, [], {
     cwd: cfg.cwd,
-    env: Object.assign({}, cfg.env, dataEnv, { BOOT_TOKEN: BOOT_TOKEN }),
+    env: childEnv,
     execPath: NODE_BIN, // 用打包内置 node 或系统 node 运行子进程，避免依赖 electron 当 node
     silent: false, // 子进程 stdout/stderr 直接继承到主进程日志
     windowsHide: true, // 打包/开发都隐藏子进程控制台窗口，避免两个黑框
   });
   cfg.proc = proc;
   cfg.running = true;
+  cfg.startedAt = Date.now();
   cfg.attempts += 1;
+  cfg.lastError = null;
 
   proc.on("message", (m) => {
     // 子进程可经 IPC 主动上报（预留）
@@ -239,6 +331,19 @@ function startChild(cfg) {
     log(`子进程 ${cfg.key} 退出 code=${code} signal=${signal}`);
     pushStatus();
     if (quitting) return;
+    // #5 D：端口占用友好提示（EADDRINUSE 探活）。仅异常退出时探活。
+    if (code && code !== 0) {
+      isPortInUse(cfg.url)
+        .then((used) => {
+          cfg.lastError = used
+            ? `启动失败：端口被占用 (EADDRINUSE)，请检查 ${cfg.url} 是否被其他进程占用`
+            : `进程异常退出 code=${code}`;
+          pushStatus();
+        })
+        .catch(() => {});
+    } else {
+      cfg.lastError = null;
+    }
     if (cfg.attempts > MAX_RESTART) {
       log(`子进程 ${cfg.key} 重启次数超限，停止重试`);
       return;
@@ -254,6 +359,7 @@ function startChild(cfg) {
   pushStatus();
 }
 
+// ── #5 C：退出前强制杀进程（SIGTERM 后延迟 3s，仍存活则 SIGKILL / taskkill）──
 function stopAllChildren() {
   quitting = true;
   for (const cfg of Object.values(CHILDREN)) {
@@ -263,16 +369,74 @@ function stopAllChildren() {
       } catch (e) {
         /* ignore */
       }
-      cfg.proc = null;
-      cfg.running = false;
     }
   }
+  // 延迟 3s 后强制清理仍未退出的幽灵进程，避免升级/退出后残留占用端口。
+  setTimeout(() => {
+    for (const cfg of Object.values(CHILDREN)) {
+      if (cfg.proc) {
+        try {
+          if (process.platform === "win32") {
+            try { spawnSync("taskkill", ["/F", "/PID", String(cfg.proc.pid)], { windowsHide: true }); }
+            catch (e) { /* ignore */ }
+          } else {
+            cfg.proc.kill("SIGKILL");
+          }
+        } catch (e) { /* ignore */ }
+        cfg.proc = null;
+        cfg.running = false;
+      }
+    }
+  }, 3000);
+}
+
+// ── #5 A：周期健康看门狗（每 30s 探活，发现 dead 自动重启）──
+let watchdogTimer = null;
+function startWatchdog() {
+  if (watchdogTimer) return;
+  watchdogTimer = setInterval(async () => {
+    if (quitting) return;
+    for (const cfg of Object.values(CHILDREN)) {
+      // 仅在“认为运行中”时探活；退出后的重启由 proc 'exit' 处理器负责，避免双重重启。
+      if (!cfg.running) continue;
+      // 刚启动 10s 内端口可能尚未就绪，跳过以免误判。
+      if (Date.now() - (cfg.startedAt || 0) < 10000) continue;
+      const alive = await healthCheck(cfg).catch(() => false);
+      if (alive) continue;
+      // 探活失败：进程可能已崩溃但未触发 exit（幽灵进程）→ 强制重启。
+      log(`看门狗：检测到 ${cfg.key} 无响应，尝试重启`);
+      cfg.running = false;
+      if (cfg.proc) { try { cfg.proc.kill("SIGKILL"); } catch (e) {} cfg.proc = null; }
+      if (cfg.attempts > MAX_RESTART) {
+        log(`看门狗：${cfg.key} 重启次数超限，停止`);
+        continue;
+      }
+      // #5 B：启动前探测端口，避免误杀其它服务。
+      const state = await probeChildPort(cfg);
+      if (state === "ours") {
+        // 端口仍被“我们自己”的前一个实例占用 → 视为存活并复用，不再拉新实例。
+        log(`${cfg.key} 端口仍被自身占用，复用已有实例`);
+        cfg.running = true;
+        continue;
+      }
+      if (state === "foreign") {
+        log(`⚠️ ${cfg.key} 端口被其它进程占用（bootToken 不匹配，疑似端口抢占/伪造）；未自动清理以免误杀`);
+      }
+      startChild(cfg);
+    }
+  }, 30000);
+  if (watchdogTimer.unref) watchdogTimer.unref();
 }
 
 function statusPayload() {
   const out = {};
   for (const cfg of Object.values(CHILDREN)) {
-    out[cfg.key] = { name: cfg.name, running: cfg.running, url: cfg.url };
+    out[cfg.key] = {
+      name: cfg.name,
+      running: cfg.running,
+      url: cfg.url,
+      lastError: cfg.lastError || null,
+    };
   }
   return out;
 }
@@ -366,6 +530,17 @@ ipcMain.handle("pick-folder", async () => {
   }
   return { dir: result.filePaths[0] };
 });
+ipcMain.handle("pick-file", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "选择视频文件",
+    properties: ["openFile"],
+    filters: [{ name: "视频", extensions: ["mp4"] }],
+  });
+  if (result.canceled || !result.filePaths.length) {
+    return { filePath: "" };
+  }
+  return { filePath: result.filePaths[0] };
+});
 ipcMain.handle("check-update", async () => {
   try {
     await autoUpdater.checkForUpdates();
@@ -414,9 +589,13 @@ app.whenReady().then(() => {
   relocateNetdiskData();
   cleanupStaleBackups();
   startChild(CHILDREN.netdisk);
+  startChild(CHILDREN.biliup);
+  startChild(CHILDREN.material);
   setupAutoUpdater();
   // 子进程启动需要一点时间，稍后推一次状态
   setTimeout(pushStatus, 1500);
+  // #5 A：启动健康看门狗（biliup 中途崩溃会自动拉起，网盘/金山同样受益且不受影响）
+  startWatchdog();
 });
 
 app.on("second-instance", () => {

@@ -126,9 +126,10 @@ async function walk(cookie, pwdId, stoken, pdirFid, seen, acc) {
   }
 }
 
+// 输出短格式（规范文档 §2.5）："30.7G" / "2T" / "512M"，与 constants.normalizeSize 保持一致
 function formatSize(bytes) {
   if (!bytes) return "0B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
+  const units = ["B", "K", "M", "G", "T"];
   let v = bytes;
   let u = 0;
   while (v >= 1024 && u < units.length - 1) {
@@ -177,7 +178,7 @@ function pickLatestVersion(list) {
  * 抓取夸克分享页总大小。
  * @param {string} link 夸克分享链接
  * @returns {Promise<{bytes:number,text:string,files:number}|null>}
- *   成功返回 {bytes,text(如 "30.7GB"),files}；无 Cookie / 失败 / 分享为空返回 null
+ *   成功返回 {bytes,text(如 "30.7G"),files}；无 Cookie / 失败 / 分享为空返回 null
  *   版本感知：根目录含多个版本文件夹时，仅对最高版本递归求和（扁平结构：根=版本）。
  */
 async function getTotalSize(link) {

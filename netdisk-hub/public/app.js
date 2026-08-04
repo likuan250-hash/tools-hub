@@ -9,40 +9,89 @@ function setBanner(level, msg) {
   banner.innerHTML = statusHTML(level, msg);
 }
 if (params.get('authorized') === 'baidu') {
-  setBanner('ok', '✅ 百度网盘授权成功,可以开始转存了');
+  setBanner('ok', '百度网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('authorized') === 'quark') {
-  setBanner('ok', '✅ 夸克网盘授权成功,可以开始转存了');
+  setBanner('ok', '夸克网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('authorized') === 'xunlei') {
-  setBanner('ok', '✅ 迅雷网盘授权成功,可以开始转存了');
+  setBanner('ok', '迅雷网盘授权成功,可以开始转存了');
   history.replaceState({}, '', '/');
 } else if (params.get('error') === 'no_config') {
-  setBanner('off', '⚠️ 尚未配置百度应用凭证,请在 .env 填写 BAIDU_CLIENT_ID / BAIDU_CLIENT_SECRET 后重启');
+  setBanner('off', '尚未配置百度应用凭证,请在 .env 填写 BAIDU_CLIENT_ID / BAIDU_CLIENT_SECRET 后重启');
 } else if (params.get('error') === 'auth_failed') {
-  setBanner('err', '⚠️ 百度授权失败:' + (params.get('msg') || '未知错误'));
+  setBanner('err', '百度授权失败:' + (params.get('msg') || '未知错误'));
+}
+
+// ── 统一执行按钮 loading 切换（macOS 线性图标风格：执行中显示 spinner + 执行中…）──
+function setExec(btn, on) {
+  if (!btn) return;
+  if (on) {
+    if (btn.dataset.label === undefined) {
+      var l = btn.querySelector('.bx-label');
+      btn.dataset.label = l ? l.textContent : btn.textContent;
+    }
+    btn.classList.add('is-loading');
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    var lbl = btn.querySelector('.bx-label');
+    if (lbl) lbl.textContent = '执行中…';
+  } else {
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+    var lbl2 = btn.querySelector('.bx-label');
+    if (lbl2 && btn.dataset.label !== undefined) lbl2.textContent = btn.dataset.label;
+  }
+}
+
+// ── 轻量 Toast（T05：与 biliup/kdocs 统一，玻璃 .toast-host + 子节点，3s 自动消失，复用 pop-in 入场）──
+function toast(msg, type) {
+  let host = document.getElementById('toastHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toastHost';
+    host.className = 'toast-host';
+    document.body.appendChild(host);
+  }
+  const isErr = type === 'err';
+  // 消息内已内联 ico() SVG（如错误态显式带 cross）时不再叠加 .toast-ico，避免双图标
+  const hasInlineIcon = typeof msg === 'string' && msg.indexOf('ico(') !== -1;
+  const el = document.createElement('div');
+  el.className = 'toast pop-in';
+  el.setAttribute('role', 'status');
+  el.innerHTML = '<span class="toast-ico"></span><span class="toast-msg"></span>';
+  el.querySelector('.toast-ico').innerHTML = hasInlineIcon ? '' : (isErr ? ico('cross') : ico('check'));
+  const msgEl = el.querySelector('.toast-msg');
+  if (hasInlineIcon) msgEl.innerHTML = msg; else msgEl.textContent = msg;
+  host.appendChild(el);
+  // 3s 后淡出移除；reduced-motion 下过渡被全局降级为瞬隐，不影响功能
+  setTimeout(() => {
+    el.classList.add('toast-out');
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+  }, 3000);
 }
 
 // 授权:弹窗打开对应网盘的授权/登录页
 function openAuth(provider) {
   const path = provider === 'baidu' ? '/auth/baidu/cookie' : '/auth/' + provider;
   const w = window.open(path, provider + 'Auth', 'width=520,height=720');
-  if (!w) alert('浏览器拦截了弹窗,请允许本站弹窗后重试');
+  if (!w) toast('浏览器拦截了弹窗,请允许本站弹窗后重试', 'err');
 }
 // 监听弹窗回传:授权成功后自动刷新账号状态并显示成功提示
 window.addEventListener('message', (e) => {
   if (e.origin !== location.origin) return;
   if (e.data && e.data.provider === 'baidu' && e.data.authorized) {
     loadAccounts();
-    setBanner('ok', '✅ 百度网盘授权成功,可以开始转存了');
+    setBanner('ok', '百度网盘授权成功,可以开始转存了');
   }
   if (e.data && e.data.provider === 'quark' && e.data.authorized) {
     loadAccounts();
-    setBanner('ok', '✅ 夸克网盘授权成功,可以开始转存了');
+    setBanner('ok', '夸克网盘授权成功,可以开始转存了');
   }
   if (e.data && e.data.provider === 'xunlei' && e.data.authorized) {
     loadAccounts();
-    setBanner('ok', '✅ 迅雷网盘授权成功,可以开始转存了');
+    setBanner('ok', '迅雷网盘授权成功,可以开始转存了');
   }
 });
 
@@ -51,7 +100,7 @@ async function loadAccounts() {
   const cards = document.getElementById('cards');
   // 先渲染「检查中」占位(避免校验网络耗时期间空白)
   const names = ['百度网盘', '夸克网盘', '迅雷网盘'];
-  cards.innerHTML = names.map((n) => `<div class="card"><div class="name">${n}</div><div class="status"><span class="dot off"></span>检查中…</div></div>`).join('');
+  cards.innerHTML = names.map((n) => `<div class="card"><div class="name">${n}</div><div class="status">${statusHTML('off', '检测中…')}</div></div>`).join('');
   try {
     const r = await fetch('/api/accounts');
     const d = await r.json();
@@ -68,7 +117,7 @@ async function loadAccounts() {
         const d = a.detail;
         if (d.startsWith('baidu_errno')) {
           // 真·登录态失效(接口返回错误): 橙色提醒 + 下方仍提供「重新授权」按钮
-          warn = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.85;color:var(--warn,#e0a030)">⚠ 百度返回错误 ${d.slice(12)}(登录态可能失效,可重新授权)</div>`;
+          warn = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.85;color:var(--warn,#e0a030)">百度返回错误 ${d.slice(12)}(登录态可能失效,可重新授权)</div>`;
         } else {
           // 网络/代理探测不通: 仅为参考,不影响实际转存,降级为灰色中性备注
           const reason = d.startsWith('net_error') ? ('网络/代理探测不通: ' + d.slice(10)) : ('联网校验未通过: ' + d);
@@ -90,14 +139,14 @@ async function loadAccounts() {
       // 仅网络探测不通(net_error)不算故障,不弹重授权(重授权救不了网络,反而误导)。
       const reallyBad = connected && a.pingOK === false && a.detail && a.detail.startsWith('baidu_errno');
       const showAuth = !connected || reallyBad;
-      const authBtnText = connected ? `🔄 重新授权${name}` : `🔗 授权${name}`;
+      const authBtnText = connected ? (ico('refresh') + ' 重新授权' + name) : (ico('link') + ' 授权' + name);
       const authLink = showAuth
         ? `<div style="margin-top:10px"><button class="auth-btn" onclick="openAuth('${key}')">${authBtnText}</button></div>` : '';
       // 转存目录行:显示当前目录(已选/默认),已连接时提供「选择目录」按钮
       const dir = a && a.dir;
       let dirRow = '';
       if (dir && dir.effective) {
-        const tag = dir.userSet ? '📁 转存到(已选)' : '📁 转存到(默认)';
+        const tag = dir.userSet ? (ico('folder') + ' 转存到(已选)') : (ico('folder') + ' 转存到(默认)');
         const dirBtn = connected
           ? `<button class="dir-btn" onclick="openDirPicker('${key}')">选择目录</button>`
           : '';
@@ -139,7 +188,7 @@ function renderTasks() {
   if (historyFilter !== 'all') items = items.filter((t) => t.status === historyFilter);
   if (!items.length) {
     const msg = historyFilter === 'failed' ? '暂无异常的转存' : historyFilter === 'success' ? '暂无成功的转存' : '还没有转存记录';
-    box.innerHTML = `<div class="empty">${msg}</div>`;
+    box.innerHTML = `<div class="empty-state"><span class="es-ico">${ico('inbox')}</span>${msg}</div>`;
     return;
   }
 
@@ -191,7 +240,7 @@ function renderTasks() {
         <span class="group-title">${escapeHtml(title)}</span>
         <span class="group-actions">
           <span class="group-summary">${summaryPill}</span>
-          ${hasOk ? `<button class="group-copy" data-copy-group="${gi}">📋 复制本组</button>` : ''}
+          ${hasOk ? `<button class="group-copy" data-copy-group="${gi}">${ico('clipboard')} 复制本组</button>` : ''}
         </span>
       </div>
       ${rows}
@@ -369,16 +418,16 @@ function renderResults(results) {
   const html = lastResults.map((res) => {
     const name = PROVIDER_NAME[res.provider] || res.provider;
     if (!res.ok) {
-      return `<div class="br-card fail">${statusHTML('err', '失败', { size: 'sm' })}<div class="br-name">${name}</div><div class="br-meta">❌ ${escapeHtml(res.error)}</div></div>`;
+      return `<div class="br-card fail">${statusHTML('err', '失败', { size: 'sm' })}<div class="br-name">${name}</div><div class="br-meta">${escapeHtml(res.error)}</div></div>`;
     }
     const link = res.share && res.share.link ? res.share.link : '';
     const count = res.files ? res.files.length : 0;
     let metaLine, linkArea;
     if (res.needShare) {
       metaLine = '↩ 来自历史,需补生成分享';
-      linkArea = `<div class="br-meta" style="color:#e0941a">⚠ ${escapeHtml(res.message || '请勾选「强制重转」补生成分享')}</div>`;
+      linkArea = `<div class="br-meta" style="color:#e0941a">${escapeHtml(res.message || '请勾选「强制重转」补生成分享')}</div>`;
     } else {
-      metaLine = res.fromCache ? '↩ 来自历史,跳过转存' : `✅ 转存 ${count} 个文件`;
+      metaLine = res.fromCache ? '↩ 来自历史,跳过转存' : `转存 ${count} 个文件`;
       linkArea = `<div class="br-meta" style="display:flex;align-items:flex-start;gap:8px">
         <a href="${escapeHtml(link)}" target="_blank" style="flex:1;word-break:break-all">${escapeHtml(link)}</a>
         <button class="copy" data-copy-text="${escapeHtml(PROVIDER_LABEL[res.provider] + link)}">复制</button>
@@ -393,7 +442,7 @@ function renderResults(results) {
   }).join('');
 
   const copyAll = ok.length
-    ? `<button class="btn ghost copy-all" data-copy-all style="margin-top:14px">📋 一键复制全部</button>`
+    ? `<button class="btn ghost copy-all" data-copy-all style="margin-top:14px">${ico('clipboard')} 一键复制全部</button>`
     : '';
   const preview = parsedState.title && ok.length
     ? `<div class="hint" style="margin-top:12px">复制内容预览:</div><div class="copy-preview">${escapeHtml(buildCopyAllText(lastResults))}</div>`
@@ -420,11 +469,12 @@ batchBtn.onclick = async () => {
   refreshUI();
   const jobs = getSelectedJobs();
   if (!jobs.length) {
-    batchErr.className = 'err show';
-    batchErr.innerHTML = statusHTML('err', parsedState.order.length ? '请至少勾选 1 个网盘' : '没识别到任何网盘链接');
+    // 空点校验：仅保留轻量 toast 反馈，去掉红色边框横幅（v2.1.8：用户反馈此处不需要红色提示）
+    const msg = parsedState.order.length ? '请先勾选要转存的网盘' : '请先粘贴网盘分享链接';
+    toast(msg, 'err');
     return;
   }
-  batchBtn.disabled = true; batchBtn.textContent = '转存中…';
+  setExec(batchBtn, true);
   try {
     const r = await fetch('/api/transfer/batch', {
       method: 'POST',
@@ -437,13 +487,13 @@ batchBtn.onclick = async () => {
       }),
     });
     const d = await r.json();
-    if (!d.ok) { batchErr.className = 'err show'; batchErr.textContent = '❌ ' + d.error; return; }
+    if (!d.ok) { batchErr.className = 'err show'; batchErr.innerHTML = ico('cross') + ' ' + escapeHtml(d.error); return; }
     renderResults(d.results);
     loadTasks();
   } catch (e) {
-    batchErr.className = 'err show'; batchErr.innerHTML = statusHTML('err', '❌ ' + e.message);
+    batchErr.className = 'err show'; batchErr.innerHTML = statusHTML('err', ico('cross') + ' ' + e.message);
   } finally {
-    batchBtn.disabled = false; batchBtn.textContent = '🚀 转存选中并生成分享';
+    setExec(batchBtn, false);
   }
 };
 
@@ -519,18 +569,40 @@ document.addEventListener('click', async (e) => {
     });
     const d = await r.json();
     if (d.ok) { loadTasks(); }
-    else { alert('重试失败: ' + (d.error || '')); btn.disabled = false; btn.textContent = old; }
+    else { toast('重试失败: ' + (d.error || ''), 'err'); btn.disabled = false; btn.textContent = old; }
   } catch (err) { btn.disabled = false; btn.textContent = old; }
 });
 
-// 历史面板折叠 / Tab 过滤 / 清空异常
-document.getElementById('historyToggle').addEventListener('click', () => {
-  const body = document.getElementById('historyBody');
-  const chev = document.getElementById('historyChevron');
-  const open = body.style.display === 'none';
-  body.style.display = open ? 'block' : 'none';
-  chev.classList.toggle('open', open);
-});
+// ── 统一弹窗机制（openModal/closeModal，对齐 biliup/kdocs，来去一致、回到原页、不丢上下文）──
+let activeModal = null;
+function openModal(modalEl) {
+  if (!modalEl) return;
+  activeModal = modalEl; // 记录当前浮层，关闭即回到下层原页（不切路由、不重置表单）
+  const panel = modalEl.querySelector('.modal');
+  if (panel) {
+    panel.classList.remove('pop-in');
+    void panel.offsetWidth; // 强制 reflow 以重放入场动画
+    panel.classList.add('pop-in'); // 复用 macos-motion 的 popIn（reduced-motion 下自动降级）
+  }
+  modalEl.classList.add('show');
+}
+function closeModal() {
+  if (!activeModal) return;
+  activeModal.classList.remove('show');
+  const panel = activeModal.querySelector('.modal');
+  if (panel) panel.classList.remove('pop-in');
+  activeModal = null;
+}
+
+// 历史 / 格式化：由卡片 header 右上角图标按钮触发厚玻璃弹窗（渲染逻辑不变，仅触发方式改）
+const historyMaskEl = document.getElementById('historyMask');
+const fmtMaskEl = document.getElementById('fmtMask');
+document.getElementById('historyIconBtn').addEventListener('click', () => { openModal(historyMaskEl); });
+document.getElementById('fmtIconBtn').addEventListener('click', () => { openModal(fmtMaskEl); });
+document.getElementById('historyClose').addEventListener('click', closeModal);
+document.getElementById('fmtClose').addEventListener('click', closeModal);
+if (historyMaskEl) historyMaskEl.addEventListener('click', (e) => { if (e.target === historyMaskEl) closeModal(); });
+if (fmtMaskEl) fmtMaskEl.addEventListener('click', (e) => { if (e.target === fmtMaskEl) closeModal(); });
 
 document.getElementById('historyTabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab');
@@ -549,29 +621,6 @@ document.getElementById('clearFailed').addEventListener('click', async () => {
   } catch (e) { /* ignore */ }
 });
 
-// ── 右上角版本徽章（只读，更新由工具箱统一管理）──
-const verBadge = document.getElementById('verBadge');
-async function loadVersion() {
-  // 版本数据加载中：先给出「检测中」视觉反馈（蓝 info 呼吸态），避免请求期间空白
-  verBadge.innerHTML = statusHTML('info', '检测中…');
-  try {
-    const r = await fetch('/api/version');
-    const d = await r.json();
-    const prefix = d.source === 'tools-hub' ? '工具箱 ' : '独立 ';
-    if (d.updatable === true) {
-      // 有新版本：琥珀 warn（当前服务端固定返回 updatable:false，分支结构保留，数据可判定时自然触发）
-      verBadge.innerHTML = statusHTML('warn', '有新版本');
-    } else {
-      // 最新：绿 ok
-      verBadge.innerHTML = statusHTML('ok', prefix + 'v' + d.version);
-    }
-    verBadge.title = d.source === 'tools-hub'
-      ? '由工具箱统一管理，更新请通过工具箱'
-      : '独立运行模式';
-    verBadge.classList.add('readonly');
-  } catch (e) { verBadge.innerHTML = statusHTML('off', 'v?'); }
-}
-
 // ── 转存目录选择(网页选目录,选完持久化,下次不再选) ──
 let dirCtx = { provider: '', stack: [], folders: [], loading: false };
 const ROOT_ID = { baidu: '/', quark: '0', xunlei: '' };
@@ -587,19 +636,19 @@ async function openDirPicker(provider) {
 
 async function browseDir(parentId) {
   const listEl = document.getElementById('dirList');
-  listEl.innerHTML = '<div class="empty">加载中…</div>';
+  listEl.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('hourglass') + '</span>加载中…</div>';
   document.getElementById('dirHint').textContent = '';
   try {
     const r = await fetch('/api/dirs/' + dirCtx.provider + '/browse?parent=' + encodeURIComponent(parentId));
     const d = await r.json();
     if (!r.ok) {
-      listEl.innerHTML = '<div class="empty" style="color:var(--err)">' + escapeHtml(d.error || '加载失败') + '</div>';
+      listEl.innerHTML = '<div class="empty-state" style="color:var(--err)"><span class="es-ico">' + ico('warning') + '</span>' + escapeHtml(d.error || '加载失败') + '</div>';
       return;
     }
     dirCtx.folders = d.folders || [];
     renderDirList();
   } catch (e) {
-    listEl.innerHTML = '<div class="empty" style="color:var(--err)">' + escapeHtml(e.message) + '</div>';
+    listEl.innerHTML = '<div class="empty-state" style="color:var(--err)"><span class="es-ico">' + ico('warning') + '</span>' + escapeHtml(e.message) + '</div>';
   }
 }
 
@@ -607,11 +656,11 @@ function renderDirList() {
   const listEl = document.getElementById('dirList');
   const folders = dirCtx.folders;
   if (!folders.length) {
-    listEl.innerHTML = '<div class="empty">此目录没有子文件夹</div>';
+    listEl.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('folder') + '</span>此目录没有子文件夹</div>';
     return;
   }
   listEl.innerHTML = folders.map((f) => `<div class="dir-item" onclick="enterDir('${escapeHtml(f.id)}','${escapeHtml(f.name)}')">
-    <span class="dir-ico">📁</span><span class="dir-name">${escapeHtml(f.name)}</span><span class="dir-go">›</span>
+    <span class="dir-ico">${ico('folder')}</span><span class="dir-name">${escapeHtml(f.name)}</span><span class="dir-go">›</span>
   </div>`).join('');
 }
 
@@ -659,11 +708,11 @@ async function confirmDir() {
       body: JSON.stringify({ id, name }),
     });
     const d = await r.json();
-    if (!d.ok) { alert('保存失败: ' + (d.error || '')); return; }
+    if (!d.ok) { toast('保存失败: ' + (d.error || ''), 'err'); return; }
     closeDirPicker();
     loadAccounts();
   } catch (e) {
-    alert('保存失败: ' + e.message);
+    toast('保存失败: ' + e.message, 'err');
   } finally {
     btn.disabled = false;
   }
@@ -674,20 +723,12 @@ document.getElementById('dirModal').addEventListener('click', (e) => {
 });
 
 // ── 格式化分享文本:乱序原帖 → 标准「标题 + 百度/迅雷/夸克」格式(可编辑,缺盘省略) ──
-const fmtToggle = document.getElementById('fmtToggle');
-const fmtChevron = document.getElementById('fmtChevron');
-const fmtBody = document.getElementById('fmtBody');
+// 触发已迁移至转存中心 header 的图标按钮（openModal(#fmtMask)），见上方统一弹窗机制
 const fmtInput = document.getElementById('fmtInput');
 const fmtResult = document.getElementById('fmtResult');
 const fmtCopy = document.getElementById('fmtCopy');
 const fmtFill = document.getElementById('fmtFill');
 const fmtClear = document.getElementById('fmtClear');
-
-fmtToggle.addEventListener('click', () => {
-  const open = fmtBody.style.display === 'none';
-  fmtBody.style.display = open ? 'block' : 'none';
-  fmtChevron.classList.toggle('open', open);
-});
 
 // 把任意排版的分享帖整理成标准格式。链接用正则硬抓(顺序/位置无关),标题尽力猜,结果可改。
 function formatPost(text) {
@@ -797,7 +838,6 @@ fmtFill.addEventListener('click', () => {
 
 loadAccounts();
 loadTasks();
-loadVersion();
 
 // 状态胶囊光标光斑（info 态 hover 随动）
 if (typeof bindStatusCursor === 'function') bindStatusCursor(document);
@@ -805,3 +845,26 @@ if (typeof bindStatusCursor === 'function') bindStatusCursor(document);
 // 首屏即时渲染(账户接口已改为立即返回,不再被迅雷 token 冷启动阻塞);
 // 2.8s 后再拉一次,等后台探测/迅雷 token 预热完成后刷新卡片上的「联网校验」提示。
 setTimeout(loadAccounts, 2800);
+
+// T02：首屏入场编排（零侵入：仅给 .wrap 首屏可见块挂 pop-in + --i，复用内联 macos-motion.css 的 stagger）
+(function () {
+  function applyEntrance(scope, max) {
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    } catch (e) {}
+    const root = scope || document;
+    const blocks = Array.from(root.children).filter((el) => {
+      if (!el || !el.style) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") return false;
+      if (el.offsetParent === null) return false; // 不在渲染树（如隐藏面板 / #banner）跳过
+      return true;
+    });
+    const n = Math.min(max || 6, blocks.length);
+    for (let i = 0; i < n; i++) {
+      blocks[i].classList.add("pop-in");
+      blocks[i].style.setProperty("--i", i);
+    }
+  }
+  applyEntrance(document.querySelector(".wrap"));
+})();

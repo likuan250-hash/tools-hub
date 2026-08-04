@@ -1,0 +1,137 @@
+classDiagram
+    class CoverFetcher {
+        +Function fetch
+        +object fs
+        +object probe
+        +number timeout
+        +string userAgent
+        +object env
+        +Map englishTitleCache
+        +Map steamAppIdCache
+        +Boolean directFirstOk
+        +number bingRequestCount
+        +number lastBingAt
+        +netFetch(url, opts) Promise
+        +httpText(url, opts) Promise
+        +httpJson(url, opts) Promise
+        +fetchImage(url, opts) Promise
+        +tryCandidates(urls, outDir, opts) Promise
+        +saveCover(buf, size, outDir) Promise
+        +buildBingImageUrl(sites, query, extra) string
+        +discoverViaBing(sites, query, opts) Promise
+        +buildSteamCdnUrl(appId, asset) string
+        +buildSteamCdnCandidates(appId, tier) string[]
+        +buildSteamSearchUrl(term) string
+        +resolveSteamAppId(query, opts) Promise
+        +fromSteamCdn(appId, outDir, opts) Promise
+        +fromWallhaven(name, outDir, opts) Promise
+        +fromReddit(name, outDir, opts) Promise
+        +fromUserUrl(url, outDir, opts) Promise
+        +from4kWallpapers(name, outDir, opts) Promise
+        +fromAlphacoders(name, outDir, opts) Promise
+        +fromGameSites(name, outDir, opts) Promise
+        +fromChineseSites(name, outDir, opts) Promise
+        +fromYouTube(videoId, outDir, opts) Promise
+        +resolveEnglishTitle(name, opts) Promise
+        +fetchCover(name, outDir, opts) Promise
+    }
+
+    class BingPureFns {
+        <<module functions>>
+        +parseBingImageResults(html) BingItem[]
+        +filterBingCandidates(items, queryTokens, opts) string[]
+        +isBingItemRelevant(item, queryTokens) boolean
+        +looksLikeBingBlockPage(html) boolean
+    }
+
+    class SteamPureFns {
+        <<module functions>>
+        +pickRelevantSteamAppId(json, queryTokens) string
+        +parseSteamSearchAppId(json) string
+        +parseSteamAppName(json, appId) string
+    }
+
+    class RelevancePureFns {
+        <<module functions>>
+        +normalizeTokens(str) string[]
+        +isRelevantCandidate(cand, tokens, opts) boolean
+        +extractSlugFromUrl(url) string
+        +extractTitleFromHtml(html) string
+        +decodeEntities(s) string
+        +hasWordToken(str) boolean
+    }
+
+    class BingItem {
+        +string murl
+        +string purl
+        +string title
+        +string turl
+    }
+
+    class CoverResult {
+        +boolean ok
+        +boolean degraded
+        +string source
+        +string file
+        +string path
+        +number width
+        +number height
+        +string url
+        +string queryUsed
+        +string[] queryPlan
+        +string[] tried
+        +string steamAppId
+        +string error
+    }
+
+    class ImageSize {
+        <<lib/imagesize.js>>
+        +readImageSize(buf) Size
+        +meetsMinSize(size, min) boolean
+        +extForImageFormat(format) string
+        +MIN_WIDTH 1280
+        +MIN_HEIGHT 720
+    }
+
+    class Http {
+        <<lib/http.js>>
+        +proxyFetch(url, opts) Promise
+        +resolveProxy(target, env) Proxy
+        +toProxyUrl(proxy) string
+    }
+
+    class MediaProbe {
+        <<lib/probe.js>>
+        +convertToJpg(input, output) Promise
+        +extractFrame(video, out, opts) Promise
+    }
+
+    class CollectService {
+        <<lib/collect.js>>
+        +CoverFetcher cover
+        +TrailerDownloader trailer
+        +MediaProbe probe
+        +run(opts, handlers) Promise
+    }
+
+    class FrontendApp {
+        <<public/app.js>>
+        +COVER_SOURCE_LABEL
+        +coverSourceLabel(source) string
+        +renderDone(ev) void
+    }
+
+    CoverFetcher ..> BingPureFns : uses
+    CoverFetcher ..> SteamPureFns : uses
+    CoverFetcher ..> RelevancePureFns : uses
+    CoverFetcher ..> ImageSize : validates real size
+    CoverFetcher ..> Http : default proxyFetch
+    CoverFetcher ..> MediaProbe : convertToJpg
+    CoverFetcher ..> CoverResult : returns
+    BingPureFns ..> BingItem : produces
+    BingPureFns ..> RelevancePureFns : relevance gate
+    SteamPureFns ..> RelevancePureFns : relevance gate
+    CollectService --> CoverFetcher : owns
+    CollectService ..> MediaProbe : ffmpeg frame fallback
+    CollectService ..> CoverResult : consumes degraded flag
+    FrontendApp ..> CoverResult : renders source label

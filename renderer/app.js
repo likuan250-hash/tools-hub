@@ -9,11 +9,16 @@
   const landingEl = document.getElementById("landing");
   const cardsEl = document.getElementById("toolCards");
   const aggEl = document.getElementById("aggStatus");
-  const versionEl = document.getElementById("version");
   const themeBtn = document.getElementById("themeBtn");
   const sortBtn = document.getElementById("sortBtn");
   const sortHintEl = document.getElementById("sortHint");
   const updateBtn = document.getElementById("updateBtn");
+  let currentVersion = "";
+  if (api && api.getVersion) {
+    api.getVersion()
+      .then((v) => { currentVersion = v; updateBtn.textContent = "v" + v; })
+      .catch(() => { updateBtn.textContent = "v?"; });
+  }
   const updateStatusEl = document.getElementById("updateStatus");
   const winMin = document.getElementById("winMin");
   const winMax = document.getElementById("winMax");
@@ -21,7 +26,27 @@
   const quitModal = document.getElementById("quitModal");
   const quitCancel = document.getElementById("quitCancel");
 
-  const { computeInsertIndex } = require("./drag-geometry");
+  // 拖拽几何计算（DOM 无关的纯函数）。
+  // ⚠️ 渲染进程 webPreferences: nodeIntegration=false + contextIsolation=true（main.js:298-299），
+  // 因此 `require` 在渲染进程里是 undefined —— 原代码在此行直接抛 ReferenceError，
+  // 导致整个 IIFE 在第 24 行就崩溃，其后所有事件绑定 / renderStatus / renderCards 全部不执行，
+  // 这正是「卡在初始化中…、卡片空白、整页无法操作」的根因。
+  // 改为从 window 读取（drag-geometry.js 已以 <script> 注入），并保留一份内联兜底实现，
+  // 保证即使该文件缺失也能渲染卡片、拖拽仍可工作，绝不再依赖 require。
+  const computeInsertIndex =
+    (typeof window !== "undefined" && typeof window.computeInsertIndex === "function")
+      ? window.computeInsertIndex
+      : function fallbackComputeInsertIndex(rects, px, py) {
+          let idx = rects.length;
+          for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            const cy = r.top + r.height / 2;
+            const cx = r.left + r.width / 2;
+            if (py < cy - r.height / 2) { idx = i; break; }
+            if (Math.abs(py - cy) <= r.height / 2 && px < cx) { idx = i; break; }
+          }
+          return idx;
+        };
   const quitConfirm = document.getElementById("quitConfirm");
 
   // ── 主题 ──
@@ -51,11 +76,6 @@
     });
   }
 
-  // ── 版本 ──
-  if (api && api.getVersion) {
-    api.getVersion().then((v) => { versionEl.textContent = "v" + v; }).catch(() => {});
-  }
-
   // ── 工具注册表 ──
   const TOOLS = {
     kdocs: {
@@ -65,14 +85,28 @@
       url: "http://localhost:3599",
       icon: "📊",
     },
-    netdisk: {
-      key: "netdisk",
-      name: "网盘转存中转",
-      desc: "分享链接 → 转存我盘 → 生成我的分享（百度/夸克/迅雷）",
-      url: "http://localhost:3000",
-      icon: "☁️",
-    },
-  };
+  netdisk: {
+    key: "netdisk",
+    name: "网盘转存中转",
+    desc: "分享链接 → 转存我盘 → 生成我的分享（百度/夸克/迅雷）",
+    url: "http://localhost:3000",
+    icon: "☁️",
+  },
+  biliup: {
+    key: "biliup",
+    name: "B站自动投稿",
+    desc: "选视频 → 填标签 → 选模式 → 一键投稿（上传/抽帧/AIGC/合集/置顶）",
+    url: "http://localhost:3600",
+    icon: "📺",
+  },
+  material: {
+    key: "material",
+    name: "素材搜集",
+    desc: "输入游戏名 → 自动建号文件夹 → 官方封面 + 宣传片落盘素材库",
+    url: "http://localhost:3700",
+    icon: "🎮",
+  },
+};
 
   let serviceStatus = {};
   let webviewPreload = "";
@@ -80,6 +114,9 @@
   const openTabs = [{ key: HOME_KEY, name: "入口" }]; // 入口页常驻、不可关闭
   let activeKey = HOME_KEY;
   let sortMode = false; // 卡片排序编辑模式
+
+  // 待激活兜底定时器：key -> timerId（服务未起导致 dom-ready 不触发时强制激活）
+  const pendingFallbacks = new Map();
 
   // ── 卡片顺序持久化 ──
   // 读取已保存顺序：过滤已删除工具、把新增工具追加到末尾（兜底）
@@ -123,7 +160,9 @@
           <div class="card-title">${t.name}</div>
           <div class="card-desc">${t.desc}</div>
           <div class="card-meta">
-            ${statusHTML(running ? "ok" : "off", running ? "在线" : "离线")}
+            ${(typeof statusHTML === "function")
+              ? statusHTML(running ? "ok" : "off", running ? "在线" : "离线")
+              : (running ? "在线" : "离线")}
             <span class="card-port">${t.url.replace("http://localhost:", "端口 ")}</span>
           </div>
         </div>
@@ -149,7 +188,7 @@
     sortMode = !sortMode;
     if (sortBtn) {
       sortBtn.classList.toggle("active", sortMode);
-      sortBtn.textContent = sortMode ? "✓" : "⇅";
+      sortBtn.textContent = sortMode ? "✓ 完成" : "⇅ 调整顺序";
       sortBtn.title = sortMode ? "完成排序" : "调整卡片顺序";
       sortBtn.setAttribute("aria-pressed", sortMode ? "true" : "false");
     }
@@ -335,16 +374,23 @@
     wv.setAttribute("allowpopups", "true"); // 授权页等弹窗需要
     wv.className = "wv";
     wv.id = "wv-" + key;
+    wv.dataset.key = key;
     wv.addEventListener("did-fail-load", (e) => {
       if (e.errorCode === -3) return;
       console.warn("webview 加载失败", key, e.errorDescription);
     });
     // DOM 准备好后触发一次 resize，确保 webview 内部内容正确撑满容器
     wv.addEventListener("dom-ready", () => {
+      wv.dataset.ready = "1";
       try { wv.send("sync-theme", theme); } catch (e) {} // 加载完成后同步工具箱主题
-      if (wv.classList.contains("active")) {
-        resizeWebview(wv);
-        setTimeout(() => resizeWebview(wv), 60);
+      // 仍是当前要展示的标签才淡入；否则仅标记就绪，等切回时直接激活（避免黑闪）
+      if (wv.dataset.key === activeKey) {
+        wv.dataset.pending = "";
+        const ft = pendingFallbacks.get(wv.dataset.key);
+        if (ft) { clearTimeout(ft); pendingFallbacks.delete(wv.dataset.key); }
+        activateWebview(wv);
+      } else {
+        wv.dataset.pending = ""; // 已就绪，pending 失效
       }
     });
     stageEl.appendChild(wv);
@@ -361,6 +407,8 @@
     openTabs.splice(idx, 1);
     const wv = document.getElementById("wv-" + key);
     if (wv) wv.remove();
+    const ft = pendingFallbacks.get(key);
+    if (ft) { clearTimeout(ft); pendingFallbacks.delete(key); }
     renderTabs();
     if (activeKey === key) {
       const tools = openTabs.filter((x) => x.key !== HOME_KEY);
@@ -372,6 +420,32 @@
     // webview 在显示/窗口大小变化后需要触发 resize 才能正确重绘内部尺寸
     if (!wv || !wv.resize) return;
     try { wv.resize(); } catch (e) {}
+  }
+
+  // 激活一个 webview：隐藏 landing + 挂 .active（CSS 淡入微缩放），并触发内部 resize
+  function activateWebview(wv) {
+    landingEl.classList.add("hidden");
+    wv.classList.add("active");
+    requestAnimationFrame(() => {
+      resizeWebview(wv);
+      // 再补一次，兼容某些情况下首帧未生效
+      setTimeout(() => resizeWebview(wv), 60);
+    });
+  }
+
+  // 首次激活兜底：dom-ready 超过 1500ms 仍未触发（如服务未起），且仍是当前目标，
+  // 则强制激活——露出 webview（错误页）也好过卡在 landing/空白。
+  function scheduleFallbackActivation(wv) {
+    const key = wv.dataset.key;
+    if (pendingFallbacks.has(key)) return;
+    const ft = setTimeout(() => {
+      pendingFallbacks.delete(key);
+      if (wv.dataset.ready) return;             // 已就绪
+      if (wv.dataset.key !== activeKey) return; // 已切走
+      wv.dataset.pending = "";
+      activateWebview(wv);
+    }, 1500);
+    pendingFallbacks.set(key, ft);
   }
 
   function switchTab(key) {
@@ -388,22 +462,23 @@
       });
       return;
     }
-    // 工具页：隐藏 landing，显示对应 webview
-    landingEl.classList.add("hidden");
+    // 工具页：显示对应 webview
     openTabs.forEach((x) => {
       if (x.key === HOME_KEY) return; // 跳过入口页，它不走 webview
       const wv = document.getElementById("wv-" + x.key);
       if (!wv) return;
       const active = x.key === key;
-      const wasActive = wv.classList.contains("active");
-      wv.classList.toggle("active", active);
       if (active) {
-        // visibility 改变后内部布局需要一帧才能稳定，延迟 resize
-        requestAnimationFrame(() => {
-          resizeWebview(wv);
-          // 再补一次，兼容某些情况下首帧未生效
-          setTimeout(() => resizeWebview(wv), 60);
-        });
+        if (!wv.dataset.ready) {
+          // 内容未就绪：保持 webview hidden，landing 仍可见（环境光渐变，非黑）；
+          // 等 dom-ready 再 activateWebview（内部隐藏 landing + 挂 .active 淡入）
+          wv.dataset.pending = "1";
+          scheduleFallbackActivation(wv);
+        } else {
+          activateWebview(wv);
+        }
+      } else {
+        wv.classList.remove("active");
       }
     });
   }
@@ -435,13 +510,25 @@
   // ── 服务状态 ──
   function renderStatus(status) {
     serviceStatus = status || {};
-    const keys = Object.keys(serviceStatus);
-    const online = keys.filter((k) => serviceStatus[k] && serviceStatus[k].running).length;
-    const kdocsLevel = (serviceStatus.kdocs && serviceStatus.kdocs.running) ? 'ok' : 'off';
-    const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
-    const agg = aggregateStatus([kdocsLevel, netdiskLevel]);
-    aggEl.innerHTML = statusHTML(aggColorLevel(agg), aggLabel(agg));
-    renderCards();
+    // 防御性：状态系统组件（status-luxe.js 提供的全局函数）若未加载成功，
+    // 必须保证卡片渲染与页面可操作，绝不能让状态胶囊的异常阻断整个初始化序列。
+    try {
+      const kdocsLevel = (serviceStatus.kdocs && serviceStatus.kdocs.running) ? 'ok' : 'off';
+      const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
+      const biliupLevel = (serviceStatus.biliup && serviceStatus.biliup.running) ? 'ok' : 'off';
+      const materialLevel = (serviceStatus.material && serviceStatus.material.running) ? 'ok' : 'off';
+      const agg = (typeof aggregateStatus === "function")
+        ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel, materialLevel])
+        : 'off';
+      const colorLevel = (typeof aggColorLevel === "function") ? aggColorLevel(agg) : agg;
+      aggEl.innerHTML = (typeof statusHTML === "function")
+        ? statusHTML(colorLevel, aggLabel(agg))
+        : (aggLabel(agg) || "");
+    } catch (e) {
+      // 状态胶囊渲染失败不应阻断卡片与页面：回退为纯文本标签，保证 #aggStatus 被替换。
+      if (aggEl) aggEl.textContent = aggLabel('off');
+    }
+    renderCards(); // 无论状态系统是否成功，卡片必须渲染、页面必须可操作
   }
   // 入口聚合标签：err→异常 / off→离线 / warn→需注意 / info→检测中 / ok→全部正常
   function aggLabel(level) {
@@ -462,10 +549,21 @@
   }
 
   // ── 更新 ──
+  /** 提取错误的可读摘要（electron-updater 原始 message 常含 URL/堆栈/HTTP 细节） */
+  function cleanErrMsg(raw) {
+    if (!raw) return "未知错误";
+    const s = String(raw).trim();
+    // 只取第一行（真实消息通常在第一行，后面是堆栈或 URL 列表）
+    const first = s.split(/\n/)[0].trim();
+    // 截断到 80 字符，防止撑爆 UI
+    return first.length > 80 ? first.slice(0, 77) + "…" : first;
+  }
   function setUpdateUI(text, busy, level) {
-    updateStatusEl.innerHTML = level ? statusHTML(level, text || "") : (text || "");
+    updateStatusEl.innerHTML = level
+      ? ((typeof statusHTML === "function") ? statusHTML(level, text || "") : (text || ""))
+      : (text || "");
     updateBtn.disabled = !!busy;
-    updateBtn.textContent = busy ? "⏳ 检查中…" : "🔄 检测更新";
+    updateBtn.textContent = busy ? "⏳ 检查中…" : (currentVersion ? "v" + currentVersion : "🔄 检测更新");
   }
   if (api && api.onUpdateStatus) {
     api.onUpdateStatus((p) => {
@@ -488,14 +586,18 @@
           setUpdateUI("当前已是最新", false, "ok");
           break;
         case "error":
-          setUpdateUI(`更新失败：${p.message || ""}`, false, "err");
+          const msg = cleanErrMsg(p.message);
+          // 对已知临时性问题给友好提示
+          const hint = /latest\.yml|Cannot find|404|network|timeout/i.test(msg)
+            ? "（可能正在构建中，稍后重试）" : "";
+          setUpdateUI(`更新失败：${msg}${hint}`, false, "err");
           break;
       }
     });
   }
   updateBtn.onclick = () => {
     if (api && api.checkUpdate) {
-      api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + (e.message || ""), false, "err"));
+      api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + cleanErrMsg(e.message), false, "err"));
     }
   };
 
@@ -508,7 +610,7 @@
     winMax.onclick = () => api.windowControl("maximize");
     winClose.onclick = () => api.windowControl("close");
     // 双击标题区（居中标题）最大化/还原
-    const titleEl = document.querySelector(".top-center");
+    const titleEl = document.querySelector(".top-left");
     if (titleEl) titleEl.addEventListener("dblclick", () => api.windowControl("maximize"));
   }
 

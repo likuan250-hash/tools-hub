@@ -77,7 +77,7 @@ test("aiDescribe：runCmd 抛错 → 兜底原始文本", async () => {
 test("buildPrompt 只含介绍+大小两项，不含封面/免责声明诱导", () => {
   const p = buildPrompt("双影奇境", { quarkUrl: "https://pan.quark.cn/s/x" });
   assert.ok(p.includes("不要写免责声明"));
-  assert.ok(p.includes("50-80字"));
+  assert.ok(p.includes("80-110字"));
   assert.ok(p.includes("未抓取到"));
   assert.ok(!p.includes("封面")); // 封面已拆分到 aiCoverSearch
   assert.ok(!p.includes("必须联网搜索该游戏的封面")); // 旧封面任务已移除

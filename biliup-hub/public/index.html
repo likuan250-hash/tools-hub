@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>B站自动投稿</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--mac-font);
+      color: var(--text);
+      min-height: 100vh;
+      background:
+        radial-gradient(900px 700px at 80% 20%, var(--bg-2), transparent 55%),
+        radial-gradient(1000px 650px at 15% 75%, var(--bg-3), transparent 58%),
+        radial-gradient(800px 500px at 110% 90%, var(--bg-2), transparent 50%),
+        radial-gradient(700px 400px at 50% 55%, rgba(255,255,255,0.04), transparent 48%),
+        linear-gradient(155deg, var(--bg-1), var(--bg-2));
+      background-attachment: fixed;
+      padding: 32px 16px 64px;
+      transition: background 0.5s ease, color 0.3s ease;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 28px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .logo {
+      width: 44px; height: 44px; border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      display: grid; place-items: center; font-size: 22px;
+      box-shadow: 0 8px 30px rgba(var(--accent-rgb), 0.4);
+    }
+    h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+    .sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+    .theme-btn {
+      border: 1px solid var(--glass-border); background: var(--glass-bg);
+      color: var(--text); border-radius: 12px; padding: 8px 14px;
+      cursor: pointer; font-size: 13px; backdrop-filter: blur(16px) saturate(160%);
+      box-shadow: var(--shadow-card);
+      transition: transform var(--motion-base) var(--ease-standard), background var(--motion-base) var(--ease-standard);
+    }
+    .theme-btn:hover { background: rgba(255,255,255,0.14); }
+
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .ver-badge {
+      color: var(--text-dim); padding: 6px 10px;
+      cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+      background: transparent; border: none; box-shadow: none;
+      backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 0;
+      transition: color var(--dur) var(--ease-out);
+    }
+    .ver-badge:hover { color: var(--text); }
+
+    /* ===== 账号区（#7 头像/昵称/登录按钮）===== */
+    .account-area { display: flex; align-items: center; gap: 8px; }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--glass-border); cursor: pointer; background: var(--field-bg);
+    }
+    .nick-name { font-size: 13px; font-weight: 600; cursor: pointer; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ===== panel（与网盘转存完全一致） ===== */
+    .panel {
+      border: 1px solid var(--glass-border); border-radius: var(--r-lg);
+      background: var(--glass-bg); backdrop-filter: blur(24px) saturate(160%);
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+      padding: var(--sp-6); margin-bottom: var(--sp-6);
+    }
+    .panel h2 {
+      font-size: 17px; font-weight: 700; margin-bottom: 18px;
+      display: flex; align-items: center; gap: 8px; letter-spacing: 0.2px;
+    }
+    /* ===== 表单控件（统一：半透明微妙表面 + 发丝边 + 12px 圆角 + 内阴影 + 4px 焦点环） ===== */
+    label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+    input[type="text"], input[type="password"], input[type="number"],
+    input[type="datetime-local"], select, textarea {
+      width: 100%;
+      padding: var(--field-pad-y) var(--field-pad-x);
+      border-radius: var(--field-radius);
+      border: 1px solid var(--field-border);
+      background: var(--field-bg);
+      color: var(--fg);
+      font-size: 14px; line-height: 1.5;
+      outline: none;
+      box-shadow: var(--field-inset);
+      transition:
+        border-color var(--motion-base) var(--ease-standard),
+        box-shadow   var(--motion-base) var(--ease-standard),
+        background    var(--motion-base) var(--ease-standard);
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: var(--field-inset), var(--field-focus-ring);
+    }
+    textarea { resize: vertical; min-height: 84px; font-family: var(--mono-font); font-size: 13px; }
+    textarea::placeholder, input::placeholder { color: var(--muted); opacity: .8; }
+
+    /* select 现代化重做：圆角 + 与 input 一致内边距 + 更实背景（--select-bg）+ 更清晰边框（--select-border）+ hover/focus 反馈；
+       chevron 随主题变色（暗亮灰 / 亮深灰），修复高级参数弹窗 select 发虚（v2.1.11）。 */
+    select {
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
+      width: 100%;
+      /* 内边距与同弹窗 input 一致：上下用 --field-pad-y、左侧 --field-pad-x，右侧预留 chevron 空间 */
+      padding: var(--field-pad-y) 38px var(--field-pad-y) var(--field-pad-x);
+      border-radius: var(--field-radius);
+      border: 1px solid var(--select-border);
+      background-color: var(--select-bg);
+      color: var(--fg);
+      font-size: 14px; line-height: 1.5;
+      cursor: pointer;
+      outline: none;
+      box-shadow: var(--field-inset);
+      /* 暗色主题 chevron（亮灰，在更实深底上对比清晰） */
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23c7c7cc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      background-size: 16px 16px;
+      transition:
+        border-color var(--motion-base) var(--ease-standard),
+        box-shadow   var(--motion-base) var(--ease-standard),
+        background-color var(--motion-base) var(--ease-standard);
+    }
+    /* hover：边框轻微染上强调色，给出可交互反馈 */
+    select:hover { border-color: color-mix(in oklab, var(--accent) 50%, var(--field-border)); }
+    /* focus：Apple HIG 统一聚焦环（--apple-accent） */
+    select:focus { border-color: var(--apple-accent); box-shadow: var(--field-inset), 0 0 0 3px color-mix(in oklab, var(--apple-accent) 40%, transparent); }
+    select:disabled { opacity: .55; cursor: not-allowed; }
+    /* 原生下拉列表项：选中/悬停用强调蓝高亮（webkit 受限，firefox 表现更佳） */
+    select option { color: var(--fg); background: var(--bg-2); }
+    select option:checked, select option:hover { background: var(--apple-accent); color: #fff; }
+    /* 亮色主题：chevron 加深，确保与浅底对比清晰 */
+    [data-theme="light"] select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2348484a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    }
+    input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+    .field { margin-bottom: 16px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 18px; align-items: start; }
+    @media (max-width: 680px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .file-name { font-size: 12px; opacity: .75; word-break: break-all; }
+
+    /* radio group */
+    .radio { display: flex; gap: 20px; align-items: center; margin: 4px 0 14px; }
+    .radio label { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; cursor: pointer; margin: 0; color: var(--text); }
+
+    /* ===== #J 发布模式分段大按钮（segmented control，保留原生 radio 取值/change 逻辑） ===== */
+    .seg-input {
+      position: absolute; opacity: 0; pointer-events: none;
+      width: 0; height: 0; margin: 0; padding: 0;
+    }
+    .radio .seg-item {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 8px 16px; min-width: 92px; font-size: 14px; cursor: pointer;
+      color: var(--text); background: var(--field-bg);
+      border: 1px solid var(--glass-border); border-radius: 12px;
+      transition:
+        transform var(--dur) var(--ease-standard),
+        background var(--dur) var(--ease-out),
+        border-color var(--dur) var(--ease-out),
+        color var(--dur) var(--ease-out),
+        box-shadow var(--dur) var(--ease-out);
+    }
+    .radio .seg-item:hover { border-color: var(--accent); }
+    /* 选中态：相邻兄弟选择器（无需 :has()，所有 webview 均支持） */
+    .seg-input:checked + .seg-item {
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-color: var(--accent);
+      box-shadow: 0 8px 24px rgba(var(--accent-rgb), 0.35);
+    }
+    .radio.seg { gap: 8px; }
+
+    /* ===== 发布模式 · 定时发布时间选择器对齐（v2.1.12，对齐原型） =====
+       让 datetime-local 与分段控件同高、同圆角、同边框语言；所在 .row 已
+       align-items:center，两者垂直居中到同一条线。仅改样式，不改 app.js 显隐逻辑。 */
+    #dtimeInput {
+      height: 38px; box-sizing: border-box; padding: 0 14px;
+      font: inherit; font-size: 14px; color: var(--text);
+      background: var(--field-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;            /* 与 .seg-item 圆角一致 */
+      outline: none;
+      width: auto;                     /* 覆盖全局 input 的 width:100%，保留 inline min-width:220px */
+      transition:
+        border-color var(--motion-base) var(--ease-standard),
+        box-shadow   var(--motion-base) var(--ease-standard),
+        background-color var(--motion-base) var(--ease-standard);
+    }
+    #dtimeInput:focus {
+      border-color: var(--apple-accent);
+      box-shadow: var(--field-inset), 0 0 0 3px color-mix(in oklab, var(--apple-accent) 40%, transparent);
+    }
+    /* 衔接文字「计划于」：仅在选择定时发布（#dtimeInput 显示）时出现。
+       纯 CSS 用 :has() 探测；不支持 :has() 的 webview 下自动隐藏，不影响对齐。 */
+    #dtimeConnector { font-size: 13px; color: var(--text-dim); white-space: nowrap; display: none; }
+    .row:has(#dtimeInput:not([style*="display: none"])) #dtimeConnector { display: inline; }
+
+    /* ===== 按钮（与网盘转存完全一致） ===== */
+    .btn {
+      width: 100%; padding: 14px; border: none; border-radius: var(--r-lg); cursor: pointer;
+      font-size: 15px; font-weight: 600; color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 10px 30px rgba(var(--accent-rgb), 0.35);
+      transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
+    }
+    .btn:hover { box-shadow: 0 14px 40px rgba(var(--accent-rgb), 0.5); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn.ghost { background: var(--field-bg); border: 1px solid var(--glass-border); color: var(--text); box-shadow: var(--shadow-card); }
+    .auth-btn {
+      border: none; border-radius: var(--r-md); cursor: pointer; font-size: 13px; font-weight: 600; color: #fff;
+      padding: 8px 16px; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.3);
+      transition: transform var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
+    }
+    .auth-btn:hover { box-shadow: 0 10px 26px rgba(var(--accent-rgb), 0.45); }
+
+    /* ===== 高级参数按钮（#F：替代原生 details 小三角，玻璃+accent，明暗两态） ===== */
+    .adv-toggle {
+      width: 100%; padding: 14px 16px; border-radius: 14px; cursor: pointer;
+      font-size: 14px; font-weight: 600; color: var(--text);
+      display: flex; align-items: center; justify-content: space-between;
+      border: 1px solid var(--glass-border);
+      background: var(--glass-bg); backdrop-filter: blur(16px) saturate(160%);
+      box-shadow: var(--shadow-card);
+      transition: transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease-out),
+        background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+    }
+    .adv-toggle:hover { border-color: var(--accent); }
+    .adv-toggle.open { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25); }
+    .adv-toggle .chev { display: inline-block; color: var(--accent); font-size: 12px;
+      transition: transform var(--dur) var(--ease-spring); }
+    .adv-toggle.open .chev { transform: rotate(180deg); }
+    .adv-body { margin-top: 6px; }
+
+    .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; padding-left: 10px; border-left: 2px solid var(--glass-border); }
+
+    .kpis { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    .kpi { font-size: 11px; opacity: .85; background: var(--field-bg); border: 1px solid var(--glass-border); border-radius: 8px; padding: 5px 10px; }
+
+    /* 执行面板容器：对齐 kdocs .auto-result（JS 仍用内联 display:none / display:"" 切换显隐，DOM 契约不变） */
+    #logWrap { display: flex; flex-direction: column; gap: 18px; }
+    .exec-title { font-size: 15px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
+
+    /* 日志区：可折叠玻璃卡片（<details> 包裹 #logBox，JS 照常追加 .line，DOM 契约不变；复刻 kdocs .log-card/.log-area 视觉语言） */
+    .log-card {
+      border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden;
+      background: var(--field-bg);
+    }
+    .log-card > summary {
+      list-style: none; cursor: pointer; user-select: none;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; font-size: 13px; font-weight: 600; color: var(--text);
+      transition: background var(--motion-base) var(--ease-standard);
+    }
+    .log-card > summary::-webkit-details-marker { display: none; }
+    .log-card > summary:hover { background: color-mix(in oklab, var(--text) 6%, transparent); }
+    .log-card > summary .chev { transition: transform var(--dur) var(--ease-standard); color: var(--text-dim); font-size: 12px; line-height: 1; }
+    .log-card:not([open]) > summary .chev { transform: rotate(-90deg); }
+
+    .log-area { padding: 12px 16px 16px; font-family: var(--mono-font); font-size: 13px; line-height: 1.6; max-height: 260px; overflow-y: auto; color: var(--text-dim); border-top: 1px solid var(--glass-border); }
+    .log-area .line { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+    .log-area .line.info { color: var(--text-dim); }
+    .log-area .line.ok { color: var(--ok); }
+    .log-area .line.err { color: var(--err); }
+    /* stage 为 app.js 注入的阶段标记行：用品牌 token 取色（原 #ffd479 硬编码改为 --accent-2，明暗双主题均覆盖） */
+    .log-area .line.stage { color: var(--accent-2); }
+
+    /* modal（与网盘转存完全一致） */
+    .modal-mask {
+      position: fixed; inset: 0; background: var(--modal-mask); backdrop-filter: blur(6px);
+      display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px;
+    }
+    .modal-mask.show { display: flex; animation: pop 0.25s ease; }
+    .modal {
+      width: 100%; max-width: 480px; padding: 22px;
+      border: 1px solid var(--glass-border); border-radius: var(--r-lg);
+      background: var(--surface);
+      -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+      box-shadow: var(--shadow-modal);
+      max-height: 80vh; display: flex; flex-direction: column;
+    }
+    /* 弹窗正文区：在 modal 固定 max-height 内独立滚动（A4 高级参数弹窗） */
+    .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 14px; padding-right: 4px; font-size: 14px; line-height: 1.65; }
+    /* 高级参数弹窗略加宽，2 列网格与长选项不再拥挤（v2.1.8 可读性） */
+    #advMask .modal { max-width: 560px; }
+
+    /* 历史列表（P08） */
+    .history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    .history-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
+    .history-item:last-child { border-bottom: none; }
+    .history-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+    .history-dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .history-dot.err { background: var(--err); box-shadow: 0 0 8px var(--err); }
+    .history-main { flex: 1; min-width: 0; }
+    .history-title { font-size: 14px; font-weight: 600; line-height: 1.5; color: var(--text); word-break: break-word; overflow-wrap: anywhere; }
+    .history-meta { color: var(--hist-meta); font-size: 13px; line-height: 1.55; margin-top: 4px; word-break: break-word; overflow-wrap: anywhere; }
+    .empty-state, .empty, .history-empty {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 8px; color: var(--text-dim); font-size: 13px; text-align: center; padding: 28px 12px;
+    }
+    .empty-state .es-ico { font-size: 28px; line-height: 1; opacity: 0.7; }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 600; }
+    .modal-close { border: none; background: transparent; color: var(--text-dim); font-size: 18px; cursor: pointer; line-height: 1; }
+    .modal-close:hover { color: var(--text); }
+    .modal h3 { margin: 0 0 14px; font-size: 16px; }
+    .modal .modal-actions { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+    .modal .modal-actions .btn { width: auto; padding: 10px 20px; font-size: 14px; }
+    .modal-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    .modal-foot .modal-hint { flex: 1; font-size: 12px; color: var(--text-dim); word-break: break-all; }
+    .modal-foot .btn.ghost { width: auto; padding: 9px 16px; font-size: 13px; }
+    .modal-foot .auth-btn { padding: 9px 16px; font-size: 13px; }
+    .qr-box { text-align: center; margin: 10px 0 4px; }
+    .qr-box img { width: 240px; height: 240px; border-radius: 12px; background: #fff; padding: 8px; }
+
+    /* 遮罩淡入（本地 keyframes，未改共享 macos-motion；reduced-motion 下被全局降级） */
+    @keyframes pop { from { opacity: 0; } to { opacity: 1; } }
+
+    /* ===== Toast（A2：轻量提示，明暗自动适配，3s 自动消失，复用 pop-in 入场） ===== */
+    .toast-host { position: fixed; left: 50%; bottom: var(--sp-7); transform: translateX(-50%);
+      display: flex; flex-direction: column; gap: var(--sp-3); align-items: center; z-index: 100; pointer-events: none; }
+    .toast {
+      pointer-events: auto;
+      max-width: 80vw; padding: 10px 18px; border-radius: var(--r-md);
+      font-size: 14px; font-weight: 600; color: var(--fg);
+      border: 1px solid var(--glass-border); background: var(--surface);
+      -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .toast .toast-ico { width: 16px; height: 16px; flex: none; display: inline-flex; }
+    .toast .toast-msg { line-height: 1.4; }
+    .toast.toast-out { opacity: 0; transform: translateY(8px);
+      transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard); }
+    [data-theme="light"] .toast { box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.7); }
+
+    /* 亮色玻璃分离增强（与网盘转存完全一致） */
+    [data-theme="light"] .panel,
+    [data-theme="light"] .chip,
+    [data-theme="light"] .card,
+    [data-theme="light"] .modal {
+      box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(20, 30, 80, 0.10);
+    }
+    /* 实色回退 */
+    @supports not (backdrop-filter: blur(1px)) {
+      .panel, .chip, .card, .modal, .theme-btn, .tab {
+        -webkit-backdrop-filter: none; backdrop-filter: none;
+        background: #eef1fb; border: 1px solid rgba(90, 95, 150, 0.45);
+      }
+    }
+  </style>
+
+  <!-- 三套样式完全内联（tokens + motion + macos），保证打包后零外部依赖 -->
+  <style>
+/* ===== shared/tokens.css（单一真源 —— 明暗 token 严格对齐网盘转存） ===== */
+:root { /* 默认暗色 —— Apple HIG token（新增规范名，旧名作别名） */
+  /* 页面基底：保留既有蓝调；新增 --bg 规范名 */
+  --bg: #1d1d1f;
+  --bg-1: #0f1226;
+  --bg-2: #222a52;
+  --bg-3: #2b1a4a;
+
+  /* 文字：规范名 --fg / --fg-2 / --muted；旧名 --text / --text-dim 作别名 */
+  --fg: #f5f5f7;
+  --fg-2: #c7c7cc;
+  --muted: #98989d;
+  --text: var(--fg);
+  --text-dim: var(--fg-2);
+
+  /* 表面：--surface 即既有玻璃面板；--surface-2 为字段微妙表面（修复突兀关键） */
+  --surface: rgba(255, 255, 255, 0.32);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --field-bg: var(--surface-2);
+  --solid-bg: var(--surface-2);
+  --glass-bg: var(--surface);
+
+  /* 边框：--border 为字段发丝边；--glass-border 继续用于面板 */
+  --border: #3a3a3c;
+  --border-soft: rgba(255, 255, 255, 0.12);
+      --glass-border: rgba(255, 255, 255, 0.42);
+      --field-border: var(--border);
+      /* select 专用更实背景与更清晰边框：修复高级参数 select 发虚（v2.1.11）。
+         暗色用半实深底，使近白文字清晰可读，同时保留一点玻璃质感。 */
+      --select-bg: rgba(30, 32, 50, 0.82);
+      --select-border: #7c7c82;
+
+  /* 强调色（保留分模块品牌色；见规范决策点#1 备选方案） */
+  --accent: #fb7299; --accent-2: #00aeec; --accent-3: #c4b5ff;
+  /* Apple HIG 强调蓝：聚焦环 / 选中高亮统一变量（暗 #2997FF） */
+  --apple-accent: #2997FF;
+  --accent-hover: #fc8aab; --accent-active: #e85c83;
+  --accent-rgb: 251, 114, 153; --accent2-rgb: 0, 174, 236;
+
+  /* 语义色 */
+  --ok: #34d399; --warn: #fbbf24; --err: #f87171;
+  --ok-rgb: 52, 211, 153; --err-rgb: 248, 113, 113;
+  --success: var(--ok); --danger: var(--err);
+
+  /* 历史弹窗次级文字：复用 netdisk 同语义变量（暗色亮蓝灰），对比度约 11:1，达 WCAG AA */
+  --hist-meta: #c8cff0;
+
+  /* 开关 / 遮罩 */
+  --switch-off: #4b4f6b; --switch-thumb: #ffffff;
+  --modal-mask: rgba(8, 10, 24, 0.6);
+  --shadow-card: 0 10px 34px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.6);
+
+  /* 圆角阶梯 */
+  --r-sm: 8px; --r-md: 12px; --r-lg: 18px; --r-pill: 999px;
+
+  /* 阴影 / 层级 */
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  /* 间距阶梯 */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 48px;
+
+  /* 焦点环 */
+  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent);
+  --field-focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent);
+
+  /* 字段专用 */
+  --field-radius: var(--r-md);
+  --field-pad-y: 9px; --field-pad-x: 12px;
+  --field-inset: inset 0 1px 2px rgba(0, 0, 0, 0.10);
+
+  /* 动效（规范统一；旧名 --dur / --ease-* 作别名） */
+  --motion-fast: 150ms;
+  --motion-base: 220ms;
+  --ease-standard: cubic-bezier(0.28, 0.22, 1);
+  --ease-emphasized: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur: var(--motion-base); --dur-fast: var(--motion-fast);
+  --ease-out: var(--ease-standard); --ease-spring: var(--ease-emphasized);
+
+  /* 字体 */
+  --mac-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --mono-font: "SF Mono", Menlo, "Cascadia Code", "JetBrains Mono", Consolas, "PingFang SC", monospace;
+}
+
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-1: #dde6ff; --bg-2: #e9edfb; --bg-3: #e6ddfb;
+
+  --fg: #1d1d1f; --fg-2: #424245; --muted: #6e6e73;
+  --text: var(--fg); --text-dim: var(--fg-2);
+  /* 历史弹窗次级文字：亮色深中蓝灰，对比度约 8:1，达 WCAG AA（与暗色 --hist-meta 呼应） */
+  --hist-meta: #3f456b;
+
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-2: rgba(0, 0, 0, 0.04);
+  --field-bg: var(--surface-2); --solid-bg: var(--surface-2);
+  --glass-bg: var(--surface);
+
+  --border: #d2d2d7; --border-soft: rgba(0, 0, 0, 0.08);
+      --glass-border: rgba(90, 95, 150, 0.35);
+      --field-border: var(--border);
+      /* select 专用更实背景与更清晰边框：修复高级参数 select 发虚（v2.1.11）。
+         亮色用近实白底，使深色文字清晰可读。 */
+      --select-bg: rgba(255, 255, 255, 0.92);
+      --select-border: #8c8c92;
+
+  --accent: #fb7299; --accent-2: #00aeec; --accent-3: #5b3df0;
+  /* Apple HIG 强调蓝（亮 #0071E3） */
+  --apple-accent: #0071E3;
+  --accent-hover: #fc8aab; --accent-active: #e85c83;
+  --accent-rgb: 251, 114, 153; --accent2-rgb: 0, 174, 236;
+
+  --ok: #10b981; --warn: #b7791f; --err: #e2483d;
+  --ok-rgb: 16, 185, 129; --err-rgb: 226, 72, 61;
+  --success: var(--ok); --danger: var(--err);
+
+  --switch-off: #c7c9d8; --switch-thumb: #ffffff;
+  --modal-mask: rgba(20, 24, 55, 0.4);
+  --shadow-card: 0 8px 24px rgba(20, 30, 80, 0.1);
+  --shadow-modal: 0 30px 80px rgba(20, 30, 80, 0.25);
+
+  --elev-raised: 0 12px 32px rgba(0, 0, 0, 0.08);
+
+  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent);
+  --field-focus-ring: var(--focus-ring);
+  --field-inset: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* ===== shared/macos-motion.css（完整版，与网盘转存逐行一致） ===== */
+/* —— 动效 token（--dur / --ease-*）已统一定义于上方 shared/tokens.css，此处不再重复 —— */
+
+.liquid, .card, .panel, .modal { position: relative; }
+.liquid::before, .card::before, .panel::before, .modal::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 30%),
+              rgba(255, 255, 255, 0.16), transparent 60%);
+  opacity: 0; pointer-events: none; transition: opacity var(--dur);
+}
+.card:hover::before, .panel:hover::before, .modal:hover::before, .liquid:hover::before { opacity: 1; }
+
+.btn, .auth-btn, .icon-btn, .update-btn, .theme-btn, .ver-badge, .tab, .chip,
+.card-open, .dir-btn, .group-copy, .clear-input, .clear-corner,
+.modal-actions button, .tab-close {
+  transition:
+    transform var(--dur) var(--ease-standard),
+    box-shadow var(--dur) var(--ease-out),
+    background var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out),
+    color var(--dur) var(--ease-out),
+    filter var(--dur) var(--ease-out);
+}
+.btn:active, .auth-btn:active, .card-open:active, .icon-btn:active, .update-btn:active,
+.theme-btn:active, .ver-badge:active, .tab:active, .chip:active, .dir-btn:active,
+.group-copy:active, .clear-input:active, .clear-corner:active,
+.modal-actions button:active, .tab-close:active { transform: scale(0.97); }
+
+.dot.ok, .chip .dot.green, .dot.green {
+  animation: statusBreath 2.4s ease-in-out infinite;
+}
+@keyframes statusBreath {
+  0%, 100% { box-shadow: 0 0 6px var(--ok); }
+  50% { box-shadow: 0 0 12px var(--ok); }
+}
+
+.pop-in { animation: popIn 0.5s var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 0.08s); }
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 键盘可达性：统一 focus-visible 高亮环（accent 色 outline 2px / offset 2px） */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 微交互：轻动效（仅在不减少动效时生效；reduced-motion 偏好下由下方 reduce 块关闭） */
+@media (prefers-reduced-motion: no-preference) {
+  .btn:hover, .auth-btn:hover, .theme-btn:hover, .adv-toggle:hover, .seg-item:hover { transform: translateY(-2px); }
+  .history-item, .step-item { animation: itemIn 0.4s var(--ease-out) both; }
+  @keyframes itemIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+  }
+  .card::before, .panel::before, .modal::before, .liquid::before { display: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .card, .panel, .modal, .chip,
+  .btn.ghost, .theme-btn, .ver-badge, .icon-btn, .update-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ===== public/macos.css（完整版，与网盘转存逐行一致） ===== */
+body { font-family: var(--mac-font); }
+
+.mac-ctl { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.mac-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  transition: filter .15s ease;
+}
+.mac-dot::before { font-size: 10px; line-height: 1; font-weight: 700; color: transparent; }
+.mac-close { background: #ff5f57; }
+.mac-close::before { content: "\00D7"; }
+.mac-min   { background: #febc2e; }
+.mac-min::before { content: "\2212"; }
+.mac-max   { background: #28c840; }
+.mac-max::before { content: "\FF0B"; }
+.mac-ctl:hover .mac-dot::before { color: rgba(0, 0, 0, .55); }
+.mac-dot:active { filter: brightness(.92); }
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 160, .35); border-radius: 10px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(140, 160, 180, .55); background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+.switch input {
+  width: 38px; height: 22px; border-radius: 22px;
+  background: rgba(var(--accent-rgb), 0.30);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.35);
+}
+[data-theme="light"] .switch input { background: rgba(var(--accent-rgb), 0.20); }
+.switch input:checked { background: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.20); }
+.switch input::after {
+  width: 18px; height: 18px; top: 2px; left: 2px;
+  box-shadow: 1px 3px rgba(0, 0, 0, .3);
+}
+.switch input:checked::after { left: 18px; }
+
+input[type="text"], input[type="password"], input[type="number"], select, textarea {
+  border-radius: var(--field-radius);
+}
+  </style>
+
+  <!-- 主题 token 覆盖（与网盘转存逐行一致） -->
+  <style>
+    :root, [data-theme="dark"] {
+      --glass-bg: rgba(255, 255, 255, 0.32);
+      --glass-border: rgba(255, 255, 255, 0.42);
+    }
+    [data-theme="light"] {
+      --bg-1: #dde6ff; --bg-2: #e9edfb; --bg-3: #e6ddfb;
+      --text: #1b1f3b; --text-dim: #5b6189;
+      --glass-bg: rgba(255, 255, 255, 0.55);
+      --glass-border: rgba(90, 95, 150, 0.35);
+      --field-bg: var(--surface-2); --solid-bg: var(--surface-2);
+      --shadow-card: 0 8px 24px rgba(20, 30, 80, 0.1);
+    }
+    /* 次要按钮：对齐入口页的"突出"质感，亮/暗两态都能从玻璃面板浮出 */
+    .btn.ghost, .clear-corner, .clear-input, .browse,
+    .copy, .group-copy, .task .copy, .task .retry {
+      background: rgba(255, 255, 255, 0.16) !important;
+      border: 1px solid rgba(255, 255, 255, 0.42) !important;
+      color: var(--text) !important;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      font-weight: 600 !important;
+    }
+    .task .retry { color: var(--err) !important; border-color: rgba(var(--err-rgb), 0.45) !important; }
+    [data-theme="light"] .btn.ghost, [data-theme="light"] .clear-corner, [data-theme="light"] .clear-input,
+    [data-theme="light"] .browse, [data-theme="light"] .copy, [data-theme="light"] .group-copy,
+    [data-theme="light"] .task .copy, [data-theme="light"] .task .retry {
+      background: #d3daf2 !important;
+      border: 1px solid rgba(90, 95, 150, 0.55) !important;
+      color: #1b1f3b !important;
+      box-shadow: 0 2px 8px rgba(20, 30, 80, 0.15) !important;
+    }
+    [data-theme="light"] .task .retry { color: var(--err) !important; }
+    /* 主题由工具箱统一管理，内嵌项目自身的主题按钮永久隐藏 */
+    #themeBtn { display: none !important; }
+    /* 标题文字：对齐入口页 text-shadow，在玻璃上更"立"得住 */
+    h1, .brand h1, .card-title, .panel h2, .modal-title {
+      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.20);
+    }
+    [data-theme="light"] h1, [data-theme="light"] .brand h1, [data-theme="light"] .card-title,
+    [data-theme="light"] .panel h2, [data-theme="light"] .modal-title {
+      text-shadow: 0 1px 8px rgba(20, 30, 80, 0.14);
+    }
+  </style>
+  <link rel="stylesheet" href="status-luxe.css" />
+
+  <!-- T01：厚玻璃弹窗统一规范（单一真源，三模块逐字节一致）+ 卡片 header 图标按钮槽 -->
+  <style>
+    /* ===== 厚玻璃弹窗（单一真源，三模块逐字节一致）===== */
+    /* —— token：暗色用深色半透明玻璃保证亮字可读；亮色用浅半透明玻璃保证暗字可读 —— */
+    :root {
+      --glass-modal-bg:     rgba(20, 24, 55, 0.55);   /* 暗色：中性深半透明 */
+      --glass-modal-border: rgba(255, 255, 255, 0.45);
+      --glass-modal-divider: rgba(255, 255, 255, 0.42);
+      --glass-mask-bg:      rgba(6, 8, 20, 0.62);     /* overlay 深色基底 */
+    }
+    [data-theme="light"] {
+      --glass-modal-bg:     rgba(255, 255, 255, 0.62);
+      --glass-modal-border: rgba(90, 95, 150, 0.45);
+      --glass-modal-divider: rgba(90, 95, 150, 0.42);
+      --glass-mask-bg:      rgba(20, 24, 55, 0.40);
+    }
+
+    /* —— overlay（遮罩层） —— */
+    .modal-mask.glass-mask {
+      background: var(--glass-mask-bg);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    /* —— 厚玻璃卡片本体（用户指定规格） —— */
+    .modal.glass {
+      background: var(--glass-modal-bg);
+      -webkit-backdrop-filter: blur(40px) saturate(2.0);
+      backdrop-filter: blur(40px) saturate(2.0);
+      border: 1px solid var(--glass-modal-border);
+      box-shadow: var(--shadow-modal), inset 0 1px 0 rgba(255, 255, 255, 0.28); /* 顶部高光勾边，强化玻璃感 */
+      color: var(--text);
+    }
+
+    /* —— 文字 / 分隔线高对比约定（回应关注点 #5） —— */
+    .modal.glass .modal-head,
+    .modal.glass .modal-title,
+    .modal.glass h2, .modal.glass h3 {
+      color: var(--text);
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.28);   /* 标题加投影，强饱和下仍立得住 */
+    }
+    .modal.glass .history-title { color: var(--text); font-weight: 600; }
+    .modal.glass .history-meta  { color: var(--hist-meta); line-height: 1.55; }
+    .modal.glass .history-item  { border-bottom: 1px solid var(--glass-modal-divider); } /* 比 --glass-border 更亮，分隔更清晰 */
+    .modal.glass .hint          { color: var(--text-dim); }
+    .modal.glass .modal-close   { color: var(--text-dim); }
+    .modal.glass .modal-close:hover { color: var(--text); }
+
+    /* —— 高级设置弹窗：对齐 + 表单控件美化 —— */
+    .modal.glass { max-width: 520px; }
+    .modal.glass .grid-2 { margin-top: 4px; }
+    .grid-2 > .field:last-child { grid-column: 1 / -1; }
+    .field-hint { font-size: 11px; color: var(--text-dim); margin-top: 3px; line-height: 1.4; }
+
+    /* —— a11y 护栏：并入既有 @supports / reduced-transparency（必补） —— */
+    @supports not (backdrop-filter: blur(1px)) {
+      .modal.glass { -webkit-backdrop-filter: none; backdrop-filter: none;
+                     background: var(--bg-2); }            /* 暗色回退实色 */
+      [data-theme="light"] .modal.glass { background: #e7ecf8; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .modal.glass { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+    }
+
+    /* ===== 卡片 header：标题 + 右上角图标按钮槽（全站统一）===== */
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; margin-bottom: 18px;
+    }
+    .panel-head h2 { margin: 0; }
+    .panel-acts { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    .icon-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 7px 12px; border-radius: 9px;
+      border: 1px solid var(--glass-border);
+      background: var(--field-bg); color: var(--text);
+      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+      box-shadow: var(--shadow-card);
+      cursor: pointer; font-size: 13px; font-weight: 500; line-height: 1;
+      transition: border var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard), background var(--motion-base) var(--ease-standard), color var(--motion-base) var(--ease-standard);
+    }
+    .icon-btn:hover {
+      border-color: var(--accent); background: rgba(var(--accent-rgb), .10);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .18);
+    }
+    .icon-btn .ib-ico { width: 17px; height: 17px; flex-shrink: 0; display: block; }
+    .icon-btn .ib-label { line-height: 1; }
+    .app-ico { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; flex-shrink: 0; }
+    .app-ico-lg { width: 1.6em; height: 1.6em; }
+    .logo .app-ico { width: 26px; height: 26px; }
+    .btn-exec {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-width: 168px; padding: 11px 22px;
+      font-size: 14px; font-weight: 600; line-height: 1; white-space: nowrap;
+      color: #fff; background: var(--accent); border: 1px solid transparent; border-radius: 11px;
+      cursor: pointer; user-select: none;
+      box-shadow: 0 8px 20px rgba(var(--accent-rgb), .28);
+      transition: filter var(--motion-base) var(--ease-standard), transform var(--motion-fast) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard), background var(--motion-base) var(--ease-standard);
+    }
+    .btn-exec:hover:not(:disabled) { filter: brightness(1.07); }
+    .btn-exec:active:not(:disabled) { transform: translateY(1px); }
+    .btn-exec:disabled { cursor: default; opacity: .82; }
+    .btn-exec .bx-ico { width: 18px; height: 18px; flex-shrink: 0; display: block; }
+    .btn-exec .bx-label { line-height: 1; }
+    .btn-exec .bx-spin {
+      width: 16px; height: 16px; flex-shrink: 0; display: none;
+      border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%;
+      animation: bx-spin .7s linear infinite;
+    }
+    .btn-exec.is-loading .bx-spin { display: inline-block; }
+    @keyframes bx-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .btn-exec .bx-spin { animation: none; }
+      .btn-exec:active:not(:disabled) { transform: none; }
+    }
+    @media (max-width: 560px) { .icon-btn { padding: 7px; } .ib-label { display: none; } }
+
+  /* ===== 投稿按钮 + 状态胶囊同行（#④） ===== */
+  .submit-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .submit-row .btn-exec { flex: 0 0 auto; }
+  .submit-row #statusCapsule { flex: 1 1 auto; min-width: 0; }
+
+  /* ===== 账号二级菜单（#③：头像点击弹出的 dropdown） ===== */
+  /* 复用现有 Apple HIG token：--surface / --glass-border / --accent / --err / 圆角 / 发丝边 */
+  .acct-menu {
+    position: fixed; z-index: 60; min-width: 136px; padding: 6px;
+    border: 1px solid var(--glass-border);
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    backdrop-filter: blur(20px) saturate(160%);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    display: none;
+  }
+  .acct-menu-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 8px 10px; border: none; background: transparent; cursor: pointer;
+    color: var(--text); font-size: 13px; font-weight: 500; border-radius: 9px;
+    font-family: inherit; text-align: left; line-height: 1;
+    transition: background var(--motion-base) var(--ease-standard);
+  }
+  .acct-menu-item:hover { background: rgba(var(--accent-rgb), 0.12); }
+  .acct-menu-item .app-ico { width: 16px; height: 16px; flex: none; display: block; }
+  .acct-menu-item--danger { color: var(--err); }
+  .acct-menu-item--danger:hover { background: rgba(var(--err-rgb), 0.14); }
+  @media (prefers-reduced-motion: reduce) {
+    .acct-menu-item { transition: none; }
+  }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo"><i class="app-ico" data-ico="tv"></i></div>
+        <div>
+          <h1>B站自动投稿</h1>
+          <div class="sub">本地视频 → 自动投稿到 B站（含合集 / 分区）</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <!-- #7 账号区：头像(圆形)+昵称 / 登录按钮（由 app.js 动态渲染） -->
+        <div class="account-area" id="accountArea"></div>
+        <button class="theme-btn" id="themeBtn"><i class="app-ico" data-ico="theme"></i> 主题</button>
+      </div>
+    </header>
+
+    <!-- 选择视频（独立卡片） -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2><i class="app-ico" data-ico="folder"></i> 选择视频</h2>
+        <div class="panel-acts">
+          <button class="icon-btn" id="clearBtn" title="清空" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span class="ib-label">清空</span></button>
+        </div>
+      </div>
+      <div class="field">
+        <label>本地视频文件（mp4）</label>
+        <div class="row">
+          <button class="auth-btn" id="pickBtn" type="button"><i class="app-ico" data-ico="folder"></i> 选择文件</button>
+          <span id="videoName" class="file-name"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 投稿设置（合并：标签与发布模式 + 投稿参数；高级参数折叠） -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2><i class="app-ico" data-ico="edit"></i> 投稿设置</h2>
+        <div class="panel-acts">
+          <button class="icon-btn" id="advTrigger" title="高级" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="ib-label">高级</span></button>
+        </div>
+      </div>
+      <div class="field">
+        <label>投稿标题（可编辑）</label>
+        <input type="text" id="titleInput" placeholder="默认取文件名，可覆盖" />
+      </div>
+      <div class="field">
+        <label>标签（选入视频后自动从 B站推荐生成，可手动覆盖；默认标签见设置）</label>
+        <input type="text" id="tagsInput" placeholder="辐射4,单机游戏,RPG" />
+      </div>
+      <div class="field">
+        <label>发布模式</label>
+        <div class="row">
+          <div class="radio seg">
+            <input type="radio" class="seg-input" id="modeNow" name="mode" value="now" checked />
+            <label class="seg-item" for="modeNow">立即发布</label>
+            <input type="radio" class="seg-input" id="modeDtime" name="mode" value="dtime" />
+            <label class="seg-item" for="modeDtime">定时发布</label>
+          </div>
+          <span id="dtimeConnector">计划于</span>
+          <input type="datetime-local" id="dtimeInput" style="display:none; width:auto; min-width:220px;" />
+        </div>
+      </div>
+    </section>
+
+    <!-- 投稿 + 日志 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2><i class="app-ico" data-ico="rocket"></i> 投稿</h2>
+        <div class="panel-acts">
+          <button class="icon-btn" id="submitHistoryBtn" title="历史" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg><span class="ib-label">历史</span></button>
+        </div>
+      </div>
+      <div class="submit-row">
+        <button class="btn-exec" id="submitBtn" type="button">
+          <svg class="bx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="bx-label">投稿</span>
+          <span class="bx-spin" role="status" aria-hidden="true"></span>
+        </button>
+        <span id="statusCapsule"></span>
+      </div>
+      <p class="hint" id="submitHint">选择视频后点击投稿（发布前会二次确认模式）</p>
+      <!-- #4 日志面板默认隐藏，仅在点击投稿时展示（玻璃执行面板：对齐 kdocs .auto-result / .log-card 视觉语言，DOM 契约不变） -->
+      <div id="logWrap" style="display:none">
+        <h3 class="exec-title"><i class="app-ico" data-ico="history"></i> 投稿日志</h3>
+        <details class="log-card" open>
+          <summary><span>投稿进度与结果</span><span class="chev">⌄</span></summary>
+          <div class="log-area" id="logBox"></div>
+          <p class="hint" id="logEmpty">投稿进度与结果会显示在这里</p>
+        </details>
+      </div>
+    </section>
+  </div>
+
+  <!-- 二次确认弹窗 -->
+  <div class="modal-mask" id="confirmMask">
+    <div class="modal">
+      <h3>确认投稿？</h3>
+      <p id="confirmText" style="font-size:13px;opacity:.85;line-height:1.6;"></p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="confirmCancel" type="button">取消</button>
+        <button class="btn" id="confirmOk" type="button">确认投稿</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 扫码登录弹窗（#7） -->
+  <div class="modal-mask" id="loginMask">
+    <div class="modal">
+      <div class="modal-head">
+        <span><i class="app-ico" data-ico="key"></i> 扫码登录 B站</span>
+        <button class="modal-close" id="loginClose" type="button">×</button>
+      </div>
+      <p class="hint">用 B站手机客户端扫码登录；cookie 仅存于本机数据目录，与投稿上传共用同一份。</p>
+      <div class="qr-box">
+        <img id="qrImg" alt="登录二维码" />
+      </div>
+      <p class="hint" id="loginStatus">等待扫码…</p>
+      <div class="modal-actions">
+        <button class="btn ghost" id="loginCancel" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 高级设置弹窗（A4：独立弹窗页；关闭后回到投稿设置页，不重置表单） -->
+  <div class="modal-mask glass-mask" id="advMask">
+    <div class="modal glass">
+      <div class="modal-head">
+        <span><i class="app-ico" data-ico="settings"></i> 高级参数</span>
+        <button class="modal-close" id="advClose" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="grid-2">
+          <div class="field"><label>分区 tid</label>
+            <select id="cfgTid">
+              <option value="17">单机游戏</option>
+              <option value="171">电子竞技</option>
+              <option value="172">手机游戏</option>
+              <option value="21">生活</option>
+              <option value="24">动画</option>
+            </select>
+          </div>
+          <div class="field"><label>合集</label><select id="cfgSeason"><option value="">不使用合集</option></select></div>
+          <div class="field"><label>分集</label><select id="cfgSection"><option value="">不指定分集</option></select><div class="field-hint" id="sectionHint">（可选：选中分集后，上传将归入该分集）</div></div>
+          <div class="field"><label>线路 line</label>
+            <select id="cfgLine">
+              <option value="bda2">bda2（默认）</option>
+              <option value="upos">upos</option>
+              <option value="kodo">kodo</option>
+              <option value="cos">cos</option>
+            </select>
+          </div>
+          <div class="field"><label>UID</label><input type="text" id="cfgUid" placeholder="你的 B站 UID" /></div>
+          <div class="field"><label>版权 copyright</label>
+            <select id="cfgCopyright">
+              <option value="1">自制（原创）</option>
+              <option value="2">转载</option>
+            </select>
+          </div>
+          <div class="field"><label>转载 noReprint</label>
+            <select id="cfgNoReprint">
+              <option value="1">允许转载</option>
+              <option value="0">禁止转载</option>
+            </select>
+          </div>
+          <div class="field"><label>默认标签（逗号分隔，标签自动生成时叠加兜底）</label>
+            <input type="text" id="defaultTagsInput" placeholder="单机游戏,RPG" />
+          </div>
+        </div>
+        <div class="field" style="margin-top:16px">
+          <label>固定简介（4 行，可编辑）</label>
+          <textarea id="cfgDesc"></textarea>
+        </div>
+        <div class="field">
+          <label>置顶评论</label>
+          <textarea id="cfgComment" style="min-height:42px;"></textarea>
+        </div>
+        <div class="kpis">
+          <span class="kpi" id="cookiesKpi">cookies: 检测中…</span>
+        </div>
+        <div style="margin-top:14px">
+          <button class="auth-btn" id="saveCfgBtn" type="button"><i class="app-ico" data-ico="save"></i> 保存参数</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 投稿历史弹窗（P08，复用 P09 统一弹窗机制） -->
+  <div class="modal-mask glass-mask" id="historyMask">
+    <div class="modal glass">
+      <div class="modal-head">
+        <span><i class="app-ico" data-ico="history"></i> 投稿历史</span>
+        <button class="modal-close" id="historyClose" type="button" title="关闭">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="history-list" id="historyList"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="historyClear" type="button">清空历史</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 宿主（A2：toast() 动态注入子节点） -->
+  <div class="toast-host" id="toastHost"></div>
+
+  <script src="status-luxe.js"></script>
+  <script src="select-preserve.js"></script>
+  <script src="coerce-int.js"></script>
+  <script src="season-align.js"></script>
+  <script>
+// 统一图标系统（单一来源；1.75 描边线性风格，跟随 currentColor）
+window.ICONS = {
+  tv: '<rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/>',
+  chart: '<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>',
+  theme: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>',
+  folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>',
+  edit: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+  rocket: '<path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2 0-2.8a2 2 0 0 0-3 0Z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.5 12.5 7-7"/><path d="m15 4 3 3"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+  robot: '<path d="M12 2v2"/><path d="M12 4a2 2 0 0 0-2 2v2H8a4 4 0 0 0-4 4v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a4 4 0 0 0-4-4h-2V6a2 2 0 0 0-2-2z"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.6-3.6a2 2 0 0 0-2.8 0L6 20"/>',
+  clipboard: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+  warning: '<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
+  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
+  check: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  cross: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+  hourglass: '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4-4.4A2 2 0 0 1 7 6.2V2"/>',
+  ban: '<circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/>',
+  arrowdown: '<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>',
+  gamepad: '<line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="18" y1="11" x2="18.01" y2="11"/><rect x="2" y="6" width="20" height="12" rx="2"/>',
+  tag: '<path d="M12.6 2.6 21 11a2 2 0 0 1 0 2.8l-8 8a2 2 0 0 1-2.8 0l-8-8a2 2 0 0 1 0-2.8l8.4-8.4a2 2 0 0 1 2.8 0z"/><circle cx="7.5" cy="7.5" r="1"/>',
+  skip: '<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>',
+  party: '<path d="M5.8 11.3 2 22l10.7-3.8"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 8.5l-2 3 3 1-2 3 5-1.5a3 3 0 0 0 2-4.5l-2.5 2Z"/><path d="M2 12h.01"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'
+};
+window.ico = function(name){
+  var inner = window.ICONS[name];
+  if(!inner) return '';
+  return '<svg class="app-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+};
+window.hydrateIcons = function(root){
+  (root||document).querySelectorAll('[data-ico]').forEach(function(el){
+    var n = el.getAttribute('data-ico');
+    if(window.ICONS[n]) el.innerHTML = window.ico(n);
+  });
+};
+hydrateIcons(document);
+</script>
+  <script src="app.js"></script>
+</body>
+</html>

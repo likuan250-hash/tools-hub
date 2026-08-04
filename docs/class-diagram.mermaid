@@ -1,0 +1,39 @@
+classDiagram
+    class RendererApp {
+        +openTabs: Tab[]
+        +activeKey: string
+        +webviewPreload: string
+        +openTab(key) void
+        +switchTab(key) void
+        +closeTab(key, ev) void
+        +resizeWebview(wv) void
+        +syncThemeToWebviews(t) void
+    }
+    class ToolWebview {
+        +el: HTMLWebViewElement
+        +key: string
+        +ready: boolean
+        +pending: boolean
+        +active: boolean
+        +activate() void
+        +deactivate() void
+        +onDomReady() void
+        +sendTheme(t) void
+        +resize() void
+    }
+    class EntranceAnimator {
+        +root: Element
+        +stepMs: number
+        +apply(scope, max) void
+        +isReducedMotion() boolean
+    }
+    class ThemeBridge {
+        +current: string
+        +pushToWebviews(t) void
+        +onSyncTheme(t) void
+    }
+
+    RendererApp "1" *-- "0..*" ToolWebview : creates / holds
+    RendererApp ..> ThemeBridge : uses
+    ToolWebview ..> ThemeBridge : IPC "sync-theme"
+    ToolWebview "1" o-- "1" EntranceAnimator : hosts (runs inside webview document)

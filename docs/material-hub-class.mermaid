@@ -1,0 +1,69 @@
+classDiagram
+    %% material-hub 业务层类图（CommonJS，与 biliup-hub 同构分层）
+
+    class CollectService {
+        +run(opts, handlers) Promise~Result~
+        -emit(type, step, msg, ok, detail)
+        -outDir: string
+    }
+
+    class NameResolver {
+        +scanMaxIndex(outputDir) Promise~number~
+        +buildFolderName(index, gameName) string
+        +parseIndexFromFolder(name) number|null
+    }
+
+    class FilenameSanitizer {
+        +sanitize(raw) string
+        +extForFormat(fmt) string
+        +truncate(raw, max) string
+    }
+
+    class SteamCover {
+        +searchAppId(term, opts) Promise~AppIdResult~
+        +heroUrl(appid) string
+        +fetchCover(term, outDir, opts) Promise~CoverResult~
+        -fetchYouTubeThumbnail(term, outDir) Promise~CoverResult~
+    }
+
+    class TrailerDownloader {
+        +searchTrailer(name) Promise~TrailerMeta~
+        +download(name, dir, env) Promise~TrailerResult~
+        +transcodeIfNeeded(file, dir, env) Promise~TrailerResult~
+    }
+
+    class EnvDetector {
+        +detect() Promise~EnvStatus~
+        -spawnWhich(cmd) Promise~boolean~
+        +guidance() EnvGuidance
+    }
+
+    class Result {
+        +folder: string
+        +index: number
+        +cover: CoverResult
+        +trailer: TrailerResult
+        +success: boolean
+        +coverOk: boolean
+        +trailerOk: boolean
+    }
+
+    class App {
+        <<server.js>>
+        +GET /api/version
+        +POST /api/collect (SSE)
+    }
+
+    CollectService ..> NameResolver : uses
+    CollectService ..> FilenameSanitizer : uses
+    CollectService ..> SteamCover : uses
+    CollectService ..> TrailerDownloader : uses
+    CollectService ..> EnvDetector : uses
+    CollectService ..> Result : produces
+
+    SteamCover ..> FilenameSanitizer : uses
+    SteamCover ..> EnvDetector : youtubeFallback
+    TrailerDownloader ..> FilenameSanitizer : uses
+    TrailerDownloader ..> EnvDetector : needs
+
+    App ..> CollectService : invokes

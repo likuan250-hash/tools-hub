@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getWebviewPreload: () => ipcRenderer.invoke("get-webview-preload"),
   // 原生文件夹选择（替代 Tkinter IPC）
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  // 原生文件选择（biliup-hub 选 mp4）
+  pickFile: () => ipcRenderer.invoke("pick-file"),
   // 更新相关
   checkUpdate: () => ipcRenderer.invoke("check-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),

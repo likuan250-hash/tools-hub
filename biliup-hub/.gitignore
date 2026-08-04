@@ -1,0 +1,12 @@
+node_modules/
+.env
+data/
+logs/
+.tmp/
+*.log
+overview.md
+*.lnk
+
+# 内置外部二进制（biliup.exe ≈15MB）：由 scripts/prepare-biliup-bin.js 下载（CI 由 build.yml 的
+# pwsh 步骤下载），electron-builder extraResources 打包时一并带上，不进 git（与 material-hub/bin 同策略）
+bin/

@@ -25,6 +25,8 @@ try {
 contextBridge.exposeInMainWorld("electronAPI", {
   // 原生文件夹选择（kdocs 封面目录按钮调用）
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  // 原生文件选择（biliup-hub 选 mp4）
+  pickFile: () => ipcRenderer.invoke("pick-file"),
   // 系统默认浏览器打开外部链接（金山文档入口等）
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   // 状态（预留）

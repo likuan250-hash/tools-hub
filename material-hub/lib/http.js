@@ -176,10 +176,14 @@ function resolveProxy(target, env) {
   //   测试里 env={} 会让 source!==process.env，.proxy 不会被读到，不受本机配置干扰。
   if (source === process.env) {
     try {
-      const cfgPath = pathMod.join(__dirname, '..', '.proxy');
-      if (fsDefault.existsSync(cfgPath)) {
-        const cfg = fsDefault.readFileSync(cfgPath, 'utf8').split('\n')[0].trim();
-        if (cfg) return parseProxyUrl(cfg);
+      // 优先 .proxy（用户配置），不存在则回退到 .proxy.example（仓库模板）
+      const base = pathMod.join(__dirname, '..');
+      for (const name of ['.proxy', '.proxy.example']) {
+        const cfgPath = pathMod.join(base, name);
+        if (fsDefault.existsSync(cfgPath)) {
+          const cfg = fsDefault.readFileSync(cfgPath, 'utf8').split('\n')[0].trim();
+          if (cfg) return parseProxyUrl(cfg);
+        }
       }
     } catch (e) { /* 文件不存在或不可读，静默跳过 */ }
   }

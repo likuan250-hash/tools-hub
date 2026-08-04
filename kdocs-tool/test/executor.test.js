@@ -28,6 +28,7 @@ function baseDeps(over = {}) {
     fetchAppIdFromWikidata: async () => null,
     fetchAppIdFromBaiduBaike: async () => null,
     fetchAppIdFromWebSearch: async () => null,
+    resolveEnglishName: async () => "", // 默认解析不到英文名（走中文名匹配）
     aiDescribe: () => ({ intro: "Hazelight 开发的双人合作冒险游戏。", size: "30.7G" }),
     aiCoverSearch: async () => "https://cdn.x.com/a.jpg", // 默认 bl 能搜到封面（中英文双搜）
     downloadCover: async () => { downloadCoverCount++; return "/fake/steam.jpg"; },
@@ -304,6 +305,48 @@ test("AppID 多源取拿：维基未命中时回退百度百科", async () => {
   assert.strictEqual(appidStep.status, "成功");
   assert.strictEqual(appidStep.appid, "1086940");
   assert.strictEqual(appidStep.source, "百度百科");
+});
+
+// ── 英文名前置解析（2026-08-04 新增：中文名 → 英文名 → 优先英文名匹配）──
+test("英文名前置：解析到英文名后优先用英文名去 Steam 搜索，未命中再回退中文名", async () => {
+  const steamCalls = [];
+  const deps = baseDeps({
+    resolveEnglishName: async () => "Elden Ring",
+    searchSteamAppId: async (name) => { steamCalls.push(name); return null; }, // 模拟 Steam 未命中，验证调用顺序
+    fetchAppIdFromWikidata: async () => "1245620",
+  });
+  const res = await autoExecute(baseParsed({ gameName: "艾尔登法环", englishName: "" }), null, "/tmp", { deps });
+  assert.strictEqual(steamCalls[0], "Elden Ring", "应优先用解析到的英文名去 Steam 搜索");
+  assert.strictEqual(steamCalls[1], "艾尔登法环", "英文名未命中时应回退中文名");
+  const appidStep = res.steps.find(s => s.name === "Steam AppID");
+  assert.strictEqual(appidStep.appid, "1245620", "最终应经维基拿到 AppID");
+  assert.strictEqual(appidStep.source, "维基百科");
+});
+
+test("英文名前置：未解析到英文名时直接用中文名匹配，不报错", async () => {
+  const steamCalls = [];
+  const deps = baseDeps({
+    resolveEnglishName: async () => "", // 没查到
+    searchSteamAppId: async (name) => { steamCalls.push(name); return null; },
+    fetchAppIdFromWikidata: async () => "999",
+  });
+  const res = await autoExecute(baseParsed({ gameName: "某冷门游戏", englishName: "" }), null, "/tmp", { deps });
+  assert.strictEqual(steamCalls[0], "某冷门游戏", "无英文名时应直接用中文名搜 Steam");
+  assert.strictEqual(res.steps.find(s => s.name === "Steam AppID").appid, "999");
+});
+
+test("英文名前置：手动录入的英文名优先于自动解析（不再发额外解析请求）", async () => {
+  const steamCalls = [];
+  let resolveCalled = false;
+  const deps = baseDeps({
+    resolveEnglishName: async () => { resolveCalled = true; return "AutoName"; },
+    searchSteamAppId: async (name) => { steamCalls.push(name); return null; },
+    fetchAppIdFromWikidata: async () => "123",
+  });
+  // parsed.englishName 模拟用户手动录入
+  const res = await autoExecute(baseParsed({ gameName: "游戏", englishName: "ManualName" }), null, "/tmp", { deps });
+  assert.strictEqual(resolveCalled, false, "手动录入英文名时应跳过自动解析");
+  assert.strictEqual(steamCalls[0], "ManualName", "应直接用手动录入的英文名去 Steam 搜");
 });
 
 test("游戏大小兜底：Steam 官方大小在无网盘真实大小时生效", async () => {

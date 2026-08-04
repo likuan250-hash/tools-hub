@@ -21,6 +21,7 @@ const DEFAULT_DEPS = {
   fetchAppIdFromWikidata: steam.fetchAppIdFromWikidata,
   fetchAppIdFromBaiduBaike: steam.fetchAppIdFromBaiduBaike,
   fetchAppIdFromWebSearch: steam.fetchAppIdFromWebSearch,
+  resolveEnglishName: steam.resolveEnglishName,
   downloadCover: steam.downloadCover,
   downloadCoverFromUrl: steam.downloadCoverFromUrl,
   callMcporter: kdocs.callMcporter,
@@ -149,33 +150,46 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     return result;
   }
 
-  // 2. 取拿 Steam AppID（多源兜底：手动录入 → Steam 搜索 → 维基百科 → 百度百科 → 网页搜索）
-  //    拿到 AppID 后即可统一兜底封面 / 游戏简介 / 游戏大小（Steam 官方数据最稳）。
+  // 2.0 前置：解析游戏英文名（中文名 → 英文名）
+  //     因为 Steam 商店与 Wikidata 多以英文名为准，直接用中文名搜常搜不到或错配。
+  //     先拿到规范英文名，再用英文名（优先）去匹配，显著提升命中率。
+  //     手动录入的英文名优先于自动解析；已拿到 appid 时跳过解析省一次请求。
   let appid = manualAppId || null;
   let appidSource = manualAppId ? "手动录入" : "";
+  let englishName = parsed.englishName || "";
+  if (!appid && !englishName) {
+    doing({ name: "解析游戏英文名" });
+    const resolved = await deps.resolveEnglishName(parsed.gameName);
+    if (resolved) { englishName = resolved; ok({ name: "游戏英文名", englishName }); }
+    else skip({ name: "游戏英文名", reason: "未解析到（将直接用中文名匹配）" });
+  }
+  const en = englishName; // 后续统一用 en / parsed.gameName 双语言匹配
+
+  // 2.1 取拿 Steam AppID（优先英文名，否则中文名；多源兜底：Steam 搜索 → 维基 → 百度 → 网页）
+  //     拿到 AppID 后即可统一兜底封面 / 游戏简介 / 游戏大小（Steam 官方数据最稳）。
   doing({ name: "搜索 Steam AppID" });
   if (!appid) {
-    appid = await deps.searchSteamAppId(parsed.gameName);
-    if (!appid && parsed.englishName) appid = await deps.searchSteamAppId(parsed.englishName);
+    if (en) appid = await deps.searchSteamAppId(en);
+    if (!appid) appid = await deps.searchSteamAppId(parsed.gameName);
     if (appid) appidSource = "Steam 搜索";
   }
   if (!appid) {
-    const fromWiki = (await deps.fetchAppIdFromWikidata(parsed.gameName))
-      || (parsed.englishName && await deps.fetchAppIdFromWikidata(parsed.englishName)) || "";
+    const fromWiki = (en && await deps.fetchAppIdFromWikidata(en))
+      || await deps.fetchAppIdFromWikidata(parsed.gameName) || "";
     if (fromWiki) { appid = fromWiki; appidSource = "维基百科"; }
   }
   if (!appid) {
-    const fromBaike = (await deps.fetchAppIdFromBaiduBaike(parsed.gameName))
-      || (parsed.englishName && await deps.fetchAppIdFromBaiduBaike(parsed.englishName)) || "";
+    const fromBaike = (en && await deps.fetchAppIdFromBaiduBaike(en))
+      || await deps.fetchAppIdFromBaiduBaike(parsed.gameName) || "";
     if (fromBaike) { appid = fromBaike; appidSource = "百度百科"; }
   }
   if (!appid) {
-    const fromWeb = (await deps.fetchAppIdFromWebSearch(parsed.gameName))
-      || (parsed.englishName && await deps.fetchAppIdFromWebSearch(parsed.englishName)) || "";
+    const fromWeb = (en && await deps.fetchAppIdFromWebSearch(en))
+      || await deps.fetchAppIdFromWebSearch(parsed.gameName) || "";
     if (fromWeb) { appid = fromWeb; appidSource = "网页搜索"; }
   }
   if (appid) ok({ name: "Steam AppID", appid, source: appidSource });
-  else skip({ name: "Steam AppID", reason: "未找到（Steam 搜索、维基百科、百度百科、网页搜索均未匹配）" });
+  else skip({ name: "Steam AppID", reason: "未找到（英文名/中文名 在 Steam 搜索、维基百科、百度百科、网页搜索均未匹配）" });
 
   // 3. 游戏介绍：Steam 官方描述作主源（质量最高、零编造），bl 降次级，双无则占位 + 待校对
   doing({ name: "游戏介绍与大小（bl 辅助）" });
@@ -194,7 +208,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     quarkUrl: parsed.quarkUrl,
     baiduUrl: parsed.baiduUrl,
     xunleiUrl: parsed.xunleiUrl,
-    englishName: parsed.englishName,
+    englishName: en,
   });
   // 3.3 选择介绍主源 + 溯源（provenance）
   let desc = "";

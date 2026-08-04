@@ -238,6 +238,62 @@ async function fetchAppIdFromWebSearch(gameName) {
   return "";
 }
 
+// ────────────────────── 英文名前置解析（中文名 → 英文名）──────────────────────
+// 背景：Steam 商店与 Wikidata 多以英文名为准，直接用中文名搜 Steam 常搜不到或错配。
+// 因此在「查 AppID」之前先解析出规范英文名，再用英文名（优先）去匹配，显著提升命中率。
+
+/** 纯函数：从 Wikidata search + entities 两份 JSON 抽英文 label（取前 3 候选首个有 en label 的）。可单测。 */
+function extractEnglishNameFromWikidata(searchJson, entitiesJson) {
+  const entities = (searchJson && searchJson.search) || [];
+  const ids = entities.map(e => e && e.id).filter(Boolean).slice(0, 3);
+  if (!ids.length) return "";
+  const map = (entitiesJson && entitiesJson.entities) || {};
+  for (const id of ids) {
+    const label = map[id] && map[id].labels && map[id].labels.en && map[id].labels.en.value;
+    if (label) return String(label);
+  }
+  return "";
+}
+
+/** 纯函数：从百度百科词条页 HTML 抽英文名字段。可单测。 */
+function extractEnglishNameFromBaidu(html) {
+  if (!html) return "";
+  // 百度百科 infobox 形如 <th>英文名</th><td>Elden Ring</td>，先剥离 HTML 标签，
+  // 否则懒惰量词会在 </th> 的 "th" 处提前满足、误把标签残字当英文名。
+  const text = String(html).replace(/<[^>]+>/g, " ");
+  const m = /英文名[\s\S]{0,30}?([A-Za-z][A-Za-z0-9\s:'’!&.\-]{1,40})/i.exec(text);
+  return m ? m[1].trim() : "";
+}
+
+/**
+ * 解析游戏英文名（中文名 → 英文名）。多源兜底：
+ *   1) Wikidata 中文 search → 英文 label（最结构化、最可靠）
+ *   2) 百度百科词条页英文段
+ * 失败/超时/异常一律返回 ""（绝不抛错打断流程），交由上层直接用中文名匹配。
+ */
+async function resolveEnglishName(gameName) {
+  if (!gameName) return "";
+  // 1) Wikidata 中文 search → 英文 label
+  try {
+    const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(gameName)}&language=zh&format=json&limit=3`;
+    const search = await httpGetJson(searchUrl, 8000);
+    const ids = ((search && search.search) || []).map(e => e && e.id).filter(Boolean).slice(0, 3);
+    if (ids.length) {
+      const entUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${ids.join("|")}&props=labels&languages=en&format=json`;
+      const ent = await httpGetJson(entUrl, 8000);
+      const label = extractEnglishNameFromWikidata(search, ent);
+      if (label) return label;
+    }
+  } catch {}
+  // 2) 百度百科英文段
+  try {
+    const html = await httpGetText(`https://baike.baidu.com/item/${encodeURIComponent(gameName)}`, 8000);
+    const en = extractEnglishNameFromBaidu(html);
+    if (en) return en;
+  } catch {}
+  return "";
+}
+
 /**
  * 从 Steam pc_requirements（appdetails 返回的 {minimum, recommended} HTML 串）抽磁盘占用。
  * 优先 recommended，其次 minimum；中英双语识别 Storage / 存储空间 / 硬盘。纯函数。
@@ -266,5 +322,5 @@ function extractStorageFromHtml(html) {
 module.exports = {
   searchSteamAppId, downloadCover, downloadCoverFromUrl, getSteamAppDetails, parseSteamAppDetails,
   parseSteamAppIdFromText, fetchAppIdFromWikidata, fetchAppIdFromBaiduBaike, fetchAppIdFromWebSearch,
-  parseSteamSizeFromRequirements,
+  parseSteamSizeFromRequirements, resolveEnglishName, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu,
 };

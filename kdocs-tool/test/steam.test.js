@@ -1,7 +1,7 @@
 // steam.test.js — Steam 官方描述解析单元测试（纯函数，无需网络）
 const test = require("node:test");
 const assert = require("node:assert");
-const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText } = require("../lib/steam");
+const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName } = require("../lib/steam");
 
 test("parseSteamAppDetails 提取官方 short_description / genres / type", () => {
   const data = {
@@ -71,4 +71,32 @@ test("parseSteamSizeFromRequirements 无 requirements 返回空", () => {
 test("parseSteamSizeFromRequirements 标签穿插也能命中（Storage:</strong> 40 GB）", () => {
   const pc = { minimum: "<strong>Storage:</strong> 40 GB available space" };
   assert.strictEqual(parseSteamSizeFromRequirements(pc), "40GB");
+});
+
+// ── 英文名前置解析（中文名 → 英文名）──
+test("extractEnglishNameFromWikidata 从 search+entities 抽首个 en label", () => {
+  const search = { search: [{ id: "Q1" }, { id: "Q2" }] };
+  const entities = { entities: { Q1: { labels: { en: { value: "Elden Ring" } } }, Q2: { labels: { en: { value: "Other" } } } } };
+  assert.strictEqual(extractEnglishNameFromWikidata(search, entities), "Elden Ring");
+});
+
+test("extractEnglishNameFromWikidata 候选无 en label 返回空", () => {
+  const search = { search: [{ id: "Q1" }] };
+  const entities = { entities: { Q1: { labels: { zh: { value: "艾尔登法环" } } } } };
+  assert.strictEqual(extractEnglishNameFromWikidata(search, entities), "");
+});
+
+test("extractEnglishNameFromBaidu 从 infobox 抽英文名", () => {
+  const html = "<th>英文名</th><td>Elden Ring</td>";
+  assert.strictEqual(extractEnglishNameFromBaidu(html), "Elden Ring");
+});
+
+test("extractEnglishNameFromBaidu 无英文名返回空", () => {
+  assert.strictEqual(extractEnglishNameFromBaidu(""), "");
+  assert.strictEqual(extractEnglishNameFromBaidu("<th>发行日期</th><td>2022</td>"), "");
+});
+
+test("resolveEnglishName 空输入直接返回空（不发起请求）", async () => {
+  assert.strictEqual(await resolveEnglishName(""), "");
+  assert.strictEqual(await resolveEnglishName(null), "");
 });

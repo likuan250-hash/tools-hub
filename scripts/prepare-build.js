@@ -1,7 +1,7 @@
 // 构建前准备运行时资源：
 //  1) 确保 resources/node 与 resources/bin 存在（electron-builder extraResources 不能指向缺失目录）
 //  2) 准备 node.exe：优先用 NODE_SRC；否则尝试当前进程 execPath（setup-node/本机 node）
-//  3) 准备 bailian-cli：见 prune-bailian.js（本地复制 或 npm install 兜底）
+//  3) 内置外部二进制：见 prepare-material-bins.js / prepare-biliup-bin.js
 // 真实二进制（node.exe / bl 依赖）均被 .gitignore 忽略，不进 git，仅本地/CI 准备。
 const fs = require("fs");
 const path = require("path");
@@ -104,8 +104,6 @@ function inlineSharedStyles() {
   );
 }
 inlineSharedStyles();
-
-require("./prune-bailian");
 
 // ── 内置 material-hub 外部二进制（yt-dlp.exe）──
 // 素材搜集模块的宣传片下载强依赖 yt-dlp；用户机器不保证装过、更不保证在 PATH。

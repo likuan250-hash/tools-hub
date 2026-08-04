@@ -3,8 +3,6 @@ const fs = require("fs");
 const path = require("path");
 const steam = require("./steam");
 const kdocs = require("./kdocs");
-const ai = require("./ai");
-const quark = require("./quark");
 const { isBadIntro, normalizeSize } = require("./constants");
 
 // ── 分类标签默认值（写入记录「游戏信息」字段，与 parser 关键词检测的 tags 并存且去重）──
@@ -27,8 +25,6 @@ const DEFAULT_DEPS = {
   callMcporter: kdocs.callMcporter,
   checkKdocsReady: kdocs.checkKdocsReady,
   fileBase64: kdocs.fileBase64,
-  aiDescribe: ai.aiDescribe,
-  aiCoverSearch: ai.aiCoverSearch,
 };
 
 // ── 查重：翻页拉全表，比对「游戏名称」字段，精确匹配 parsed.raw ──
@@ -154,8 +150,8 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   //     因为 Steam 商店与 Wikidata 多以英文名为准，直接用中文名搜常搜不到或错配。
   //     先拿到规范英文名，再用英文名（优先）去匹配，显著提升命中率。
   //     手动录入的英文名优先于自动解析；已拿到 appid 时跳过解析省一次请求。
-  let appid = manualAppId || null;
-  let appidSource = manualAppId ? "手动录入" : "";
+  let appid = manualAppId || parsed.appid || null; // 手动录入 > 粘贴的 Steam 链接(appid) > 自动解析
+  let appidSource = manualAppId ? "手动录入" : (parsed.appid ? "手动链接" : "");
   let englishName = parsed.englishName || "";
   if (!appid && !englishName) {
     doing({ name: "解析游戏英文名" });
@@ -191,9 +187,10 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   if (appid) ok({ name: "Steam AppID", appid, source: appidSource });
   else skip({ name: "Steam AppID", reason: "未找到（英文名/中文名 在 Steam 搜索、维基百科、百度百科、网页搜索均未匹配）" });
 
-  // 3. 游戏介绍：Steam 官方描述作主源（质量最高、零编造），bl 降次级，双无则占位 + 待校对
-  doing({ name: "游戏介绍与大小（bl 辅助）" });
-  // 3.1 Steam 官方 store 描述（仅 appid 命中时尝试；失败不致命，交由 bl 兜底）
+  // 3. 游戏介绍：Steam 官方描述作主源（质量最高、零编造），无则占位 + 待校对
+  //    （百炼 bl CLI 已移除，不再有 AI 生成兜底；介绍来源收敛为 Steam 官方 / 占位）
+  doing({ name: "游戏介绍生成" });
+  // 3.1 Steam 官方 store 描述（仅 appid 命中时尝试；失败不致命）
   let steamDesc = "";
   let steamSize = "";
   if (appid) {
@@ -203,32 +200,21 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       steamSize = (det && det.size) || "";
     } catch (_) { /* Steam 详情失败不致命 */ }
   }
-  // 3.2 bl 生成（介绍 + 大小猜测），作为次级源 / 大小兜底
-  const aiRes = await deps.aiDescribe(parsed.gameName, parsed.raw, {
-    quarkUrl: parsed.quarkUrl,
-    baiduUrl: parsed.baiduUrl,
-    xunleiUrl: parsed.xunleiUrl,
-    englishName: en,
-  });
-  // 3.3 选择介绍主源 + 溯源（provenance）
+  // 3.2 选择介绍主源 + 溯源（provenance）
   let desc = "";
   let introProvenance = "";
   if (steamDesc && !isBadIntro(steamDesc)) {
     desc = steamDesc;
     introProvenance = "Steam官方";
     ok({ name: "游戏介绍生成（Steam 官方）", desc });
-  } else if (aiRes.intro && !isBadIntro(aiRes.intro)) {
-    desc = aiRes.intro;
-    introProvenance = "bl联网";
-    ok({ name: "游戏介绍生成（bl）", desc });
   } else {
     // 兜底占位（非标题、非免责声明），显式标注待人工校对，而非静默空
     desc = "介绍待补充";
     introProvenance = "占位";
-    skip({ name: "游戏介绍生成", reason: "Steam 无官方描述且 bl 未返回有效介绍，已占位待人工补充" });
+    skip({ name: "游戏介绍生成", reason: "Steam 无官方描述，已占位待人工补充" });
   }
 
-  // 4. 下载封面（优先级：Steam 官方 CDN → bl 联网搜真实封面(中英文双搜+下载校验) → 手动链接 → 留空）
+  // 4. 下载封面（优先级：Steam 官方 CDN → 手动链接 → 留空）
   let coverPath = null;
   let coverAttemptFailed = false; // 封面下载真实报错(区别于合理留空)，供最终 coverStatus 判定
   // 4.1 Steam 官方 CDN（已有 appid 时）
@@ -240,21 +226,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       ok({ name: "封面下载（Steam 官方）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
     } catch (e) { coverAttemptFailed = true; warn({ name: "封面下载（Steam 官方）", reason: e.message }); }
   }
-  // 4.2 bl 联网搜真实封面（中英文名各搜一次，downloadCoverFromUrl 做真实下载校验防破图）
-  if (!coverPath && deps.aiCoverSearch) {
-    doing({ name: "bl 联网搜索封面（中英文）" });
-    try {
-      const url = await deps.aiCoverSearch(parsed.gameName, parsed.englishName);
-      if (url) {
-        coverPath = await deps.downloadCoverFromUrl(parsed.gameName, url, coverDir);
-        const s = deps.fs.statSync(coverPath);
-        ok({ name: "封面下载（bl 联网搜索）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
-      } else {
-        skip({ name: "封面下载（bl 联网搜索）", reason: "未搜到可用封面直链" });
-      }
-    } catch (e) { coverAttemptFailed = true; warn({ name: "封面下载（bl 联网搜索）", reason: e.message }); }
-  }
-  // 4.3 手动链接兜底
+  // 4.2 手动链接兜底
   if (!coverPath && manualCoverUrl) {
     doing({ name: "下载手动封面" });
     try {
@@ -263,7 +235,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       ok({ name: "封面下载（手动链接）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
     } catch (e) { coverAttemptFailed = true; warn({ name: "封面下载（手动链接）", reason: e.message }); }
   }
-  if (!coverPath) { doing({ name: "封面下载" }); skip({ name: "封面下载", reason: "Steam 无匹配、bl 未搜到、且无手动链接，留空" }); }
+  if (!coverPath) { doing({ name: "封面下载" }); skip({ name: "封面下载", reason: "Steam 无匹配且无手动链接，留空" }); }
 
   // 5. 上传附件（失败自动重试 1 次，瞬错常见；仍失败则标记 coverLost 供前端补传）
   let objectId = null;
@@ -277,7 +249,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 
   // 5.5 游戏大小：网盘真实分享页大小抓取已移除（夸克/百度/迅雷均依赖登录态，长期 0 命中率，
   // 只是堆出 3 条「跳过」噪音，不产生任何数据）。统一由 Steam 官方 pc_requirements Storage 兜底 →
-  // 仍无则走 bl 简介附带 → 仍无则文本识别 → 全无则留空 + 待核。
+  // 仍无则文本识别 → 全无则留空 + 待核。
   // 边界：此改动只移除"获取大小"路径，绝不动网盘链接写入记录 / mcporter 转存中转 / 链接解析 / UI 输入。
   const realSizes = {}; // { steam: "40G" }
   if (steamSize) {
@@ -288,10 +260,9 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 
   // 6. 创建记录
   doing({ name: "创建多维表记录" });
-  // 游戏大小优先级：Steam 官方（pc_requirements Storage）→ bl 简介附带 → 文本识别 → 全无则留空 + 待核
-  const gameSize = resolveGameSize(realSizes, aiRes.size, parsed.size);
+  // 游戏大小优先级：Steam 官方（pc_requirements Storage）→ 文本识别 → 全无则留空 + 待核
+  const gameSize = resolveGameSize(realSizes, parsed.size);
   const sizeProvenance = realSizes.steam ? "Steam官方"
-    : aiRes.size ? "bl猜测"
     : parsed.size ? "文本识别"
     : "待核";
   // 需要人工校对：介绍是占位，或大小全来源缺失
@@ -336,14 +307,12 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 }
 
 // ── 纯函数（不依赖外部 IO，可单测）──
-// 游戏大小优先级：Steam 官方（pc_requirements Storage）→ bl 简介附带 → 文本识别 → 全无则空。
-// 网盘真实分享页大小已移除（夸克/百度/迅雷 均依赖登录态，长期 0 命中率），保留调用入口仅为兼容旧 realSizes 结构。
+// 游戏大小优先级：Steam 官方（pc_requirements Storage）→ 文本识别 → 全无则空。
+// 网盘真实分享页大小已移除（夸克/百度/迅雷 均依赖登录态，长期 0 命中率）。
 // 所有候选均经 normalizeSize 统一为短格式（"30.7GB"→"30.7G"，规范文档 §2.5）。
-function resolveGameSize(realSizes = {}, aiSize = "", parsedSize = "") {
+function resolveGameSize(realSizes = {}, parsedSize = "") {
   const steam = normalizeSize(realSizes.steam);
   if (steam) return steam;
-  const ai = normalizeSize(aiSize);
-  if (ai) return ai;
   return normalizeSize(parsedSize) || "";
 }
 
@@ -365,7 +334,7 @@ function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverS
   if (sizeProvenance) push(`大小:${sizeProvenance}`);
   if (needsReview) push("⚠需人工校对");
   const fields = {
-    游戏名称: parsed.raw,
+    游戏名称: parsed.gameName, // 用清洗后的干净名展示（H3/H4）；查重仍比对 parsed.raw（稳定）
     游戏介绍: desc || parsed.raw,
     游戏信息: tags,
     更新日期: new Date().toISOString().split("T")[0].replace(/-/g, "/"),

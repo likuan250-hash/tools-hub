@@ -1,10 +1,11 @@
 ﻿// ── 输入文本解析 ──
+const { cleanGameName, parseSteamAppIdFromText } = require("./nameutil");
 
 function parseInput(text) {
   const lines = text.trim().split("\n").map(l => l.trim()).filter(l => l);
   if (!lines.length) return null;
   const firstLine = lines[0];
-  let baidu = "", quark = "", xunlei = "";
+  let baidu = "", quark = "", xunlei = "", appid = "";
   for (const line of lines) {
     // 只提取纯链接，兼容「百度：https://...」「链接：https://...」等带前缀标签的写法
     const m = line.match(/https?:\/\/[^\s）)】]+/);
@@ -13,6 +14,12 @@ function parseInput(text) {
     if (url.includes("pan.baidu.com")) baidu = url;
     else if (url.includes("pan.quark.cn")) quark = url;
     else if (url.includes("pan.xunlei.com")) xunlei = url;
+    else {
+      // H1：从粘贴的 Steam 链接（store/community/steamdb）抽取 AppID，作手动链接兜底，
+      // 解决「中文名→英文名→AppID」整条失败（如 Wikidata 无中文标签的西方新作）的死局。
+      const aid = parseSteamAppIdFromText(url);
+      if (aid) appid = aid;
+    }
   }
   let gameName = firstLine, englishName = "";
   // 先提取英文原名（括号内）
@@ -20,6 +27,9 @@ function parseInput(text) {
   if (m) { englishName = m[1]; }
   // 游戏名：取括号前中文名；若无中文则用英文名；并去掉 Build/版本/补丁/免安装等长尾
   gameName = (m ? firstLine.substring(0, m.index).trim() : firstLine).replace(/\s*[Bb]uild\.\S+|\(?v?\d{4,}\S*\)?|\s*官方中文\+?|\+?升级补丁|\+?联机补丁|\s*免安装硬盘版|\s*免安装|\s*硬盘版/g, "").trim() || englishName;
+  // 二次清洗：剥除版本号与 repack 标签噪音（如 v1.6.10721.0105 / 官方中文+预购特典+单独升级档），
+  // 得到干净游戏名，既利于中文 Steam 检索、也用于封面文件名与展示（H3）。
+  gameName = cleanGameName(gameName);
   const tags = [];
   if (firstLine.includes("全DLC")) tags.push("全DLC");
   if (firstLine.includes("免安装硬盘版") || firstLine.includes("免安装")) tags.push("免安装硬盘版");
@@ -51,7 +61,7 @@ function parseInput(text) {
     if (cm) { coverUrl = cm[1]; break; }
   }
 
-  return { gameName, englishName, baiduUrl: baidu, quarkUrl: quark, xunleiUrl: xunlei, tags, raw: firstLine, size, coverUrl };
+  return { gameName, englishName, baiduUrl: baidu, quarkUrl: quark, xunleiUrl: xunlei, appid, tags, raw: firstLine, size, coverUrl };
 }
 
 module.exports = { parseInput };

@@ -5,7 +5,7 @@ const clearBtn = $("clearBtn");
 const preview = $("preview"), previewContent = $("previewContent");
 const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $("autoSummary"), autoLog = $("autoLog"), kdocsViewBtn = $("kdocsViewBtn");
 const retryCoverBtn = $("retryCoverBtn");
-const chipKdocs = $("chipKdocs"), chipBl = $("chipBl"), kdocsBtn = $("kdocsBtn"), toastHost = $("toastHost");
+const chipKdocs = $("chipKdocs"), kdocsBtn = $("kdocsBtn"), toastHost = $("toastHost");
 
 // ── 分类标签选择（P0 用户偏好：免安装硬盘版/PC游戏/全DLC 三个默认勾上）──
 // 与金山文档「游戏信息」多选字段对齐：用户点 pill 切换 on/off；当前选中的标签会在「解析预览」里也显示。
@@ -125,94 +125,18 @@ function setChip(el, ok, label) {
   el.innerHTML = statusHTML(ok ? "ok" : "off", label);
 }
 
-function setAiChip(ok, label) {
-  setChip(chipBl, ok, label || (ok ? "AI 可用" : "AI 不可用"));
-}
-
 // ── 启动检查 ──
 async function initCheck() {
   try {
     const r = await fetch("/api/check");
     const d = await r.json();
     setChip(chipKdocs, d.kdocsReady, d.kdocsReady ? "kdocs 已配置" : "kdocs 未配置");
-    setAiChip(!!d.blAvailable);
-    _aiPrev = !!d.blAvailable;
   } catch {
     setChip(chipKdocs, false, "后端未连接");
-    setAiChip(false);
-    _aiPrev = false;
   }
 }
-
-// ── P05：AI 心跳 / 掉线重连（稳定性）──
-// kdocs AI 由 bl CLI 每次 fresh spawn 检测（stateless），"掉线"=bl 瞬时不可用；
-// 前端每 30s 轮询 /api/check，状态跳变时给明显提示并自动重连，恢复自动消隐，免去人工重开页面。
-const aiBanner = $("aiBanner"), aiBannerMsg = $("aiBannerMsg"), aiReconnectBtn = $("aiReconnectBtn");
-let _aiPrev = null;          // 上一次 AI 在线状态（null=尚未探活）
-let _aiReconnecting = false; // 防止重连请求并发
-
-function showAiBanner(msg) {
-  if (aiBannerMsg) aiBannerMsg.textContent = msg;
-  if (aiBanner) aiBanner.classList.add("show");
-}
-function hideAiBanner() {
-  if (aiBanner) aiBanner.classList.remove("show");
-}
-
-async function checkAiStatus() {
-  try {
-    const r = await fetch("/api/check");
-    const d = await r.json();
-    const ok = !!d.blAvailable;
-    if (_aiPrev !== null && _aiPrev !== ok) {
-      if (ok) {
-        setAiChip(true);
-        hideAiBanner();
-        toastMsg("AI 已恢复在线", "ok");
-      } else {
-        setAiChip(false);
-        showAiBanner("AI 已掉线，正在尝试自动重连…");
-        toastMsg("AI 已掉线，正在尝试重连", "err");
-      }
-    }
-    _aiPrev = ok;
-    return ok;
-  } catch {
-    if (_aiPrev === true) {
-      setAiChip(false);
-      showAiBanner("与后端失联，无法检测 AI 状态");
-    }
-    _aiPrev = false;
-    return false;
-  }
-}
-
-async function reconnectAi() {
-  if (_aiReconnecting) return;
-  _aiReconnecting = true;
-  if (aiReconnectBtn) aiReconnectBtn.disabled = true;
-  showAiBanner("正在重新连接 AI…");
-  try {
-    const r = await fetch("/api/ai/reconnect", { method: "POST" });
-    const d = await r.json();
-    const ok = !!d.blAvailable;
-    _aiPrev = ok;
-    setAiChip(ok);
-    if (ok) { hideAiBanner(); toastMsg("AI 已重连", "ok"); }
-    else { showAiBanner("重连失败，AI 仍不可用，请稍后再试或检查 bl 登录"); toastMsg("AI 重连失败", "err"); }
-  } catch (e) {
-    showAiBanner("重连请求失败：" + e.message);
-    toastMsg("重连请求失败：" + e.message, "err");
-  } finally {
-    _aiReconnecting = false;
-    if (aiReconnectBtn) aiReconnectBtn.disabled = false;
-  }
-}
-if (aiReconnectBtn) aiReconnectBtn.onclick = reconnectAi;
 
 initCheck();
-// 心跳：每 30s 探活一次，掉线自动提示+重连，恢复自动消隐
-setInterval(() => { checkAiStatus(); }, 30000);
 
 // ── 清空（输入框右上角）──
 clearBtn.onclick = () => {

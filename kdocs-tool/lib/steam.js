@@ -4,6 +4,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { DEFAULT_COVER_DIR } = require("./config");
+const { cleanGameName, stripSubtitle, parseSteamAppIdFromText } = require("./nameutil");
 
 /** 搜索 Steam AppID（10 秒超时，避免网络不畅时卡死整流程） */
 function searchSteamAppId(gameName) {
@@ -25,10 +26,29 @@ function searchSteamAppId(gameName) {
   });
 }
 
+/** 校验文件头 magic 是否为真实图片（JPEG/PNG/WEBP/GIF/BMP）。用于下载后过滤占位图/错误页。 */
+function isImageMagic(buf) {
+  if (!buf || buf.length < 4) return false;
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return true;
+  // PNG: 89 50 4E 47
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return true;
+  // GIF: 47 49 46 38 ("GIF8")
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return true;
+  // BMP: 42 4D ("BM")
+  if (buf[0] === 0x42 && buf[1] === 0x4D) return true;
+  // WEBP: 52 49 46 46 ("RIFF") + 偏移 8 处 57 45 42 50 ("WEBP")
+  if (buf.length >= 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return true;
+  return false;
+}
+
 /** 尝试从单个 URL 下载封面，成功返回 fp，失败 reject（自动跟随 301/302 重定向） */
 function tryDownload(url, fp) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 10000 }, (r) => {
+    // 按协议选模块：Steam CDN 为 https；用户手动封面链接也可能是 http，统一兼容
+    const mod = url.startsWith("http://") ? http : https;
+    const req = mod.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 10000 }, (r) => {
       if (r.statusCode === 301 || r.statusCode === 302) {
         const loc = r.headers.location;
         r.destroy();
@@ -39,7 +59,26 @@ function tryDownload(url, fp) {
       if (r.statusCode !== 200) { r.destroy(); return reject(new Error("HTTP " + r.statusCode)); }
       const f = fs.createWriteStream(fp);
       r.pipe(f);
-      f.on("finish", () => { f.close(); resolve(fp); });
+      f.on("finish", () => {
+        // 关闭后再做图片校验，避免把 Steam 占位图/错误页/1x1 当封面收下（H9）
+        f.close((err) => {
+          if (err) return reject(err);
+          try {
+            const fd = fs.openSync(fp, "r");
+            const head = Buffer.alloc(12);
+            fs.readSync(fd, head, 0, 12, 0);
+            fs.closeSync(fd);
+            if (!isImageMagic(head)) {
+              try { fs.unlinkSync(fp); } catch {}
+              return reject(new Error("下载内容非图片（magic 不匹配），已丢弃"));
+            }
+          } catch (e) {
+            try { fs.unlinkSync(fp); } catch {}
+            return reject(e);
+          }
+          resolve(fp);
+        });
+      });
       f.on("error", (e) => { f.destroy(); reject(e); });
     });
     req.on("timeout", () => { req.destroy(new Error("下载超时")); });
@@ -181,13 +220,6 @@ function httpGetJson(url, timeoutMs = 10000, depth = 0) {
   });
 }
 
-/** 从任意文本抽 Steam AppID（store.steampowered.com/app/<id> / steamcommunity / steamdb）。纯函数。 */
-function parseSteamAppIdFromText(text) {
-  if (!text) return "";
-  const m = /store\.steampowered\.com\/app\/(\d+)|steamcommunity\.com\/app\/(\d+)|steamdb\.info\/app\/(\d+)/i.exec(String(text));
-  return m ? (m[1] || m[2] || m[3] || "") : "";
-}
-
 /**
  * 维基百科 / Wikidata 反查 Steam AppID（P1733 属性 = Steam Application ID）。
  * 多语言搜索（zh→en）提高命中；取前若干候选实体的首个 P1733 值。失败静默返回空。
@@ -265,70 +297,7 @@ function extractEnglishNameFromBaidu(html) {
 return m ? m[1].trim() : "";
 }
 
-// ── 清洗：剥除游戏名里的版本号 / repack 标签噪音，便于百科精确匹配 ──
-// 背景：百度网盘分享页标题常带 "v1.6.10721.0105 官方中文+预购特典+单独升级档" 这类噪音，
-// 直接拿去 Wikidata / 百度百科搜会因词条名不匹配而 0 结果。先做轻量清洗再查命中率显著上升。
-const NOISE_TAGS = [
-  // 复合标签优先剥
-  '官方中文+预购特典+单独升级档', '官方简中+预购特典+单独升级档', '官方繁中+预购特典+单独升级档',
-  '官方中文+预购特典', '官方简中+预购特典', '官方繁中+预购特典',
-  '预购特典+单独升级档', '预购特典',
-  '单独升级档',
-  // 单标签
-  '官方中文', '官方简中', '官方繁中', '官方英文', '官方日文', '官方中文版',
-  '整合版', '年度版', '终极版', '完全版', '豪华版', '典藏版', '黄金版', '黄金典藏版',
-  '高清版', '中文版', '汉化版', '国行版', '美版', '欧版', '日版',
-  'PC版', 'Steam版', '免安装', '免安装版', '绿色版', '破解版', '学习版', '未加密版',
-  '离线版', '联机版', '单机版', '多人版',
-  'D加密', 'Steam脱机', '数字版', '实体版', '光盘版', '全DLC', 'DLC',
-  '赠品版', '体验版', '正式版', '尝鲜版', '抢先版', 'Beta版', 'Demo版',
-  '更新版', '修正版', '升级版', '补丁版',
-  '简体中文', '官方简体中文',
-];
-
-function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
-/**
- * 清洗游戏名：剥除版本号与尾部 repack 标签噪音，保留副标题（重制版等）。
- * 例：「最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档」 → 「最后的生还者2：重制版」
- * 纯函数，可单测。
- */
-function cleanGameName(raw) {
-  if (!raw || typeof raw !== 'string') return '';
-  let s = raw.trim();
-  if (!s) return '';
-  // 1) 剥版本号 v1.2.3 / V2 / v 1.2
-  s = s.replace(/\s*[vV]\s*\d+(?:\.\d+)*\b/g, ' ');
-  // 2) 反复剥除 +/、/空格/，串接的标签（前/后锚定避免误伤核心名里的同字）
-  const SEP = '[+\\s、/,,　]';
-  for (let pass = 0; pass < 4; pass++) {
-    let changed = false;
-    for (const tag of NOISE_TAGS) {
-      const re = new RegExp(`(?:^|${SEP})${escapeRe(tag)}(?=${SEP}|$)`, 'g');
-      const before = s;
-      s = s.replace(re, ' ');
-      if (s !== before) changed = true;
-    }
-    if (!changed) break;
-  }
-  // 3) 清理多余分隔符
-  s = s.replace(/\s+/g, ' ').trim();
-  s = s.replace(/^[：:+\s、/,,]+/, '').replace(/[：:+\s、/,,]+$/, '');
-  s = s.replace(/\s+\+\s+/g, ' ').trim();
-  return s;
-}
-
-/**
- * 进一步剥掉冒号/破折号后的副标题（"重制版"、"Remastered"、"终极版"等），
- * 仅保留核心名用作百科兜底查询。纯函数。
- */
-function stripSubtitle(name) {
-  if (!name || typeof name !== 'string') return '';
-  const m = /^([^：:\-—–]+?)\s*[：:\-—–]\s*/.exec(name);
-  let core = m ? m[1].trim() : name.trim();
-  core = core.replace(/[：:+\s、/,,]+$/, '').trim();
-  return core;
-}
+// ── 清洗 / 副标题剥离 / AppID 抽取：见 lib/nameutil.js（纯函数，parser 与 steam 共享）──
 
 /**
  * 解析游戏英文名（中文名 → 英文名）。多源兜底：
@@ -346,38 +315,52 @@ function stripSubtitle(name) {
 async function resolveEnglishName(gameName, deps) {
   if (!gameName || !String(gameName).trim()) return "";
   const raw = String(gameName).trim();
-  // 候选名顺序：清洗后名（保留副标题，重制版/年度版独立条目更准）→ 剥副标题（百科核心名覆盖高）→ 原名兜底
-  const cleaned = cleanGameName(raw);
-  const candidates = [];
-  if (cleaned) candidates.push(cleaned);
-  const stripped = stripSubtitle(cleaned);
-  if (stripped && stripped !== cleaned) candidates.push(stripped);
-  if (!candidates.includes(raw)) candidates.push(raw);
   const httpJson = (deps && deps.httpGetJson) || httpGetJson;
   const httpText = (deps && deps.httpGetText) || httpGetText;
-  // 1) Wikidata zh search → en label（按候选顺序逐级尝试）
-  for (const name of candidates) {
-    try {
-      const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(name)}&language=zh&format=json&limit=3`;
-      const search = await httpJson(searchUrl, 8000);
-      const ids = ((search && search.search) || []).map(e => e && e.id).filter(Boolean).slice(0, 3);
-      if (ids.length) {
-        const entUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${ids.join("|")}&props=labels&languages=en&format=json`;
-        const ent = await httpJson(entUrl, 8000);
-        const label = extractEnglishNameFromWikidata(search, ent);
-        if (label) return label;
-      }
-    } catch {}
+
+  // 内部解析：候选名逐级尝试 Wikidata → 百度百科，命中即返回英文名，否则 ""。
+  const doResolve = async () => {
+    // 候选名顺序：清洗后名（保留副标题，重制版/年度版独立条目更准）→ 剥副标题（百科核心名覆盖高）→ 原名兜底
+    const cleaned = cleanGameName(raw);
+    const candidates = [];
+    if (cleaned) candidates.push(cleaned);
+    const stripped = stripSubtitle(cleaned);
+    if (stripped && stripped !== cleaned) candidates.push(stripped);
+    if (!candidates.includes(raw)) candidates.push(raw);
+    // 1) Wikidata zh search → en label（按候选顺序逐级尝试）
+    for (const name of candidates) {
+      try {
+        const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(name)}&language=zh&format=json&limit=3`;
+        const search = await httpJson(searchUrl, 8000);
+        const ids = ((search && search.search) || []).map(e => e && e.id).filter(Boolean).slice(0, 3);
+        if (ids.length) {
+          const entUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${ids.join("|")}&props=labels&languages=en&format=json`;
+          const ent = await httpJson(entUrl, 8000);
+          const label = extractEnglishNameFromWikidata(search, ent);
+          if (label) return label;
+        }
+      } catch {}
+    }
+    // 2) 百度百科英文段（同上逐级尝试）
+    for (const name of candidates) {
+      try {
+        const html = await httpText(`https://baike.baidu.com/item/${encodeURIComponent(name)}`, 8000);
+        const en = extractEnglishNameFromBaidu(html);
+        if (en) return en;
+      } catch {}
+    }
+    return "";
+  };
+
+  // 总超时预算（H2）：Wikidata/百度全失败时最坏会串行挂 ~48s，这里封顶 12s，
+  // 超时即放弃解析（交上层直接用中文名匹配），避免整条录入被拖死。
+  let timer;
+  const timeoutP = new Promise((res) => { timer = setTimeout(() => res(""), 12000); });
+  try {
+    return await Promise.race([doResolve(), timeoutP]);
+  } finally {
+    clearTimeout(timer);
   }
-  // 2) 百度百科英文段（同上逐级尝试）
-  for (const name of candidates) {
-    try {
-      const html = await httpText(`https://baike.baidu.com/item/${encodeURIComponent(name)}`, 8000);
-      const en = extractEnglishNameFromBaidu(html);
-      if (en) return en;
-    } catch {}
-  }
-  return "";
 }
 
 /**
@@ -409,5 +392,5 @@ module.exports = {
   searchSteamAppId, downloadCover, downloadCoverFromUrl, getSteamAppDetails, parseSteamAppDetails,
   parseSteamAppIdFromText, fetchAppIdFromWikidata, fetchAppIdFromBaiduBaike, fetchAppIdFromWebSearch,
   parseSteamSizeFromRequirements, resolveEnglishName, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu,
-  cleanGameName, stripSubtitle,
+  cleanGameName, stripSubtitle, tryDownload, isImageMagic,
 };

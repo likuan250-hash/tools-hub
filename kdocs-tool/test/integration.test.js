@@ -2,7 +2,7 @@
 // 运行方式：
 //   RUN_INTEGRATION=1 node --test test/integration.test.js
 //   RUN_KDOCS_WRITE=1 node --test test/integration.test.js   # 仅真实 kdocs 只读连通
-// 默认不跑：bl / Steam CDN / 金山文档 都是外部依赖，放进 CI 会不稳定或污染真实多维表。
+// 默认不跑：Steam CDN / 金山文档 都是外部依赖，放进 CI 会不稳定或污染真实多维表。
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("fs");
@@ -11,15 +11,6 @@ const path = require("path");
 
 const RUN_INTEGRATION = !!process.env.RUN_INTEGRATION;
 const RUN_KDOCS = !!process.env.RUN_KDOCS_WRITE;
-
-test("集成[真实bl]：介绍不编造、大小非空、封面为合法URL", { skip: !RUN_INTEGRATION }, async () => {
-  const { aiDescribe } = require("../lib/ai");
-  const r = await aiDescribe("双影奇境", "双影奇境（Split Fiction）", { englishName: "Split Fiction" });
-  assert.ok(r.intro && r.intro.length >= 10, "介绍应非空");
-  assert.ok(!/疑似虚构|无法确认|经核实无真实|请勿轻信|非官方渠道/.test(r.intro), "介绍不应含免责声明（符合需求）");
-  assert.ok(r.size && !/^(无|未知|未抓取到)?$/i.test(r.size.trim()), "大小应非空（符合需求）");
-  assert.ok(/^https?:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(r.coverUrl), "封面应为合法图片URL（符合需求）");
-});
 
 test("集成[真实Steam]：官方 CDN（首选 fastly library_600x900_2x）能下载到封面文件", { skip: !RUN_INTEGRATION }, async () => {
   const { downloadCover } = require("../lib/steam");

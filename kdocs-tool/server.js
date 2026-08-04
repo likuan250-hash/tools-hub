@@ -17,9 +17,7 @@ app.use("/", router);
   const PORT = process.env.KDOCS_PORT || 3599;
   const server = app.listen(PORT, "127.0.0.1", async () => {
     const { checkKdocsReady } = require("./lib/kdocs");
-    const { checkBlAvailable } = require("./lib/ai");
     console.log("✅ 多维表智能录入工具已启动");
     console.log("   http://localhost:" + PORT);
     console.log("   kdocs: " + ((await checkKdocsReady()) ? "✅ 已配置" : "⚠️ 未配置"));
-    console.log("   AI:    " + ((await checkBlAvailable()) ? "✅ 可用" : "⚠️ 不可用"));
   });

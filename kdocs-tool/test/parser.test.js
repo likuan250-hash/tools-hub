@@ -57,3 +57,28 @@ test("提取英文名（无中文括号时为空）", () => {
   assert.strictEqual(parseInput("Hades II").englishName, "");
   assert.strictEqual(parseInput("黑神话悟空（Black Myth Wukong）").englishName, "Black Myth Wukong");
 });
+
+// ── H3：脏名清洗（版本号 + repack 标签全剥，保留副标题）──
+test("清洗脏名：版本号+复合 repack 标签全剥，保留「重制版」副标题", () => {
+  const p = parseInput("最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档 免安装硬盘版");
+  assert.strictEqual(p.gameName, "最后的生还者2：重制版");
+  assert.strictEqual(p.englishName, "");
+});
+
+test("清洗脏名：v 版本号拖尾点不残留（避免 .预购特典 这类残点）", () => {
+  const p = parseInput("某游戏 v1.6. 预购特典+单独升级档 免安装硬盘版");
+  assert.strictEqual(p.gameName, "某游戏");
+});
+
+// ── H1：从粘贴的 Steam 链接抽取 AppID（手动链接兜底）──
+test("从粘贴的 Steam 链接抽取 AppID（store/community/steamdb）", () => {
+  assert.strictEqual(parseInput("黑神话：悟空\nhttps://store.steampowered.com/app/2358720/").appid, "2358720");
+  assert.strictEqual(parseInput("某游戏\nhttps://steamcommunity.com/app/1091500").appid, "1091500");
+  assert.strictEqual(parseInput("某游戏\nhttps://steamdb.info/app/400/").appid, "400");
+});
+
+test("无 Steam 链接时 appid 为空，且不影响网盘链接提取", () => {
+  const p = parseInput("无链接的普通游戏\n百度：https://pan.baidu.com/s/x");
+  assert.strictEqual(p.appid, "");
+  assert.strictEqual(p.baiduUrl, "https://pan.baidu.com/s/x");
+});

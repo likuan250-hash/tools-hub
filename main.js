@@ -23,15 +23,6 @@ const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
   ? path.join(RES, "node", "node.exe")
   : "node";
 
-// bl CLI：打包后用自带的 resources/bin/bl.cmd（由 NODE_BIN 运行 bailian.mjs）；
-// 否则回退 BL_BIN_PATH 环境变量或 PATH 中的 bl（开发 / 独立运行）
-function resolveBlBin() {
-  const bundled = path.join(RES, "bin", "bl.cmd");
-  if (fs.existsSync(bundled)) return bundled;
-  return process.env.BL_BIN_PATH || "bl";
-}
-const BL_BIN = resolveBlBin();
-
 // 启动令牌：随机生成，注入子进程环境变量；子服务在 /api/version 回显。
 // 主进程据此校验"占用本端口的确实是我们自己的服务"，可检测端口被其他进程抢占/伪造(本地安全)。
 const BOOT_TOKEN = crypto.randomBytes(16).toString("hex");
@@ -50,7 +41,6 @@ const CHILDREN = {
     env: Object.assign({}, process.env, {
       TOOLSHUB_VERSION: app.getVersion(),
       KDOCS_PORT: "3599",
-      BL_BIN_PATH: BL_BIN, // 注入 bl 二进制绝对路径，kdocs 优先使用
     }),
     proc: null,
     running: false,

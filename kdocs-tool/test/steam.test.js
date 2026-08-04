@@ -1,7 +1,11 @@
 // steam.test.js — Steam 官方描述解析单元测试（纯函数，无需网络）
 const test = require("node:test");
 const assert = require("node:assert");
-const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName, cleanGameName, stripSubtitle } = require("../lib/steam");
+const http = require("http");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName, cleanGameName, stripSubtitle, tryDownload, isImageMagic } = require("../lib/steam");
 
 test("parseSteamAppDetails 提取官方 short_description / genres / type", () => {
   const data = {
@@ -205,4 +209,45 @@ test("resolveEnglishName 所有候选都失败返回空", async () => {
     { httpGetJson: fakeHttpJson, httpGetText: fakeHttpText }
   );
   assert.strictEqual(en, "");
+});
+
+// ── H9：tryDownload 落盘后校验图片 magic，非图片内容应被丢弃并 reject ──
+test("isImageMagic 识别常见图片格式", () => {
+  assert.strictEqual(isImageMagic(Buffer.from([0xFF, 0xD8, 0xFF, 0xE0])), true, "JPEG");
+  assert.strictEqual(isImageMagic(Buffer.from([0x89, 0x50, 0x4E, 0x47])), true, "PNG");
+  assert.strictEqual(isImageMagic(Buffer.from([0x47, 0x49, 0x46, 0x38])), true, "GIF");
+  assert.strictEqual(isImageMagic(Buffer.from([0x42, 0x4D, 0x00, 0x00])), true, "BMP");
+  assert.strictEqual(isImageMagic(Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])), true, "WEBP");
+  assert.strictEqual(isImageMagic(Buffer.from([0x3C, 0x68, 0x74, 0x6D])), false, "HTML 非图片");
+  assert.strictEqual(isImageMagic(Buffer.alloc(2)), false, "太短");
+});
+
+test("tryDownload 真实图片落盘，非图片内容被丢弃并 reject", async () => {
+  const srv = http.createServer((req, res) => {
+    if (req.url === "/img") {
+      res.writeHead(200, { "Content-Type": "image/jpeg" });
+      res.end(Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01]));
+    } else {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html><body>not an image</body></html>");
+    }
+  });
+  await new Promise((r) => srv.listen(0, r));
+  const port = srv.address().port;
+  const fpOk = path.join(os.tmpdir(), `kdocs_trydl_ok_${Date.now()}.jpg`);
+  const fpBad = path.join(os.tmpdir(), `kdocs_trydl_bad_${Date.now()}.jpg`);
+  try {
+    const got = await tryDownload(`http://127.0.0.1:${port}/img`, fpOk);
+    assert.strictEqual(got, fpOk);
+    assert.ok(fs.existsSync(fpOk), "真实图片应落盘");
+    await assert.rejects(
+      tryDownload(`http://127.0.0.1:${port}/html`, fpBad),
+      /非图片/,
+      "非图片内容应被拒绝"
+    );
+    assert.ok(!fs.existsSync(fpBad), "非图片文件应被丢弃（不落盘）");
+  } finally {
+    srv.close();
+    for (const f of [fpOk, fpBad]) { try { fs.unlinkSync(f); } catch {} }
+  }
 });

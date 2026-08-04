@@ -24,13 +24,11 @@ function baseDeps(over = {}) {
     calls,
     checkKdocsReady: () => true,
     searchSteamAppId: async () => null,
-    getSteamAppDetails: async () => null, // 默认无 Steam 官方描述（走 bl 兜底）
+    getSteamAppDetails: async () => null, // 默认无 Steam 官方描述（走占位）
     fetchAppIdFromWikidata: async () => null,
     fetchAppIdFromBaiduBaike: async () => null,
     fetchAppIdFromWebSearch: async () => null,
     resolveEnglishName: async () => "", // 默认解析不到英文名（走中文名匹配）
-    aiDescribe: () => ({ intro: "Hazelight 开发的双人合作冒险游戏。", size: "30.7G" }),
-    aiCoverSearch: async () => "https://cdn.x.com/a.jpg", // 默认 bl 能搜到封面（中英文双搜）
     downloadCover: async () => { downloadCoverCount++; return "/fake/steam.jpg"; },
     downloadCoverFromUrl: async () => { downloadFromUrlCount++; return "/fake/cover.jpg"; },
     fileBase64: () => "base64data",
@@ -57,31 +55,47 @@ test("kdocs 未就绪 → 提前失败", async () => {
   assert.strictEqual(res.recordId, null);
 });
 
-test("正常流程字段映射正确", async () => {
-  const deps = baseDeps();
+test("正常流程字段映射正确（Steam 官方主源）", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    getSteamAppDetails: async () => ({ shortDescription: "Hazelight 开发的双人合作冒险游戏。", size: "30.7GB" }),
+  });
   const res = await autoExecute(baseParsed({ quarkUrl: "https://pan.quark.cn/s/x" }), null, "/tmp/cover", { deps });
   const { lastCreate } = deps._state();
   assert.strictEqual(res.recordId, "r1");
-  assert.strictEqual(lastCreate["游戏名称"], "双影奇境（Split Fiction）");
+  assert.strictEqual(lastCreate["游戏名称"], "双影奇境");
   assert.strictEqual(lastCreate["游戏介绍"], "Hazelight 开发的双人合作冒险游戏。");
-  assert.strictEqual(lastCreate["游戏大小"], "30.7G", "大小经归一化：30.7G → 30.7G");
+  assert.strictEqual(lastCreate["游戏大小"], "30.7G", "大小经归一化：30.7GB → 30.7G");
   assert.strictEqual(lastCreate["夸克网盘"][0].address, "https://pan.quark.cn/s/x");
+  assert.strictEqual(res.introProvenance, "Steam官方");
+  assert.strictEqual(res.sizeProvenance, "Steam官方");
 });
 
-test("游戏大小优先级：ai.size > parsed.size（归一化）", async () => {
-  // ai 优先
-  let deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "10G", coverUrl: "" }) });
+test("游戏大小优先级：Steam 官方 > 文本识别（parsed.size）", async () => {
+  // Steam 官方优先
+  let deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    getSteamAppDetails: async () => ({ shortDescription: "x".repeat(20), size: "10GB" }),
+  });
   await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "10G", "ai 优先且归一化");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "10G", "Steam 官方优先且归一化");
 
-  // ai 空 → parsed 优先
-  deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "", coverUrl: "" }) });
+  // Steam 无 → 文本识别优先
+  deps = baseDeps({ getSteamAppDetails: async () => null });
   await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "5G", "ai 空时 parsed 优先且归一化");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "5G", "Steam 无时文本识别优先且归一化");
+
+  // 全空 → 不写字段
+  deps = baseDeps({ getSteamAppDetails: async () => null });
+  await autoExecute(baseParsed({ size: "" }), null, "/tmp", { deps });
+  assert.ok(!("游戏大小" in deps._state().lastCreate), "全空不应写游戏大小字段");
 });
 
-test("含免责声明的介绍被丢弃，改为占位「介绍待补充」+ needsReview（非标题兜底）", async () => {
-  const deps = baseDeps({ aiDescribe: () => ({ intro: "该游戏经核实无真实公开资料，疑似虚构，请勿轻信。", size: "", coverUrl: "" }) });
+test("含免责声明的介绍被丢弃（Steam 官方描述命中黑名单），改为占位「介绍待补充」+ needsReview", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    getSteamAppDetails: async () => ({ shortDescription: "该游戏经核实无真实公开资料，疑似虚构，请勿轻信。", size: "" }),
+  });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
   assert.strictEqual(lastCreate["游戏介绍"], "介绍待补充", "免责声明应被丢弃并占位，而非用标题兜底");
@@ -91,25 +105,46 @@ test("含免责声明的介绍被丢弃，改为占位「介绍待补充」+ nee
 });
 
 test("大小缺失时不再提示手动填写，直接不写入游戏大小字段", async () => {
-  const deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "", coverUrl: "" }) });
-  const res = await autoExecute(baseParsed({ quarkUrl: "https://pan.quark.cn/s/x" }), null, "/tmp", { deps });
-  const sizeStep = res.steps.find(s => s.name === "游戏大小抓取");
-  assert.strictEqual(sizeStep, undefined, "不应再出现游戏大小抓取提示步骤");
+  const deps = baseDeps({ getSteamAppDetails: async () => null }); // 无 Steam 官方大小 + parsed.size 默认空
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const sizeStep = res.steps.find(s => s.name.includes("大小抓取"));
+  assert.strictEqual(sizeStep, undefined, "不应再出现大小抓取步骤");
   assert.ok(!("游戏大小" in deps._state().lastCreate));
   assert.strictEqual(res.success, true, "大小缺失不应导致失败");
 });
 
-test("封面优先级：Steam 优先，命中后 aiCoverSearch 不被调用", async () => {
-  let aiCoverSearchCalled = false;
-  const deps = baseDeps({
-    searchSteamAppId: async () => "12345",
-    aiCoverSearch: async () => { aiCoverSearchCalled = true; return "https://cdn.x.com/a.jpg"; },
-  });
+test("封面优先级：Steam 官方优先，命中即下载并上传", async () => {
+  const deps = baseDeps({ searchSteamAppId: async () => "12345" });
   await autoExecute(baseParsed(), "12345", "/tmp", { deps });
-  const { downloadCoverCount, downloadFromUrlCount } = deps._state();
+  const { downloadCoverCount, lastCreate } = deps._state();
   assert.strictEqual(downloadCoverCount, 1, "有 appid 应走 Steam 官方封面");
-  assert.strictEqual(downloadFromUrlCount, 0, "Steam 命中后不应再下载其他封面");
-  assert.strictEqual(aiCoverSearchCalled, false, "Steam 已覆盖则不应调 aiCoverSearch");
+  assert.ok(lastCreate["作品展示"] && lastCreate["作品展示"][0].uploadId === "obj1", "Steam 封面应上传为作品展示");
+});
+
+// ── H1：解析输入里的 Steam 链接抽到的 AppID 作「手动链接」覆盖（优先级低于 manualAppId，高于自动解析）──
+test("H1：parsed.appid 作手动链接覆盖，跳过英文名解析，直接驱动封面/介绍/大小", async () => {
+  let resolveCalled = false;
+  const deps = baseDeps({
+    resolveEnglishName: async () => { resolveCalled = true; return "ShouldNotBeUsed"; },
+    // 不覆盖 downloadCover：沿用默认实现（含 downloadCoverCount++），以验证封面下载被驱动
+  });
+  const parsed = baseParsed({ appid: "2531310" }); // 模拟解析输入时从粘贴的 Steam 链接抽到 AppID
+  const res = await autoExecute(parsed, null, "/tmp", { deps });
+  const appidStep = res.steps.find(s => s.name === "Steam AppID");
+  assert.strictEqual(appidStep.status, "成功");
+  assert.strictEqual(appidStep.appid, "2531310");
+  assert.strictEqual(appidStep.source, "手动链接", "来源应标注手动链接");
+  assert.strictEqual(resolveCalled, false, "已有 appid 应跳过英文名解析（省一次请求）");
+  assert.strictEqual(deps._state().downloadCoverCount, 1, "有 appid 应走 Steam 封面");
+});
+
+test("H1：manualAppId 优先于 parsed.appid（程序化覆盖胜出）", async () => {
+  const deps = baseDeps({ downloadCover: async () => "/fake/steam.jpg" });
+  const parsed = baseParsed({ appid: "2531310" });
+  const res = await autoExecute(parsed, "999", "/tmp", { deps });
+  const appidStep = res.steps.find(s => s.name === "Steam AppID");
+  assert.strictEqual(appidStep.appid, "999");
+  assert.strictEqual(appidStep.source, "手动录入");
 });
 
 test("需求：先查重（list_records）再创建记录，且顺序正确", async () => {
@@ -130,7 +165,7 @@ test("需求：创建记录后调用 get_record 验证", async () => {
 });
 
 test("需求：附件上传参数正确（文件名含游戏名、类型、base64）", async () => {
-  const deps = baseDeps();
+  const deps = baseDeps({ searchSteamAppId: async () => "12345" });
   await autoExecute(baseParsed({ quarkUrl: "https://pan.quark.cn/s/x" }), null, "/tmp", { deps });
   const up = deps._state().calls.find(c => c.fn === "upload_attachment");
   assert.ok(up, "应上传附件");
@@ -140,11 +175,12 @@ test("需求：附件上传参数正确（文件名含游戏名、类型、base6
 });
 
 test("需求：创建记录字段完整（游戏信息/更新日期/作品展示/网盘数组）", async () => {
-  const deps = baseDeps();
+  const deps = baseDeps({ searchSteamAppId: async () => "12345" });
   const res = await autoExecute(baseParsed({ tags: ["PC游戏", "动作"], baiduUrl: "https://pan.baidu.com/s/b" }), null, "/tmp", { deps });
   const f = deps._state().lastCreate;
   // 游戏信息含分类标签(默认) + 原始标签 + 数据溯源标签（介绍/大小来源）；分类与 parsed 重合时去重
-  assert.deepStrictEqual(f["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC", "动作", "介绍:bl联网", "大小:bl猜测"], "游戏信息含分类标签 + 原始标签 + 溯源标签");
+  // 默认无 Steam 官方描述 → 介绍占位、大小待核、需人工校对
+  assert.deepStrictEqual(f["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC", "动作", "介绍:占位", "大小:待核", "⚠需人工校对"], "游戏信息含分类标签 + 原始标签 + 溯源标签");
   assert.ok(/^\d{4}\/\d{2}\/\d{2}$/.test(f["更新日期"]), "更新日期应为 YYYY/MM/DD");
   assert.ok(f["作品展示"] && f["作品展示"][0].uploadId === "obj1" && f["作品展示"][0].source === "upload_ks3", "应带作品展示附件");
   assert.deepStrictEqual(f["百度网盘"], [{ address: "https://pan.baidu.com/s/b", displayText: "https://pan.baidu.com/s/b" }], "百度网盘应为地址数组");
@@ -152,7 +188,7 @@ test("需求：创建记录字段完整（游戏信息/更新日期/作品展示
 
 // ── 封面缺失语义（P0-1 修复后）──
 // 封面是尽力而为：下载「真实报错」记为「警告」(不拉红整体)，并置 coverStatus='failed' 供前端显式提示；
-// 下载「无来源」(bl 未搜到直链等) 记为「跳过」且 coverStatus='absent'，属合理留空。
+// 下载「无来源」(无 appid 且无手动链接) 记为「跳过」且 coverStatus='absent'，属合理留空。
 // 二者均不阻断记录创建，但失败不再被洗白成无声的 success。
 test("onStep 实时回调：每步 emit step（带 index），结束 emit done", async () => {
   const events = [];
@@ -176,8 +212,8 @@ test("onStep 实时回调：每步 emit step（带 index），结束 emit done",
   assert.strictEqual(res.recordId, "r1");
 });
 
-test("封面无来源（bl 未搜到直链）→ 跳过 + coverStatus='absent'，仍判 success 且无作品展示", async () => {
-  const deps = baseDeps({ aiDescribe: () => ({ intro: "x".repeat(20), size: "10G" }), aiCoverSearch: async () => "" });
+test("封面无来源（无 AppID 且无手动链接）→ 跳过 + coverStatus='absent'，仍判 success 且无作品展示", async () => {
+  const deps = baseDeps(); // searchSteamAppId null → 无 appid，无 manualCoverUrl → 无来源
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const coverSteps = res.steps.filter(s => s.name.includes("封面"));
   assert.ok(coverSteps.length >= 1 && coverSteps.every(s => s.status === "跳过"), "无来源应记为跳过");
@@ -190,7 +226,6 @@ test("P0-1 修复：封面下载真实报错 → 警告 + coverStatus='failed'�
   const deps = baseDeps({
     searchSteamAppId: async () => "12345",
     downloadCover: async () => { throw new Error("Steam CDN 503"); },
-    aiCoverSearch: async () => "", // 不给备用直链，避免 bl 兜底成功
   });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const coverSteps = res.steps.filter(s => s.name.includes("封面"));
@@ -270,13 +305,12 @@ test("查重未命中 → 正常创建（action=created），list_records 先于
   assert.ok(fns.indexOf("dbsheet.list_records") < fns.indexOf("dbsheet.create_records"), "查重先于创建");
 });
 
-// ── 游戏大小优先级：网盘真实分享页大小已移除（2026-08-04），仅 Steam 官方 → bl → 文本 → 空 ──
-test("resolveGameSize 优先级：Steam 官方 > bl > 文本 > 空（并归一化）", () => {
-  assert.strictEqual(resolveGameSize({ steam: "40GB" }, "", ""), "40G", "Steam 官方优先且归一化");
-  assert.strictEqual(resolveGameSize({ steam: "40GB" }, "99G", "88G"), "40G", "Steam 官方严格优先于 bl 与文本");
-  assert.strictEqual(resolveGameSize({}, "25G", "5G"), "25G", "无 Steam 时 bl 优先于文本");
-  assert.strictEqual(resolveGameSize({}, "", "20G"), "20G", "文本识别兜底且归一化");
-  assert.strictEqual(resolveGameSize({}, "", ""), "", "全空返回空串（不写字段）");
+// ── 游戏大小优先级：Steam 官方 → 文本识别 → 空 ──
+test("resolveGameSize 优先级：Steam 官方 > 文本识别 > 空（并归一化）", () => {
+  assert.strictEqual(resolveGameSize({ steam: "40GB" }, ""), "40G", "Steam 官方优先且归一化");
+  assert.strictEqual(resolveGameSize({ steam: "40GB" }, "99G"), "40G", "Steam 官方严格优先于文本");
+  assert.strictEqual(resolveGameSize({}, "25G"), "25G", "无 Steam 时文本识别兜底且归一化");
+  assert.strictEqual(resolveGameSize({}, ""), "", "全空返回空串（不写字段）");
 });
 
 // ── AppID 多源取拿 + Steam 官方大小兜底（2026-08-04 新增）──
@@ -290,7 +324,7 @@ test("AppID 多源取拿：Steam 搜索未命中时回退维基百科，并驱�
   assert.strictEqual(appidStep.status, "成功");
   assert.strictEqual(appidStep.appid, "2461850");
   assert.strictEqual(appidStep.source, "维基百科", "应标注来源维基百科");
-  // 拿到 appid 后应走 Steam 官方封面（而非 bl 兜底）
+  // 拿到 appid 后应走 Steam 官方封面
   assert.strictEqual(deps._state().downloadCoverCount, 1, "有 appid 应走 Steam 官方封面");
 });
 
@@ -371,38 +405,38 @@ test("游戏大小兜底：仅 Steam 官方一个真实来源（无网盘大小�
   assert.strictEqual(res.sizeProvenance, "Steam官方", "溯源标签应为 Steam官方（quarkUrl 不再触发任何大小步骤）");
 });
 
-// ── 游戏介绍兜底（v0.1.48：Steam 官方主源 + bl 降次级 + 占位待核对）──
-test("介绍主源：Steam 官方描述优先于 bl（provenance=Steam官方）", async () => {
+// ── 游戏介绍兜底（v0.1.48 → 2026-08-04 移除 bl：Steam 官方主源 + 占位待核对）──
+test("介绍主源：Steam 官方描述优先（provenance=Steam官方）", async () => {
   const deps = baseDeps({
     searchSteamAppId: async () => "12345",
-    getSteamAppDetails: async () => ({ shortDescription: "Steam 官方：一款双人合作动作冒险游戏。", genres: ["动作"], type: "game" }),
-    aiDescribe: () => ({ intro: "bl 可能编造的简介。", size: "30.7G" }),
+    getSteamAppDetails: async () => ({ shortDescription: "Steam 官方：一款双人合作动作冒险游戏。", size: "30.7GB", genres: ["动作"], type: "game" }),
   });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
-  assert.strictEqual(lastCreate["游戏介绍"], "Steam 官方：一款双人合作动作冒险游戏。", "应使用 Steam 官方描述而非 bl");
+  assert.strictEqual(lastCreate["游戏介绍"], "Steam 官方：一款双人合作动作冒险游戏。", "应使用 Steam 官方描述");
   assert.strictEqual(res.introProvenance, "Steam官方");
-  assert.strictEqual(res.needsReview, false, "有官方来源则无需校对");
+  assert.strictEqual(res.sizeProvenance, "Steam官方", "大小也来自 Steam 官方");
+  assert.strictEqual(res.needsReview, false, "介绍与大小均有官方来源则无需校对");
   assert.ok(lastCreate["游戏信息"].includes("介绍:Steam官方"), "溯源标签应写入游戏信息");
 });
 
-test("介绍降级：Steam 无描述时回退 bl（provenance=bl联网）", async () => {
+test("介绍降级：Steam 有 AppID 但无官方描述时占位（provenance=占位）+ needsReview", async () => {
   const deps = baseDeps({
     searchSteamAppId: async () => "12345",
-    getSteamAppDetails: async () => null, // 无官方描述
-    aiDescribe: () => ({ intro: "bl 提供的真实简介。", size: "30.7G" }),
+    getSteamAppDetails: async () => null, // 有 appid 但无官方描述
   });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
-  assert.strictEqual(lastCreate["游戏介绍"], "bl 提供的真实简介。");
-  assert.strictEqual(res.introProvenance, "bl联网");
+  assert.strictEqual(lastCreate["游戏介绍"], "介绍待补充", "无官方描述应占位");
+  assert.strictEqual(res.introProvenance, "占位");
+  assert.strictEqual(res.needsReview, true, "占位应标记需人工校对");
+  assert.ok(lastCreate["游戏信息"].includes("介绍:占位"));
 });
 
-test("介绍兜底：双无则占位 + needsReview（不再用标题/免责声明洗白）", async () => {
+test("介绍兜底：双无（无 AppID 且无官方描述）则占位 + needsReview（不再用标题/免责声明洗白）", async () => {
   const deps = baseDeps({
     searchSteamAppId: async () => null,
     getSteamAppDetails: async () => null,
-    aiDescribe: () => ({ intro: "经核实无真实公开资料，疑似虚构，请勿轻信。", size: "" }), // bl 返回黑名单
   });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
@@ -414,9 +448,7 @@ test("介绍兜底：双无则占位 + needsReview（不再用标题/免责声�
 });
 
 test("大小全缺失 → 不写游戏大小 + needsReview=true + 溯源=待核", async () => {
-  const deps = baseDeps({
-    aiDescribe: () => ({ intro: "x".repeat(20), size: "" }),
-  });
+  const deps = baseDeps(); // 无 Steam 大小 + parsed.size 默认空
   const res = await autoExecute(baseParsed({ quarkUrl: "https://pan.quark.cn/s/x" }), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
   assert.ok(!("游戏大小" in lastCreate), "大小全缺失不写字段");
@@ -474,7 +506,7 @@ test("buildRecordFields classificationTags 与 parsed.tags 去重保序（PC游�
 test("buildRecordFields 组装字段（网盘链接 + 封面对象）", () => {
   const parsed = baseParsed({ baiduUrl: "https://pan.baidu.com/s/b", quarkUrl: "https://pan.quark.cn/s/q" });
   const fields = buildRecordFields(parsed, { desc: "介绍文本", coverPath: "/x/cover.jpg", objectId: "obj9", gameSize: "30.7G", coverSize: 1234 });
-  assert.strictEqual(fields["游戏名称"], parsed.raw);
+  assert.strictEqual(fields["游戏名称"], parsed.gameName);
   assert.strictEqual(fields["游戏介绍"], "介绍文本");
   assert.strictEqual(fields["游戏大小"], "30.7G");
   assert.deepStrictEqual(fields["百度网盘"], [{ address: parsed.baiduUrl, displayText: parsed.baiduUrl }]);

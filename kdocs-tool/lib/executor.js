@@ -7,6 +7,12 @@ const ai = require("./ai");
 const quark = require("./quark");
 const { isBadIntro, normalizeSize } = require("./constants");
 
+// ── 分类标签默认值（写入记录「游戏信息」字段，与 parser 关键词检测的 tags 并存且去重）──
+// 背景：金山文档「游戏信息」列是 multi-select，用户每次新建记录都要手动勾选默认的几个标签（见 issue/用户反馈）。
+// 这里把用户的默认偏好下沉到工具侧：自动勾上免安装硬盘版/PC游戏/全DLC，省去金文档端的重复操作。
+// 前端可在选择框里临时增删（通过 opts.classificationTags 覆盖），不影响其它记录的默认行为。
+const DEFAULT_CLASSIFICATION_TAGS = ["免安装硬盘版", "PC游戏", "全DLC"];
+
 // 默认依赖（真实实现）；测试可通过 opts.deps 覆盖任意项注入 mock
 const DEFAULT_DEPS = {
   fs,
@@ -22,9 +28,6 @@ const DEFAULT_DEPS = {
   fileBase64: kdocs.fileBase64,
   aiDescribe: ai.aiDescribe,
   aiCoverSearch: ai.aiCoverSearch,
-  getTotalSize: quark.getTotalSize,
-  getBaiduSize: quark.getBaiduSize,
-  getXunleiSize: quark.getXunleiSize,
 };
 
 // ── 查重：翻页拉全表，比对「游戏名称」字段，精确匹配 parsed.raw ──
@@ -67,6 +70,11 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   const manualCoverUrl = (opts.manualCoverUrl || "").trim();
   const forceAdd = !!opts.forceAdd;
   const updateLinks = !!opts.updateLinks;
+  // 分类标签：opts 显式传（即使是空数组）即用之；未传（undefined）走 buildRecordFields 内置默认
+  // 行为契约：空数组 = 用户显式清空，不要自动回填默认
+  const classificationTags = Array.isArray(opts.classificationTags)
+    ? opts.classificationTags.filter(t => typeof t === "string" && t.trim())
+    : undefined;
   const steps = [];
   let stepIdx = -1;
   // onStep 实时回调（SSE 流式进度用）；不传则无副作用（保持测试兼容）
@@ -253,34 +261,11 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     else fail({ name: "附件上传", error: up.error });
   }
 
-  // 5.5 真实分享页大小（夸克/百度/迅雷，真实字节求和，严格优先于 bl 猜测与文本识别）
-  const realSizes = {}; // { quark:"30.7G", baidu:"...", xunlei:"..." }
-  if (parsed.quarkUrl) {
-    doing({ name: "夸克分享页大小抓取" });
-    try {
-      const r = await deps.getTotalSize(parsed.quarkUrl);
-      if (r && r.text && r.bytes > 0) { realSizes.quark = r.text; ok({ name: "夸克分享页大小", size: r.text, files: r.files }); }
-      else skip({ name: "夸克分享页大小", reason: "未获取到有效大小（分享为空或未配置夸克登录）" });
-    } catch (e) { skip({ name: "夸克分享页大小", reason: e.message }); }
-  }
-  if (parsed.baiduUrl) {
-    doing({ name: "百度分享页大小抓取" });
-    try {
-      const r = await deps.getBaiduSize(parsed.baiduUrl);
-      if (r && r.text && r.bytes > 0) { realSizes.baidu = r.text; ok({ name: "百度分享页大小", size: r.text, files: r.files }); }
-      else skip({ name: "百度分享页大小", reason: "未获取到有效大小（分享为空或未配置百度登录）" });
-    } catch (e) { skip({ name: "百度分享页大小", reason: e.message }); }
-  }
-  if (parsed.xunleiUrl) {
-    doing({ name: "迅雷分享页大小抓取" });
-    try {
-      const r = await deps.getXunleiSize(parsed.xunleiUrl);
-      if (r && r.text && r.bytes > 0) { realSizes.xunlei = r.text; ok({ name: "迅雷分享页大小", size: r.text, files: r.files }); }
-      else skip({ name: "迅雷分享页大小", reason: "未获取到有效大小（分享为空或未配置迅雷登录）" });
-    } catch (e) { skip({ name: "迅雷分享页大小", reason: e.message }); }
-  }
-
-  // 5.6 Steam 官方大小（pc_requirements Storage），作为网盘真实大小之后的兜底
+  // 5.5 游戏大小：网盘真实分享页大小抓取已移除（夸克/百度/迅雷均依赖登录态，长期 0 命中率，
+  // 只是堆出 3 条「跳过」噪音，不产生任何数据）。统一由 Steam 官方 pc_requirements Storage 兜底 →
+  // 仍无则走 bl 简介附带 → 仍无则文本识别 → 全无则留空 + 待核。
+  // 边界：此改动只移除"获取大小"路径，绝不动网盘链接写入记录 / mcporter 转存中转 / 链接解析 / UI 输入。
+  const realSizes = {}; // { steam: "40G" }
   if (steamSize) {
     doing({ name: "Steam 官方大小抓取" });
     realSizes.steam = steamSize;
@@ -289,19 +274,16 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 
   // 6. 创建记录
   doing({ name: "创建多维表记录" });
-  // 游戏大小：真实字节求和（夸克>百度>迅雷）严格优先，其次 Steam 官方（pc_requirements），再次 bl 简介附带，再次文本识别，全无则留空 + 待核对
+  // 游戏大小优先级：Steam 官方（pc_requirements Storage）→ bl 简介附带 → 文本识别 → 全无则留空 + 待核
   const gameSize = resolveGameSize(realSizes, aiRes.size, parsed.size);
-  const sizeProvenance = realSizes.quark ? "夸克真实"
-    : realSizes.baidu ? "百度真实"
-    : realSizes.xunlei ? "迅雷真实"
-    : realSizes.steam ? "Steam官方"
+  const sizeProvenance = realSizes.steam ? "Steam官方"
     : aiRes.size ? "bl猜测"
     : parsed.size ? "文本识别"
     : "待核";
   // 需要人工校对：介绍是占位，或大小全来源缺失
   const needsReview = introProvenance === "占位" || !gameSize;
   const coverSize = (objectId && coverPath) ? deps.fs.statSync(coverPath).size : 0;
-  const fields = buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize, needsReview, introProvenance, sizeProvenance });
+  const fields = buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize, needsReview, introProvenance, sizeProvenance, classificationTags });
 
   let recordId = null;
   try {
@@ -340,14 +322,12 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 }
 
 // ── 纯函数（不依赖外部 IO，可单测）──
-// 游戏大小优先级：真实字节求和（夸克>百度>迅雷）严格优先，其次 bl 简介附带，再次文本识别，全无则空。
+// 游戏大小优先级：Steam 官方（pc_requirements Storage）→ bl 简介附带 → 文本识别 → 全无则空。
+// 网盘真实分享页大小已移除（夸克/百度/迅雷 均依赖登录态，长期 0 命中率），保留调用入口仅为兼容旧 realSizes 结构。
 // 所有候选均经 normalizeSize 统一为短格式（"30.7GB"→"30.7G"，规范文档 §2.5）。
 function resolveGameSize(realSizes = {}, aiSize = "", parsedSize = "") {
-  const order = ["quark", "baidu", "xunlei", "steam"];
-  for (const k of order) {
-    const s = normalizeSize(realSizes[k]);
-    if (s) return s;
-  }
+  const steam = normalizeSize(realSizes.steam);
+  if (steam) return steam;
   const ai = normalizeSize(aiSize);
   if (ai) return ai;
   return normalizeSize(parsedSize) || "";
@@ -355,11 +335,21 @@ function resolveGameSize(realSizes = {}, aiSize = "", parsedSize = "") {
 
 // 组装多维表字段（封面对象仅当 objectId+coverPath 都存在时附带）
 // needsReview / introProvenance / sizeProvenance 写入「游戏信息」标签，让数据来源可追溯、缺失显式标注。
-function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize, needsReview, introProvenance, sizeProvenance }) {
-  const tags = [...(parsed.tags || [])];
-  if (introProvenance) tags.push(`介绍:${introProvenance}`);
-  if (sizeProvenance) tags.push(`大小:${sizeProvenance}`);
-  if (needsReview) tags.push("⚠需人工校对");
+// classificationTags（默认 DEFAULT_CLASSIFICATION_TAGS）：写入记录前部，已存在的标签不重复添加。
+//   undefined → 用默认；空数组 → 用户显式清空（不要自动回填）
+function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize, needsReview, introProvenance, sizeProvenance, classificationTags }) {
+  // 分类标签放最前面（用户期望在「游戏信息」列表里最显眼）；用 Set 保序去重
+  const seen = new Set();
+  const tags = [];
+  const push = (t) => { if (t && !seen.has(t)) { seen.add(t); tags.push(t); } };
+  // 仅当传了 classificationTags 时才覆盖默认（保留 undefined → 默认；空数组 → 真清空 的语义）
+  const cls = classificationTags === undefined ? DEFAULT_CLASSIFICATION_TAGS : classificationTags;
+  (cls || []).forEach(push);
+  // parser 关键词检测到的（免安装/全DLC/虚拟机/联机合作/PC游戏）与分类标签可能重合，去重交给 Set
+  (parsed.tags || []).forEach(push);
+  if (introProvenance) push(`介绍:${introProvenance}`);
+  if (sizeProvenance) push(`大小:${sizeProvenance}`);
+  if (needsReview) push("⚠需人工校对");
   const fields = {
     游戏名称: parsed.raw,
     游戏介绍: desc || parsed.raw,
@@ -434,4 +424,4 @@ async function retryCoverUpload(recordId, coverPath, opts = {}) {
   return { success: true, objectId, steps };
 }
 
-module.exports = { autoExecute, findExistingRecord, DEFAULT_DEPS, buildRecordFields, resolveGameSize, tryUploadAttachment, retryCoverUpload };
+module.exports = { autoExecute, findExistingRecord, DEFAULT_DEPS, DEFAULT_CLASSIFICATION_TAGS, buildRecordFields, resolveGameSize, tryUploadAttachment, retryCoverUpload };

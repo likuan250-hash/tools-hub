@@ -153,6 +153,28 @@
     .input-row label { margin: 0; white-space: nowrap; }
     .input-row .browse { white-space: nowrap; }
 
+    /* 分类标签选择行：标签行不需要右边的 <span> 占位；网格用 120px 1fr 让标签区占满中列 */
+    .input-row.tag-row { grid-template-columns: 120px 1fr; }
+    .input-row.tag-row > span { display: none; }
+    .tag-toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag-pill {
+      padding: 6px 14px;
+      font-size: 13px;
+      border-radius: 999px;
+      border: 1px solid rgba(var(--accent-rgb), 0.25);
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      font-family: inherit;
+    }
+    .tag-pill:hover { border-color: rgba(var(--accent-rgb), 0.5); color: var(--text); }
+    .tag-pill.on {
+      background: rgba(var(--accent-rgb), 0.85);
+      color: #fff;
+      border-color: rgba(var(--accent-rgb), 0.85);
+    }
+
     .field { margin-top: 14px; }
     .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; padding-left: 10px; border-left: 2px solid var(--glass-border); }
 
@@ -351,7 +373,7 @@
     @keyframes pop { from { opacity: 0; } to { opacity: 1; } }
     .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--text-dim); border-top-color: var(--accent-2); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
 
-    @media (max-width: 680px) { .input-row { grid-template-columns: 1fr; } .input-row .browse { justify-self: start; } }
+    @media (max-width: 680px) { .input-row { grid-template-columns: 1fr; } .input-row .browse { justify-self: start; } .input-row.tag-row { grid-template-columns: 1fr; } }
     /* 亮色玻璃分离增强：顶部白高光 + 底部暗线（白底上原 0.10 白高光不可见，靠加深边框 + 此暗线承担分离） */
     [data-theme="light"] .panel,
     [data-theme="light"] .chip,
@@ -846,6 +868,22 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <div class="input-row">
       <label><i class="app-ico" data-ico="image"></i> 封面链接</label>
       <input type="text" id="coverUrl" placeholder="非 Steam 游戏填图片 URL（.jpg/.png）" />
+      <span></span>
+    </div>
+
+    <!-- 分类标签：写入记录「游戏信息」字段，默认勾选免安装硬盘版/PC游戏/全DLC（与金山文档多选下拉对齐） -->
+    <div class="input-row tag-row" id="classTagRow">
+      <label><i class="app-ico" data-ico="tag"></i> 分类标签</label>
+      <div class="tag-toggles" id="classTagToggles" role="group" aria-label="分类标签">
+        <button type="button" class="tag-pill" data-tag="免安装硬盘版">免安装硬盘版</button>
+        <button type="button" class="tag-pill" data-tag="PC游戏">PC游戏</button>
+        <button type="button" class="tag-pill" data-tag="全DLC">全DLC</button>
+        <button type="button" class="tag-pill" data-tag="虚拟机版">虚拟机版</button>
+        <button type="button" class="tag-pill" data-tag="查询工具">查询工具</button>
+        <button type="button" class="tag-pill" data-tag="游戏工具">游戏工具</button>
+        <button type="button" class="tag-pill" data-tag="热门推荐">热门推荐</button>
+        <button type="button" class="tag-pill" data-tag="最近更新">最近更新</button>
+      </div>
       <span></span>
     </div>
 

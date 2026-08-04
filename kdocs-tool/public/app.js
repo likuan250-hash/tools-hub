@@ -7,6 +7,25 @@ const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $(
 const retryCoverBtn = $("retryCoverBtn");
 const chipKdocs = $("chipKdocs"), chipBl = $("chipBl"), kdocsBtn = $("kdocsBtn"), toastHost = $("toastHost");
 
+// ── 分类标签选择（P0 用户偏好：免安装硬盘版/PC游戏/全DLC 三个默认勾上）──
+// 与金山文档「游戏信息」多选字段对齐：用户点 pill 切换 on/off；当前选中的标签会在「解析预览」里也显示。
+// 后端会写入 dbsheet 的「游戏信息」字段，免去用户在金文档端每次手动勾选。
+const CLASSIFICATION_TAGS = ["免安装硬盘版", "PC游戏", "全DLC", "虚拟机版", "查询工具", "游戏工具", "热门推荐", "最近更新"];
+const classTagToggles = $("classTagToggles");
+const classTagPills = classTagToggles ? Array.from(classTagToggles.querySelectorAll(".tag-pill")) : [];
+const DEFAULT_CHECKED = new Set(["免安装硬盘版", "PC游戏", "全DLC"]); // 与后端 DEFAULT_CLASSIFICATION_TAGS 保持一致
+function getSelectedClassificationTags() {
+  return classTagPills.filter(p => p.classList.contains("on")).map(p => p.dataset.tag);
+}
+classTagPills.forEach(pill => {
+  if (DEFAULT_CHECKED.has(pill.dataset.tag)) pill.classList.add("on");
+  pill.addEventListener("click", () => {
+    pill.classList.toggle("on");
+    // 标签变更后重渲染预览（如果预览已显示）
+    if (preview.style.display === "block" && gameInput.value.trim()) doPreview();
+  });
+});
+
 // ── 统一执行按钮 loading 切换（macOS 线性图标风格：执行中显示 spinner + 执行中…）──
 function setExec(btn, on) {
   if (!btn) return;
@@ -283,7 +302,13 @@ function parseInput(text) {
 }
 
 function renderPreview(p) {
-  const th = p.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(" ");
+  // 分类标签 = 自动检测的 parsed.tags + 用户当前勾选的分类标签（去重保序）
+  const seen = new Set();
+  const allTags = [];
+  const push = (t) => { if (t && !seen.has(t)) { seen.add(t); allTags.push(t); } };
+  getSelectedClassificationTags().forEach(push);
+  (p.tags || []).forEach(push);
+  const th = allTags.map(t => `<span class="tag">${esc(t)}</span>`).join(" ");
   const rows = [
     `<span class="label">${ico('gamepad')} 游戏</span><span class="value">${esc(p.gameName)}${p.englishName ? "（" + esc(p.englishName) + "）" : ""}</span>`,
     `<span class="label">${ico('tag')} 标签</span><span class="value">${th}</span>`,
@@ -425,7 +450,7 @@ async function runAuto(text, opts = {}) {
     const r = await fetch("/api/auto", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, coverDir: coverDir.value.trim() || undefined, manualCoverUrl: coverUrl.value.trim(), forceAdd: !!opts.forceAdd, updateLinks: !!opts.updateLinks }),
+      body: JSON.stringify({ text, coverDir: coverDir.value.trim() || undefined, manualCoverUrl: coverUrl.value.trim(), forceAdd: !!opts.forceAdd, updateLinks: !!opts.updateLinks, classificationTags: getSelectedClassificationTags() }),
     });
     if (!r.ok && r.headers.get("content-type")?.includes("application/json")) {
       const d = await r.json();

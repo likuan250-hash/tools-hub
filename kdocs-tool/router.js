@@ -137,7 +137,7 @@ router.post("/api/check-exists", async (req, res) => {
 });
 
 router.post("/api/auto", async (req, res) => {
-  const { text, coverDir, manualCoverUrl, forceAdd, updateLinks } = req.body;
+  const { text, coverDir, manualCoverUrl, forceAdd, updateLinks, classificationTags } = req.body;
   if (!text) return res.status(400).json({ error: "请输入游戏信息" });
   const parsed = parseInput(text);
   if (!parsed) return res.status(400).json({ error: "无法解析输入" });
@@ -163,6 +163,8 @@ router.post("/api/auto", async (req, res) => {
       manualCoverUrl,
       forceAdd: !!forceAdd,
       updateLinks: !!updateLinks,
+      // 分类标签：前端传过来时按用户当前勾选；未传（null/undefined）走后端默认 3 个
+      classificationTags: Array.isArray(classificationTags) ? classificationTags : undefined,
       onStep: (ev) => send(ev),
     });
   } catch (e) {

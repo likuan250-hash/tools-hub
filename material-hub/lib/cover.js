@@ -40,8 +40,8 @@ const path = require('path');
 const { readImageSize, meetsMinSize, extForImageFormat, MIN_WIDTH, MIN_HEIGHT } = require('./imagesize');
 const { proxyFetch } = require('./http');
 
-/** 单次网络请求超时（规范无明文，取 15s：够慢站点响应，又不会把 SSE 拖死）。 */
-const FETCH_TIMEOUT = 15 * 1000;
+/** 单次网络请求超时（DDG 经代理可能慢，取 30s）。 */
+const FETCH_TIMEOUT = 30 * 1000;
 /** DuckDuckGo HTML 端点（无 API key 的站内搜索通道）。 */
 const DDG_HTML_URL = 'https://html.duckduckgo.com/html/';
 /** wallhaven 公开搜索 API（免 key）。 */
@@ -1616,7 +1616,6 @@ class CoverFetcher {
           else if (source === 'user') r = await this.fromUserUrl(opts.coverUrl, outDir, { emit });
           else if (source === 'youtube') r = await this.fromYouTube(opts.videoId, outDir, { emit });
         } catch (e) {
-          // 兜底：任何一级的意外异常都不允许中断整条降级链
           r = { ok: false, error: '来源异常：' + (e && e.message ? e.message : String(e)) };
         }
         if (r && r.ok) break;

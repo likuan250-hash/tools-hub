@@ -86,16 +86,15 @@ test('readImageSize 对非图片 / 过短输入返回 null', () => {
   assert.equal(readImageSize(Buffer.from('<!DOCTYPE html><html><head><title>404</title></head></html>')), null);
 });
 
-test('meetsMinSize 默认下限为规范的 1920×1080', () => {
-  assert.equal(MIN_WIDTH, 1920);
-  assert.equal(MIN_HEIGHT, 1080);
+test('meetsMinSize 默认下限为 1280×720', () => {
+  assert.equal(MIN_WIDTH, 1280);
+  assert.equal(MIN_HEIGHT, 720);
   assert.equal(meetsMinSize({ width: 1920, height: 1080 }), true);
-  assert.equal(meetsMinSize({ width: 3840, height: 2160 }), true);
-  // Steam library_hero 的真实尺寸 1920×620 —— 正是旧实现永远达不到标准的物证
+  assert.equal(meetsMinSize({ width: 1280, height: 720 }), true);
+  // 宽度或高度任一不达标即拒绝
+  assert.equal(meetsMinSize({ width: 1279, height: 720 }), false);
+  assert.equal(meetsMinSize({ width: 1280, height: 719 }), false);
   assert.equal(meetsMinSize({ width: 1920, height: 620 }), false);
-  // YouTube maxresdefault 的真实尺寸 1280×720
-  assert.equal(meetsMinSize({ width: 1280, height: 720 }), false);
-  assert.equal(meetsMinSize({ width: 1919, height: 1080 }), false);
   assert.equal(meetsMinSize(null), false);
 });
 

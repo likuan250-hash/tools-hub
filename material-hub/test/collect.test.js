@@ -348,8 +348,8 @@ test('抽帧失败但手上有降级图 → 保留降级图，仍判成功（有
   assert.equal(kept.detail.degraded, true);
 });
 
-test('抽帧产出仍不足 1920×1080 时标记 degraded 但不判失败', async () => {
-  const probe = fakeProbe({ frame: { ok: true, seek: '00:00:05' }, size: { ok: true, width: 1280, height: 720 } });
+test('抽帧产出低于 1280×720 时标记 degraded 但不判失败', async () => {
+  const probe = fakeProbe({ frame: { ok: true, seek: '00:00:05' }, size: { ok: true, width: 960, height: 540 } });
   const cover = fakeCover({ result: { ok: false, reason: 'cover-all-sources-failed', error: 'x', tried: [] } });
   const { result } = await runCollect({ probe, cover });
 

@@ -145,9 +145,10 @@ test('parseDuckDuckGoLinks 解析 uddg 跳转链接与直链，并按域名过�
   assert.deepEqual(c.parseDuckDuckGoLinks(null, '4kwallpapers.com'), []);
 });
 
-test('parse4kWallpapersDirect 只保留 ≥1920×1080 档位并按面积降序', () => {
+test('parse4kWallpapersDirect 只保留 ≥1280×720 档位并按面积降序', () => {
   const c = new CoverFetcher({ fetch: fakeFetch({}), fs: fakeFs() });
   const html = [
+    '<a href="https://4kwallpapers.com/images/wallpapers/just-cause-4-640x480-111.jpg">SD</a>',
     '<a href="https://4kwallpapers.com/images/wallpapers/just-cause-4-1280x720-111.jpg">720p</a>',
     '<a href="https://4kwallpapers.com/images/wallpapers/just-cause-4-1920x1080-111.jpg">1080p</a>',
     '<a href="/images/wallpapers/just-cause-4-3840x2160-111.jpg">4K</a>',
@@ -156,6 +157,7 @@ test('parse4kWallpapersDirect 只保留 ≥1920×1080 档位并按面积降序',
   assert.deepEqual(urls, [
     'https://4kwallpapers.com/images/wallpapers/just-cause-4-3840x2160-111.jpg',
     'https://4kwallpapers.com/images/wallpapers/just-cause-4-1920x1080-111.jpg',
+    'https://4kwallpapers.com/images/wallpapers/just-cause-4-1280x720-111.jpg',
   ]);
   assert.deepEqual(c.parse4kWallpapersDirect('<html>nothing</html>'), []);
 });
@@ -193,7 +195,7 @@ test('buildWallhavenApiUrl 带 atleast/categories/purity（免 key 公开接口�
   const u = c.buildWallhavenApiUrl('Elden Ring');
   assert.ok(u.startsWith(WALLHAVEN_API + '?q='));
   assert.ok(u.includes('q=Elden%20Ring'));
-  assert.ok(u.includes('atleast=1920x1080'));
+  assert.ok(u.includes('atleast=1280x720'));
   assert.ok(u.includes('categories=100'));
   assert.ok(u.includes('purity=100'));
   assert.ok(u.includes('sorting=relevance'));
@@ -206,7 +208,7 @@ test('buildWallhavenApiUrl 必须用 categories=100（general），绝不能是 
   const c = new CoverFetcher({ fetch: fakeFetch({}), fs: fakeFs() });
   assert.equal(WALLHAVEN_CATEGORIES, '100', 'general 位在最高位');
   assert.equal(WALLHAVEN_PURITY, '100', 'purity=100 只要 SFW');
-  assert.equal(WALLHAVEN_ATLEAST, '1920x1080');
+  assert.equal(WALLHAVEN_ATLEAST, '1280x720');
   assert.equal(WALLHAVEN_SORTING, 'relevance');
 
   for (const name of ['Just Cause 4', 'Nioh 2', 'Elden Ring', 'God of War', '正当防卫4']) {
@@ -219,7 +221,7 @@ test('buildWallhavenApiUrl 必须用 categories=100（general），绝不能是 
   // 精确锁死整串拼接结果（含参数顺序），任何改动都会被这条测试拦下
   assert.equal(
     c.buildWallhavenApiUrl('Just Cause 4'),
-    WALLHAVEN_API + '?q=Just%20Cause%204&atleast=1920x1080&categories=100&purity=100&sorting=relevance',
+    WALLHAVEN_API + '?q=Just%20Cause%204&atleast=1280x720&categories=100&purity=100&sorting=relevance',
   );
 });
 
@@ -256,6 +258,7 @@ test('parseWallhavenResults 取 data[].path 并挡掉明确不达标项', () => 
   };
   assert.deepEqual(c.parseWallhavenResults(json), [
     'https://w.wallhaven.cc/full/ab/wallhaven-1.jpg',
+    'https://w.wallhaven.cc/full/cd/wallhaven-2.jpg',
     'https://w.wallhaven.cc/full/ef/wallhaven-3.jpg',
   ]);
   assert.deepEqual(c.parseWallhavenResults(null), []);
@@ -289,11 +292,11 @@ test('所有请求都带 User-Agent（DuckDuckGo 无 UA 会被直接拒绝）', 
 
 test('tryCandidates 只采纳实测达标的候选，不信 URL 里的分辨率字样', async () => {
   const fs = fakeFs();
-  // URL 号称 1920x1080，实际字节是 1280×720 → 必须拒绝
+  // URL 号称 1920x1080，实际字节是 640×480 → 必须拒绝（URL 不可信）
   const liar = 'https://4kwallpapers.com/images/wallpapers/x-1920x1080-1.jpg';
   const real = 'https://4kwallpapers.com/images/wallpapers/y-1920x1080-2.jpg';
   const c = new CoverFetcher({
-    fetch: fakeFetch({ [liar]: { buf: jpegBuf(1280, 720) }, [real]: { buf: jpegBuf(1920, 1080) } }),
+    fetch: fakeFetch({ [liar]: { buf: jpegBuf(640, 480) }, [real]: { buf: jpegBuf(1920, 1080) } }),
     fs,
   });
   const r = await c.tryCandidates([liar, real], 'D:\\out', { source: '4kwallpapers' });
@@ -422,7 +425,7 @@ test('所有请求都把 timeout / env 透传给 proxyFetch（代理与超时才
 // ─────────────────────── 逐级降级 ───────────────────────
 
 test('第 3 级 wallhaven 端到端：API → 直链 → 下载 → 校验 → 落盘', async () => {
-  const api = 'https://wallhaven.cc/api/v1/search?q=Elden%20Ring&atleast=1920x1080&categories=100&purity=100&sorting=relevance';
+  const api = 'https://wallhaven.cc/api/v1/search?q=Elden%20Ring&atleast=1280x720&categories=100&purity=100&sorting=relevance';
   const img = 'https://w.wallhaven.cc/full/ab/wallhaven-1.jpg';
   const fs = fakeFs();
   const c = new CoverFetcher({
@@ -494,7 +497,7 @@ test('第 4 级用户指定 URL：默认排在规范的第 4 位，userUrlFirst 
   assert.deepEqual(r2.tried, ['user']);
 });
 
-test('第 6 级 YouTube 1280×720 → 标记 degraded（不冒充达标封面）', async () => {
+test('第 6 级 YouTube 1280×720 → 达标（不再降级）', async () => {
   const thumb = 'https://i.ytimg.com/vi/vid1/maxresdefault.jpg';
   const c = new CoverFetcher({
     fetch: fakeFetch((url) => (url === thumb ? { buf: jpegBuf(1280, 720) } : { status: 500 })),
@@ -503,7 +506,7 @@ test('第 6 级 YouTube 1280×720 → 标记 degraded（不冒充达标封面）
   const r = await c.fetchCover('X', 'D:\\out', { videoId: 'vid1' });
   assert.equal(r.ok, true);
   assert.equal(r.source, 'youtube');
-  assert.equal(r.degraded, true, 'YouTube 720p 必须标记为降级，交给第 7 级抽帧覆盖');
+  assert.equal(r.degraded, false, '1280×720 达封面最低门槛');
   assert.equal(r.width, 1280);
 });
 

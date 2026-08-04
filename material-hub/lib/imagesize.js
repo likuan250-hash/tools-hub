@@ -3,9 +3,9 @@
 // 物理上永远达不到规范要求的 1920×1080），故把这两个通用纯函数抽出来独立复用，
 // 供 lib/cover.js 在「下载后、采纳前」做本地尺寸校验，避免重复造轮子。
 
-/** 规范要求的封面最小尺寸。 */
-const MIN_WIDTH = 1920;
-const MIN_HEIGHT = 1080;
+/** 封面最小尺寸（1280×720：HD 壁纸站在保证质量前提下更易命中）。 */
+const MIN_WIDTH = 1280;
+const MIN_HEIGHT = 720;
 
 /**
  * 从图片二进制头部解析尺寸（PNG / JPEG / WEBP）。
@@ -60,7 +60,7 @@ function readImageSize(input) {
 }
 
 /**
- * 尺寸是否满足规范下限（默认 1920×1080）。
+ * 尺寸是否满足封面下限（默认 1280×720）。
  * @param {{width: number, height: number}|null} size 解析出的尺寸
  * @param {{width?: number, height?: number}} [min] 下限
  * @returns {boolean}

@@ -262,35 +262,121 @@ function extractEnglishNameFromBaidu(html) {
   // 否则懒惰量词会在 </th> 的 "th" 处提前满足、误把标签残字当英文名。
   const text = String(html).replace(/<[^>]+>/g, " ");
   const m = /英文名[\s\S]{0,30}?([A-Za-z][A-Za-z0-9\s:'’!&.\-]{1,40})/i.exec(text);
-  return m ? m[1].trim() : "";
+return m ? m[1].trim() : "";
+}
+
+// ── 清洗：剥除游戏名里的版本号 / repack 标签噪音，便于百科精确匹配 ──
+// 背景：百度网盘分享页标题常带 "v1.6.10721.0105 官方中文+预购特典+单独升级档" 这类噪音，
+// 直接拿去 Wikidata / 百度百科搜会因词条名不匹配而 0 结果。先做轻量清洗再查命中率显著上升。
+const NOISE_TAGS = [
+  // 复合标签优先剥
+  '官方中文+预购特典+单独升级档', '官方简中+预购特典+单独升级档', '官方繁中+预购特典+单独升级档',
+  '官方中文+预购特典', '官方简中+预购特典', '官方繁中+预购特典',
+  '预购特典+单独升级档', '预购特典',
+  '单独升级档',
+  // 单标签
+  '官方中文', '官方简中', '官方繁中', '官方英文', '官方日文', '官方中文版',
+  '整合版', '年度版', '终极版', '完全版', '豪华版', '典藏版', '黄金版', '黄金典藏版',
+  '高清版', '中文版', '汉化版', '国行版', '美版', '欧版', '日版',
+  'PC版', 'Steam版', '免安装', '免安装版', '绿色版', '破解版', '学习版', '未加密版',
+  '离线版', '联机版', '单机版', '多人版',
+  'D加密', 'Steam脱机', '数字版', '实体版', '光盘版', '全DLC', 'DLC',
+  '赠品版', '体验版', '正式版', '尝鲜版', '抢先版', 'Beta版', 'Demo版',
+  '更新版', '修正版', '升级版', '补丁版',
+  '简体中文', '官方简体中文',
+];
+
+function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/**
+ * 清洗游戏名：剥除版本号与尾部 repack 标签噪音，保留副标题（重制版等）。
+ * 例：「最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档」 → 「最后的生还者2：重制版」
+ * 纯函数，可单测。
+ */
+function cleanGameName(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let s = raw.trim();
+  if (!s) return '';
+  // 1) 剥版本号 v1.2.3 / V2 / v 1.2
+  s = s.replace(/\s*[vV]\s*\d+(?:\.\d+)*\b/g, ' ');
+  // 2) 反复剥除 +/、/空格/，串接的标签（前/后锚定避免误伤核心名里的同字）
+  const SEP = '[+\\s、/,,　]';
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (const tag of NOISE_TAGS) {
+      const re = new RegExp(`(?:^|${SEP})${escapeRe(tag)}(?=${SEP}|$)`, 'g');
+      const before = s;
+      s = s.replace(re, ' ');
+      if (s !== before) changed = true;
+    }
+    if (!changed) break;
+  }
+  // 3) 清理多余分隔符
+  s = s.replace(/\s+/g, ' ').trim();
+  s = s.replace(/^[：:+\s、/,,]+/, '').replace(/[：:+\s、/,,]+$/, '');
+  s = s.replace(/\s+\+\s+/g, ' ').trim();
+  return s;
+}
+
+/**
+ * 进一步剥掉冒号/破折号后的副标题（"重制版"、"Remastered"、"终极版"等），
+ * 仅保留核心名用作百科兜底查询。纯函数。
+ */
+function stripSubtitle(name) {
+  if (!name || typeof name !== 'string') return '';
+  const m = /^([^：:\-—–]+?)\s*[：:\-—–]\s*/.exec(name);
+  let core = m ? m[1].trim() : name.trim();
+  core = core.replace(/[：:+\s、/,,]+$/, '').trim();
+  return core;
 }
 
 /**
  * 解析游戏英文名（中文名 → 英文名）。多源兜底：
- *   1) Wikidata 中文 search → 英文 label（最结构化、最可靠）
- *   2) 百度百科词条页英文段
- * 失败/超时/异常一律返回 ""（绝不抛错打断流程），交由上层直接用中文名匹配。
- */
-async function resolveEnglishName(gameName) {
-  if (!gameName) return "";
-  // 1) Wikidata 中文 search → 英文 label
-  try {
-    const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(gameName)}&language=zh&format=json&limit=3`;
-    const search = await httpGetJson(searchUrl, 8000);
-    const ids = ((search && search.search) || []).map(e => e && e.id).filter(Boolean).slice(0, 3);
-    if (ids.length) {
-      const entUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${ids.join("|")}&props=labels&languages=en&format=json`;
-      const ent = await httpGetJson(entUrl, 8000);
-      const label = extractEnglishNameFromWikidata(search, ent);
-      if (label) return label;
-    }
-  } catch {}
-  // 2) 百度百科英文段
-  try {
-    const html = await httpGetText(`https://baike.baidu.com/item/${encodeURIComponent(gameName)}`, 8000);
-    const en = extractEnglishNameFromBaidu(html);
-    if (en) return en;
-  } catch {}
+   *   1) Wikidata 中文 search → 英文 label（最结构化、最可靠）
+   *   2) 百度百科词条页英文段
+   * 失败/超时/异常一律返回 ""（绝不抛错打断流程），交由上层直接用中文名匹配。
+   *
+   * 每个数据源内部按候选名顺序逐级尝试：
+   *   ① cleanGameName(raw) — 保留副标题（重制版/年度版等独立条目更准）
+   *   ② stripSubtitle(①) — 剥副标题的核心名（百科核心名覆盖更高）
+   *   ③ raw 原名 — 最后兜底
+   * 候选去重保序，避免重复请求。
+   * 第 2 参数 deps（可选）注入 httpGetJson/httpGetText，便于单测 mock。
+   */
+async function resolveEnglishName(gameName, deps) {
+  if (!gameName || !String(gameName).trim()) return "";
+  const raw = String(gameName).trim();
+  // 候选名顺序：清洗后名（保留副标题，重制版/年度版独立条目更准）→ 剥副标题（百科核心名覆盖高）→ 原名兜底
+  const cleaned = cleanGameName(raw);
+  const candidates = [];
+  if (cleaned) candidates.push(cleaned);
+  const stripped = stripSubtitle(cleaned);
+  if (stripped && stripped !== cleaned) candidates.push(stripped);
+  if (!candidates.includes(raw)) candidates.push(raw);
+  const httpJson = (deps && deps.httpGetJson) || httpGetJson;
+  const httpText = (deps && deps.httpGetText) || httpGetText;
+  // 1) Wikidata zh search → en label（按候选顺序逐级尝试）
+  for (const name of candidates) {
+    try {
+      const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(name)}&language=zh&format=json&limit=3`;
+      const search = await httpJson(searchUrl, 8000);
+      const ids = ((search && search.search) || []).map(e => e && e.id).filter(Boolean).slice(0, 3);
+      if (ids.length) {
+        const entUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${ids.join("|")}&props=labels&languages=en&format=json`;
+        const ent = await httpJson(entUrl, 8000);
+        const label = extractEnglishNameFromWikidata(search, ent);
+        if (label) return label;
+      }
+    } catch {}
+  }
+  // 2) 百度百科英文段（同上逐级尝试）
+  for (const name of candidates) {
+    try {
+      const html = await httpText(`https://baike.baidu.com/item/${encodeURIComponent(name)}`, 8000);
+      const en = extractEnglishNameFromBaidu(html);
+      if (en) return en;
+    } catch {}
+  }
   return "";
 }
 
@@ -323,4 +409,5 @@ module.exports = {
   searchSteamAppId, downloadCover, downloadCoverFromUrl, getSteamAppDetails, parseSteamAppDetails,
   parseSteamAppIdFromText, fetchAppIdFromWikidata, fetchAppIdFromBaiduBaike, fetchAppIdFromWebSearch,
   parseSteamSizeFromRequirements, resolveEnglishName, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu,
+  cleanGameName, stripSubtitle,
 };

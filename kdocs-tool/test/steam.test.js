@@ -1,7 +1,7 @@
 // steam.test.js — Steam 官方描述解析单元测试（纯函数，无需网络）
 const test = require("node:test");
 const assert = require("node:assert");
-const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName } = require("../lib/steam");
+const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName, cleanGameName, stripSubtitle } = require("../lib/steam");
 
 test("parseSteamAppDetails 提取官方 short_description / genres / type", () => {
   const data = {
@@ -99,4 +99,110 @@ test("extractEnglishNameFromBaidu 无英文名返回空", () => {
 test("resolveEnglishName 空输入直接返回空（不发起请求）", async () => {
   assert.strictEqual(await resolveEnglishName(""), "");
   assert.strictEqual(await resolveEnglishName(null), "");
+});
+
+// ── cleanGameName / stripSubtitle（英文名清洗规则）──
+test("cleanGameName 用户例子：剥 v 版本 + 尾部标签列表，保留重制版副标题", () => {
+  assert.strictEqual(
+    cleanGameName("最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档"),
+    "最后的生还者2：重制版"
+  );
+});
+
+test("cleanGameName 无副标题时只剩核心名", () => {
+  assert.strictEqual(cleanGameName("艾尔登法环 v1.10 官方中文"), "艾尔登法环");
+  assert.strictEqual(cleanGameName("只狼 v1.6 官方中文+预购特典"), "只狼");
+});
+
+test("cleanGameName 复合标签一次性剥除", () => {
+  assert.strictEqual(cleanGameName("赛博朋克 2077 整合版"), "赛博朋克 2077");
+  assert.strictEqual(cleanGameName("黑神话：悟空 v1.0 整合版 DLC"), "黑神话：悟空");
+});
+
+test("cleanGameName 纯英文原名无噪音原样返回", () => {
+  assert.strictEqual(cleanGameName("Split Fiction"), "Split Fiction");
+  assert.strictEqual(cleanGameName("Elden Ring"), "Elden Ring");
+});
+
+test("cleanGameName 边界输入安全", () => {
+  assert.strictEqual(cleanGameName(""), "");
+  assert.strictEqual(cleanGameName(null), "");
+  assert.strictEqual(cleanGameName(undefined), "");
+  assert.strictEqual(cleanGameName(123), "");
+  assert.strictEqual(cleanGameName("   "), "");
+  assert.strictEqual(cleanGameName("v1.2.3 整合版"), "");
+});
+
+test("cleanGameName 资料片副标题保留（不在 NOISE_TAGS）", () => {
+  assert.strictEqual(cleanGameName("赛博朋克 2077：幻影自由 v2.1"), "赛博朋克 2077：幻影自由");
+});
+
+test("stripSubtitle 剥掉冒号后的副标题", () => {
+  assert.strictEqual(stripSubtitle("最后的生还者2：重制版"), "最后的生还者2");
+  assert.strictEqual(stripSubtitle("艾尔登法环：黄金树之影"), "艾尔登法环");
+});
+
+test("stripSubtitle 无副标题原样返回", () => {
+  assert.strictEqual(stripSubtitle("艾尔登法环"), "艾尔登法环");
+  assert.strictEqual(stripSubtitle(""), "");
+  assert.strictEqual(stripSubtitle(null), "");
+});
+
+// ── resolveEnglishName 多候选降级（清洗→剥副标题→原名）──
+test("resolveEnglishName 清洗后 Wikidata 命中直接返回（不发剥副标题请求）", async () => {
+  const calls = [];
+  const fakeHttpJson = async (url) => {
+    calls.push(url);
+    if (calls.length === 1) return { search: [{ id: "Q1" }] };
+    return { entities: { Q1: { labels: { en: { value: "The Last of Us Part II Remastered" } } } } };
+  };
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
+    { httpGetJson: fakeHttpJson }
+  );
+  assert.strictEqual(en, "The Last of Us Part II Remastered");
+  assert.strictEqual(calls.length, 2);
+});
+
+test("resolveEnglishName 清洗名 Wikidata 失败 → 剥副标题命中", async () => {
+  const calls = [];
+  const fakeHttpJson = async (url) => {
+    calls.push(url);
+    if (calls.length === 1) return { search: [] };
+    if (calls.length === 2) return { search: [{ id: "Q1" }] };
+    return { entities: { Q1: { labels: { en: { value: "The Last of Us Part II" } } } } };
+  };
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
+    { httpGetJson: fakeHttpJson }
+  );
+  assert.strictEqual(en, "The Last of Us Part II");
+  assert.strictEqual(calls.length, 3);
+});
+
+test("resolveEnglishName Wikidata 全失败 → 百度百科清洗名命中", async () => {
+  const callsJson = [];
+  const callsText = [];
+  const fakeHttpJson = async (url) => { callsJson.push(url); return { search: [] }; };
+  const fakeHttpText = async (url) => {
+    callsText.push(url);
+    if (callsText.length === 1) return "<th>英文名</th><td>The Last of Us Part II Remastered</td>";
+    return "";
+  };
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
+    { httpGetJson: fakeHttpJson, httpGetText: fakeHttpText }
+  );
+  assert.strictEqual(en, "The Last of Us Part II Remastered");
+  assert.strictEqual(callsText.length, 1);
+});
+
+test("resolveEnglishName 所有候选都失败返回空", async () => {
+  const fakeHttpJson = async () => { throw new Error("net"); };
+  const fakeHttpText = async () => "";
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
+    { httpGetJson: fakeHttpJson, httpGetText: fakeHttpText }
+  );
+  assert.strictEqual(en, "");
 });

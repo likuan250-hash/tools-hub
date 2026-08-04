@@ -269,6 +269,63 @@ function hasWordToken(str) {
 }
 
 /**
+ * 从 DuckDuckGo HTML 搜索结果里提取可能的英文游戏名。
+ *
+ * DDG 返回的每个结果大致是：
+ *   <a class="result__a" rel="nofollow" href="...">Elden Ring - Wikipedia</a>
+ *   <a class="result__snippet">Elden Ring is a 2022 action RPG...</a>
+ *
+ * 只取 result__a 标题（比 snippet 干净），滤掉纯中文和非游戏类标题。
+ * @param {string} html DuckDuckGo HTML 页面
+ * @returns {string[]} 候选英文名字符串列表
+ */
+function extractWebEnglishCandidates(html) {
+  const text = String(html == null ? '' : html);
+  const candidates = [];
+  // 匹配 <a class="result__a" ...>标题</a>
+  const re = /<a\s[^>]*\bclass\s*=\s*["']\w*result__a\w*["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const raw = decodeEntities(m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
+    if (!raw) continue;
+    // 跳过纯非拉丁标题（中文/日文/韩文）
+    if (!/[a-zA-Z]{4}/.test(raw)) continue;
+    // 跳过太长的（大概率不是游戏名）
+    if (raw.length > 100) continue;
+    // 去掉末尾的来源标注 " - Wikipedia" / " | Steam" 等
+    const cleaned = raw.replace(/\s*[-–—|]\s*(Wikipedia|Steam|IGN|GameSpot|Fandom|百度百科|维基百科).*$/i, '').trim();
+    if (cleaned && /[a-zA-Z]{4}/.test(cleaned)) {
+      candidates.push(cleaned);
+    }
+  }
+  return candidates;
+}
+
+/**
+ * 从 DuckDuckGo 搜索结果里挑最可能是游戏英文名的候选。
+ * 规则：优先取与原名无关、且长度合理（3~60字符）的纯拉丁标题。
+ * @param {string[]} candidates extractWebEnglishCandidates 的输出
+ * @param {string} gameName 原始中文名（用于排除信息框里的中文标题）
+ * @returns {string|null} 最佳英文名，无合适则 null
+ */
+function pickBestWebCandidate(candidates, gameName) {
+  if (!candidates || !candidates.length) return null;
+  const origLower = String(gameName || '').toLowerCase();
+  for (const c of candidates) {
+    const lower = c.toLowerCase();
+    // 必须主要是拉丁字母
+    if (!/^[a-zA-Z0-9\s:.'\-!&()]+$/.test(c)) continue;
+    // 排除与原名大量重叠的（一般是中文搜索结果里的副标题）
+    const cTokens = lower.split(/\s+/);
+    if (cTokens.length <= 1) continue;
+    // 长度合理
+    if (c.length < 3 || c.length > 60) continue;
+    return c;
+  }
+  return null;
+}
+
+/**
  * 相关性校验（缺陷 4 的核心，纯函数、可单测）。
  *
  * 判定口径：
@@ -523,6 +580,72 @@ class CoverFetcher {
   }
 
   /**
+   * YouTube 搜索反查英文名（Steam 搜不到的兜底，v2.3.5）。
+   *
+   * yt-dlp 往 YouTube 搜 "{name} game" 拿前几条视频标题，
+   * 从中提取英文游戏名。yt-dlp 已内置且确定能在本机代理下工作，
+   * 比 Wikipedia/DDG scraping 都可靠。
+   *
+   * @param {string} gameName 中文游戏名
+   * @param {{emit?: Function, ytDlpPath?: string}} [opts]
+   * @returns {Promise<{title: string, source: 'youtube-title'|'none'}>}
+   */
+  async lookupEnglishTitleFromWeb(gameName, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const ytDlpPath = opts.ytDlpPath;
+    const name = String(gameName == null ? '' : gameName).trim();
+    if (!name || !ytDlpPath) return { title: '', source: 'none' };
+
+    emit('cover_search', STEP_SEARCH, 'YouTube 反查「' + name + '」的英文名…', null, { source: 'youtube-title' });
+    try {
+      const { spawn } = require('child_process');
+      const args = [
+        '--flat-playlist', '--dump-json',
+        '--playlist-end', '3',
+        '--no-warnings',
+        'ytsearch3:' + name + ' game',
+      ];
+      const { resolveProxy, toProxyUrl } = require('./http');
+      const px = resolveProxy('https://www.youtube.com/');
+      if (px) {
+        const u = toProxyUrl(px);
+        if (u) args.unshift('--proxy', u);
+      }
+      const raw = await new Promise((resolve) => {
+        const chunks = [];
+        const child = spawn(ytDlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        child.stdout.on('data', (d) => chunks.push(d));
+        child.stderr.on('data', () => {});
+        child.on('close', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        setTimeout(() => { try { child.kill(); } catch (e) { /* ignore */ } resolve(''); }, 12000);
+      });
+      if (!raw) return { title: '', source: 'none' };
+      const lines = raw.split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const item = JSON.parse(line);
+          const title = String(item.title || '');
+          // YouTube 标题格式："{Game Name} - {trailer/type} | {channel}"
+          const idx = title.indexOf(' - ');
+          if (idx <= 0) continue;
+          const candidate = title.slice(0, idx).trim();
+          // 必须是拉丁字母为主的游戏名
+          if (!isLatinTitle(candidate) || candidate.length < 3 || candidate.length > 60) continue;
+          if (candidate.toLowerCase() === name.toLowerCase()) continue;
+          emit('cover_search', STEP_SEARCH, 'YouTube 反查英文名：' + candidate, null, {
+            source: 'youtube-title', englishTitle: candidate,
+          });
+          return { title: candidate, source: 'youtube-title' };
+        } catch (e) { /* 跳过解析失败的 JSON 行 */ }
+      }
+    } catch (e) {
+      // 静默降级
+    }
+    emit('log', STEP_SEARCH, '[cover] YouTube 英文名反查无结果，退回原名查询', null, { level: 'info' });
+    return { title: '', source: 'none' };
+  }
+
+  /**
    * 解析本次要用的英文名（缺陷 3 的入口）。
    *
    * 优先级：
@@ -530,7 +653,8 @@ class CoverFetcher {
    *   2. 原名本身就是拉丁标题（`Elden Ring` / `Nioh 2`）—— 它就是英文名，同样不发请求
    *      （这一条同时保证纯英文场景下不会平白多打两次 Steam 接口）；
    *   3. Steam 两步反查；
-   *   4. 全都拿不到 → 返回空英文名，由 buildQueryPlan 退回原名，**不报错**。
+   *   4. DuckDuckGo 网页搜索反查（Steam 没收录的兜底）；
+   *   5. 全都拿不到 → 返回空英文名，由 buildQueryPlan 退回原名，**不报错**。
    *
    * @param {string} gameName 游戏名
    * @param {{englishTitle?: string, emit?: Function, lookup?: boolean}} [opts]
@@ -550,8 +674,16 @@ class CoverFetcher {
     try {
       r = await this.lookupEnglishTitleFromSteam(name, { emit: opts.emit });
     } catch (e) {
-      // 反查只是锦上添花，出任何意外都退回原名，绝不影响封面主链路
       r = { title: '', source: 'none', error: e && e.message ? e.message : String(e) };
+    }
+    // Steam 没查到 → YouTube 搜索兜底
+    if (!r.title) {
+      try {
+        const webR = await this.lookupEnglishTitleFromWeb(name, { emit: opts.emit, ytDlpPath: opts.ytDlpPath });
+        if (webR.title) r = webR;
+      } catch (e) {
+        // 保持 Steam 的 error 信息不覆盖
+      }
     }
     this.englishTitleCache.set(name, r);
     return r;
@@ -1309,6 +1441,7 @@ class CoverFetcher {
       englishTitle: opts.englishTitle,
       emit,
       lookup: opts.resolveEnglish !== false,
+      ytDlpPath: opts.ytDlpPath,
     });
     const queryPlan = buildQueryPlan(name, english.title);
     if (!queryPlan.length) queryPlan.push(name);

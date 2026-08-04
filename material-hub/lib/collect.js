@@ -317,6 +317,7 @@ class CollectService {
         coverRes = await this.cover.fetchCover(gameName, reserved.folder, {
           emit,
           coverUrl: opts.coverUrl,
+          ytDlpPath: envInfo.ytDlpPath,
           // 缺陷 3：4kwallpapers / alphacoders / wallhaven 都是纯英文站，中文名喂进去必然 0 结果。
           // 英文名优先级：调用方显式给的 > 宣传片标题里提取的 > Steam 反查 > 退回原名。
           //   中间这一档是本次加的兜底 —— Steam 国区经常搜不到中文名对应的英文标题

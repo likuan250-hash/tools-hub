@@ -36,6 +36,8 @@ const DEFAULT_OUTPUT_DIR = 'E:\\素材\\';
 /** 复用文件夹时识别既有产物用的扩展名。 */
 const VIDEO_EXTS = ['.mp4', '.mkv', '.webm', '.mov'];
 const COVER_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
+/** 宣传片元数据 sidecar 文件名（复用视频时读取以支持英文名提取）。 */
+const TRAILER_META_FILE = '.trailer.json';
 /** 规范《目录结构》里的投稿完成标记，不能被当成素材产物。 */
 const UPLOADED_MARK = '.uploaded';
 
@@ -103,6 +105,20 @@ class CollectService {
     return null;
   }
 
+  // ── 宣传片元数据 sidecar（复用场景下提取英文名用）──
+  saveTrailerMeta(folder, meta) {
+    try {
+      this.fs.writeFileSync(path.join(folder, TRAILER_META_FILE), JSON.stringify(meta, null, 2), 'utf8');
+    } catch (e) { /* sidecar 静默失败 */ }
+  }
+  readTrailerMeta(folder) {
+    try {
+      const p = path.join(folder, TRAILER_META_FILE);
+      if (!this.fs.existsSync(p)) return null;
+      return JSON.parse(this.fs.readFileSync(p, 'utf8'));
+    } catch (e) { return null; }
+  }
+
   /**
    * 执行一次素材搜集。
    * @param {{
@@ -134,7 +150,11 @@ class CollectService {
       try { onEvent(ev); } catch (e) { /* 客户端已断开 */ }
     };
 
-    const gameName = String(opts.name == null ? '' : opts.name).trim();
+    // 统一清洗游戏名：去首尾空格，消除中文与数字间的多余空格
+    // （如「正当防卫 4」→「正当防卫4」，但不影响「Elden Ring」「Just Cause 4」）
+    const gameName = String(opts.name == null ? '' : opts.name).trim()
+      .replace(/([\u4e00-\u9fff\u3400-\u4dbf])\s+(\d)/g, '$1$2')
+      .replace(/(\d)\s+([\u4e00-\u9fff\u3400-\u4dbf])/g, '$1$2');
     const outDir = opts.outDir || DEFAULT_OUTPUT_DIR;
     const force = opts.force === true;
     const forceTrailer = force || opts.forceTrailer === true;
@@ -209,7 +229,10 @@ class CollectService {
     const existingVideo = !forceTrailer && result.reused ? this.findExistingVideo(reserved.folder) : null;
     if (existingVideo) {
       result.trailerOk = true;
-      result.trailer = { file: existingVideo.file, path: existingVideo.path, title: '', reused: true };
+      // 从 sidecar 读取上次下载时保存的标题，供封面英文名提取用
+      this.reusedTrailerMeta = this.readTrailerMeta(reserved.folder);
+      const reusedTitle = (this.reusedTrailerMeta && this.reusedTrailerMeta.title) || '';
+      result.trailer = { file: existingVideo.file, path: existingVideo.path, title: reusedTitle, reused: true };
       videoPath = existingVideo.path;
       emit('trailer_download', STEP_TRAILER, '复用已有视频 ' + existingVideo.file, true, {
         file: existingVideo.file, reused: true,
@@ -258,6 +281,12 @@ class CollectService {
           converted: tr.converted === true,
           reused: false,
         };
+        this.saveTrailerMeta(reserved.folder, {
+          title: dl.title || '',
+          channel: dl.channel || '',
+          url: dl.url || '',
+          id: trailerInfo && trailerInfo.id ? trailerInfo.id : '',
+        });
         emit('trailer_download', STEP_TRAILER, finalFile, true, {
           file: finalFile,
           title: dl.title || '',
@@ -293,7 +322,8 @@ class CollectService {
           //   中间这一档是本次加的兜底 —— Steam 国区经常搜不到中文名对应的英文标题
           //   （如「正当防卫4」→ Steam storesearch 无结果），但宣传片搜索结果可能已经拿到了。
           englishTitle: opts.englishName
-            || (trailerInfo ? trailerExtractEnglishName(trailerInfo.title) : ''),
+            || (trailerInfo ? trailerExtractEnglishName(trailerInfo.title) : '')
+            || (this.reusedTrailerMeta ? trailerExtractEnglishName(this.reusedTrailerMeta.title || '') : ''),
           videoId: trailerInfo && trailerInfo.id ? trailerInfo.id : '',
         });
       } catch (e) {

@@ -62,6 +62,21 @@ const NPM_STAGING_RULES = ["!node_modules/**/.*-????????", "!node_modules/**/.*-
 
 /** npm 暂存条目命名文法：点 + 任意 + 连字符 + 恰好 8 位 base64url 随机后缀。 */
 const NPM_STAGING_NAME_RE = /^\.[^\\/]*-[A-Za-z0-9_-]{8}$/;
+/**
+ * 已知合法的"点开头"目录/文件名 —— 这些不应被 npm 暂存正则误伤。
+ * .local-browsers 是 Playwright 浏览器缓存目录（playwright-core 自身结构），
+ *   "local-browsers" 恰好 8 字母，会撞 npm 暂存文法的假阳性（连字符前
+ *   "local" 5 字符 + "-" + 8 字母），必须显式豁免（Playwright 浏览器就是
+ *   合法的 extraResources 目标，netdisk xunlei 强依赖）。
+ * 其它都是 npm 自身的标准结构（可执行链接目录、lock 文件、通用缓存），跟
+ * 暂存半成品无关。
+ */
+const KNOWN_LEGAL_DOTNAMES = new Set([
+  ".local-browsers", // playwright-core 浏览器缓存根（netdisk xunlei 强依赖）；点开头是 fs.readdirSync 返回的 entry 真实形态
+  ".bin", // npm 把可执行链接放这里
+  ".cache", // npm/各包通用缓存目录
+  ".package-lock.json", // npm lock 文件
+]);
 
 function fail(msg) {
   failures.push(msg);
@@ -191,6 +206,7 @@ function filterHasCatchAllInclude(filter) {
  */
 function isNpmStagingName(name) {
   if (typeof name !== "string" || !name) return false;
+  if (KNOWN_LEGAL_DOTNAMES.has(name)) return false;
   return NPM_STAGING_NAME_RE.test(name);
 }
 

@@ -46,12 +46,24 @@ test('pin: top 非 0 码抛错 (如 12011)', async () => {
   );
 });
 
-test('pin: -404（评论资源不存在/风控秒删）仍抛错且信息明确（外部限制，非致命）', async () => {
+test('pin: -404（评论资源不存在/审核期）重试耗尽后抛错且信息明确（外部限制，非致命）', async () => {
   const fetchFn = async () => fakeResp({ code: -404, message: '啥都木有' });
   await assert.rejects(
     async () => await comment.pin(1, 555, 'csrf', 'c', { deps: { fetchFn, sleep: async () => {} } }),
-    /评论置顶失败/
+    /持续 -404.*重试 10 次仍失败/
   );
+});
+
+test('pin: -404 首次失败第二次成功 → 最终成功（审核期延迟窗口）', async () => {
+  let calls = 0;
+  const fetchFn = async () => {
+    calls += 1;
+    if (calls === 1) return fakeResp({ code: -404, message: '啥都木有' });
+    return fakeResp({ code: 0, data: {} });
+  };
+  const r = await comment.pin(1, 555, 'csrf', 'c', { deps: { fetchFn, sleep: async () => {} } });
+  assert.equal(r.ok, true);
+  assert.equal(calls, 2, '第二次调用成功');
 });
 
 test('pin: fetch 网络错误抛错', async () => {
@@ -79,4 +91,36 @@ test('pin: 请求体含 rpid 与 action=REPLY_SETTOP_ACTION', async () => {
   assert.ok(urlSeen.includes('/reply/top'), 'pin 应请求 top 接口');
   assert.ok(bodySeen.includes('rpid=9'));
   assert.ok(bodySeen.includes('action=' + comment.REPLY_SETTOP_ACTION));
+});
+
+test('post: -404 首次失败第二次成功 → 最终成功返回 rpid（审核期延迟窗口）', async () => {
+  let calls = 0;
+  const fetchFn = async () => {
+    calls += 1;
+    if (calls === 1) return fakeResp({ code: -404, message: '啥都木有' });
+    return fakeResp({ code: 0, data: { rpid: 777 } });
+  };
+  const rpid = await comment.post(1, 'msg', 'csrf', 'c', { deps: { fetchFn, sleep: async () => {} } });
+  assert.equal(rpid, 777);
+  assert.equal(calls, 2, '第二次调用成功');
+});
+
+test('post: 持续 -404 重试耗尽后抛错且带重试次数', async () => {
+  const fetchFn = async () => fakeResp({ code: -404, message: '啥都木有' });
+  await assert.rejects(
+    async () => await comment.post(1, 'msg', 'csrf', 'c', {
+      deps: { fetchFn, sleep: async () => {} },
+    }),
+    /持续 -404.*重试 10 次仍失败/
+  );
+});
+
+test('withRetryOn404: 非 -404 错误码不重试，立即返回', async () => {
+  let calls = 0;
+  const r = await comment.withRetryOn404(async () => {
+    calls += 1;
+    return { code: -509, message: '请求过于频繁' };
+  }, { deps: { sleep: async () => {} } });
+  assert.equal(r.code, -509);
+  assert.equal(calls, 1, '非 -404 不重试');
 });

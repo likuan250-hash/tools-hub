@@ -351,10 +351,15 @@
     if (prev) {
       selectPreserve(selSection, prev);
       if (selSection.value === prev) chosen = prev;
+    } else if (secs.length > 0) {
+      // 2) 用户未选分集但合集下有分集 → 自动选中第一个（B 站创建合集时自动建默认分集
+      //    「正片」，通常排第一；用户只传单视频时无需手动选分集，否则 sectionId 为空
+      //    会导致 task.js 跳过合集后置——这正是「选了合集却加不进合集」的根因）。
+      //    多分集时默认选第一个，用户仍可手动改。
+      selSection.value = String(secs[0].id);
+      chosen = selSection.value;
     }
-    // 注：不再强制自动选分集——上面已优先保留用户/历史已选分集；若用户未选，分集下拉保持
-    // 「不指定分集」。用户手动选了哪个分集，投稿就用哪个 sectionId（见 saveCfg）。合集无分集
-    // 时仅做温和提示，不阻断投稿。
+    // 注：合集下无分集（secs 为空）时保持「不指定分集」，updateSectionHint 给出温和提示。
     updateSectionHint(seasonId, secs);
     return chosen;
   }

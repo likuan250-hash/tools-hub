@@ -4,6 +4,8 @@ node_modules/
 # 环境变量 / 密钥（如有）
 .env
 .env.*
+# 代理配置（每台机器不同，不提交；复制 .proxy.example 并修改）
+.proxy
 
 # 运行日志与临时产物（按日滚动，不进 git）
 logs/

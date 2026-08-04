@@ -169,9 +169,12 @@ function resolveProxy(target, env) {
   if (shouldBypassProxy(u.hostname, firstEnv(source, NO_PROXY_ENV_KEYS))) return null;
   const url = pickProxyEnv(source, u.protocol);
   if (url) return parseProxyUrl(url);
-  // env 里没代理且调用方未注入 env（= 真实运行时）→ 尝试读项目级 .proxy 配置文件
-  //   测试会注入 env，不会触发此路径
-  if (!env) {
+  // 当且仅当 source 是真实 process.env 时才读 .proxy 文件。
+  //   CoverFetcher 会把 process.env 写进 this.env 再传给每一次 fetch；
+  //   但这里的 source 永远等于形参 env（或 process.env），所以 source===process.env
+  //   意味着「调用方没注入 env→现在读的是真实环境→应该补 .proxy 兜底」；
+  //   测试里 env={} 会让 source!==process.env，.proxy 不会被读到，不受本机配置干扰。
+  if (source === process.env) {
     try {
       const cfgPath = pathMod.join(__dirname, '..', '.proxy');
       if (fsDefault.existsSync(cfgPath)) {

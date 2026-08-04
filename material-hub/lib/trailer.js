@@ -493,6 +493,7 @@ class TrailerDownloader {
       r = await runCommand(this.ytDlpCmd(), args, {
         spawn: this.spawn,
         timeout: TIMEOUT_SEARCH,
+        env: Object.assign({}, process.env, { PYTHONUTF8: '1' }),
         onLine: (line, stream) => {
           if (stream === 'stderr') emit('log', STEP_SEARCH, '[yt-dlp] ' + line, null, { level: 'info' });
         },
@@ -565,6 +566,7 @@ class TrailerDownloader {
       r = await runCommand(this.ytDlpCmd(), args, {
         spawn: this.spawn,
         timeout: TIMEOUT_DOWNLOAD,
+        env: Object.assign({}, process.env, { PYTHONUTF8: '1' }),
         onLine: (line) => emit('log', STEP_DOWNLOAD, '[yt-dlp] ' + line, null, { level: 'info' }),
       });
     } catch (e) {
@@ -683,7 +685,7 @@ class TrailerDownloader {
       '--dump-json',
       '--playlist-end', '1',
       url,
-    ], { timeout: 30000 });
+    ], { timeout: 30000, env: Object.assign({}, process.env, { PYTHONUTF8: '1' }) });
     if (r.code !== 0 || !r.stdout) {
       return { ok: false, reason: 'steam-extract-failed', error: 'yt-dlp Steam 提取失败' };
     }

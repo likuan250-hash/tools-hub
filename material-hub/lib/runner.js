@@ -21,8 +21,9 @@ const DEFAULT_TIMEOUT = 20 * 60 * 1000;
  *   spawn?: Function,
  *   onLine?: (line: string, stream: string) => void,
  *   timeout?: number,
- *   cwd?: string
- * }} [opts] 选项；spawn 用于单测注入
+ *   cwd?: string,
+ *   env?: object
+ * }} [opts] 选项；spawn 用于单测注入，env 注入子进程环境变量
  * @returns {Promise<{code: number, stdout: string, stderr: string}>} 进程退出信息
  */
 function runCommand(cmd, args, opts = {}) {
@@ -32,7 +33,11 @@ function runCommand(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
     let child = null;
     try {
-      child = spawnFn(cmd, args, { windowsHide: true, cwd: opts.cwd });
+      // 中文 Windows 下 yt-dlp 默认输出 GBK，Node.js 读成 UTF-8 即乱码。
+      // 注入 PYTHONUTF8=1 强制 Python 用 UTF-8，同时兜底其他外部命令不受影响。
+      const spawnOpts = { windowsHide: true, cwd: opts.cwd };
+      if (opts.env) spawnOpts.env = opts.env;
+      child = spawnFn(cmd, args, spawnOpts);
     } catch (e) {
       reject(e);
       return;

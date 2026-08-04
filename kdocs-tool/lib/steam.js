@@ -8,24 +8,45 @@ const { cleanGameName, stripSubtitle, parseSteamAppIdFromText } = require("./nam
 const { lookupEnglishNameOffline } = require("./gamemap");
 const { fetchTextProxy, fetchJsonProxy } = require("./proxyHttp");
 
-/** 搜索 Steam AppID（10 秒超时，避免网络不畅时卡死整流程） */
-function searchSteamAppId(gameName) {
-  return new Promise((resolve) => {
-    const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=schinese&cc=CN`;
-    let settled = false;
-    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-    const req = https.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 10000 }, (res) => {
-      let d = "";
-      res.on("data", (c) => d += c);
-      res.on("end", () => {
-        try { const j = JSON.parse(d); done(j.items?.[0]?.id || null); }
-        catch { done(null); }
-      });
-      res.on("error", () => done(null));
-    });
-    req.on("error", () => done(null));
-    req.on("timeout", () => { req.destroy(); done(null); });
-  });
+/**
+ * 搜索 Steam AppID（代理感知：走 fetchJsonProxy，无代理时退化为直连，行为与历史一致）。
+ * 按候选查询词（原名 → 剥英文版本词 → 剥中文副标题）逐级尝试；结果内按名称相似度择优，
+ * 避免 storesearch 把模糊首条当答案导致错配 AppID。单请求 10s 超时防卡死；
+ * 任何失败返回 null（绝不抛错，交由上层 Wikidata/百度/网页兜底）。
+ */
+async function searchSteamAppId(gameName, fetchImpl) {
+  const getJson = fetchImpl || fetchJsonProxy;
+  if (!gameName) return null;
+  const norm = (s) => String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const variants = [];
+  const push = (t) => { const v = String(t == null ? "" : t).trim(); if (v && !variants.includes(v)) variants.push(v); };
+  push(gameName);
+  // 剥中文噪声标签 + 版本号 → 核心名（如「巫师3：狂猎 年度版 v1.6 官方中文」→「巫师3：狂猎」）
+  push(cleanGameName(String(gameName).trim()));
+  // 剥英文版本词（Game of the Year / Remastered / Definitive ...）得到基础英文名，提升精确匹配率
+  push(String(gameName).replace(EDITION_WORDS, "").replace(/\s+/g, " ").trim());
+  for (const term of variants) {
+    const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&l=english&cc=CN`;
+    let j = null;
+    try { j = await getJson(url, { timeout: 10000 }); } catch { j = null; }
+    const items = (j && Array.isArray(j.items) && j.items) || [];
+    if (!items.length) continue;
+    const q = norm(term);
+    let best = null, bestScore = -1;
+    for (const it of items) {
+      const nm = norm(it && it.name);
+      let score = 0;
+      if (nm && q) {
+        if (nm === q) score = 3;
+        else if (nm.includes(q) || q.includes(nm)) score = 2;
+      }
+      if (score > bestScore) { bestScore = score; best = it; }
+    }
+    // 强匹配（score>=2）直接采纳；否则退化为首条（与历史行为一致，保命中率）
+    const pick = bestScore >= 2 ? best : items[0];
+    if (pick && pick.id) return String(pick.id);
+  }
+  return null;
 }
 
 /** 校验文件头 magic 是否为真实图片（JPEG/PNG/WEBP/GIF/BMP）。用于下载后过滤占位图/错误页。 */
@@ -129,29 +150,19 @@ function parseSteamAppDetails(data) {
   return { shortDescription: sd, genres, type, size };
 }
 
-/** 抓取 Steam 官方 store 描述（主源，质量最高）。失败/无结果返回 null，绝不抛错打断流程。 */
-function getSteamAppDetails(appid) {
-  return new Promise((resolve) => {
-    if (!appid) return resolve(null);
-    const url = `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`;
-    let settled = false;
-    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-    const req = https.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 10000 }, (res) => {
-      let d = "";
-      res.on("data", (c) => d += c);
-      res.on("end", () => {
-        try {
-          const j = JSON.parse(d);
-          const entry = j && j[String(appid)];
-          if (entry && entry.success && entry.data) done(parseSteamAppDetails(entry.data));
-          else done(null); // 应用下架/无数据：返回 null，交由 bl 兜底
-        } catch { done(null); }
-      });
-      res.on("error", () => done(null));
-    });
-    req.on("error", () => done(null));
-    req.on("timeout", () => { req.destroy(); done(null); });
-  });
+/**
+ * 抓取 Steam 官方 store 描述（主源，质量最高）。
+ * 代理感知：走 fetchJsonProxy，无代理时退化为直连。失败/无结果返回 null，绝不抛错打断流程。
+ */
+async function getSteamAppDetails(appid) {
+  if (!appid) return null;
+  const url = `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`;
+  let j = null;
+  try { j = await fetchJsonProxy(url, { timeout: 10000 }); } catch { j = null; }
+  if (!j) return null;
+  const entry = j[String(appid)];
+  if (entry && entry.success && entry.data) return parseSteamAppDetails(entry.data);
+  return null; // 应用下架/无数据：返回 null，交由 bl 兜底
 }
 
 /** 从任意图片 URL 下载封面（非 Steam 游戏：用户提供的官方封面链接兜底） */

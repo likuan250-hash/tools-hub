@@ -7,7 +7,7 @@ const os = require("os");
 const path = require("path");
 const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName, cleanGameName, stripSubtitle, tryDownload, isImageMagic,
   extractEnglishNameFromWikiSnippet, extractEnglishNameFromWikiInfobox, fetchEnglishNameFromWikipedia, fetchEnglishNameFromBangumi, isLatinName, cnNameSimilarity,
-  detectEditionSuffix, augmentWithEdition } = require("../lib/steam");
+  detectEditionSuffix, augmentWithEdition, searchSteamAppId } = require("../lib/steam");
 const { lookupEnglishNameOffline, normZh } = require("../lib/gamemap");
 
 test("parseSteamAppDetails 提取官方 short_description / genres / type", () => {
@@ -443,4 +443,50 @@ test("tryDownload 真实图片落盘，非图片内容被丢弃并 reject", asyn
     srv.close();
     for (const f of [fpOk, fpBad]) { try { fs.unlinkSync(f); } catch {} }
   }
+});
+
+// ── searchSteamAppId：代理感知 + 名称择优 + 版本词降级（fetchImpl 注入 mock，无真实网络）──
+test("searchSteamAppId 英文名精确匹配采纳首条命中", async () => {
+  const fakeFetch = async (url) => {
+    assert.ok(url.includes("storesearch"), "应请求 storesearch");
+    return { items: [{ id: 292030, name: "The Witcher 3: Wild Hunt" }] };
+  };
+  const id = await searchSteamAppId("The Witcher 3: Wild Hunt", fakeFetch);
+  assert.strictEqual(id, "292030");
+});
+
+test("searchSteamAppId 版本词降级：GOTY 全名无条目时降级到基础名命中", async () => {
+  // 输入带 Game of the Year，但 Steam 无 GOTY 命名条目；应降级到剥版本词的基础名命中
+  const calls = [];
+  const fakeFetch = async (url) => {
+    calls.push(url);
+    const m = /term=([^&]+)/.exec(url);
+    const term = m ? decodeURIComponent(m[1]) : "";
+    if (/Game\s*of\s*the\s*Year/i.test(term)) return { items: [] };
+    return { items: [{ id: 292030, name: "The Witcher 3: Wild Hunt" }] };
+  };
+  const id = await searchSteamAppId("The Witcher 3: Wild Hunt Game of the Year", fakeFetch);
+  assert.strictEqual(id, "292030", "GOTY 全名无条目时应降级到基础名命中");
+  assert.ok(calls.length >= 2, "应对多个候选查询词都发起请求");
+});
+
+test("searchSteamAppId 中文名剥噪声标签命中（cleanGameName 核心名）", async () => {
+  const fakeFetch = async (url) => {
+    const m = /term=([^&]+)/.exec(url);
+    const term = m ? decodeURIComponent(m[1]) : "";
+    if (term.includes("年度版")) return { items: [] }; // 带副标题的长中文名 Steam 匹配差
+    return { items: [{ id: 292030, name: "The Witcher 3: Wild Hunt" }] };
+  };
+  const id = await searchSteamAppId("巫师3：狂猎 年度版", fakeFetch);
+  assert.strictEqual(id, "292030");
+});
+
+test("searchSteamAppId 全部无结果返回 null（绝不抛错）", async () => {
+  const fakeFetch = async () => ({ items: [] });
+  assert.strictEqual(await searchSteamAppId("xyz不存在的游戏", fakeFetch), null);
+});
+
+test("searchSteamAppId fetch 抛异常也返回 null", async () => {
+  const fakeFetch = async () => { throw new Error("net down"); };
+  assert.strictEqual(await searchSteamAppId("任意游戏", fakeFetch), null);
 });

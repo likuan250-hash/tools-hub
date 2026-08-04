@@ -638,7 +638,7 @@ test('resolveEnglishTitle：opts 显式传入优先，且不发任何请求', as
   assert.equal(calls.length, 0, 'opts 已给英文名，不该打 Steam 接口');
 });
 
-test('resolveEnglishTitle：原名本身是拉丁标题时直接复用，不打 Steam', async () => {
+test('resolveEnglishTitle：原名本身是拉丁标题时直接复用，不打维基', async () => {
   const calls = [];
   const c = new CoverFetcher({ fetch: fakeFetch({}, calls), fs: fakeFs() });
   const r = await c.resolveEnglishTitle('Elden Ring');
@@ -646,33 +646,35 @@ test('resolveEnglishTitle：原名本身是拉丁标题时直接复用，不打 
   assert.equal(calls.length, 0);
 });
 
-test('resolveEnglishTitle：中文名经 Steam 两步反查拿到英文名并缓存', async () => {
-  const searchUrl = STEAM_SEARCH_API + '?term=' + encodeURIComponent('仁王2') + '&l=schinese&cc=CN';
-  const detailUrl = STEAM_DETAILS_API + '?appids=1325200&l=english&filters=basic';
+test('resolveEnglishTitle：中文名经维基百科反查拿到英文名并缓存', async () => {
+  // 模拟 zh.wikipedia.org 搜索 + langlinks.en 两步
+  const zhSearchUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('仁王2') + '&format=json&srlimit=1';
+  const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=123&format=json&lllimit=1';
   const calls = [];
   const c = new CoverFetcher({
     fetch: fakeFetch({
-      [searchUrl]: { json: { total: 1, items: [{ id: 1325200, name: '仁王２ Complete Edition' }] } },
-      [detailUrl]: { json: { 1325200: { success: true, data: { name: 'Nioh 2 – The Complete Edition' } } } },
+      [zhSearchUrl]: { json: { query: { search: [{ pageid: 123, title: '仁王2' }] } } },
+      [llUrl]: { json: { query: { pages: { 123: { langlinks: [{ '*': 'Nioh 2' }] } } } } },
     }, calls),
     fs: fakeFs(),
   });
   const r = await c.resolveEnglishTitle('仁王2');
-  assert.equal(r.title, 'Nioh 2', '版本后缀必须被剥掉');
-  assert.equal(r.source, 'steam');
-  assert.equal(r.appId, '1325200');
+  assert.equal(r.title, 'Nioh 2');
+  assert.equal(r.source, 'wiki');
   assert.equal(calls.length, 2);
 
-  // 同名再问一次走缓存，不重复打接口（appdetails 有频控）
+  // 同名再问一次走缓存
   const again = await c.resolveEnglishTitle('仁王2');
   assert.equal(again.title, 'Nioh 2');
   assert.equal(calls.length, 2);
 });
 
-test('resolveEnglishTitle：Steam 查不到 / 出错时退回空英文名，绝不报错', async () => {
-  // ① Steam 无收录（实测「正当防卫4」在中国区 Steam 就是 total=0）
-  const c1 = new CoverFetcher({ fetch: fakeFetch(() => ({ json: { total: 0, items: [] } })), fs: fakeFs() });
-  assert.deepEqual(await c1.resolveEnglishTitle('正当防卫4'), { title: '', source: 'none', error: 'Steam 无搜索结果' });
+test('resolveEnglishTitle：维基百科查不到 / 出错时退回空英文名，绝不报错', async () => {
+  // ① 维基无收录
+  const c1 = new CoverFetcher({ fetch: fakeFetch(() => ({ json: { query: { search: [] } } })), fs: fakeFs() });
+  const r1 = await c1.resolveEnglishTitle('不存在的游戏名');
+  assert.equal(r1.title, '');
+  assert.equal(r1.source, 'none');
 
   // ② 网络异常
   const c2 = new CoverFetcher({ fetch: fakeFetch(() => ({ throws: '连接被重置' })), fs: fakeFs() });
@@ -680,13 +682,13 @@ test('resolveEnglishTitle：Steam 查不到 / 出错时退回空英文名，绝�
   assert.equal(r2.title, '');
   assert.equal(r2.source, 'none');
 
-  // ③ Steam 只有中文名（反查等于没查到）
-  const searchUrl = STEAM_SEARCH_API + '?term=' + encodeURIComponent('黑神话悟空') + '&l=schinese&cc=CN';
-  const detailUrl = STEAM_DETAILS_API + '?appids=2358720&l=english&filters=basic';
+  // ③ 有中文词条但无英文跨语言链接
+  const zhUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('黑神话悟空') + '&format=json&srlimit=1';
+  const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=999&format=json&lllimit=1';
   const c3 = new CoverFetcher({
     fetch: fakeFetch({
-      [searchUrl]: { json: { items: [{ id: 2358720 }] } },
-      [detailUrl]: { json: { 2358720: { success: true, data: { name: '黑神话：悟空' } } } },
+      [zhUrl]: { json: { query: { search: [{ pageid: 999, title: '黑神话：悟空' }] } } },
+      [llUrl]: { json: { query: { pages: { 999: { langlinks: [] } } } } },
     }),
     fs: fakeFs(),
   });
@@ -776,14 +778,14 @@ test('fetchCover 原名即英文名时只跑一轮（不白费网络请求）', 
   assert.deepEqual(r.queryPlan, ['Elden Ring']);
 });
 
-test('fetchCover 不传 englishTitle 时自动经 Steam 反查（端到端链路）', async () => {
-  const searchUrl = STEAM_SEARCH_API + '?term=' + encodeURIComponent('仁王2') + '&l=schinese&cc=CN';
-  const detailUrl = STEAM_DETAILS_API + '?appids=1325200&l=english&filters=basic';
+test('fetchCover 不传 englishTitle 时自动经维基百科反查（端到端链路）', async () => {
+  const zhUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('仁王2') + '&format=json&srlimit=1';
+  const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=123&format=json&lllimit=1';
   const img = 'https://w.wallhaven.cc/full/cd/wallhaven-nioh.jpg';
   const c = new CoverFetcher({
     fetch: fakeFetch((url) => {
-      if (url === searchUrl) return { json: { total: 1, items: [{ id: 1325200, name: '仁王２ Complete Edition' }] } };
-      if (url === detailUrl) return { json: { 1325200: { success: true, data: { name: 'Nioh 2 – The Complete Edition' } } } };
+      if (url === zhUrl) return { json: { query: { search: [{ pageid: 123, title: '仁王2' }] } } };
+      if (url === llUrl) return { json: { query: { pages: { 123: { langlinks: [{ '*': 'Nioh 2' }] } } } } };
       if (url.includes('wallhaven.cc/api')) {
         return url.includes(encodeURIComponent('Nioh 2'))
           ? { json: { data: [{ path: img, dimension_x: 3840, dimension_y: 2160 }] } }
@@ -798,7 +800,7 @@ test('fetchCover 不传 englishTitle 时自动经 Steam 反查（端到端链路
   const r = await c.fetchCover('仁王2', 'D:\\out');
   assert.equal(r.ok, true);
   assert.equal(r.englishTitle, 'Nioh 2');
-  assert.equal(r.englishTitleSource, 'steam');
+  assert.equal(r.englishTitleSource, 'wiki');
   assert.equal(r.queryUsed, 'Nioh 2');
   assert.deepEqual(r.queryPlan, ['Nioh 2', '仁王2']);
 });

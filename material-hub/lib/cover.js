@@ -542,48 +542,64 @@ class CoverFetcher {
   }
 
   /**
-   * 经 Steam 两步反查英文名（storesearch 取 appid → appdetails 取英文 name）。
-   * 任何一步失败都只返回空英文名，不抛异常、不阻断封面链路。
-   * @param {string} gameName 游戏名
-   * @param {{emit?: Function}} [opts]
-   * @returns {Promise<{title: string, source: string, appId?: string, rawTitle?: string, error?: string}>}
+   * 经维基百科反查英文名（zh.wikipedia.org 搜索 → langlinks.en）。
+   * 维基百科有完善的跨语言链接，中文名搜到词条后直接拿英文标题，
+   * 远胜 Steam storesearch（很多游戏在 Steam 国区没条目）。
    */
-  async lookupEnglishTitleFromSteam(gameName, opts = {}) {
+  async lookupEnglishTitleFromWiki(gameName, opts = {}) {
     const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
     const name = String(gameName == null ? '' : gameName).trim();
     if (!name) return { title: '', source: 'none' };
 
-    const searchUrl = this.buildSteamSearchUrl(name);
-    emit('cover_search', STEP_SEARCH, '经 Steam 反查「' + name + '」的英文名…', null, {
-      source: 'steam-title', url: searchUrl,
-    });
-    const searched = await this.httpJson(searchUrl);
-    if (!searched.ok) {
-      emit('log', STEP_SEARCH, '[cover] Steam 英文名反查失败：' + searched.error, null, { level: 'info' });
-      return { title: '', source: 'none', error: searched.error };
-    }
-    const appId = parseSteamSearchAppId(searched.json);
-    if (!appId) {
-      emit('log', STEP_SEARCH, '[cover] Steam 未收录「' + name + '」，退回原名查询', null, { level: 'info' });
-      return { title: '', source: 'none', error: 'Steam 无搜索结果' };
-    }
+    emit('cover_search', STEP_SEARCH, '维基百科反查「' + name + '」的英文名…', null, { source: 'wiki' });
+    try {
+      // 第一步：中文维基搜索
+      const srUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch='
+        + encodeURIComponent(name) + '&format=json&srlimit=1';
+      const srRes = await this.fetch(srUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: this.timeoutSignal(),
+      });
+      if (!srRes.ok) {
+        return { title: '', source: 'none', error: 'Wikipedia 返回 ' + srRes.status };
+      }
+      const srData = await srRes.json();
+      const page = (srData.query && srData.query.search || [])[0];
+      if (!page) {
+        emit('log', STEP_SEARCH, '[cover] 维基百科未收录「' + name + '」', null, { level: 'info' });
+        return { title: '', source: 'none' };
+      }
 
-    const detailed = await this.httpJson(this.buildSteamDetailsUrl(appId));
-    if (!detailed.ok) {
-      emit('log', STEP_SEARCH, '[cover] Steam appdetails 失败：' + detailed.error, null, { level: 'info' });
-      return { title: '', source: 'none', appId, error: detailed.error };
+      // 第二步：取英文跨语言链接
+      const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks'
+        + '&lllang=en&pageids=' + page.pageid + '&format=json&lllimit=1';
+      const llRes = await this.fetch(llUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: this.timeoutSignal(),
+      });
+      if (!llRes.ok) {
+        return { title: '', source: 'none', error: 'Wikipedia langlinks 返回 ' + llRes.status };
+      }
+      const llData = await llRes.json();
+      const pages = llData.query && llData.query.pages || {};
+      const pg = Object.values(pages)[0];
+      const ll = (pg && pg.langlinks || [])[0];
+      if (!ll || !ll['*']) {
+        emit('log', STEP_SEARCH, '[cover] 维基百科无英文跨语言链接', null, { level: 'info' });
+        return { title: '', source: 'none' };
+      }
+      const title = String(ll['*']).trim();
+      if (title && isLatinTitle(title) && title.length >= 3) {
+        emit('cover_search', STEP_SEARCH, '维基百科英文名：' + title, null, {
+          source: 'wiki', englishTitle: title, zhPage: page.title,
+        });
+        return { title, source: 'wiki', zhPage: page.title };
+      }
+    } catch (e) {
+      // 静默降级
     }
-    const rawTitle = parseSteamAppName(detailed.json, appId);
-    const title = cleanEnglishTitle(rawTitle);
-    // 有些游戏在 Steam 上压根没有英文标题（只有中文），这种反查等于没查到
-    if (!title || !isLatinTitle(title)) {
-      emit('log', STEP_SEARCH, '[cover] Steam 未提供英文名（appid=' + appId + '），退回原名查询', null, { level: 'info' });
-      return { title: '', source: 'none', appId, rawTitle };
-    }
-    emit('cover_search', STEP_SEARCH, 'Steam 英文名：' + title + '（appid=' + appId + '）', null, {
-      source: 'steam-title', englishTitle: title, appId,
-    });
-    return { title, source: 'steam', appId, rawTitle };
+    emit('log', STEP_SEARCH, '[cover] 维基百科英文名反查失败', null, { level: 'info' });
+    return { title: '', source: 'none' };
   }
 
   /**
@@ -653,15 +669,14 @@ class CoverFetcher {
   }
 
   /**
-   * 解析本次要用的英文名（缺陷 3 的入口）。
+   * 解析本次要用的英文名。
    *
    * 优先级：
    *   1. `opts.englishTitle` —— 调用方显式给的，最可信，不发任何请求；
-   *   2. 原名本身就是拉丁标题（`Elden Ring` / `Nioh 2`）—— 它就是英文名，同样不发请求
-   *      （这一条同时保证纯英文场景下不会平白多打两次 Steam 接口）；
-   *   3. Steam 两步反查；
-   *   4. DuckDuckGo 网页搜索反查（Steam 没收录的兜底）；
-   *   5. 全都拿不到 → 返回空英文名，由 buildQueryPlan 退回原名，**不报错**。
+   *   2. 原名本身就是拉丁标题（`Elden Ring` / `Nioh 2`）—— 它就是英文名；
+   *   3. 维基百科反查（zh.wikipedia.org → langlinks.en）；
+   *   4. YouTube 搜索兜底（yt-dlp 搜视频标题）；
+   *   5. 全都拿不到 → 返回空英文名，**不报错**。
    *
    * @param {string} gameName 游戏名
    * @param {{englishTitle?: string, emit?: Function, lookup?: boolean}} [opts]
@@ -679,11 +694,11 @@ class CoverFetcher {
     if (this.englishTitleCache.has(name)) return this.englishTitleCache.get(name);
     let r = { title: '', source: 'none' };
     try {
-      r = await this.lookupEnglishTitleFromSteam(name, { emit: opts.emit });
+      r = await this.lookupEnglishTitleFromWiki(name, { emit: opts.emit });
     } catch (e) {
       r = { title: '', source: 'none', error: e && e.message ? e.message : String(e) };
     }
-    // Steam 没查到 → YouTube 搜索兜底
+    // 维基没查到 → YouTube 搜索兜底
     if (!r.title) {
       try {
         const webR = await this.lookupEnglishTitleFromWeb(name, { emit: opts.emit, ytDlpPath: opts.ytDlpPath });

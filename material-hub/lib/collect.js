@@ -193,8 +193,11 @@ class CollectService {
         + ' · ffprobe/' + envInfo.sources.ffprobe, null, { level: 'info' });
     }
     // 打印代理状态——封面搜索依赖代理出网，无声缺失会导致全超时
-    const px = (process.env.HTTP_PROXY || process.env.http_proxy || '');
-    emit('log', STEP_SCAN, '[env] HTTP_PROXY=' + (px || '(未设置)'), null, { level: px ? 'info' : 'warn' });
+    const pxEnv = (process.env.HTTP_PROXY || process.env.http_proxy || '');
+    const { resolveProxy } = require('./http');
+    const pxResolved = resolveProxy('https://www.google.com');
+    const pxStatus = pxEnv || (pxResolved ? '.proxy 文件' : '(未设置)');
+    emit('log', STEP_SCAN, '[env] HTTP_PROXY=' + pxStatus, null, { level: pxResolved ? 'info' : 'warn' });
 
     // ── 1. scan：同名复用优先，不存在才按「最大编号 +1」新建（Bug A）──
     let reserved = null;

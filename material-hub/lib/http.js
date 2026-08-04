@@ -167,7 +167,20 @@ function resolveProxy(target, env) {
   }
   if (!u || !u.protocol || !u.hostname) return null;
   if (shouldBypassProxy(u.hostname, firstEnv(source, NO_PROXY_ENV_KEYS))) return null;
-  return parseProxyUrl(pickProxyEnv(source, u.protocol));
+  const url = pickProxyEnv(source, u.protocol);
+  if (url) return parseProxyUrl(url);
+  // env 里没代理且调用方未注入 env（= 真实运行时）→ 尝试读项目级 .proxy 配置文件
+  //   测试会注入 env，不会触发此路径
+  if (!env) {
+    try {
+      const cfgPath = pathMod.join(__dirname, '..', '.proxy');
+      if (fsDefault.existsSync(cfgPath)) {
+        const cfg = fsDefault.readFileSync(cfgPath, 'utf8').split('\n')[0].trim();
+        if (cfg) return parseProxyUrl(cfg);
+      }
+    } catch (e) { /* 文件不存在或不可读，静默跳过 */ }
+  }
+  return null;
 }
 
 /**

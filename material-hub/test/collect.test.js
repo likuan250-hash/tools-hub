@@ -277,7 +277,7 @@ test('【Bug B 核心】网络封面 6 级全失败 + 视频成功 → 抽帧兜
       ok: false,
       reason: 'cover-all-sources-failed',
       error: '规范前 6 级封面来源均未取到达标图',
-      tried: ['4kwallpapers', 'alphacoders', 'wallhaven', 'nintendo', 'youtube'],
+      tried: ['4kwallpapers', 'alphacoders', 'wallhaven', 'game-sites', 'chinese-sites', 'youtube'],
     },
   });
   const { result, events } = await runCollect({ probe, cover });

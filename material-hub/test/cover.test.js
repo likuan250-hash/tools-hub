@@ -474,7 +474,7 @@ test('fetchCover 缺少入参的来源被跳过（不计入 tried）', async () 
   const r = await c.fetchCover('X', 'D:\\out');
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'cover-all-sources-failed');
-  assert.deepEqual(r.tried, ['4kwallpapers', 'alphacoders', 'wallhaven', 'nintendo']);
+  assert.deepEqual(r.tried, ['4kwallpapers', 'alphacoders', 'wallhaven', 'game-sites', 'chinese-sites']);
 });
 
 test('第 4 级用户指定 URL：默认排在规范的第 4 位，userUrlFirst 可提前', async () => {
@@ -547,7 +547,7 @@ test('全部来源失败时返回 cover-all-sources-failed 并列出尝试过的
   const r = await c.fetchCover('X', 'D:\\out', { coverUrl: 'https://a.com/x.jpg', videoId: 'v1' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'cover-all-sources-failed');
-  assert.deepEqual(r.tried, ['4kwallpapers', 'alphacoders', 'wallhaven', 'user', 'nintendo', 'youtube']);
+  assert.deepEqual(r.tried, ['4kwallpapers', 'alphacoders', 'wallhaven', 'user', 'game-sites', 'chinese-sites', 'youtube']);
   assert.ok(r.error.includes('wallhaven'));
 });
 

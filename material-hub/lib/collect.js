@@ -344,6 +344,7 @@ class CollectService {
           coverUrl: opts.coverUrl,
           ytDlpPath: envInfo.ytDlpPath,
           englishTitle: searchName !== gameName ? searchName : '',
+          originalName: gameName,
           videoId: trailerInfo && trailerInfo.id ? trailerInfo.id : '',
           resolveEnglish: false,
         });

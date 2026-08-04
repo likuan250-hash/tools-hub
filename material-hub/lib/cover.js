@@ -10,7 +10,8 @@
 //   2 alphacoders.com    同上 → 提取 images.alphacoders.com/<id前三位>/<id>.(jpg|png)
 //   3 wallhaven.cc       免费公开 JSON API（无需 key），最可靠的可编程源
 //   4 用户指定 URL       opts.coverUrl
-//   5 Nintendo 官网      仅轻量尝试（无开放 API，详见 fromNintendo 注释）
+//   5 游戏媒体站（英文）   Nintendo/PlayStation/Xbox/IGN/GameSpot/PCGamer
+//   5.5 中文游戏站         游民星空/3DM/游侠（可能带水印）
 //   6 YouTube 缩略图     maxresdefault.jpg，通常仅 1280×720 → 按「降级候选」处理，不占用达标名额
 //
 // 硬约束：
@@ -92,7 +93,11 @@ const STEAM_SEARCH_API = 'https://store.steampowered.com/api/storesearch/';
 /** Steam 应用详情 API（appid → 英文名；filters=basic 只取基础字段，响应体小很多）。 */
 const STEAM_DETAILS_API = 'https://store.steampowered.com/api/appdetails';
 /** 依赖英文查询词的来源：这几个站没有中文索引，喂中文名必然 0 结果。 */
-const ENGLISH_QUERY_SOURCES = ['4kwallpapers', 'alphacoders', 'wallhaven', 'nintendo'];
+const ENGLISH_QUERY_SOURCES = ['4kwallpapers', 'alphacoders', 'wallhaven', 'game-sites'];
+/** 第 5 级「游戏媒体站」：覆盖主要平台与游戏新闻站，不限任天堂一家。 */
+const GAME_MEDIA_SITES = ['nintendo.com', 'playstation.com', 'xbox.com', 'ign.com', 'gamespot.com', 'pcgamer.com'];
+/** 第 5.5 级「中文游戏站」：游民星空/3DM/游侠（⚠ 可能带水印，谨慎采纳）。 */
+const CHINESE_WALLPAPER_SITES = ['gamersky.com', '3dmgame.com', 'ali213.net'];
 
 // ─────────────────────── 缺陷 4：相关性校验 ───────────────────────
 
@@ -440,6 +445,8 @@ const SOURCE_LABEL = {
   wallhaven: 'wallhaven.cc',
   user: '用户指定 URL',
   nintendo: 'Nintendo 官网',
+  'game-sites': '游戏媒体站（英文）',
+  'chinese-sites': '中文游戏站（可能带水印）',
   youtube: 'YouTube 缩略图',
   'ffmpeg-frame': '主视频抽帧',
 };
@@ -1339,17 +1346,47 @@ class CoverFetcher {
    * @param {string} outDir 目标目录
    * @param {{emit?: Function, query?: string}} [opts]
    * @returns {Promise<object>} tryCandidates 结果（附 queryUsed）
+  /**
+   * 第 5 级：游戏媒体站（DDG site: 跨多站搜索 OG 图）。
+   * 覆盖 Nintendo/PlayStation/Xbox/IGN/GameSpot/PCGamer，
+   * 不再是只搜任天堂一家。
    */
-  async fromNintendo(gameName, outDir, opts = {}) {
+  async fromGameSites(gameName, outDir, opts = {}) {
     const query = this.pickQuery(gameName, opts);
-    const urls = await this.discoverViaDuckDuckGo(
-      'nintendo.com',
-      query,
-      (html) => this.parseOgImage(html),
-      { emit: opts.emit, extra: 'wallpaper', source: 'nintendo', relevance: 'page', query },
-    );
-    const r = await this.tryCandidates(urls, outDir, { emit: opts.emit, source: 'nintendo' });
-    return Object.assign({}, r, { queryUsed: query });
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    for (const site of GAME_MEDIA_SITES) {
+      const urls = await this.discoverViaDuckDuckGo(
+        site, query,
+        (html) => this.parseOgImage(html),
+        { emit, extra: 'wallpaper', source: 'game-sites', relevance: 'page', query, siteLabel: site },
+      );
+      if (!urls.length) continue;
+      const r = await this.tryCandidates(urls, outDir, { emit, source: 'game-sites' });
+      if (r.ok) return Object.assign({}, r, { queryUsed: query, site });
+    }
+    return { ok: false, error: '所有游戏媒体站均未找到封面', source: 'game-sites', queryUsed: query };
+  }
+
+  /**
+   * 第 5.5 级：中文游戏站（游民星空 / 3DM / 游侠）。
+   * 用原名（中文）搜索；站内通常有壁纸专区。⚠ 水印风险：这些站经常在图上打 logo。
+   */
+  async fromChineseSites(gameName, outDir, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    // 优先用原始中文名（collect.js 传来的 originalName），回退到 gameName
+    const cname = String(opts.originalName || gameName || '').trim();
+    if (!cname) return { ok: false, error: '无可用中文名', source: 'chinese-sites' };
+    for (const site of CHINESE_WALLPAPER_SITES) {
+      const urls = await this.discoverViaDuckDuckGo(
+        site, cname,
+        (html) => this.parseOgImage(html),
+        { emit, extra: '壁纸', source: 'chinese-sites', relevance: 'page', query: cname, siteLabel: site },
+      );
+      if (!urls.length) continue;
+      const r = await this.tryCandidates(urls, outDir, { emit, source: 'chinese-sites' });
+      if (r.ok) return Object.assign({}, r, { queryUsed: cname, site, watermarkRisk: true });
+    }
+    return { ok: false, error: '中文游戏站未找到封面', source: 'chinese-sites', queryUsed: cname };
   }
 
   /**
@@ -1455,7 +1492,7 @@ class CoverFetcher {
       null, Object.assign({ level: 'info' }, meta));
 
     // 规范《封面来源优先级》表格顺序；userUrlFirst 仅在调用方显式要求时改变位次
-    let order = ['4kwallpapers', 'alphacoders', 'wallhaven', 'user', 'nintendo', 'youtube'];
+    let order = ['4kwallpapers', 'alphacoders', 'wallhaven', 'user', 'game-sites', 'chinese-sites', 'youtube'];
     if (opts.userUrlFirst === true) order = ['user'].concat(order.filter((s) => s !== 'user'));
     if (Array.isArray(opts.sources) && opts.sources.length) {
       order = order.filter((s) => opts.sources.indexOf(s) >= 0);
@@ -1485,7 +1522,8 @@ class CoverFetcher {
           if (source === '4kwallpapers') r = await this.from4kWallpapers(name, outDir, { emit, query });
           else if (source === 'alphacoders') r = await this.fromAlphacoders(name, outDir, { emit, query });
           else if (source === 'wallhaven') r = await this.fromWallhaven(name, outDir, { emit, query });
-          else if (source === 'nintendo') r = await this.fromNintendo(name, outDir, { emit, query });
+          else if (source === 'game-sites') r = await this.fromGameSites(name, outDir, { emit, query });
+          else if (source === 'chinese-sites') r = await this.fromChineseSites(name, outDir, { emit, originalName: opts.originalName });
           else if (source === 'user') r = await this.fromUserUrl(opts.coverUrl, outDir, { emit });
           else if (source === 'youtube') r = await this.fromYouTube(opts.videoId, outDir, { emit });
         } catch (e) {

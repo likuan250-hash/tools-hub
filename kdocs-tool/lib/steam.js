@@ -287,14 +287,127 @@ function extractEnglishNameFromWikidata(searchJson, entitiesJson) {
   return "";
 }
 
-/** 纯函数：从百度百科词条页 HTML 抽英文名字段。可单测。 */
+/** 纯函数：从百度百科词条页 HTML 抽英文名字段。可单测。
+ *  防御性：百度现已对词条页加反爬验证页（"百度安全验证"/验证码），
+ *  这种页里没有真实词条内容，必须直接返回空，避免误抽验证码页里的英文碎片。 */
 function extractEnglishNameFromBaidu(html) {
   if (!html) return "";
+  const s = String(html);
+  if (/百度安全验证|验证码|security|captcha|anti-spam/i.test(s)) return "";
   // 百度百科 infobox 形如 <th>英文名</th><td>Elden Ring</td>，先剥离 HTML 标签，
   // 否则懒惰量词会在 </th> 的 "th" 处提前满足、误把标签残字当英文名。
-  const text = String(html).replace(/<[^>]+>/g, " ");
-  const m = /英文名[\s\S]{0,30}?([A-Za-z][A-Za-z0-9\s:'’!&.\-]{1,40})/i.exec(text);
-return m ? m[1].trim() : "";
+  const text = s.replace(/<[^>]+>/g, " ");
+  const m = /(?:英文名|英文名称|游戏英文名)[\s\S]{0,40}?([A-Za-z][A-Za-z0-9\s:'’!&.\-]{1,40})/i.exec(text);
+  return m ? m[1].trim() : "";
+}
+
+// ── Wikipedia 中文模糊搜 → 英文名（主力源：覆盖 Wikidata 无中文 label 的游戏）──
+/** 纯函数：从 Wikipedia 搜索摘要抽英文名（摘要常含「英語：X」/「原名：X」）。可单测。 */
+function extractEnglishNameFromWikiSnippet(snippet) {
+  if (!snippet) return "";
+  const text = String(snippet).replace(/<[^>]+>/g, ""); // 去 <span class="searchmatch"> 等标签残字
+  const m = /(?:英語|英语|原名)[:：]\s*([A-Za-z][A-Za-z0-9\s:'’!&.\-]{1,60})/.exec(text);
+  return m ? m[1].trim().replace(/\s+/g, " ") : "";
+}
+
+/** 纯函数：从 Wikipedia 词条 infobox wikitext 抽英文名（| english = X / | 原名 = X）。可单测。 */
+function extractEnglishNameFromWikiInfobox(wikitext) {
+  if (!wikitext) return "";
+  const tests = [
+    /\|\s*english\s*=\s*([^\n|{}<]{1,80})/i,
+    /\|\s*原名\s*=\s*([^\n|{}<]{1,80})/i,
+  ];
+  for (const re of tests) {
+    const m = re.exec(wikitext);
+    if (m) { const v = m[1].trim(); if (/[A-Za-z]/.test(v)) return v; }
+  }
+  return "";
+}
+
+/**
+ * 从 Wikipedia 中文模糊搜解析英文名。多步兜底：
+ *   1) 直接解析 top5 搜索摘要里的「英語：/原名：」
+ *   2) 抓 top3 词条的 infobox（| english=/| 原名=），按与输入的匹配度择优
+ * 失败/异常/超时一律返回 ""。依赖 httpGetJson（可注入 mock 单测）。
+ */
+async function fetchEnglishNameFromWikipedia(name, httpGetJson) {
+  if (!name) return "";
+  try {
+    const searchUrl = `https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(name)}&format=json&srlimit=5`;
+    const s = await httpGetJson(searchUrl, 8000);
+    const items = (s && s.query && s.query.search) || [];
+    if (!items.length) return "";
+    // 1) 摘要快路径
+    for (const it of items) {
+      const en = extractEnglishNameFromWikiSnippet(it && it.snippet);
+      if (en) return en;
+    }
+    // 2) infobox 兜底：抓 top3 词条的英文名，按匹配度择优
+    const picks = [];
+    for (const it of items.slice(0, 3)) {
+      const t = it && it.title;
+      if (!t) continue;
+      try {
+        const url = `https://zh.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(t)}&prop=revisions&rvprop=content&rvslots=main&format=json`;
+        const r = await httpGetJson(url, 8000);
+        const pages = (r && r.query && r.query.pages) || {};
+        for (const k of Object.keys(pages)) {
+          const p = pages[k];
+          if (p && p.missing) continue;
+          const rev = p && p.revisions && p.revisions[0];
+          const wt = rev && rev.slots && rev.slots.main && rev.slots.main["*"];
+          const en = extractEnglishNameFromWikiInfobox(wt);
+          if (en) picks.push({ title: t, en, score: scoreWikiPick(en, t, name) });
+        }
+      } catch {}
+    }
+    if (!picks.length) return "";
+    picks.sort((a, b) => b.score - a.score || b.en.length - a.en.length);
+    return picks[0].en;
+  } catch {}
+  return "";
+}
+
+/** 给 Wikipedia 候选英文名打分：与输入里的序号/版本词对齐的优先。纯函数。 */
+function scoreWikiPick(en, title, input) {
+  let score = 0;
+  const enL = String(en).toLowerCase();
+  const tiL = String(title).toLowerCase();
+  const inL = String(input).toLowerCase();
+  if (/2|二|第\s*ii|ii|2代|3|三|第\s*iii|iii/.test(inL) && /ii|2|part|iii|3|vol/i.test(enL + " " + tiL)) score += 2;
+  if (/重制|复刻/.test(inL) && /remaster|remake/i.test(enL + " " + tiL)) score += 2;
+  if (/年度/.test(inL) && /year|goty/i.test(enL + " " + tiL)) score += 1;
+  if (/决定|终极|完全/.test(inL) && /definitive|ultimate|complete/i.test(enL + " " + tiL)) score += 1;
+  return score;
+}
+
+// ── 版本词增强：输入含「重制版」等 → 拼出精确英文名 ──
+const EDITION_RULES = [
+  { re: /复刻版/, suffix: "Remake" },
+  { re: /重制版/, suffix: "Remastered" },
+  { re: /年度版|年度豪華|game\s*of\s*the\s*year|\bgoty\b/i, suffix: "Game of the Year" },
+  { re: /决定版|终极版/, suffix: "Definitive Edition" },
+  { re: /豪华版|豪華版/, suffix: "Deluxe Edition" },
+  { re: /黄金版|白金版/, suffix: "Gold Edition" },
+  { re: /完整版|完全版/, suffix: "Complete Edition" },
+  { re: /典藏版|收藏版|珍藏版/, suffix: "Collector's Edition" },
+];
+const EDITION_WORDS = /remaster|remake|definitive|deluxe|gold|platinum|complete|collector|goty|game of the year|ultimate|edition/i;
+
+/** 纯函数：从原始输入检测版本后缀（中文 → 英文）。可单测。 */
+function detectEditionSuffix(raw) {
+  if (!raw) return "";
+  for (const r of EDITION_RULES) if (r.re.test(raw)) return r.suffix;
+  return "";
+}
+
+/** 纯函数：把基础英文名按输入里的版本词拼成精确名。已含版本词则不重复。可单测。 */
+function augmentWithEdition(baseEn, raw) {
+  if (!baseEn) return "";
+  const suffix = detectEditionSuffix(raw);
+  if (!suffix) return baseEn;
+  if (EDITION_WORDS.test(baseEn)) return baseEn;
+  return `${baseEn} ${suffix}`;
 }
 
 // ── 清洗 / 副标题剥离 / AppID 抽取：见 lib/nameutil.js（纯函数，parser 与 steam 共享）──
@@ -318,7 +431,7 @@ async function resolveEnglishName(gameName, deps) {
   const httpJson = (deps && deps.httpGetJson) || httpGetJson;
   const httpText = (deps && deps.httpGetText) || httpGetText;
 
-  // 内部解析：候选名逐级尝试 Wikidata → 百度百科，命中即返回英文名，否则 ""。
+  // 内部解析：候选名逐级尝试 Wikidata → Wikipedia → 百度百科，命中即返回英文名，否则 ""。
   const doResolve = async () => {
     // 候选名顺序：清洗后名（保留副标题，重制版/年度版独立条目更准）→ 剥副标题（百科核心名覆盖高）→ 原名兜底
     const cleaned = cleanGameName(raw);
@@ -327,8 +440,10 @@ async function resolveEnglishName(gameName, deps) {
     const stripped = stripSubtitle(cleaned);
     if (stripped && stripped !== cleaned) candidates.push(stripped);
     if (!candidates.includes(raw)) candidates.push(raw);
-    // 1) Wikidata zh search → en label（按候选顺序逐级尝试）
+
+    let baseEn = "";
     for (const name of candidates) {
+      // 1) Wikidata zh search → en label（有中文 label 时最结构化、最可靠，优先）
       try {
         const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(name)}&language=zh&format=json&limit=3`;
         const search = await httpJson(searchUrl, 8000);
@@ -337,25 +452,30 @@ async function resolveEnglishName(gameName, deps) {
           const entUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${ids.join("|")}&props=labels&languages=en&format=json`;
           const ent = await httpJson(entUrl, 8000);
           const label = extractEnglishNameFromWikidata(search, ent);
-          if (label) return label;
+          if (label) { baseEn = label; break; }
         }
       } catch {}
-    }
-    // 2) 百度百科英文段（同上逐级尝试）
-    for (const name of candidates) {
+      // 2) Wikipedia 中文模糊搜 → 摘要/infobox 的 英語/原名（覆盖 Wikidata 无中文 label 的游戏）
+      try {
+        const en = await fetchEnglishNameFromWikipedia(name, httpJson);
+        if (en) { baseEn = en; break; }
+      } catch {}
+      // 3) 百度百科英文段（防御性：遇反爬验证页直接跳过）
       try {
         const html = await httpText(`https://baike.baidu.com/item/${encodeURIComponent(name)}`, 8000);
         const en = extractEnglishNameFromBaidu(html);
-        if (en) return en;
+        if (en) { baseEn = en; break; }
       } catch {}
     }
-    return "";
+    if (!baseEn) return "";
+    // 版本词增强：输入含 重制版/年度版 等 → 拼出精确英文名（如 Part II + 重制版 → Part II Remastered）
+    return augmentWithEdition(baseEn, raw);
   };
 
-  // 总超时预算（H2）：Wikidata/百度全失败时最坏会串行挂 ~48s，这里封顶 12s，
+  // 总超时预算（H2）：多源全失败时最坏会串行挂数十秒，这里封顶 15s，
   // 超时即放弃解析（交上层直接用中文名匹配），避免整条录入被拖死。
   let timer;
-  const timeoutP = new Promise((res) => { timer = setTimeout(() => res(""), 12000); });
+  const timeoutP = new Promise((res) => { timer = setTimeout(() => res(""), 15000); });
   try {
     return await Promise.race([doResolve(), timeoutP]);
   } finally {
@@ -392,5 +512,7 @@ module.exports = {
   searchSteamAppId, downloadCover, downloadCoverFromUrl, getSteamAppDetails, parseSteamAppDetails,
   parseSteamAppIdFromText, fetchAppIdFromWikidata, fetchAppIdFromBaiduBaike, fetchAppIdFromWebSearch,
   parseSteamSizeFromRequirements, resolveEnglishName, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu,
+  extractEnglishNameFromWikiSnippet, extractEnglishNameFromWikiInfobox, fetchEnglishNameFromWikipedia,
+  detectEditionSuffix, augmentWithEdition,
   cleanGameName, stripSubtitle, tryDownload, isImageMagic,
 };

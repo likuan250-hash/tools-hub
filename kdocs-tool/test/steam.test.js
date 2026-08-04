@@ -5,7 +5,8 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName, cleanGameName, stripSubtitle, tryDownload, isImageMagic } = require("../lib/steam");
+const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName, cleanGameName, stripSubtitle, tryDownload, isImageMagic,
+  extractEnglishNameFromWikiSnippet, extractEnglishNameFromWikiInfobox, fetchEnglishNameFromWikipedia, detectEditionSuffix, augmentWithEdition } = require("../lib/steam");
 
 test("parseSteamAppDetails 提取官方 short_description / genres / type", () => {
   const data = {
@@ -152,53 +153,124 @@ test("stripSubtitle 无副标题原样返回", () => {
   assert.strictEqual(stripSubtitle(null), "");
 });
 
-// ── resolveEnglishName 多候选降级（清洗→剥副标题→原名）──
-test("resolveEnglishName 清洗后 Wikidata 命中直接返回（不发剥副标题请求）", async () => {
-  const calls = [];
-  const fakeHttpJson = async (url) => {
-    calls.push(url);
-    if (calls.length === 1) return { search: [{ id: "Q1" }] };
-    return { entities: { Q1: { labels: { en: { value: "The Last of Us Part II Remastered" } } } } };
+// ── resolveEnglishName 多源管道（Wikidata → Wikipedia → 百度）+ 版本词增强 ──
+// URL 感知 mock：按请求 URL 区分 Wikidata / Wikipedia 搜索 / Wikipedia infobox / 百度，便于离线断言。
+function urlAwareDeps(opts) {
+  const calls = { wikidataSearch: 0, wikidataEntities: 0, wikiSearch: 0, wikiInfobox: 0, baidu: 0 };
+  const httpGetJson = async (url) => {
+    if (url.includes("wikidata.org") && url.includes("wbsearchentities")) { calls.wikidataSearch++; return opts.wikidataSearch ? opts.wikidataSearch(url) : { search: [] }; }
+    if (url.includes("wikidata.org") && url.includes("wbgetentities")) { calls.wikidataEntities++; return opts.wikidataEntities ? opts.wikidataEntities(url) : {}; }
+    if (url.includes("wikipedia.org") && url.includes("list=search")) { calls.wikiSearch++; return opts.wikiSearch ? opts.wikiSearch(url) : { query: { search: [] } }; }
+    if (url.includes("wikipedia.org") && url.includes("prop=revisions")) { calls.wikiInfobox++; return opts.wikiInfobox ? opts.wikiInfobox(url) : { query: { pages: {} } }; }
+    return {};
   };
-  const en = await resolveEnglishName(
-    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
-    { httpGetJson: fakeHttpJson }
-  );
-  assert.strictEqual(en, "The Last of Us Part II Remastered");
-  assert.strictEqual(calls.length, 2);
+  const httpGetText = async (url) => { calls.baidu++; return opts.baidu ? opts.baidu(url) : ""; };
+  return { httpGetJson, httpGetText, calls };
+}
+
+test("extractEnglishNameFromWikiSnippet 解析 英語：/原名：", () => {
+  assert.strictEqual(extractEnglishNameFromWikiSnippet("《最後生還者 第II章》（英語：The Last of Us Part II）"), "The Last of Us Part II");
+  assert.strictEqual(extractEnglishNameFromWikiSnippet("原名：Black Myth: Wukong"), "Black Myth: Wukong");
+  assert.strictEqual(extractEnglishNameFromWikiSnippet("无英文名摘要"), "");
 });
 
-test("resolveEnglishName 清洗名 Wikidata 失败 → 剥副标题命中", async () => {
-  const calls = [];
-  const fakeHttpJson = async (url) => {
-    calls.push(url);
-    if (calls.length === 1) return { search: [] };
-    if (calls.length === 2) return { search: [{ id: "Q1" }] };
-    return { entities: { Q1: { labels: { en: { value: "The Last of Us Part II" } } } } };
-  };
-  const en = await resolveEnglishName(
-    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
-    { httpGetJson: fakeHttpJson }
-  );
-  assert.strictEqual(en, "The Last of Us Part II");
-  assert.strictEqual(calls.length, 3);
+test("extractEnglishNameFromWikiInfobox 解析 | english = / | 原名 =", () => {
+  assert.strictEqual(extractEnglishNameFromWikiInfobox("{{Infobox\n| english = The Last of Us Part II\n| released = 2020\n}}"), "The Last of Us Part II");
+  assert.strictEqual(extractEnglishNameFromWikiInfobox("| 原名 = Elden Ring"), "Elden Ring");
+  assert.strictEqual(extractEnglishNameFromWikiInfobox("| title = 最後生還者"), "");
 });
 
-test("resolveEnglishName Wikidata 全失败 → 百度百科清洗名命中", async () => {
-  const callsJson = [];
-  const callsText = [];
-  const fakeHttpJson = async (url) => { callsJson.push(url); return { search: [] }; };
-  const fakeHttpText = async (url) => {
-    callsText.push(url);
-    if (callsText.length === 1) return "<th>英文名</th><td>The Last of Us Part II Remastered</td>";
-    return "";
-  };
+test("fetchEnglishNameFromWikipedia 走 snippet 快路径", async () => {
+  const httpJson = async () => ({ query: { search: [{ snippet: "（英語：Hollow Knight）" }] } });
+  assert.strictEqual(await fetchEnglishNameFromWikipedia("空洞骑士", httpJson), "Hollow Knight");
+});
+
+test("fetchEnglishNameFromWikipedia 无结果返回空", async () => {
+  const httpJson = async () => ({ query: { search: [] } });
+  assert.strictEqual(await fetchEnglishNameFromWikipedia("某某", httpJson), "");
+});
+
+test("detectEditionSuffix / augmentWithEdition 版本词映射", () => {
+  assert.strictEqual(detectEditionSuffix("最后的生还者2：重制版"), "Remastered");
+  assert.strictEqual(detectEditionSuffix("生化危机2 复刻版"), "Remake");
+  assert.strictEqual(detectEditionSuffix("巫师3 年度版"), "Game of the Year");
+  assert.strictEqual(detectEditionSuffix("无版本词"), "");
+  assert.strictEqual(augmentWithEdition("The Last of Us Part II", "最后的生还者2：重制版"), "The Last of Us Part II Remastered");
+  assert.strictEqual(augmentWithEdition("The Last of Us Part II Remastered", "最后的生还者2：重制版"), "The Last of Us Part II Remastered", "已含版本词不重复");
+  assert.strictEqual(augmentWithEdition("The Last of Us Part II", "无版本词"), "The Last of Us Part II");
+});
+
+test("resolveEnglishName Wikidata 命中直接返回（不触发 Wikipedia/百度）", async () => {
+  const deps = urlAwareDeps({
+    wikidataSearch: () => ({ search: [{ id: "Q1" }] }),
+    wikidataEntities: () => ({ entities: { Q1: { labels: { en: { value: "The Last of Us Part II Remastered" } } } } }),
+  });
   const en = await resolveEnglishName(
     "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
-    { httpGetJson: fakeHttpJson, httpGetText: fakeHttpText }
+    deps
   );
   assert.strictEqual(en, "The Last of Us Part II Remastered");
-  assert.strictEqual(callsText.length, 1);
+  assert.strictEqual(deps.calls.wikidataSearch, 1);
+  assert.strictEqual(deps.calls.wikidataEntities, 1);
+  assert.strictEqual(deps.calls.wikiSearch, 0, "Wikidata 命中后不应再搜 Wikipedia");
+  assert.strictEqual(deps.calls.baidu, 0, "不应再查百度");
+});
+
+test("resolveEnglishName Wikidata 失败 → Wikipedia infobox 命中（含版本词增强）", async () => {
+  const deps = urlAwareDeps({
+    wikiSearch: () => ({ query: { search: [{ ns: 0, title: "最后生还者 第II章", snippet: "《最後生還者 第II章》（英語：The Last of Us Part II）" }] } }),
+    wikiInfobox: () => ({ query: { pages: { "1": { title: "最后生还者 第II章", revisions: [{ slots: { main: { "*": "| english = The Last of Us Part II\n" } } }] } } } }),
+  });
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
+    deps
+  );
+  // 基础名 The Last of Us Part II + 输入含「重制版」→ 拼成精确名
+  assert.strictEqual(en, "The Last of Us Part II Remastered");
+  assert.strictEqual(deps.calls.baidu, 0, "Wikipedia 命中后不应再查百度");
+});
+
+test("resolveEnglishName Wikipedia 多结果按匹配度择优（跳过系列通用名/干扰项）", async () => {
+  const deps = urlAwareDeps({
+    wikiSearch: () => ({ query: { search: [
+      { ns: 0, title: "最後生還者", snippet: "系列页" },
+      { ns: 0, title: "最后生还者 第II章", snippet: "（英語：The Last of Us Part II）" },
+      { ns: 0, title: "生化危机2 重制版", snippet: "（英語：Resident Evil 2 Remake）" },
+    ] } }),
+    wikiInfobox: (url) => {
+      if (url.includes("第II章")) return { query: { pages: { "1": { title: "最后生还者 第II章", revisions: [{ slots: { main: { "*": "| english = The Last of Us Part II\n" } } }] } } } };
+      if (url.includes("生化危机")) return { query: { pages: { "2": { title: "生化危机2 重制版", revisions: [{ slots: { main: { "*": "| english = Resident Evil 2 Remake\n" } } }] } } } };
+      return { query: { pages: { "0": { title: "最後生還者", revisions: [{ slots: { main: { "*": "| english = The Last of Us\n" } } }] } } } };
+    },
+  });
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
+    deps
+  );
+  assert.strictEqual(en, "The Last of Us Part II Remastered");
+});
+
+test("resolveEnglishName Wikidata+Wikipedia 失败 → 百度百科命中", async () => {
+  const deps = urlAwareDeps({
+    baidu: () => "<th>英文名</th><td>The Last of Us Part II Remastered</td>",
+  });
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
+    deps
+  );
+  assert.strictEqual(en, "The Last of Us Part II Remastered");
+  assert.strictEqual(deps.calls.baidu, 1);
+});
+
+test("resolveEnglishName 百度遇反爬验证页应跳过（返回空，不误抽）", async () => {
+  const deps = urlAwareDeps({
+    baidu: () => "<title>百度安全验证</title><script>验证码</script>",
+  });
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
+    deps
+  );
+  assert.strictEqual(en, "");
 });
 
 test("resolveEnglishName 所有候选都失败返回空", async () => {

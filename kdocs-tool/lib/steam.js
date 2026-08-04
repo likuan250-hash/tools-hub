@@ -1,5 +1,6 @@
 ﻿// ── Steam 搜索 + 封面下载 ──
 const https = require("https");
+const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { DEFAULT_COVER_DIR } = require("./config");
@@ -83,7 +84,8 @@ function parseSteamAppDetails(data) {
     ? data.genres.map(g => (g && g.description) || "").filter(Boolean)
     : [];
   const type = data.type || "";
-  return { shortDescription: sd, genres, type };
+  const size = parseSteamSizeFromRequirements(data.pc_requirements);
+  return { shortDescription: sd, genres, type, size };
 }
 
 /** 抓取 Steam 官方 store 描述（主源，质量最高）。失败/无结果返回 null，绝不抛错打断流程。 */
@@ -121,4 +123,148 @@ function downloadCoverFromUrl(gameName, url, coverDir) {
   return tryDownload(url, fp);
 }
 
-module.exports = { searchSteamAppId, downloadCover, downloadCoverFromUrl, getSteamAppDetails, parseSteamAppDetails };
+// ────────────────────── AppID 多源取拿（维基 / 百度 / 网页兜底）──────────────────────
+// 通用 GET（文本 / JSON），带超时、UA、单跳重定向跟随；任何异常 / 非 200 / 超时一律返回兜底值，绝不抛错打断流程。
+function httpGetText(url, timeoutMs = 10000, depth = 0) {
+  return new Promise((resolve) => {
+    const finish = (v) => resolve(v);
+    if (depth > 3) return finish("");
+    let req;
+    try {
+      const mod = url.startsWith("http://") ? http : https;
+      req = mod.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: timeoutMs }, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          const loc = res.headers.location;
+          res.destroy();
+          if (!loc) return finish("");
+          const next = loc.startsWith("http") ? loc : new URL(loc, url).href;
+          return finish(httpGetText(next, timeoutMs, depth + 1));
+        }
+        if (res.statusCode !== 200) { res.destroy(); return finish(""); }
+        let d = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (d += c));
+        res.on("end", () => finish(d));
+        res.on("error", () => finish(""));
+      });
+    } catch { return finish(""); }
+    req.on("error", () => finish(""));
+    req.on("timeout", () => { try { req.destroy(); } catch {} finish(""); });
+  });
+}
+
+function httpGetJson(url, timeoutMs = 10000, depth = 0) {
+  return new Promise((resolve) => {
+    const finish = (v) => resolve(v);
+    if (depth > 3) return finish(null);
+    let req;
+    try {
+      const mod = url.startsWith("http://") ? http : https;
+      req = mod.get(url, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: timeoutMs }, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          const loc = res.headers.location;
+          res.destroy();
+          if (!loc) return finish(null);
+          const next = loc.startsWith("http") ? loc : new URL(loc, url).href;
+          return finish(httpGetJson(next, timeoutMs, depth + 1));
+        }
+        if (res.statusCode !== 200) { res.destroy(); return finish(null); }
+        let d = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (d += c));
+        res.on("end", () => { try { finish(JSON.parse(d)); } catch { finish(null); } });
+        res.on("error", () => finish(null));
+      });
+    } catch { return finish(null); }
+    req.on("error", () => finish(null));
+    req.on("timeout", () => { try { req.destroy(); } catch {} finish(null); });
+  });
+}
+
+/** 从任意文本抽 Steam AppID（store.steampowered.com/app/<id> / steamcommunity / steamdb）。纯函数。 */
+function parseSteamAppIdFromText(text) {
+  if (!text) return "";
+  const m = /store\.steampowered\.com\/app\/(\d+)|steamcommunity\.com\/app\/(\d+)|steamdb\.info\/app\/(\d+)/i.exec(String(text));
+  return m ? (m[1] || m[2] || m[3] || "") : "";
+}
+
+/**
+ * 维基百科 / Wikidata 反查 Steam AppID（P1733 属性 = Steam Application ID）。
+ * 多语言搜索（zh→en）提高命中；取前若干候选实体的首个 P1733 值。失败静默返回空。
+ */
+async function fetchAppIdFromWikidata(gameName) {
+  if (!gameName) return "";
+  try {
+    for (const lang of ["zh", "en"]) {
+      const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(gameName)}&language=${lang}&format=json&limit=3`;
+      const search = await httpGetJson(searchUrl, 8000);
+      const entities = (search && search.search) || [];
+      for (const e of entities) {
+        const qid = e && e.id;
+        if (!qid) continue;
+        const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetclaims&entity=${qid}&property=P1733&format=json`;
+        const claims = await httpGetJson(claimsUrl, 8000);
+        const arr = claims && claims.claims && claims.claims.P1733;
+        if (Array.isArray(arr) && arr.length) {
+          const v = arr[0] && arr[0].mainsnak && arr[0].mainsnak.datavalue && arr[0].mainsnak.datavalue.value;
+          if (v) return String(v);
+        }
+      }
+    }
+  } catch {}
+  return "";
+}
+
+/** 百度百科：best-effort，从词条页 HTML 抽 Steam 链接里的 AppID。失败静默返回空。 */
+async function fetchAppIdFromBaiduBaike(gameName) {
+  if (!gameName) return "";
+  try {
+    const url = `https://baike.baidu.com/item/${encodeURIComponent(gameName)}`;
+    const html = await httpGetText(url, 8000);
+    return parseSteamAppIdFromText(html);
+  } catch {}
+  return "";
+}
+
+/** 网页搜索兜底（DuckDuckGo HTML）→ 抽 Steam AppID。best-effort，失败静默返回空。 */
+async function fetchAppIdFromWebSearch(gameName) {
+  if (!gameName) return "";
+  try {
+    const q = `${gameName} steam appid`;
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+    const html = await httpGetText(url, 8000);
+    return parseSteamAppIdFromText(html);
+  } catch {}
+  return "";
+}
+
+/**
+ * 从 Steam pc_requirements（appdetails 返回的 {minimum, recommended} HTML 串）抽磁盘占用。
+ * 优先 recommended，其次 minimum；中英双语识别 Storage / 存储空间 / 硬盘。纯函数。
+ * @returns {string} 形如 "40GB" / "512MB"，无则返回 ""
+ */
+function parseSteamSizeFromRequirements(pc) {
+  if (!pc || typeof pc !== "object") return "";
+  const segments = [pc.recommended, pc.minimum].filter((s) => typeof s === "string" && s);
+  for (const html of segments) {
+    const s = extractStorageFromHtml(html);
+    if (s) return s;
+  }
+  return "";
+}
+
+function extractStorageFromHtml(html) {
+  if (!html) return "";
+  // 1) 显式"Storage:" / "存储空间：" / "硬盘：" 后跟数字+单位（允许标签/空格穿插，限制窗口避免误抓）
+  const m = /(?:storage|存储空间|硬盘|磁盘空间)[\s\S]{0,40}?([\d]+(?:\.\d+)?)\s*(gb|mb|tb|g|m|t)/i.exec(html);
+  if (m) return m[1] + m[2].toUpperCase();
+  // 2) 兜底：requirements 段内第一个 "40 GB" 形态
+  const m2 = /([\d]+(?:\.\d+)?)\s*(gb|mb|tb|g|m|t)\b/i.exec(html);
+  return m2 ? m2[1] + m2[2].toUpperCase() : "";
+}
+
+module.exports = {
+  searchSteamAppId, downloadCover, downloadCoverFromUrl, getSteamAppDetails, parseSteamAppDetails,
+  parseSteamAppIdFromText, fetchAppIdFromWikidata, fetchAppIdFromBaiduBaike, fetchAppIdFromWebSearch,
+  parseSteamSizeFromRequirements,
+};

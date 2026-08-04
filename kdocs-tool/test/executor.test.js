@@ -25,6 +25,9 @@ function baseDeps(over = {}) {
     checkKdocsReady: () => true,
     searchSteamAppId: async () => null,
     getSteamAppDetails: async () => null, // 默认无 Steam 官方描述（走 bl 兜底）
+    fetchAppIdFromWikidata: async () => null,
+    fetchAppIdFromBaiduBaike: async () => null,
+    fetchAppIdFromWebSearch: async () => null,
     aiDescribe: () => ({ intro: "Hazelight 开发的双人合作冒险游戏。", size: "30.7G" }),
     aiCoverSearch: async () => "https://cdn.x.com/a.jpg", // 默认 bl 能搜到封面（中英文双搜）
     getTotalSize: async () => null, // 默认无夸克大小（有 quarkUrl 时也不报错）
@@ -282,6 +285,63 @@ test("resolveGameSize 优先级：真实字节(夸克>百度>迅雷) > bl > 文�
 test("resolveGameSize 真实大小严格优先于 bl 猜测（即使 bl 也有值）", () => {
   // 真实字节求和最准，不应被 bl 猜测覆盖
   assert.strictEqual(resolveGameSize({ quark: "30.7GB" }, "99G", "88G"), "30.7G");
+});
+
+// ── AppID 多源取拿 + Steam 官方大小兜底（2026-08-04 新增）──
+test("AppID 多源取拿：Steam 搜索未命中时回退维基百科，并驱动 Steam 封面", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => null,
+    fetchAppIdFromWikidata: async () => "2461850", // Split Fiction 真实 appid
+  });
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const appidStep = res.steps.find(s => s.name === "Steam AppID");
+  assert.strictEqual(appidStep.status, "成功");
+  assert.strictEqual(appidStep.appid, "2461850");
+  assert.strictEqual(appidStep.source, "维基百科", "应标注来源维基百科");
+  // 拿到 appid 后应走 Steam 官方封面（而非 bl 兜底）
+  assert.strictEqual(deps._state().downloadCoverCount, 1, "有 appid 应走 Steam 官方封面");
+});
+
+test("AppID 多源取拿：维基未命中时回退百度百科", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => null,
+    fetchAppIdFromWikidata: async () => null,
+    fetchAppIdFromBaiduBaike: async () => "1086940",
+  });
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const appidStep = res.steps.find(s => s.name === "Steam AppID");
+  assert.strictEqual(appidStep.status, "成功");
+  assert.strictEqual(appidStep.appid, "1086940");
+  assert.strictEqual(appidStep.source, "百度百科");
+});
+
+test("游戏大小兜底：Steam 官方大小在无网盘真实大小时生效", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    getSteamAppDetails: async () => ({ shortDescription: "x".repeat(20), size: "40GB" }),
+  });
+  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const { lastCreate } = deps._state();
+  assert.strictEqual(lastCreate["游戏大小"], "40G", "Steam 大小经归一化 40GB→40G");
+  assert.strictEqual(res.sizeProvenance, "Steam官方", "溯源标签应为 Steam官方");
+});
+
+test("游戏大小优先级：真实网盘 > Steam 官方", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    getTotalSize: async () => ({ text: "30.7G", bytes: 1, files: 1 }),
+    getSteamAppDetails: async () => ({ shortDescription: "x".repeat(20), size: "40GB" }),
+  });
+  const res = await autoExecute(baseParsed({ quarkUrl: "https://pan.quark.cn/s/x" }), null, "/tmp", { deps });
+  const { lastCreate } = deps._state();
+  assert.strictEqual(lastCreate["游戏大小"], "30.7G", "真实网盘严格优先于 Steam 官方");
+  assert.strictEqual(res.sizeProvenance, "夸克真实");
+});
+
+test("resolveGameSize 优先级含 Steam 官方（真实网盘 > Steam > bl > 文本）", () => {
+  assert.strictEqual(resolveGameSize({ steam: "40GB" }, "", ""), "40G", "无真实网盘时 Steam 官方优先且归一化");
+  assert.strictEqual(resolveGameSize({ quark: "30G" }, "", ""), "30G", "真实网盘仍严格优先于 Steam");
+  assert.strictEqual(resolveGameSize({ steam: "40GB" }, "99G", ""), "40G", "Steam 官方优先于 bl 猜测");
 });
 
 // ── 游戏介绍兜底（v0.1.48：Steam 官方主源 + bl 降次级 + 占位待核对）──

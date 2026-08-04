@@ -12,6 +12,9 @@ const DEFAULT_DEPS = {
   fs,
   searchSteamAppId: steam.searchSteamAppId,
   getSteamAppDetails: steam.getSteamAppDetails,
+  fetchAppIdFromWikidata: steam.fetchAppIdFromWikidata,
+  fetchAppIdFromBaiduBaike: steam.fetchAppIdFromBaiduBaike,
+  fetchAppIdFromWebSearch: steam.fetchAppIdFromWebSearch,
   downloadCover: steam.downloadCover,
   downloadCoverFromUrl: steam.downloadCoverFromUrl,
   callMcporter: kdocs.callMcporter,
@@ -138,26 +141,44 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     return result;
   }
 
-  // 2. 搜索 Steam AppID（中英文名各搜一次，提高命中率）
+  // 2. 取拿 Steam AppID（多源兜底：手动录入 → Steam 搜索 → 维基百科 → 百度百科 → 网页搜索）
+  //    拿到 AppID 后即可统一兜底封面 / 游戏简介 / 游戏大小（Steam 官方数据最稳）。
   let appid = manualAppId || null;
+  let appidSource = manualAppId ? "手动录入" : "";
+  doing({ name: "搜索 Steam AppID" });
   if (!appid) {
-    doing({ name: "搜索 Steam AppID" });
     appid = await deps.searchSteamAppId(parsed.gameName);
     if (!appid && parsed.englishName) appid = await deps.searchSteamAppId(parsed.englishName);
-    if (appid) ok({ name: "Steam AppID", appid });
-    else skip({ name: "Steam AppID", reason: "未找到（非 Steam 或名称无匹配）" });
-  } else {
-    ok({ name: "Steam AppID", appid });
+    if (appid) appidSource = "Steam 搜索";
   }
+  if (!appid) {
+    const fromWiki = (await deps.fetchAppIdFromWikidata(parsed.gameName))
+      || (parsed.englishName && await deps.fetchAppIdFromWikidata(parsed.englishName)) || "";
+    if (fromWiki) { appid = fromWiki; appidSource = "维基百科"; }
+  }
+  if (!appid) {
+    const fromBaike = (await deps.fetchAppIdFromBaiduBaike(parsed.gameName))
+      || (parsed.englishName && await deps.fetchAppIdFromBaiduBaike(parsed.englishName)) || "";
+    if (fromBaike) { appid = fromBaike; appidSource = "百度百科"; }
+  }
+  if (!appid) {
+    const fromWeb = (await deps.fetchAppIdFromWebSearch(parsed.gameName))
+      || (parsed.englishName && await deps.fetchAppIdFromWebSearch(parsed.englishName)) || "";
+    if (fromWeb) { appid = fromWeb; appidSource = "网页搜索"; }
+  }
+  if (appid) ok({ name: "Steam AppID", appid, source: appidSource });
+  else skip({ name: "Steam AppID", reason: "未找到（Steam 搜索、维基百科、百度百科、网页搜索均未匹配）" });
 
   // 3. 游戏介绍：Steam 官方描述作主源（质量最高、零编造），bl 降次级，双无则占位 + 待校对
   doing({ name: "游戏介绍与大小（bl 辅助）" });
   // 3.1 Steam 官方 store 描述（仅 appid 命中时尝试；失败不致命，交由 bl 兜底）
   let steamDesc = "";
+  let steamSize = "";
   if (appid) {
     try {
       const det = await deps.getSteamAppDetails(appid);
       steamDesc = (det && det.shortDescription) || "";
+      steamSize = (det && det.size) || "";
     } catch (_) { /* Steam 详情失败不致命 */ }
   }
   // 3.2 bl 生成（介绍 + 大小猜测），作为次级源 / 大小兜底
@@ -259,13 +280,21 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     } catch (e) { skip({ name: "迅雷分享页大小", reason: e.message }); }
   }
 
+  // 5.6 Steam 官方大小（pc_requirements Storage），作为网盘真实大小之后的兜底
+  if (steamSize) {
+    doing({ name: "Steam 官方大小抓取" });
+    realSizes.steam = steamSize;
+    ok({ name: "Steam 官方大小", size: steamSize });
+  }
+
   // 6. 创建记录
   doing({ name: "创建多维表记录" });
-  // 游戏大小：真实字节求和（夸克>百度>迅雷）严格优先，其次 bl 简介附带，再次文本识别，全无则留空 + 待核对
+  // 游戏大小：真实字节求和（夸克>百度>迅雷）严格优先，其次 Steam 官方（pc_requirements），再次 bl 简介附带，再次文本识别，全无则留空 + 待核对
   const gameSize = resolveGameSize(realSizes, aiRes.size, parsed.size);
   const sizeProvenance = realSizes.quark ? "夸克真实"
     : realSizes.baidu ? "百度真实"
     : realSizes.xunlei ? "迅雷真实"
+    : realSizes.steam ? "Steam官方"
     : aiRes.size ? "bl猜测"
     : parsed.size ? "文本识别"
     : "待核";
@@ -314,7 +343,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
 // 游戏大小优先级：真实字节求和（夸克>百度>迅雷）严格优先，其次 bl 简介附带，再次文本识别，全无则空。
 // 所有候选均经 normalizeSize 统一为短格式（"30.7GB"→"30.7G"，规范文档 §2.5）。
 function resolveGameSize(realSizes = {}, aiSize = "", parsedSize = "") {
-  const order = ["quark", "baidu", "xunlei"];
+  const order = ["quark", "baidu", "xunlei", "steam"];
   for (const k of order) {
     const s = normalizeSize(realSizes[k]);
     if (s) return s;

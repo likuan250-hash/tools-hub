@@ -7,6 +7,7 @@ const os = require("os");
 const path = require("path");
 const { parseSteamAppDetails, parseSteamSizeFromRequirements, parseSteamAppIdFromText, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu, resolveEnglishName, cleanGameName, stripSubtitle, tryDownload, isImageMagic,
   extractEnglishNameFromWikiSnippet, extractEnglishNameFromWikiInfobox, fetchEnglishNameFromWikipedia, detectEditionSuffix, augmentWithEdition } = require("../lib/steam");
+const { lookupEnglishNameOffline, normZh } = require("../lib/gamemap");
 
 test("parseSteamAppDetails 提取官方 short_description / genres / type", () => {
   const data = {
@@ -165,7 +166,7 @@ function urlAwareDeps(opts) {
     return {};
   };
   const httpGetText = async (url) => { calls.baidu++; return opts.baidu ? opts.baidu(url) : ""; };
-  return { httpGetJson, httpGetText, calls };
+  return { httpGetJson, httpGetText, calls, disableOffline: !!opts.disableOffline };
 }
 
 test("extractEnglishNameFromWikiSnippet 解析 英語：/原名：", () => {
@@ -202,6 +203,7 @@ test("detectEditionSuffix / augmentWithEdition 版本词映射", () => {
 
 test("resolveEnglishName Wikidata 命中直接返回（不触发 Wikipedia/百度）", async () => {
   const deps = urlAwareDeps({
+    disableOffline: true,
     wikidataSearch: () => ({ search: [{ id: "Q1" }] }),
     wikidataEntities: () => ({ entities: { Q1: { labels: { en: { value: "The Last of Us Part II Remastered" } } } } }),
   });
@@ -218,6 +220,7 @@ test("resolveEnglishName Wikidata 命中直接返回（不触发 Wikipedia/百�
 
 test("resolveEnglishName Wikidata 失败 → Wikipedia infobox 命中（含版本词增强）", async () => {
   const deps = urlAwareDeps({
+    disableOffline: true,
     wikiSearch: () => ({ query: { search: [{ ns: 0, title: "最后生还者 第II章", snippet: "《最後生還者 第II章》（英語：The Last of Us Part II）" }] } }),
     wikiInfobox: () => ({ query: { pages: { "1": { title: "最后生还者 第II章", revisions: [{ slots: { main: { "*": "| english = The Last of Us Part II\n" } } }] } } } }),
   });
@@ -232,6 +235,7 @@ test("resolveEnglishName Wikidata 失败 → Wikipedia infobox 命中（含版�
 
 test("resolveEnglishName Wikipedia 多结果按匹配度择优（跳过系列通用名/干扰项）", async () => {
   const deps = urlAwareDeps({
+    disableOffline: true,
     wikiSearch: () => ({ query: { search: [
       { ns: 0, title: "最後生還者", snippet: "系列页" },
       { ns: 0, title: "最后生还者 第II章", snippet: "（英語：The Last of Us Part II）" },
@@ -252,6 +256,7 @@ test("resolveEnglishName Wikipedia 多结果按匹配度择优（跳过系列通
 
 test("resolveEnglishName Wikidata+Wikipedia 失败 → 百度百科命中", async () => {
   const deps = urlAwareDeps({
+    disableOffline: true,
     baidu: () => "<th>英文名</th><td>The Last of Us Part II Remastered</td>",
   });
   const en = await resolveEnglishName(
@@ -264,6 +269,7 @@ test("resolveEnglishName Wikidata+Wikipedia 失败 → 百度百科命中", asyn
 
 test("resolveEnglishName 百度遇反爬验证页应跳过（返回空，不误抽）", async () => {
   const deps = urlAwareDeps({
+    disableOffline: true,
     baidu: () => "<title>百度安全验证</title><script>验证码</script>",
   });
   const en = await resolveEnglishName(
@@ -278,9 +284,42 @@ test("resolveEnglishName 所有候选都失败返回空", async () => {
   const fakeHttpText = async () => "";
   const en = await resolveEnglishName(
     "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档",
-    { httpGetJson: fakeHttpJson, httpGetText: fakeHttpText }
+    { httpGetJson: fakeHttpJson, httpGetText: fakeHttpText, disableOffline: true }
   );
   assert.strictEqual(en, "");
+});
+
+// ── 离线静态库（内置中文名→英文名映射，无需联网）──
+test("lookupEnglishNameOffline 清洗后名命中 TLOU2R（传入 cleanGameName 结果）", () => {
+  assert.strictEqual(
+    lookupEnglishNameOffline("最后的生还者2：重制版"),
+    "The Last of Us Part II Remastered"
+  );
+});
+
+test("lookupEnglishNameOffline 缩写兜底（override）命中 巫师3/只狼/荒野大镖客2", () => {
+  assert.strictEqual(lookupEnglishNameOffline("巫师3"), "The Witcher 3: Wild Hunt");
+  assert.strictEqual(lookupEnglishNameOffline("只狼"), "Sekiro: Shadows Die Twice");
+  assert.strictEqual(lookupEnglishNameOffline("荒野大镖客2"), "Red Dead Redemption 2");
+});
+
+test("lookupEnglishNameOffline 未收录游戏返回空", () => {
+  assert.strictEqual(lookupEnglishNameOffline("幻影游戏XYZ 最终版"), "");
+});
+
+test("normZh 归一化：去「的」/全角→半角/重置版↔重制版统一", () => {
+  assert.strictEqual(normZh("最后的生还者2：重制版"), "最后生还者2重制版");
+  assert.strictEqual(normZh("最后生还者2 重置版"), "最后生还者2重制版");
+});
+
+test("resolveEnglishName 离线库优先命中（不发起任何网络请求）", async () => {
+  const fakeHttpJson = async () => { throw new Error("net should not be called"); };
+  const fakeHttpText = async () => { throw new Error("net should not be called"); };
+  const en = await resolveEnglishName(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档 免安装硬盘版",
+    { httpGetJson: fakeHttpJson, httpGetText: fakeHttpText }
+  );
+  assert.strictEqual(en, "The Last of Us Part II Remastered");
 });
 
 // ── H9：tryDownload 落盘后校验图片 magic，非图片内容应被丢弃并 reject ──

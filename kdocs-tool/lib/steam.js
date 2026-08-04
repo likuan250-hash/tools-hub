@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { DEFAULT_COVER_DIR } = require("./config");
 const { cleanGameName, stripSubtitle, parseSteamAppIdFromText } = require("./nameutil");
+const { lookupEnglishNameOffline } = require("./gamemap");
 
 /** 搜索 Steam AppID（10 秒超时，避免网络不畅时卡死整流程） */
 function searchSteamAppId(gameName) {
@@ -440,6 +441,17 @@ async function resolveEnglishName(gameName, deps) {
     const stripped = stripSubtitle(cleaned);
     if (stripped && stripped !== cleaned) candidates.push(stripped);
     if (!candidates.includes(raw)) candidates.push(raw);
+
+    // 0) 离线静态库（内置中文名→英文名映射，无需联网，优先命中）
+    //    彻底摆脱对 Wikipedia/Wikidata 网络的依赖：用户网络到不了百科时也能稳定解析常见游戏。
+    //    deps.disableOffline=true 时跳过（仅供单测隔离网络管道用）。
+    const offlineEnabled = !(deps && deps.disableOffline);
+    if (offlineEnabled) {
+      for (const name of candidates) {
+        const en = lookupEnglishNameOffline(name);
+        if (en) return augmentWithEdition(en, raw);
+      }
+    }
 
     let baseEn = "";
     for (const name of candidates) {

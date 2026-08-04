@@ -115,6 +115,10 @@ function fakeCover(over = {}) {
   const calls = [];
   return {
     calls,
+    async resolveEnglishTitle(gameName, opts) {
+      const eng = opts && opts.englishTitle ? opts.englishTitle : (over.englishTitle || '');
+      return { title: eng, source: eng ? 'opts' : 'none' };
+    },
     async fetchCover(gameName, outDir, opts) {
       calls.push({ gameName, outDir, opts });
       if (over.throws) throw over.throws;

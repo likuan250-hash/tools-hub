@@ -223,6 +223,29 @@ class CollectService {
       });
     this.logger.info('[collect] 素材文件夹 ' + reserved.folder + ' reused=' + result.reused);
 
+    // ── 1.5 英文名：第一步就定下来，后续视频和封面统一用它检索 ──
+    //      先读 trailer sidecar（如果有的话），供英文名提取用
+    this.reusedTrailerMeta = this.readTrailerMeta(reserved.folder);
+    //      优先级：用户给的 > 原名就是拉丁文 > trailer sidecar 里的标题 > Steam 反查 > YouTube 搜索
+    let searchName = gameName;
+    const english = await this.cover.resolveEnglishTitle(gameName, {
+      englishTitle: opts.englishName
+        || (this.reusedTrailerMeta ? trailerExtractEnglishName(this.reusedTrailerMeta.title || '') : ''),
+      emit,
+      lookup: true,
+      ytDlpPath: envInfo.ytDlpPath,
+    });
+    if (english.title) {
+      searchName = english.title;
+      emit('log', STEP_SCAN,
+        '[collect] 英文名定稿：' + searchName + '（来源：' + (english.source || 'none') + '）',
+        null, { level: 'info' });
+    } else {
+      emit('log', STEP_SCAN,
+        '[collect] 英文名获取失败，使用原名检索：' + gameName,
+        null, { level: 'warn' });
+    }
+
     // ── 2. trailer：先下视频。放在封面之前有两个刚需 ──
     //      ① 第 6 级封面来源要用宣传片的 videoId 取缩略图；
     //      ② 第 7 级抽帧兜底必须有视频文件才能执行。
@@ -232,8 +255,6 @@ class CollectService {
     const existingVideo = !forceTrailer && result.reused ? this.findExistingVideo(reserved.folder) : null;
     if (existingVideo) {
       result.trailerOk = true;
-      // 从 sidecar 读取上次下载时保存的标题，供封面英文名提取用
-      this.reusedTrailerMeta = this.readTrailerMeta(reserved.folder);
       const reusedTitle = (this.reusedTrailerMeta && this.reusedTrailerMeta.title) || '';
       result.trailer = { file: existingVideo.file, path: existingVideo.path, title: reusedTitle, reused: true };
       videoPath = existingVideo.path;
@@ -247,13 +268,13 @@ class CollectService {
     } else {
       let dl = { ok: false, error: '未执行' };
       try {
-        trailerInfo = await this.trailer.searchTrailer(gameName, {
+        trailerInfo = await this.trailer.searchTrailer(searchName, {
           emit, developer: opts.developer,
         });
         if (!trailerInfo) {
           dl = { ok: false, reason: 'trailer-not-found', error: '未搜索到符合规范的官方宣传片' };
         } else {
-          dl = await this.trailer.download(gameName, reserved.folder, envInfo, {
+          dl = await this.trailer.download(searchName, reserved.folder, envInfo, {
             info: trailerInfo,
             emit,
             index: reserved.index,
@@ -317,18 +338,14 @@ class CollectService {
       });
     } else {
       try {
-        coverRes = await this.cover.fetchCover(gameName, reserved.folder, {
+        // 英文名已在 1.5 步定稿，直接传入，不再让 cover.js 自己反查
+        coverRes = await this.cover.fetchCover(searchName, reserved.folder, {
           emit,
           coverUrl: opts.coverUrl,
           ytDlpPath: envInfo.ytDlpPath,
-          // 缺陷 3：4kwallpapers / alphacoders / wallhaven 都是纯英文站，中文名喂进去必然 0 结果。
-          // 英文名优先级：调用方显式给的 > 宣传片标题里提取的 > Steam 反查 > 退回原名。
-          //   中间这一档是本次加的兜底 —— Steam 国区经常搜不到中文名对应的英文标题
-          //   （如「正当防卫4」→ Steam storesearch 无结果），但宣传片搜索结果可能已经拿到了。
-          englishTitle: opts.englishName
-            || (trailerInfo ? trailerExtractEnglishName(trailerInfo.title) : '')
-            || (this.reusedTrailerMeta ? trailerExtractEnglishName(this.reusedTrailerMeta.title || '') : ''),
+          englishTitle: searchName !== gameName ? searchName : '',
           videoId: trailerInfo && trailerInfo.id ? trailerInfo.id : '',
+          resolveEnglish: false,
         });
       } catch (e) {
         // cover.js 内部已全程 try/catch，这里只是最后一道保险

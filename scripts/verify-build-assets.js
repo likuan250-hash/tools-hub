@@ -490,6 +490,45 @@ function checkExtraResources(resourcesDir) {
     "视频信息探测依赖",
   );
 
+  // Playwright 浏览器（netdisk xunlei/迅雷转存功能强依赖）：CI 的「Install Playwright
+  // Chromium」把它装到 netdisk-hub/node_modules/playwright-core/.local-browsers 下，
+  // 再由 package.json 里**独立的 extraResources 条目**显式打进包（主条目 filter 会把它当
+  // npm 暂存文法 <.x>-<8位> 误排除，不能走主条目）。这里直接断言它真的进了包——
+  // 否则用户装完跑 xunlei 会报「Executable doesn't exist at .../.local-browsers/...」。
+  const lbDir = path.join(
+    resourcesDir,
+    "netdisk-hub",
+    "node_modules",
+    "playwright-core",
+    ".local-browsers",
+  );
+  if (!fs.existsSync(lbDir)) {
+    fail(
+      "extraResources 缺失 Playwright 浏览器目录 netdisk-hub/node_modules/playwright-core/.local-browsers —— " +
+        "netdisk xunlei 功能将报「Executable doesn't exist」，请确认 package.json 含独立的 .local-browsers extraResources 条目",
+    );
+  } else {
+    // headless shell 优先（新版 Playwright 默认用它跑 headless），找不到再认完整 chromium
+    const pwHit =
+      findFileRecursive(lbDir, "chrome-headless-shell.exe") ||
+      findFileRecursive(lbDir, "chrome.exe");
+    if (!pwHit) {
+      fail(
+        "在 .local-browsers/ 下未找到 chrome-headless-shell.exe / chrome.exe —— " +
+          "Playwright 浏览器未随包落盘，netdisk xunlei 不可用",
+      );
+    } else {
+      const pwSize = fs.statSync(pwHit).size;
+      if (isSaneBinarySize(pwSize)) {
+        pass(`extraResources 含 Playwright 浏览器（netdisk xunlei 依赖，${formatBytes(pwSize)}）`);
+      } else {
+        fail(
+          `Playwright 浏览器体积异常（${formatBytes(pwSize)} < 1MB）—— 安装不完整，netdisk xunlei 不可用`,
+        );
+      }
+    }
+  }
+
   // 产物层兜底：filter 写对了也可能哪天被人改回去，这里直接扫落盘结果。
   // 只要还有一条 npm 暂存残留进了包，就说明白白多背了几十上百 MB。
   let leftovers = [];

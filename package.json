@@ -59,7 +59,8 @@
           "**/*",
           "!node_modules/**/.cache",
           "!**/*.log",
-          "!node_modules/**/.*-????????"
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
         ]
       },
       {
@@ -72,8 +73,14 @@
           "!data/**",
           "!logs/**",
           "!**/.env",
-          "!node_modules/**/.*-????????"
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
         ]
+      },
+      {
+        "from": "netdisk-hub/node_modules/playwright-core/.local-browsers",
+        "to": "netdisk-hub/node_modules/playwright-core/.local-browsers",
+        "filter": ["**/*"]
       },
       {
         "from": "biliup-hub",
@@ -86,7 +93,8 @@
           "!logs/**",
           "!**/.env",
           "!.tmp/**",
-          "!node_modules/**/.*-????????"
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
         ]
       },
       {
@@ -99,7 +107,8 @@
           "!logs/**",
           "!**/.env",
           "!.tmp/**",
-          "!node_modules/**/.*-????????"
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
         ]
       },
       {

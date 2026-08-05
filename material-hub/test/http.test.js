@@ -11,6 +11,9 @@ const {
   parseNoProxy,
   shouldBypassProxy,
   resolveProxy,
+  resolveProxyAsync,
+  detectLocalProxy,
+  resetAutoProxyCache,
   mergeHeaders,
   describeProxy,
   DEFAULT_USER_AGENT,
@@ -188,4 +191,57 @@ test('mergeHeaders 忽略 undefined/null 值并容忍空入参', () => {
 test('默认 UA 必须是浏览器 UA（DuckDuckGo 无 UA 直接拒绝），重定向上限足够 GitHub 两跳', () => {
   assert.ok(DEFAULT_USER_AGENT.includes('Mozilla/5.0'));
   assert.ok(MAX_REDIRECTS >= 2);
+});
+
+// ─────────────────────── 本地代理自动探测（方案 A） ───────────────────────
+
+/** 起一个最小 HTTP 代理替身：只响应 CONNECT 200（探测只关心隧道能否建立）。 */
+function startFakeProxy() {
+  const net = require('net');
+  return new Promise((resolve) => {
+    const srv = net.createServer((socket) => {
+      socket.once('data', () => {
+        socket.write('HTTP/1.1 200 Connection established\r\n\r\n');
+        socket.end();
+      });
+      socket.on('error', () => {});
+    });
+    srv.listen(0, '127.0.0.1', () => resolve(srv));
+  });
+}
+
+test('detectLocalProxy：本机有可用代理端口时自动识别（注入端口，不发真实外网请求）', async () => {
+  resetAutoProxyCache();
+  const srv = await startFakeProxy();
+  try {
+    const port = srv.address().port;
+    const px = await detectLocalProxy({}, [port]);
+    assert.ok(px, '应探测到本地代理');
+    assert.equal(px.hostname, '127.0.0.1');
+    assert.equal(px.port, port);
+  } finally {
+    srv.close();
+    resetAutoProxyCache();
+  }
+});
+
+test('detectLocalProxy：无监听端口时返回 null 且缓存不误报', async () => {
+  resetAutoProxyCache();
+  const px = await detectLocalProxy({}, [1]); // 1 号端口几乎必然无监听
+  assert.equal(px, null);
+  resetAutoProxyCache();
+});
+
+test('detectLocalProxy：MATERIAL_NO_AUTO_PROXY=1 时禁用自动探测', async () => {
+  resetAutoProxyCache();
+  const px = await detectLocalProxy({ MATERIAL_NO_AUTO_PROXY: '1' }, [7990]);
+  assert.equal(px, null);
+  resetAutoProxyCache();
+});
+
+test('resolveProxyAsync：测试注入 env（非 process.env）不触发自动探测', async () => {
+  resetAutoProxyCache();
+  const px = await resolveProxyAsync('https://www.google.com/', {});
+  assert.equal(px, null, '注入 env 的调用方不应触发本机自动探测');
+  resetAutoProxyCache();
 });

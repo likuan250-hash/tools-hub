@@ -30,6 +30,7 @@ const {
   parseBingImageResults,
   filterBingCandidates,
   isBingItemRelevant,
+  isYouTubeTitleRelevant,
   looksLikeBingBlockPage,
   pickRelevantSteamAppId,
   STEAM_CDN_BASE,
@@ -1104,4 +1105,26 @@ test('fetchCover Bing 相关性拦截后继续降级到下一来源，不会把�
   assert.equal(r.source, 'wallhaven', '4kwallpapers 因相关性不过被跳过，降级到 wallhaven');
   assert.equal(r.url, wallhavenImg);
   assert.equal(fs.written.length, 1);
+});
+
+// ── isYouTubeTitleRelevant：YouTube 反查英文名的相关性校验（防误判）──
+
+test('isYouTubeTitleRelevant：中文搜索词+数字，宣传片标题且编号匹配 → 采纳', () => {
+  assert.equal(isYouTubeTitleRelevant('Just Cause 4 Launch Trailer', '正当防卫4'), true);
+  assert.equal(isYouTubeTitleRelevant('The Legend of Zelda - Nintendo Switch Presentation 2017 Trailer', '塞尔达传说'), true);
+});
+
+test('isYouTubeTitleRelevant：无关视频（无宣传片特征词）→ 拒绝，防误判', () => {
+  assert.equal(isYouTubeTitleRelevant('How to make Connect 4 game', '正当防卫4'), false);
+  assert.equal(isYouTubeTitleRelevant('Connect 4 world record run', '正当防卫4'), false);
+});
+
+test('isYouTubeTitleRelevant：数字编号不匹配（同系列错配）→ 拒绝', () => {
+  assert.equal(isYouTubeTitleRelevant('Just Cause 3 Launch Trailer', '正当防卫4'), false);
+  assert.equal(isYouTubeTitleRelevant('GTA VI Trailer', 'GTA 5'), false);
+});
+
+test('isYouTubeTitleRelevant：拉丁搜索词共享实词 → 采纳；无关 → 拒绝', () => {
+  assert.equal(isYouTubeTitleRelevant('Elden Ring Official Trailer', 'Elden Ring'), true);
+  assert.equal(isYouTubeTitleRelevant('How to make Connect 4 game', 'Just Cause 4'), false);
 });

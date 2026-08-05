@@ -174,6 +174,52 @@ function isLatinTitle(s) {
 }
 
 /**
+ * YouTube 反查候选标题的相关性校验（防误判，纯函数）。
+ *
+ * 背景：`ytsearch3:"正当防卫4 game"` 可能返回无关视频（实测命中
+ * 「How to make Connect 4 game - ...」），旧逻辑把 ` - ` 前段直接当游戏名，
+ * 导致后续宣传片/封面全部按错误名字搜索。
+ *
+ * 判定口径：
+ *   1. 搜索词带数字编号时（续作），候选必须含相同数字（挡同系列错配）；
+ *   2. 搜索词为拉丁文 → 候选须与搜索词共享至少一个实词（前缀级模糊）；
+ *   3. 搜索词为中文 → 无法做词根匹配，候选必须带宣传片特征词
+ *      （trailer/gameplay/official/launch/teaser/reveal/cinematic/opening）才可信，
+ *      否则宁可不采纳，退回原名搜索。
+ *
+ * @param {string} candidate YouTube 标题「 - 」前段
+ * @param {string} query 原始搜索词（中文或拉丁文）
+ * @returns {boolean} true=可信，可采纳为英文名
+ */
+function isYouTubeTitleRelevant(candidate, query) {
+  const cand = String(candidate == null ? '' : candidate).trim();
+  const q = String(query == null ? '' : query).trim();
+  if (!cand || !q) return false;
+  if (!isLatinTitle(cand)) return false;
+
+  const queryTokens = normalizeTokens(q);
+  const candTokens = normalizeTokens(cand);
+  if (!candTokens.length) return false;
+  const queryNums = queryTokens.filter((t) => /^\d+$/.test(t));
+  const candNums = candTokens.filter((t) => /^\d+$/.test(t));
+  // ① 数字编号必须匹配
+  if (queryNums.length && !queryNums.some((n) => candNums.includes(n))) return false;
+
+  const lowerCand = cand.toLowerCase();
+  if (hasCjk(q)) {
+    // ③ 中文搜索词：候选必须带宣传片特征词
+    return /(trailer|gameplay|official|launch|teaser|reveal|cinematic|opening)/i.test(lowerCand);
+  }
+  // ② 拉丁文搜索词：共享至少一个实词（前缀级）
+  const words = queryTokens.filter((t) => !/^\d+$/.test(t));
+  return words.some((t) => {
+    if (t.length < 3) return false;
+    if (lowerCand.includes(t)) return true;
+    return candTokens.some((w) => w.startsWith(t) || t.startsWith(w));
+  });
+}
+
+/**
  * 极简 HTML 实体解码（只覆盖标题里真正会出现的几个，不引入第三方依赖）。
  * @param {string} s 原始字符串
  * @returns {string}
@@ -795,6 +841,8 @@ class CoverFetcher {
           // 必须是拉丁字母为主的游戏名
           if (!isLatinTitle(candidate) || candidate.length < 3 || candidate.length > 60) continue;
           if (candidate.toLowerCase() === name.toLowerCase()) continue;
+          // 相关性校验（防止「正当防卫4」被搜成 How to make Connect 4 game）
+          if (!isYouTubeTitleRelevant(candidate, name)) continue;
           emit('cover_search', STEP_SEARCH, 'YouTube 反查英文名：' + candidate, null, {
             source: 'youtube-title', englishTitle: candidate,
           });
@@ -1812,6 +1860,7 @@ module.exports = {
   parseBingImageResults,
   filterBingCandidates,
   isBingItemRelevant,
+  isYouTubeTitleRelevant,
   looksLikeBingBlockPage,
   pickRelevantSteamAppId,
   STEAM_CDN_BASE,

@@ -21,6 +21,14 @@ const pathMod = require('path');
 
 /** 默认超时（下载 18MB 的 yt-dlp.exe 经代理约 25s，留足余量）。 */
 const DEFAULT_TIMEOUT = 120 * 1000;
+/** 自动探测本地代理时的单端口探测超时（ms）：够 CONNECT 到目标即可，不宜过长。 */
+const PROBE_TIMEOUT = 2500;
+/** 自动探测的本地常见代理端口（按出现频率排序；用户可在 .proxy 显式指定覆盖）。 */
+const LOCAL_PROXY_PORTS = [7990, 7890, 7897, 10809, 10808, 1080, 8888, 2080];
+/** 自动探测的验证目标（须在墙外，能过 CONNECT 即说明代理可用）。 */
+const PROBE_TARGET = 'www.google.com';
+/** 环境变量开关：设置后禁用本地代理自动探测（高级用户强制直连）。 */
+const AUTO_PROXY_DISABLE_ENV = 'MATERIAL_NO_AUTO_PROXY';
 /** 默认 UA：壁纸站 / DuckDuckGo 对无 UA 请求一律拒绝。 */
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -33,6 +41,62 @@ const PROXY_ENV_KEYS_HTTPS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_
 const PROXY_ENV_KEYS_HTTP = ['HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'];
 /** NO_PROXY 环境变量查找顺序。 */
 const NO_PROXY_ENV_KEYS = ['NO_PROXY', 'no_proxy'];
+
+/** 自动探测结果缓存：null=未探测；'none'=探测过但没找到；其余为代理 href。 */
+let autoProxyCache = undefined;
+
+/**
+ * 探测本机是否在运行常见代理端口（localhost/127.0.0.1）。
+ * 与 .proxy 文件互补：用户不用手动建文件，代理软件开着就能被识别。
+ * 结果缓存在进程内，避免每次请求都重新探测；可用 MATERIAL_NO_AUTO_PROXY=1 关闭。
+ * @param {number[]} [ports] 待探测端口列表（默认 LOCAL_PROXY_PORTS；测试可注入）
+ * @returns {Promise<{protocol: string, hostname: string, port: number, auth: string, href: string}|null>}
+ */
+async function detectLocalProxy(env, ports) {
+  const src = env && typeof env === 'object' ? env : process.env;
+  if (String(firstEnv(src, [AUTO_PROXY_DISABLE_ENV, AUTO_PROXY_DISABLE_ENV.toLowerCase()])) === '1') return null;
+  if (autoProxyCache !== undefined) return autoProxyCache;
+
+  const probe = async (port) => {
+    try {
+      const sock = await openProxyTunnel(
+        { hostname: '127.0.0.1', port, auth: '' },
+        PROBE_TARGET,
+        443,
+        PROBE_TIMEOUT
+      );
+      // 探测只需确认隧道能建立，用完立即销毁，避免 socket 泄漏挂住进程
+      try { sock.destroy(); } catch (e) { /* 已销毁 */ }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  let found = null;
+  const list = Array.isArray(ports) && ports.length ? ports : LOCAL_PROXY_PORTS;
+  for (const port of list) {
+    // 先确认端口在监听（比真实 CONNECT 快得多），没监听直接跳过
+    const listening = await new Promise((resolve) => {
+      const sock = require('net').connect({ host: '127.0.0.1', port });
+      const timer = setTimeout(() => { try { sock.destroy(); } catch (e) { /* ignore */ } resolve(false); }, 300);
+      sock.on('connect', () => { clearTimeout(timer); sock.destroy(); resolve(true); });
+      sock.on('error', () => { clearTimeout(timer); resolve(false); });
+    });
+    if (!listening) continue;
+    if (await probe(port)) {
+      found = parseProxyUrl('http://127.0.0.1:' + port);
+      if (found) break;
+    }
+  }
+  autoProxyCache = found || 'none';
+  return found;
+}
+
+/** 清空自动探测缓存（单测 / 代理端口变化后重新探测用）。 */
+function resetAutoProxyCache() {
+  autoProxyCache = undefined;
+}
 
 /**
  * 按给定顺序取第一个非空环境变量值。
@@ -169,27 +233,41 @@ function resolveProxy(target, env) {
   if (shouldBypassProxy(u.hostname, firstEnv(source, NO_PROXY_ENV_KEYS))) return null;
   const url = pickProxyEnv(source, u.protocol);
   if (url) return parseProxyUrl(url);
-  // 当且仅当 source 是真实 process.env 时才读 .proxy 文件。
-  //   CoverFetcher 会把 process.env 写进 this.env 再传给每一次 fetch；
-  //   但这里的 source 永远等于形参 env（或 process.env），所以 source===process.env
-  //   意味着「调用方没注入 env→现在读的是真实环境→应该补 .proxy 兜底」；
-  //   测试里 env={} 会让 source!==process.env，.proxy 不会被读到，不受本机配置干扰。
-  if (source === process.env) {
-    try {
-      // 优先 .proxy（用户自定义），不存在则读 proxy-default（用户按 proxy-default.example
-      // 模板创建的本地文件）。两者均被 .gitignore 排除，不会进 git；模板文件
-      // proxy-default.example 随包分发仅供参照，运行时不读取。
-      const base = pathMod.join(__dirname, '..');
-      for (const name of ['.proxy', 'proxy-default']) {
-        const cfgPath = pathMod.join(base, name);
-        if (fsDefault.existsSync(cfgPath)) {
-          const cfg = fsDefault.readFileSync(cfgPath, 'utf8').split('\n')[0].trim();
-          if (cfg) return parseProxyUrl(cfg);
-        }
+  // 仅真实环境（source===process.env）参与文件配置与自动探测，
+  // 测试注入 env={} 时不受本机 .proxy / 端口影响。
+  if (source !== process.env) return null;
+  try {
+    // 优先 .proxy（用户自定义），不存在则读 proxy-default（用户按 proxy-default.example
+    // 模板创建的本地文件）。两者均被 .gitignore 排除，不会进 git；模板文件
+    // proxy-default.example 随包分发仅供参照，运行时不读取。
+    const base = pathMod.join(__dirname, '..');
+    for (const name of ['.proxy', 'proxy-default']) {
+      const cfgPath = pathMod.join(base, name);
+      if (fsDefault.existsSync(cfgPath)) {
+        const cfg = fsDefault.readFileSync(cfgPath, 'utf8').split('\n')[0].trim();
+        if (cfg) return parseProxyUrl(cfg);
       }
-    } catch (e) { /* 文件不存在或不可读，静默跳过 */ }
-  }
+    }
+  } catch (e) { /* 文件不存在或不可读，静默跳过 */ }
+  // 自动探测结果缓存：异步探测（collect 启动时）成功后，这里直接复用，
+  // 让后续所有同步 fetch 都能拿到代理；'none' 表示探测过但没有可用代理。
+  if (autoProxyCache && autoProxyCache !== 'none') return autoProxyCache;
   return null;
+}
+
+/**
+ * 异步版代理解析：文件/环境变量都没有时，自动探测本地代理端口。
+ * collect.js 在流程启动时调用一次，把结果回填进 .proxy 等价的全局缓存，
+ * 之后所有 fetch 都能拿到代理。探测失败返回 null（保持直连语义）。
+ * @param {string|URL} target 目标地址
+ * @param {object} [env]
+ * @returns {Promise<{protocol: string, hostname: string, port: number, auth: string, href: string}|null>}
+ */
+async function resolveProxyAsync(target, env) {
+  const proxy = resolveProxy(target, env);
+  if (proxy) return proxy;
+  if (env && env !== process.env) return null; // 测试注入不触发自动探测
+  return detectLocalProxy(env);
 }
 
 /**
@@ -643,6 +721,9 @@ module.exports = {
   parseNoProxy,
   shouldBypassProxy,
   resolveProxy,
+  resolveProxyAsync,
+  detectLocalProxy,
+  resetAutoProxyCache,
   mergeHeaders,
   describeProxy,
   // 带 IO

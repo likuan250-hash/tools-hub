@@ -209,7 +209,7 @@ function parseInput(text) {
   }
   let name = first, en = "";
   const m = first.match(/[（(]([^）)]+)[）)]/);
-  if (m) { en = m[1]; name = first.substring(0, m.index).trim() || en; }
+  if (m) { en = m[1]; } // 游戏名保留第一行原样（用户要求不可改动）；en 仅作可选展示
   const tags = [];
   if (first.includes("全DLC")) tags.push("全DLC");
   if (first.includes("免安装硬盘版") || first.includes("免安装")) tags.push("免安装硬盘版");
@@ -231,10 +231,9 @@ function renderPreview(p) {
   const allTags = [];
   const push = (t) => { if (t && !seen.has(t)) { seen.add(t); allTags.push(t); } };
   getSelectedClassificationTags().forEach(push);
-  (p.tags || []).forEach(push);
   const th = allTags.map(t => `<span class="tag">${esc(t)}</span>`).join(" ");
   const rows = [
-    `<span class="label">${ico('gamepad')} 游戏</span><span class="value">${esc(p.gameName)}${p.englishName ? "（" + esc(p.englishName) + "）" : ""}</span>`,
+    `<span class="label">${ico('gamepad')} 游戏</span><span class="value">${esc(p.raw || p.gameName)}</span>`,
     `<span class="label">${ico('tag')} 标签</span><span class="value">${th}</span>`,
     p.coverUrl ? `<span class="label">${ico('image')} 封面</span><span class="value">${esc(p.coverUrl)}</span>` : "",
     p.baiduUrl ? `<span class="label">${ico('link')} 百度</span><span class="value">${esc(p.baiduUrl)}</span>` : "",

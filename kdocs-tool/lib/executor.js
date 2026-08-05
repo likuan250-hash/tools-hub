@@ -90,7 +90,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     steps[stepIdx].status = "失败";
     steps[stepIdx].error = "kdocs-qclaw 未配置，请先运行 setup 脚本";
     emit({ type: "step", step: { index: stepIdx, ...steps[stepIdx] } });
-    const result = { steps, recordId: null, success: false, action: "failed", gameName: parsed.gameName };
+    const result = { steps, recordId: null, success: false, action: "failed", gameName: parsed.raw };
     emit({ type: "done", result });
     return result;
   }
@@ -114,7 +114,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     if (Object.keys(upFields).length === 0) {
       // 本次未包含任何网盘链接，无内容可更新
       ok({ name: "无网盘链接可更新", reason: "本次输入未包含任何网盘链接，无需更新" });
-      const result = { steps, recordId: dup.recordId, success: true, action: "skipped", gameName: parsed.gameName };
+      const result = { steps, recordId: dup.recordId, success: true, action: "skipped", gameName: parsed.raw };
       emit({ type: "done", result });
       return result;
     }
@@ -129,19 +129,19 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
         await deps.callMcporter("dbsheet.get_record", { sheet_id: 1, record_id: dup.recordId });
         ok({ name: "更新验证通过" });
       } catch (e) { skip({ name: "更新验证", reason: e.message }); }
-      const result = { steps, recordId: dup.recordId, success: true, action: "updated", gameName: parsed.gameName };
+      const result = { steps, recordId: dup.recordId, success: true, action: "updated", gameName: parsed.raw };
       emit({ type: "done", result });
       return result;
     } catch (e) {
       fail({ name: "更新网盘链接", error: e.message });
-      const result = { steps, recordId: dup.recordId, success: false, action: "update_failed", gameName: parsed.gameName };
+      const result = { steps, recordId: dup.recordId, success: false, action: "update_failed", gameName: parsed.raw };
       emit({ type: "done", result });
       return result;
     }
   } else {
     // 默认：已存在则跳过，不创建不改写
     ok({ name: "查重命中，已存在（跳过）", recordId: dup.recordId });
-    const result = { steps, recordId: dup.recordId, success: true, action: "skipped", gameName: parsed.gameName };
+    const result = { steps, recordId: dup.recordId, success: true, action: "skipped", gameName: parsed.raw };
     emit({ type: "done", result });
     return result;
   }
@@ -297,7 +297,7 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   // 「警告」不拉红整体（封面是尽力而为），但前端会据此显式提示，不再假装全成功
   const success = steps.every(s => s.status === "成功" || s.status === "跳过" || s.status === "警告");
   const result = {
-    steps, recordId, success, action: "created", gameName: parsed.gameName,
+    steps, recordId, success, action: "created", gameName: parsed.raw,
     coverStatus, coverLost,
     coverPath: coverLost ? coverPath : null, // 仅当可补传时回传本地路径，供「仅重传封面」使用
     needsReview, introProvenance, sizeProvenance, // 数据溯源：介绍/大小来源与是否待人工校对
@@ -317,9 +317,9 @@ function resolveGameSize(realSizes = {}, parsedSize = "") {
 }
 
 // 组装多维表字段（封面对象仅当 objectId+coverPath 都存在时附带）
-// needsReview / introProvenance / sizeProvenance 写入「游戏信息」标签，让数据来源可追溯、缺失显式标注。
-// classificationTags（默认 DEFAULT_CLASSIFICATION_TAGS）：写入记录前部，已存在的标签不重复添加。
-//   undefined → 用默认；空数组 → 用户显式清空（不要自动回填）
+// 游戏信息 = 仅用户勾选的分类标签（classificationTags）。出于用户要求「我勾选好的是什么就是什么，不能再有别的」，
+//   不再自动并入 parser 从文本关键词检测的标签（免安装/全DLC/虚拟机/联机合作/PC游戏），也不再自动加来源/校对标记。
+//   classificationTags（默认 DEFAULT_CLASSIFICATION_TAGS 兜底）：undefined → 用默认；空数组 → 用户显式清空。
 function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverSize, needsReview, introProvenance, sizeProvenance, classificationTags }) {
   // 分类标签放最前面（用户期望在「游戏信息」列表里最显眼）；用 Set 保序去重
   const seen = new Set();
@@ -328,13 +328,9 @@ function buildRecordFields(parsed, { desc, coverPath, objectId, gameSize, coverS
   // 仅当传了 classificationTags 时才覆盖默认（保留 undefined → 默认；空数组 → 真清空 的语义）
   const cls = classificationTags === undefined ? DEFAULT_CLASSIFICATION_TAGS : classificationTags;
   (cls || []).forEach(push);
-  // parser 关键词检测到的（免安装/全DLC/虚拟机/联机合作/PC游戏）与分类标签可能重合，去重交给 Set
-  (parsed.tags || []).forEach(push);
-  if (introProvenance) push(`介绍:${introProvenance}`);
-  if (sizeProvenance) push(`大小:${sizeProvenance}`);
-  if (needsReview) push("⚠需人工校对");
+  // 注意：游戏信息严格等于用户勾选，不再合并 parsed.tags（文本关键词自动检测）与来源/校对标记。
   const fields = {
-    游戏名称: parsed.gameName, // 用清洗后的干净名展示（H3/H4）；查重仍比对 parsed.raw（稳定）
+    游戏名称: parsed.raw, // 第一行原样，不清洗；查重也比对 parsed.raw（稳定一致）
     游戏介绍: desc || parsed.raw,
     游戏信息: tags,
     更新日期: new Date().toISOString().split("T")[0].replace(/-/g, "/"),

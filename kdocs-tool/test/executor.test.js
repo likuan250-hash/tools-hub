@@ -63,7 +63,7 @@ test("正常流程字段映射正确（Steam 官方主源）", async () => {
   const res = await autoExecute(baseParsed({ quarkUrl: "https://pan.quark.cn/s/x" }), null, "/tmp/cover", { deps });
   const { lastCreate } = deps._state();
   assert.strictEqual(res.recordId, "r1");
-  assert.strictEqual(lastCreate["游戏名称"], "双影奇境");
+  assert.strictEqual(lastCreate["游戏名称"], "双影奇境（Split Fiction）");
   assert.strictEqual(lastCreate["游戏介绍"], "Hazelight 开发的双人合作冒险游戏。");
   assert.strictEqual(lastCreate["游戏大小"], "30.7G", "大小经归一化：30.7GB → 30.7G");
   assert.strictEqual(lastCreate["夸克网盘"][0].address, "https://pan.quark.cn/s/x");
@@ -101,7 +101,7 @@ test("含免责声明的介绍被丢弃（Steam 官方描述命中黑名单）�
   assert.strictEqual(lastCreate["游戏介绍"], "介绍待补充", "免责声明应被丢弃并占位，而非用标题兜底");
   assert.strictEqual(res.introProvenance, "占位");
   assert.strictEqual(res.needsReview, true);
-  assert.ok(lastCreate["游戏信息"].includes("⚠需人工校对"));
+  assert.deepStrictEqual(lastCreate["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC"], "游戏信息仅含勾选分类标签，不再写 ⚠需人工校对");
 });
 
 test("大小缺失时不再提示手动填写，直接不写入游戏大小字段", async () => {
@@ -178,9 +178,8 @@ test("需求：创建记录字段完整（游戏信息/更新日期/作品展示
   const deps = baseDeps({ searchSteamAppId: async () => "12345" });
   const res = await autoExecute(baseParsed({ tags: ["PC游戏", "动作"], baiduUrl: "https://pan.baidu.com/s/b" }), null, "/tmp", { deps });
   const f = deps._state().lastCreate;
-  // 游戏信息含分类标签(默认) + 原始标签 + 数据溯源标签（介绍/大小来源）；分类与 parsed 重合时去重
-  // 默认无 Steam 官方描述 → 介绍占位、大小待核、需人工校对
-  assert.deepStrictEqual(f["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC", "动作", "介绍:占位", "大小:待核", "⚠需人工校对"], "游戏信息含分类标签 + 原始标签 + 溯源标签");
+  // 游戏信息 = 用户勾选的分类标签（默认免安装/PC/全DLC）；不再并入 parsed.tags 与来源/校对标记（用户要求）
+  assert.deepStrictEqual(f["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC"], "游戏信息=仅勾选分类标签");
   assert.ok(/^\d{4}\/\d{2}\/\d{2}$/.test(f["更新日期"]), "更新日期应为 YYYY/MM/DD");
   assert.ok(f["作品展示"] && f["作品展示"][0].uploadId === "obj1" && f["作品展示"][0].source === "upload_ks3", "应带作品展示附件");
   assert.deepStrictEqual(f["百度网盘"], [{ address: "https://pan.baidu.com/s/b", displayText: "https://pan.baidu.com/s/b" }], "百度网盘应为地址数组");
@@ -417,7 +416,7 @@ test("介绍主源：Steam 官方描述优先（provenance=Steam官方）", asyn
   assert.strictEqual(res.introProvenance, "Steam官方");
   assert.strictEqual(res.sizeProvenance, "Steam官方", "大小也来自 Steam 官方");
   assert.strictEqual(res.needsReview, false, "介绍与大小均有官方来源则无需校对");
-  assert.ok(lastCreate["游戏信息"].includes("介绍:Steam官方"), "溯源标签应写入游戏信息");
+  assert.deepStrictEqual(lastCreate["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC"], "游戏信息仅含勾选分类标签，不再写溯源标记");
 });
 
 test("介绍降级：Steam 有 AppID 但无官方描述时占位（provenance=占位）+ needsReview", async () => {
@@ -430,7 +429,7 @@ test("介绍降级：Steam 有 AppID 但无官方描述时占位（provenance=�
   assert.strictEqual(lastCreate["游戏介绍"], "介绍待补充", "无官方描述应占位");
   assert.strictEqual(res.introProvenance, "占位");
   assert.strictEqual(res.needsReview, true, "占位应标记需人工校对");
-  assert.ok(lastCreate["游戏信息"].includes("介绍:占位"));
+  assert.deepStrictEqual(lastCreate["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC"], "游戏信息仅含勾选分类标签，不再写 介绍:占位");
 });
 
 test("介绍兜底：双无（无 AppID 且无官方描述）则占位 + needsReview（不再用标题/免责声明洗白）", async () => {
@@ -443,8 +442,7 @@ test("介绍兜底：双无（无 AppID 且无官方描述）则占位 + needsRe
   assert.strictEqual(lastCreate["游戏介绍"], "介绍待补充", "双无应占位而非标题/免责声明");
   assert.strictEqual(res.introProvenance, "占位");
   assert.strictEqual(res.needsReview, true, "占位应标记需人工校对");
-  assert.ok(lastCreate["游戏信息"].includes("⚠需人工校对"), "需校对标签应写入游戏信息");
-  assert.ok(lastCreate["游戏信息"].includes("介绍:占位"));
+  assert.deepStrictEqual(lastCreate["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC"], "游戏信息仅含勾选分类标签，不再写 ⚠需人工校对/介绍:占位");
 });
 
 test("大小全缺失 → 不写游戏大小 + needsReview=true + 溯源=待核", async () => {
@@ -457,45 +455,47 @@ test("大小全缺失 → 不写游戏大小 + needsReview=true + 溯源=待核"
 });
 
 // ── buildRecordFields 写入溯源/校对标签 ──
-test("buildRecordFields 写入 provenance 与 needsReview 标签", () => {
+test("buildRecordFields 游戏信息 = 仅勾选分类标签（不并 provenance/parsed.tags）", () => {
   const fields = buildRecordFields(baseParsed(), {
     desc: "介绍文本", coverPath: null, objectId: null, gameSize: "30.7GB",
     coverSize: 0, needsReview: true, introProvenance: "占位", sizeProvenance: "待核",
   });
-  // 分类标签默认会写最前（用户偏好"免安装/PC/全DLC"）；PC游戏与 parsed.tags 重合时去重
+  // 即使传入 needsReview/introProvenance/sizeProvenance，游戏信息也只含用户勾选的分类标签
   assert.deepStrictEqual(
     fields["游戏信息"],
-    ["免安装硬盘版", "PC游戏", "全DLC", "介绍:占位", "大小:待核", "⚠需人工校对"]
+    ["免安装硬盘版", "PC游戏", "全DLC"]
   );
 });
 
-test("buildRecordFields 未传溯源参数时仅保留分类标签+原始标签（不污染）", () => {
+test("buildRecordFields 未传溯源参数时仅保留分类标签（不并入 parsed.tags）", () => {
   const fields = buildRecordFields(baseParsed({ tags: ["PC游戏", "动作"] }), {
     desc: "x", coverPath: "/x/c.jpg", objectId: null, gameSize: "", coverSize: 0,
   });
-  // 分类标签在前；PC游戏与 parsed.tags 重合 → 去重保留前者
-  assert.deepStrictEqual(fields["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC", "动作"]);
+  // parsed.tags（动作）不再并入；游戏信息 = 默认分类标签
+  assert.deepStrictEqual(fields["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC"]);
   assert.strictEqual(fields["游戏大小"], undefined);
 });
 
-test("buildRecordFields 显式传空 classificationTags 时只用 parsed.tags", () => {
+test("buildRecordFields 显式传空 classificationTags 时游戏信息为空", () => {
   const fields = buildRecordFields(baseParsed({ tags: ["PC游戏", "动作"] }), {
     desc: "x", coverPath: null, objectId: null, gameSize: "", coverSize: 0,
     classificationTags: [],
   });
-  assert.deepStrictEqual(fields["游戏信息"], ["PC游戏", "动作"]);
+  // 空数组 = 用户显式清空；parsed.tags 不再并入
+  assert.deepStrictEqual(fields["游戏信息"], []);
 });
 
-test("buildRecordFields 自定义 classificationTags 覆盖默认", () => {
+test("buildRecordFields 自定义 classificationTags 覆盖默认（不再并入 parsed.tags）", () => {
   const fields = buildRecordFields(baseParsed(), {
     desc: "x", coverPath: null, objectId: null, gameSize: "", coverSize: 0,
     classificationTags: ["免安装硬盘版", "虚拟机版"], // 用户临时改主意：去掉 PC游戏、全DLC，加 虚拟机版
   });
-  assert.deepStrictEqual(fields["游戏信息"], ["免安装硬盘版", "虚拟机版", "PC游戏"]);
+  // parsed.tags 不再并入，故不再有 PC游戏（仅分类标签本身去重）
+  assert.deepStrictEqual(fields["游戏信息"], ["免安装硬盘版", "虚拟机版"]);
 });
 
-test("buildRecordFields classificationTags 与 parsed.tags 去重保序（PC游戏/全DLC 重复）", () => {
-  // parser 已从 "游戏名（X）全DLC" 检测到 ["全DLC", "PC游戏"]；分类标签再次写 PC游戏/全DLC 应去重
+test("buildRecordFields 分类标签去重保序（parsed.tags 不再参与）", () => {
+  // parsed.tags(全DLC/PC游戏) 不再并入，游戏信息 = 默认分类标签
   const fields = buildRecordFields(
     baseParsed({ tags: ["全DLC", "PC游戏"] }),
     { desc: "x", coverPath: null, objectId: null, gameSize: "", coverSize: 0 }
@@ -506,7 +506,7 @@ test("buildRecordFields classificationTags 与 parsed.tags 去重保序（PC游�
 test("buildRecordFields 组装字段（网盘链接 + 封面对象）", () => {
   const parsed = baseParsed({ baiduUrl: "https://pan.baidu.com/s/b", quarkUrl: "https://pan.quark.cn/s/q" });
   const fields = buildRecordFields(parsed, { desc: "介绍文本", coverPath: "/x/cover.jpg", objectId: "obj9", gameSize: "30.7G", coverSize: 1234 });
-  assert.strictEqual(fields["游戏名称"], parsed.gameName);
+  assert.strictEqual(fields["游戏名称"], parsed.raw);
   assert.strictEqual(fields["游戏介绍"], "介绍文本");
   assert.strictEqual(fields["游戏大小"], "30.7G");
   assert.deepStrictEqual(fields["百度网盘"], [{ address: parsed.baiduUrl, displayText: parsed.baiduUrl }]);

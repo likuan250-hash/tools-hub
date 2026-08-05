@@ -6,6 +6,7 @@ const path = require("path");
 const { DEFAULT_COVER_DIR } = require("./config");
 const { cleanGameName, stripSubtitle, parseSteamAppIdFromText } = require("./nameutil");
 const { lookupEnglishNameOffline } = require("./gamemap");
+const { lookupAppIdOffline } = require("./gameappid");
 const { fetchTextProxy, fetchJsonProxy } = require("./proxyHttp");
 
 /**
@@ -17,6 +18,9 @@ const { fetchTextProxy, fetchJsonProxy } = require("./proxyHttp");
 async function searchSteamAppId(gameName, fetchImpl) {
   const getJson = fetchImpl || fetchJsonProxy;
   if (!gameName) return null;
+  // 离线优先：常见游戏直接命中 AppID，零网络依赖（storesearch 在受限网络下连不上，fork 子进程不继承代理变量）
+  const offline = lookupAppIdOffline(gameName);
+  if (offline) return offline;
   const norm = (s) => String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, "");
   const variants = [];
   const push = (t) => { const v = String(t == null ? "" : t).trim(); if (v && !variants.includes(v)) variants.push(v); };

@@ -490,3 +490,20 @@ test("searchSteamAppId fetch 抛异常也返回 null", async () => {
   const fakeFetch = async () => { throw new Error("net down"); };
   assert.strictEqual(await searchSteamAppId("任意游戏", fakeFetch), null);
 });
+
+test("searchSteamAppId 离线命中优先于网络（网络彻底不可达仍返回 AppID）", async () => {
+  // 模拟受限网络：storesearch 连不上（fetchImpl 抛错），但游戏在离线 AppID 库 → 仍应命中
+  const brokenFetch = async () => { throw new Error("network down"); };
+  assert.strictEqual(await searchSteamAppId("The Last of Us Part II Remastered", brokenFetch), "2531310");
+  // 离线命中时不调用网络
+  let calls = 0;
+  const countingFetch = async () => { calls++; return { items: [] }; };
+  const id = await searchSteamAppId("Cyberpunk 2077", countingFetch);
+  assert.strictEqual(id, "1091500");
+  assert.strictEqual(calls, 0, "离线命中不应发起网络请求");
+});
+
+test("searchSteamAppId 离线未命中 + 网络不可达 → null", async () => {
+  const brokenFetch = async () => { throw new Error("network down"); };
+  assert.strictEqual(await searchSteamAppId("某不存在的游戏 终极版", brokenFetch), null);
+});

@@ -1,13 +1,14 @@
 // datapack.test.js — 离线数据包管理单元测试（内置/缓存覆盖/版本比较，无需网络）
-const os = require("os");
 const path = require("path");
 const fs = require("fs");
 const test = require("node:test");
 const assert = require("node:assert");
 
-// 隔离缓存目录：必须在 require datapack 之前设置环境变量（模块加载时计算 CACHE_FILE）
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "datapack-test-"));
-process.env.KDOCS_DATA_DIR = tmp;
+// 隔离缓存目录：项目内临时目录（约定只写 E 盘工作区，不写 %TEMP%/C 盘），after 自动清理
+const tmpDir = path.join(__dirname, ".tmp-datapack");
+fs.mkdirSync(tmpDir, { recursive: true });
+process.env.KDOCS_DATA_DIR = tmpDir;
+test.after(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {} });
 
 const { getActiveDataPack, getActiveDataPackVersion, normZh, normEn, CACHE_FILE } = require("../lib/datapack");
 

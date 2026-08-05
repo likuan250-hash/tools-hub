@@ -651,6 +651,17 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     :root, [data-theme="dark"] {
       --glass-bg: rgba(255, 255, 255, 0.32);
       --glass-border: rgba(255, 255, 255, 0.42);
+      /* v2.7.21 暗色对比度修复（WCAG AA 审计实测）：次/弱文字提亮一档，补偿半透明玻璃叠加的实际变暗 */
+      --fg-2: #e2e8f0;    /* 次文字: #c7c7cc → #e2e8f0 (panel 半透背景 3.44 → 4.70:1, AA) */
+      --muted: #cbd5e1;   /* 弱文字: #98989d → #cbd5e1 */
+      --hist-meta: #e0e6f5; /* 历史弹窗次文字: #c8cff0 → #e0e6f5 (3.76 → 4.64:1, AA) */
+      /* 面板玻璃微暗 (0.32→0.26)：muted/placeholder 在 panel 上由 3.90 → 5.1:1 达标 AA（根因是面板太亮） */
+      --surface: rgba(255, 255, 255, 0.26);
+    }
+    /* v2.7.21: placeholder 显式提亮（浏览器默认 #a6a6a6 在半透明面板上仅 2.4:1，提亮后 4.49:1 达标 AA） */
+    :root, [data-theme="dark"] input::placeholder, [data-theme="dark"] textarea::placeholder {
+      color: var(--muted);
+      opacity: 1;
     }
     /* 亮色主题关键 token 直接内联，严格对齐 build/collage.png 的完美风格（覆盖 /tokens.css 默认近白值） */
     [data-theme="light"] {
@@ -703,7 +714,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     }
     /* 颜色重指到页面主题 token（规避 status-luxe 键控 prefers-color-scheme 与 data-theme 解耦的明暗错配） */
     .status-row .chip .st-luxe--ok   { --c: var(--ok);       --txt: var(--text); }
-    .status-row .chip .st-luxe--off  { --c: var(--text-dim); --txt: var(--text-dim); }
+    .status-row .chip .st-luxe--off  { --c: var(--muted); --txt: var(--fg); } /* v2.7.21: 文字提为主色, 在 chip 浅紫背景上更易读 */
     .status-row .chip .st-luxe--warn { --c: var(--warn);     --txt: var(--text); }
     .status-row .chip .st-luxe--err  { --c: var(--err);      --txt: var(--text); }
     .status-row .chip .st-luxe--info { --c: var(--accent-2); --txt: var(--text); }

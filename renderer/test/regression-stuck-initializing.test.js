@@ -261,7 +261,7 @@ test("S1 正常路径：三段 JS 均加载 + electronAPI → 卡片渲染、玻
   const { ids } = runApp(["drag-geometry", "status-luxe"],
     { statusResolves: true, statusValue: { kdocs: { running: true }, netdisk: { running: false } } });
   await tick();
-  assert.strictEqual(ids["toolCards"].children.length, 3, "应渲染 3 张卡片（kdocs+netdisk+biliup）");
+  assert.strictEqual(ids["toolCards"].children.length, 4, "应渲染 4 张卡片（kdocs+netdisk+biliup+material）");
   assert.ok(/st-luxe/.test(ids["aggStatus"]._innerHTML), "aggStatus 应显示玻璃态胶囊");
   // 回归验证：既有绑定在 IIFE 内正常位置且已绑定
   assert.strictEqual(typeof ids["themeBtn"].onclick, "function", "themeBtn 绑定应存在");
@@ -275,13 +275,13 @@ test("S1 正常路径：三段 JS 均加载 + electronAPI → 卡片渲染、玻
 test("S2 getStatus reject：走 catch 分支 → renderStatus({}) 仍渲染卡片", async () => {
   const { ids } = runApp(["drag-geometry", "status-luxe"], { statusResolves: false });
   await tick();
-  assert.strictEqual(ids["toolCards"].children.length, 3, "reject 后卡片仍必须渲染");
+  assert.strictEqual(ids["toolCards"].children.length, 4, "reject 后卡片仍必须渲染");
   assert.ok(/st-luxe/.test(ids["aggStatus"]._innerHTML), "仍应显示玻璃态胶囊");
 });
 
 test("S3 electronAPI 缺失：走 else 分支 → aggEl 设文本 + 卡片渲染", () => {
   const { ids } = runApp(["drag-geometry", "status-luxe"], null);
-  assert.strictEqual(ids["toolCards"].children.length, 3, "无 electronAPI 时卡片仍必须渲染");
+  assert.strictEqual(ids["toolCards"].children.length, 4, "无 electronAPI 时卡片仍必须渲染");
   assert.strictEqual(ids["aggStatus"].textContent, "未运行在桌面应用环境中");
 });
 
@@ -289,7 +289,7 @@ test("S4 status-luxe.js 缺失：statusHTML 等为 undefined → typeof 守卫�
   const { ids } = runApp(["drag-geometry"],
     { statusResolves: true, statusValue: { kdocs: { running: true }, netdisk: { running: false } } });
   await tick();
-  assert.strictEqual(ids["toolCards"].children.length, 3, "状态库缺失时卡片仍必须渲染");
+  assert.strictEqual(ids["toolCards"].children.length, 4, "状态库缺失时卡片仍必须渲染");
   assert.strictEqual(ids["aggStatus"]._innerHTML, "离线", "应回退为纯文本标签而非崩溃");
 });
 
@@ -297,13 +297,13 @@ test("S5 drag-geometry.js 缺失：用内联 fallbackComputeInsertIndex → 卡�
   const { ids } = runApp(["status-luxe"],
     { statusResolves: true, statusValue: { kdocs: { running: true }, netdisk: { running: false } } });
   await tick();
-  assert.strictEqual(ids["toolCards"].children.length, 3, "拖拽库缺失时应启用内联兜底且卡片渲染");
+  assert.strictEqual(ids["toolCards"].children.length, 4, "拖拽库缺失时应启用内联兜底且卡片渲染");
   assert.ok(/st-luxe/.test(ids["aggStatus"]._innerHTML), "状态胶囊仍正常（玻璃态）");
 });
 
 test("S6 两库全缺失：最强兜底 → 卡片照常渲染、页面可操作", () => {
   const { ids } = runApp([], null);
-  assert.strictEqual(ids["toolCards"].children.length, 3, "双库缺失的最坏情况下卡片仍必须渲染");
+  assert.strictEqual(ids["toolCards"].children.length, 4, "双库缺失的最坏情况下卡片仍必须渲染");
 });
 
 // ───────────────────────── 5) 回归验证（既有功能未被破坏） ─────────────────────────

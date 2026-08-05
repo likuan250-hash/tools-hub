@@ -629,7 +629,9 @@ async function proxyFetch(url, opts = {}) {
  */
 function describeProxy(target, env) {
   const p = resolveProxy(target, env);
-  return p ? 'via ' + toProxyUrl(p) : 'direct';
+  if (!p) return 'direct';
+  // 日志摘要脱敏：代理可能带账号密码，不能把密码写进日志
+  return 'via ' + toProxyUrl(p).replace(/\/\/[^@/]+@/, '//***@');
 }
 
 module.exports = {

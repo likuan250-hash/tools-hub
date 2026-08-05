@@ -369,7 +369,12 @@
     const hint = $("sectionHint");
     if (!hint) return;
     if (seasonId && (!secs || secs.length === 0)) {
-      hint.textContent = "该合集暂无可选分集（可不指定，直接上传）";
+      // 区分「真·无分集」与「分集列表未取到」：
+      // 真·无分集（B站 no_section=1）时 sectionId 为空会让 task.js 跳过合集后置，
+      // 视频上传后不会进合集，必须引导用户先去 B站创作中心建分集。
+      hint.textContent = seasonNoSection[seasonId]
+        ? "该合集无分集，无法自动加入视频：请到 B站创作中心为该合集添加分集后再上传"
+        : "该合集暂未取到分集列表（可不指定直接上传，或稍后重试）";
     } else {
       hint.textContent = "（可选：选中分集后，上传将归入该分集）";
     }

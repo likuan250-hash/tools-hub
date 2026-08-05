@@ -23,7 +23,9 @@ const logger = require('./src/logger');
     try {
       const { ProxyAgent, setGlobalDispatcher } = require('undici');
       setGlobalDispatcher(new ProxyAgent(proxyUrl));
-      logger.info('[proxy] 已启用出站代理:', proxyUrl);
+      // 日志脱敏：代理地址可能带账号密码（http://user:pass@host:port），
+      // 不能把密码明文写进 app-*.log（保留 14 天）。
+      logger.info('[proxy] 已启用出站代理:', String(proxyUrl).replace(/\/\/[^@/]+@/, '//***@'));
     } catch (e) {
       logger.warn('[proxy] 代理初始化失败,回退直连:', e.message);
     }
@@ -360,9 +362,10 @@ async function runTransfer(body, p) {
 }
 
 // ── 版本与更新 ───────────────────────────────────────
-// 版本号存于项目根 VERSION 文件,每次发版 bump 并提交;检查更新时对比本地与远程 main 的版本号。
+// 版本号统一读 package.json（与 tools-hub 各子项目同步 bump），
+// VERSION 文件仅为历史/外部工具展示保留，不再作为 /api/version 的版本来源。
 function getVersion() {
-  try { return fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim(); }
+  try { return require('./package.json').version; }
   catch { return 'unknown'; }
 }
 // (自更新机制已移除:gitShort/findConnect/run 等 git 相关函数随 /api/update 一并删除,
@@ -370,6 +373,10 @@ function getVersion() {
 
 let fatalCount = 0;
 let lastFatalTs = 0;
+// 服务健康标志：必须显式声明并初始化为 true（全新进程即为健康态）。
+// 修复：此前只在 onFatal 里隐式赋值，导致 /api/ready、/api/health 在首次异常前
+// 读取未声明变量抛 ReferenceError → HTTP 500，独立控制面板看门狗误判服务死亡反复重启。
+let serverHealthy = true;
 
 
 // 百度登录页(弹窗,与夸克同构)

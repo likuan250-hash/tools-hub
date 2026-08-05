@@ -421,6 +421,9 @@ function startWatchdog() {
       }
       if (state === "foreign") {
         log(`⚠️ ${cfg.key} 端口被其它进程占用（bootToken 不匹配，疑似端口抢占/伪造）；未自动清理以免误杀`);
+        // 不重复拉起：端口被外来进程占用时，新实例必然 EADDRINUSE 反复失败，
+        // 只会浪费重试次数并刷日志。保持 running=false，等下一轮看门狗再探。
+        continue;
       }
       startChild(cfg);
     }

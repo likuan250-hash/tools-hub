@@ -81,7 +81,7 @@
     kdocs: {
       key: "kdocs",
       name: "金山文档录入",
-      desc: "粘贴游戏信息 → 自动解析 → AI 介绍 + 封面 + 多维表",
+      desc: "粘贴游戏信息 → 自动解析 → Steam 官方介绍/封面 + 多维表",
       url: "http://localhost:3599",
       icon: "📊",
     },
@@ -95,7 +95,7 @@
   biliup: {
     key: "biliup",
     name: "B站自动投稿",
-    desc: "选视频 → 填标签 → 选模式 → 一键投稿（上传/抽帧/AIGC/合集/置顶）",
+    desc: "选视频 → 填标签 → 选模式 → 一键投稿（上传/抽帧/合集/置顶）",
     url: "http://localhost:3600",
     icon: "📺",
   },

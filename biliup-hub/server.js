@@ -4,7 +4,6 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const store = require('./lib/store');
 const cookies = require('./lib/cookies');
@@ -159,7 +158,7 @@ app.get('/', (req, res) => {
 
 // ── 版本（回显 bootToken 供主进程 verifyChildBoot 校验端口归属）──
 function getVersion() {
-  try { return fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim(); }
+  try { return require('./package.json').version; }
   catch { return 'unknown'; }
 }
 app.get('/api/version', (req, res) => {

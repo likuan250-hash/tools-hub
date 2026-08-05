@@ -1,0 +1,5 @@
+http://127.0.0.1:7990
+# 代理配置模板：把本文件复制为 material-hub/.proxy 或 material-hub/proxy-default，
+# 再改成你的实际代理地址后生效（运行时只读首行）。
+# 注意：.proxy / proxy-default 已被 .gitignore 排除，不会进入版本控制；
+#       electron-builder 的 **/* glob 不复制点开头文件，真实 .proxy 也不会被打进安装包。

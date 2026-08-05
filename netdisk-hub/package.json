@@ -2,7 +2,7 @@
   "name": "netdisk-hub",
   "version": "2.7.26",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "test": "node --test",
     "test:parsers": "node --test test/parsers.test.js",

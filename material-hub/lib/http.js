@@ -176,9 +176,9 @@ function resolveProxy(target, env) {
   //   测试里 env={} 会让 source!==process.env，.proxy 不会被读到，不受本机配置干扰。
   if (source === process.env) {
     try {
-      // 优先 .proxy（用户自定义），不存在则读 proxy-default（仓库默认模板，随包打包）。
-      //   注意：electron-builder 的 **/* glob 默认不复制点开头的文件，
-      //   所以模板文件不能以 . 开头，否则安装包里根本没有它。
+      // 优先 .proxy（用户自定义），不存在则读 proxy-default（用户按 proxy-default.example
+      // 模板创建的本地文件）。两者均被 .gitignore 排除，不会进 git；模板文件
+      // proxy-default.example 随包分发仅供参照，运行时不读取。
       const base = pathMod.join(__dirname, '..');
       for (const name of ['.proxy', 'proxy-default']) {
         const cfgPath = pathMod.join(base, name);

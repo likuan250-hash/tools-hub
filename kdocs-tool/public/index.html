@@ -156,7 +156,7 @@
     /* 分类标签选择行：标签行不需要右边的 <span> 占位；网格用 120px 1fr 让标签区占满中列 */
     .input-row.tag-row { grid-template-columns: 120px 1fr; }
     .input-row.tag-row > span { display: none; }
-    .tag-toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag-toggles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 480px; }
     .tag-pill {
       padding: 6px 14px;
       font-size: 13px;

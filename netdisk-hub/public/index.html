@@ -310,10 +310,11 @@
       transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard); }
     [data-theme="light"] .toast { box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.7); }
 
-    .modal-mask {
+    .modal-mask { z-index: 50; padding: 16px;
       position: fixed; inset: 0; background: var(--modal-mask); backdrop-filter: blur(6px);
-      display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px;
+      display: none; align-items: center; justify-content: center;
     }
+    #copyGroupModal { z-index: 100; } /* 「复制本组分享链接」预览弹窗需盖在转存历史弹窗（historyMask 也是 .modal-mask z=50，且 DOM 后渲染）之上 */
     .modal-mask.show { display: flex; animation: pop 0.25s ease; }
     .modal {
       width: 100%; max-width: 480px; padding: 22px;

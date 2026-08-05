@@ -52,8 +52,8 @@ body {
 .icon-btn { width: 36px; }
 .update-btn {
   height: auto; padding: 4px 12px; font-size: 12px; border-radius: 14px; gap: 6px;
-  color: var(--ver);
-  background: color-mix(in srgb, var(--ver) 14%, var(--glass-bg));
+  color: var(--fg); /* v2.7.23: 改用主文字色（之前 var(--ver) 紫蓝品牌色在紫蓝顶栏上仅 1.35:1，远不达 WCAG AA） */
+  background: color-mix(in srgb, var(--ver) 14%, var(--glass-bg)); /* 品牌色保留为装饰背景 */
   border-color: color-mix(in srgb, var(--ver) 32%, var(--glass-border));
   box-shadow: none;
 }

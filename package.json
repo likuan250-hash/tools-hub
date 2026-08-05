@@ -60,6 +60,8 @@
           "!node_modules/**/.cache",
           "!**/*.log",
           "!**/.env",
+          "!**/.proxy",
+          "!**/proxy-default",
           "!node_modules/**/.*-????????",
           "!node_modules/**/.*-*/**"
         ]
@@ -107,6 +109,8 @@
           "!**/*.log",
           "!logs/**",
           "!**/.env",
+          "!**/.proxy",
+          "!**/proxy-default",
           "!.tmp/**",
           "!node_modules/**/.*-????????",
           "!node_modules/**/.*-*/**"

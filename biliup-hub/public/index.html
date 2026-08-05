@@ -284,6 +284,18 @@
     .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 14px; padding-right: 4px; font-size: 14px; line-height: 1.65; }
     /* 高级参数弹窗略加宽，2 列网格与长选项不再拥挤（v2.1.8 可读性） */
     #advMask .modal { max-width: 560px; }
+    /* 投稿历史弹窗加宽：标题 + 状态 + 视频链接同排展示不再拥挤 */
+    #historyMask .modal { max-width: 680px; }
+
+    /* 历史筛选标签（全部/成功/失败） */
+    .history-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .history-tab {
+      padding: 6px 14px; border-radius: 999px; border: 1px solid var(--glass-border);
+      background: var(--glass-bg); color: var(--text-dim); font-size: 13px; cursor: pointer;
+      transition: color var(--motion-base) var(--ease-standard), background var(--motion-base) var(--ease-standard);
+    }
+    .history-tab:hover { color: var(--text); }
+    .history-tab.active { background: var(--accent); color: #fff; border-color: transparent; }
 
     /* 历史列表（P08） */
     .history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
@@ -1024,6 +1036,11 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         <button class="modal-close" id="historyClose" type="button" title="关闭">✕</button>
       </div>
       <div class="modal-body">
+        <div class="history-tabs" id="historyTabs">
+          <button class="history-tab" data-filter="all" type="button">全部</button>
+          <button class="history-tab active" data-filter="ok" type="button">成功</button>
+          <button class="history-tab" data-filter="err" type="button">失败</button>
+        </div>
         <div class="history-list" id="historyList"></div>
       </div>
       <div class="modal-actions">

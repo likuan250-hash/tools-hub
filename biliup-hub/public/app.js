@@ -225,9 +225,9 @@
   function loadHistoryBiliup(key) {
     try { return JSON.parse(localStorage.getItem(key) || "[]") || []; } catch { return []; }
   }
-  function pushHistory(key, ok, title, status) {
+  function pushHistory(key, ok, title, status, bvid) {
     const list = loadHistoryBiliup(key);
-    list.unshift({ ts: Date.now(), ok: !!ok, title: title || "（未命名）", status: status || "" });
+    list.unshift({ ts: Date.now(), ok: !!ok, title: title || "（未命名）", status: status || "", bvid: bvid || "" });
     if (list.length > HISTORY_MAX_BILIUP) list.length = HISTORY_MAX_BILIUP;
     try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* 隐私模式可能抛错，忽略 */ }
   }
@@ -776,7 +776,7 @@
     const ok = d.success !== false;
     logLine("投稿完成！aid=" + (d.aid || "?") + " bvid=" + (d.bvid || "?") + " cid=" + (d.cid || "?") + " 合集=" + (d.season ? "已加" : "否"), "ok");
     // P08：写一条投稿历史（成功/失败 + 稿件标题 + 时间 + 简要状态）
-    pushHistory(HISTORY_KEY_BILIUP, ok, $("titleInput").value || "（未命名）", ok ? ("投稿成功" + (d.bvid ? " · " + d.bvid : "")) : (d.error || "投稿未完成"));
+    pushHistory(HISTORY_KEY_BILIUP, ok, $("titleInput").value || "（未命名）", ok ? ("投稿成功" + (d.bvid ? " · " + d.bvid : "")) : (d.error || "投稿未完成"), d.bvid);
   } else if (ev.type === "error") {
     setCapsule("err", "失败");
     logLine("失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
@@ -915,26 +915,51 @@
   const historyBtnBiliup = $("submitHistoryBtn");
   const historyCloseBiliup = $("historyClose");
   const historyClearBiliup = $("historyClear");
+  let historyFilter = "ok"; // 默认显示成功
 
   function renderBiliupHistory() {
-    const list = loadHistoryBiliup(HISTORY_KEY_BILIUP);
-    if (!list.length) { historyListBiliup.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('inbox') + '</span>还没有投稿记录</div>'; return; }
+    const all = loadHistoryBiliup(HISTORY_KEY_BILIUP);
+    const list = historyFilter === "all"
+      ? all
+      : all.filter((h) => (historyFilter === "ok" ? h.ok : !h.ok));
+    if (!list.length) {
+      historyListBiliup.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('inbox') + '</span>'
+        + (all.length ? "没有符合条件的投稿记录" : "还没有投稿记录") + "</div>";
+      return;
+    }
     historyListBiliup.innerHTML = list.map((h) => {
       const time = new Date(h.ts).toLocaleString("zh-CN");
       const badge = h.ok ? "成功" : "失败";
+      const link = h.ok && h.bvid
+        ? '<a href="https://www.bilibili.com/video/' + encodeURIComponent(h.bvid)
+          + '" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;border-bottom:1px dashed var(--accent);">'
+          + escapeHtmlBiliup(h.bvid) + "（打开）</a>"
+        : escapeHtmlBiliup(h.status || "");
+      const metaParts = [badge];
+      if (link) metaParts.push(link);
+      metaParts.push(time);
       return `<div class="history-item">
         <span class="history-dot ${h.ok ? "ok" : "err"}"></span>
         <div class="history-main">
           <div class="history-title">${escapeHtmlBiliup(h.title)}</div>
-          <div class="history-meta">${escapeHtmlBiliup(badge + (h.status ? " · " + h.status : ""))} · ${escapeHtmlBiliup(time)}</div>
+          <div class="history-meta">${metaParts.map((p) => (p.indexOf('<a ') === 0 ? p : escapeHtmlBiliup(p))).join(" · ")}</div>
         </div>
       </div>`;
     }).join("");
+  }
+  function setHistoryFilter(f) {
+    historyFilter = f;
+    const tabs = document.querySelectorAll("#historyTabs .history-tab");
+    tabs.forEach((t) => t.classList.toggle("active", t.getAttribute("data-filter") === f));
+    renderBiliupHistory();
   }
   function openBiliupHistory() { renderBiliupHistory(); openModal(historyMaskBiliup); }
   if (historyBtnBiliup) historyBtnBiliup.addEventListener("click", openBiliupHistory);
   if (historyCloseBiliup) historyCloseBiliup.addEventListener("click", closeModal);
   if (historyMaskBiliup) historyMaskBiliup.addEventListener("click", (e) => { if (e.target === historyMaskBiliup) closeModal(); });
+  document.querySelectorAll("#historyTabs .history-tab").forEach((t) => {
+    t.addEventListener("click", () => setHistoryFilter(t.getAttribute("data-filter") || "all"));
+  });
   if (historyClearBiliup) historyClearBiliup.addEventListener("click", () => {
     if (window.confirm("确定清空全部投稿历史?")) {
       try { localStorage.removeItem(HISTORY_KEY_BILIUP); } catch { /* ignore */ }

@@ -1,11 +1,13 @@
 // lib/season.js —— 合集后置 API 调用（坑点2：season_id 被投稿接口忽略 → 独立 API 后置）
 // 端点：POST https://member.bilibili.com/x2/creative/web/season/section/episodes/add
-// 参数：sectionId=7630305（非 season_id）、episodes=[{aid,cid,title,charging_pay:0}]、csrf=bili_jct + 完整 Cookie。
+// 参数（官方 JSON 格式，已用真实账号实测通过）：URL 带 ?t=<unix秒>&csrf=<bili_jct>，
+// 请求体 JSON：{ sectionId, episodes:[{aid,cid,title}], csrf } + 完整 Cookie。
+// 注意：旧版 form-urlencoded（sectionId=...&episodes=JSON 字符串）实测返回 -400，勿改回。
 // 坑点4：索引延迟返回 -404 → 重试 ≤20 次、间隔 10s。
 const logger = require('./logger');
 
-// TODO(实测): 以下端点与字段以社区已知形态为准，v1.2.1 回归时请实测确认。
 const SEASON_ADD_URL = 'https://member.bilibili.com/x2/creative/web/season/section/episodes/add';
+const SEASONS_LIST_URL = 'https://member.bilibili.com/x2/creative/web/seasons';
 
 let _fetch;
 function getFetch() {
@@ -38,24 +40,27 @@ async function add(sectionId, aid, cid, title, csrf, cookieHeader, opts = {}) {
   const MAX = 20;
   const INTERVAL = 10000;
 
-  const episodes = [{ aid: Number(aid), cid: Number(cid), title: String(title || ''), charging_pay: 0 }];
-  const body = new URLSearchParams();
-  body.set('sectionId', String(sectionId));
-  body.set('csrf', String(csrf));
-  body.set('episodes', JSON.stringify(episodes));
+  const url = SEASON_ADD_URL
+    + '?t=' + Math.floor(Date.now() / 1000)
+    + '&csrf=' + encodeURIComponent(String(csrf));
+  const body = JSON.stringify({
+    sectionId: Number(sectionId),
+    episodes: [{ aid: Number(aid), cid: Number(cid), title: String(title || '') }],
+    csrf: String(csrf),
+  });
 
   let lastErr = null;
   for (let i = 1; i <= MAX; i++) {
     try {
-      const resp = await fetchFn(SEASON_ADD_URL, {
+      const resp = await fetchFn(url, {
         method: 'POST',
         headers: {
           'Cookie': cookieHeader,
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
           'Referer': 'https://member.bilibili.com/',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1',
         },
-        body: body.toString(),
+        body,
       });
       const json = await resp.json();
       if (json && json.code === 0) {
@@ -86,4 +91,45 @@ async function add(sectionId, aid, cid, title, csrf, cookieHeader, opts = {}) {
   throw new Error('合集后置失败，重试耗尽(20/10s): ' + (lastErr && lastErr.message));
 }
 
-module.exports = { add, SEASON_ADD_URL, DEFAULT_DEPS };
+/**
+ * 按合集解析「首个分集 ID」：用于存量配置只有 seasonId、没有 sectionId 时上传兜底。
+ * 分集来源与 server.js /api/seasons 同源：优先顶层 sections.sections（嵌套，B站真实结构），
+ * 回退 season.sections；两处都取不到返回 null（由调用方决定跳过合集后置，非致命）。
+ * @param {string|number} seasonId 合集 ID
+ * @param {string} cookieHeader 完整 Cookie 头（含 SESSDATA）
+ * @param {{deps?:Object}} [opts]
+ * @returns {Promise<string|null>}
+ */
+async function resolveFirstSectionId(seasonId, cookieHeader, opts = {}) {
+  const deps = Object.assign({}, DEFAULT_DEPS, opts.deps || {});
+  const fetchFn = deps.fetchFn || deps.getFetch();
+  const url = SEASONS_LIST_URL
+    + '?pn=1&ps=50&t=' + Math.floor(Date.now() / 1000);
+  let resp;
+  try {
+    resp = await fetchFn(url, {
+      headers: {
+        'Cookie': cookieHeader,
+        'Referer': 'https://member.bilibili.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1',
+      },
+    });
+  } catch (e) {
+    logger.warn('[season] 解析首个分集失败（网络）:', e.message);
+    return null;
+  }
+  if (resp && resp.ok === false) return null;
+  let json;
+  try { json = await resp.json(); } catch (e) { return null; }
+  if (!json || json.code !== 0) return null;
+  const seasons = Array.isArray(json.data && json.data.seasons) ? json.data.seasons : [];
+  const s = seasons.find((x) => x && x.season && String(x.season.id) === String(seasonId));
+  if (!s) return null;
+  const nested = s.sections && Array.isArray(s.sections.sections) ? s.sections.sections : [];
+  const seasonSecs = Array.isArray(s.season.sections) ? s.season.sections : [];
+  const secs = nested.length > 0 ? nested : seasonSecs;
+  const first = secs.find((sec) => sec && sec.id != null);
+  return first ? String(first.id) : null;
+}
+
+module.exports = { add, resolveFirstSectionId, SEASON_ADD_URL, SEASONS_LIST_URL, DEFAULT_DEPS };

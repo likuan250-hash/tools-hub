@@ -182,12 +182,27 @@ async function run(req, ctx) {
 
     // 5) adding_season（坑点2：独立 API 后置；坑点4：-404 重试）
     // H: sectionId 为空串（用户未指定分集）时跳过合集后置，避免向后端传空 sectionId 报错。
-    if (config.sectionId) {
+    // 兜底：存量配置可能只有 seasonId、没有 sectionId（升级前分集下拉拉不到，如「绵绵不绝」），
+    // 此时按合集自动解析首个分集（B站真实结构顶层 sections.sections 里的默认「正片」），
+    // 解析失败/合集确实无分集 → 维持原跳过语义（非致命）。
+    let sectionId = config.sectionId;
+    if (config.seasonId && !sectionId) {
+      try {
+        const resolved = await seasonM.resolveFirstSectionId(config.seasonId, cookieHeader, { deps: subDeps });
+        if (resolved) {
+          sectionId = resolved;
+          log('adding_season', '已按合集自动解析分集 sectionId=' + resolved);
+        }
+      } catch (e) {
+        logger.warn('[task] 自动解析合集分集失败（非致命）: ' + e.message);
+      }
+    }
+    if (sectionId) {
       setStage('adding_season', '合集后置中');
       // 合集后置为非关键步骤（类比评论置顶，#③）：失败仅记录警告，不阻断投稿整体流程，
       // 也不影响后续评论置顶与 done。season.add 内部已含 -404 重试/传输重试，此处仅兜底其最终失败。
       try {
-        await seasonM.add(config.sectionId, videoInfo.aid, videoInfo.cid, title, csrf, cookieHeader, {
+        await seasonM.add(sectionId, videoInfo.aid, videoInfo.cid, title, csrf, cookieHeader, {
           onLog: (m) => log('adding_season', m),
           deps: subDeps,
         });
@@ -216,8 +231,8 @@ async function run(req, ctx) {
       log('commenting', '评论发布/置顶失败（非致命，已跳过）: ' + commentErr.message);
     }
 
-    // 7) done —— season 真实反映：仅当 config.sectionId 存在（即实际执行了合集后置）才为 true。
-    const seasonAdded = !!config.sectionId;
+    // 7) done —— season 真实反映：仅当 sectionId（含自动解析）存在，即实际执行了合集后置才为 true。
+    const seasonAdded = !!sectionId;
     setStage('done', '投稿完成');
     emit({
       type: 'done',

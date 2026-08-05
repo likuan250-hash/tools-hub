@@ -43,6 +43,7 @@ function baseMocks() {
     },
     season: {
       add: async () => {},
+      resolveFirstSectionId: async () => null,
     },
     comment: {
       post: async () => 999,
@@ -343,4 +344,39 @@ test('task.run: 合集后置失败（非致命）→ 不阻断投稿，仍 done 
   assert.equal(result.season, true, 'season 仍应反映曾尝试合集后置（保持原语义）');
   // 评论置顶阶段未受合集失败影响（baseMocks 中 comment 成功）
   assert.ok(logs.some((m) => /评论已发布并置顶/.test(m)), '评论置顶应在合集失败后继续执行');
+});
+
+// ── 用例11（需求①回归实测）：存量配置只有 seasonId（sectionId 为空）→ 上传时自动解析首个分集后置 ──
+// 实测背景：升级前 /api/seasons 读错分集字段（应为顶层 sections.sections），用户配置只存了
+// seasonId=8700479、sectionId='' → 合集后置被跳过。现在 task 侧兜底：按合集解析首个分集并调用 add。
+test('task.run: seasonId 有、sectionId 空 → 自动解析首个分集 → season.add 被调用且 season=true', async () => {
+  const video = makeVideoFile();
+  let addSectionId = null;
+  const deps = baseMocks();
+  deps.season.resolveFirstSectionId = async () => '9695491';
+  deps.season.add = async (sectionId) => { addSectionId = sectionId; };
+  const ctx = makeCtx(deps, '');
+  ctx.config.seasonId = '8700479';
+
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true);
+  assert.equal(addSectionId, '9695491', '应自动解析分集并调用 season.add');
+  assert.equal(result.season, true, 'season 标志应为 true');
+});
+
+// ── 用例12：seasonId 有但解析不到分集 → 维持跳过语义（season=false，不抛错）──
+test('task.run: seasonId 有、解析分集失败 → 跳过合集后置（season=false, ok:true）', async () => {
+  const video = makeVideoFile();
+  const deps = baseMocks();
+  deps.season.resolveFirstSectionId = async () => null;
+  const ctx = makeCtx(deps, '');
+  ctx.config.seasonId = '8700479';
+
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.season, false, '解析不到分集时应维持跳过语义');
 });

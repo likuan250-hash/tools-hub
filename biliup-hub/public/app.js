@@ -316,7 +316,9 @@
       selectPreserve($("cfgTid"), cfg.tid != null ? cfg.tid : "");
       // H: 合集/分集改为级联下拉，用 selectPreserve 赋值（兼容旧数字值，不在列表则显示「其它 (val)」）。
       selectPreserve($("cfgSeason"), cfg.seasonId != null ? cfg.seasonId : "");
-      selectPreserve($("cfgSection"), cfg.sectionId != null ? cfg.sectionId : "");
+      // 分集：仅当配置明确指定时回填。为空时保留 refreshSeasons→fillSections 已自动选中的首个分集，
+      // 避免老配置「选了合集但没选分集」在加载时被清空，导致合集后置被跳过（需求①回归实测）。
+      if (cfg.sectionId) selectPreserve($("cfgSection"), cfg.sectionId);
       selectPreserve($("cfgCopyright"), cfg.copyright != null ? cfg.copyright : "");
       selectPreserve($("cfgNoReprint"), cfg.noReprint != null ? cfg.noReprint : "");
       selectPreserve($("cfgLine"), cfg.line || "");
@@ -373,11 +375,10 @@
     const hint = $("sectionHint");
     if (!hint) return;
     if (seasonId && (!secs || secs.length === 0)) {
-      // 区分「真·无分集」与「分集列表未取到」：
-      // 真·无分集（B站 no_section=1）时 sectionId 为空会让 task.js 跳过合集后置，
-      // 视频上传后不会进合集，必须引导用户先去 B站创作中心建分集。
+      // 区分「无分集结构」与「分集列表未取到」：实测 no_section=1 的合集仍可能有默认「正片」分集，
+      // 因此两处均为空时不再断言「必须建分集」，而是提示确认/重试。
       hint.textContent = seasonNoSection[seasonId]
-        ? "该合集无分集，无法自动加入视频：请到 B站创作中心为该合集添加分集后再上传"
+        ? "该合集未返回分集列表（视频不会自动加入合集，可重新加载列表或到创作中心确认）"
         : "该合集暂未取到分集列表（可不指定直接上传，或稍后重试）";
     } else {
       hint.textContent = "（可选：选中分集后，上传将归入该分集）";

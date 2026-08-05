@@ -282,12 +282,15 @@ app.get('/api/seasons', async (req, res) => {
     const mapped = [];
     for (const s of seasons) {
       if (!s || !s.season || s.season.state !== 0) continue;
-      // no_section：B站声明该合集「无分集」（合集本身不含分集结构，是正常现象，非接口故障）；
-      // 前端据以区分「真·无分集」与「分集列表未返回 / 补拉失败」，给出不同提示。
+      // no_section：B站声明的「无分集」标志并不可靠——实测 no_section=1 的合集
+      // 仍可能在顶层 sections.sections（嵌套）返回默认「正片」分集（如「绵绵不绝」）。
+      // 因此分集一律优先从嵌套路径 s.sections.sections 读取，回退 s.season.sections；
+      // no_section 仅用于「两处均为空」时的提示文案区分（不阻断其它合集）。
       const noSection = Number(s.season.no_section) === 1;
-      let sections = Array.isArray(s.season.sections)
-        ? s.season.sections.map((sec) => ({ id: String(sec.id), title: sec.title }))
-        : [];
+      const nestedSections = s.sections && Array.isArray(s.sections.sections) ? s.sections.sections : [];
+      const seasonSections = Array.isArray(s.season.sections) ? s.season.sections : [];
+      let sections = (nestedSections.length > 0 ? nestedSections : seasonSections)
+        .map((sec) => ({ id: String(sec.id), title: sec.title }));
       // 仅当 no_section 为假且上游未返回分集时，才补拉 season/section 详情补齐（需求①「选合集即生效」）；
       // 真·无分集无需补拉（避免一次必然为空的请求）。补拉失败降级空数组，不阻断其它合集。
       if (!noSection && sections.length === 0) {

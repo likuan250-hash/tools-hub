@@ -52,9 +52,10 @@ test('GET /api/seasons 登录态：保留 state=0，过滤 state=-6，映射 sec
       code: 0,
       data: {
         seasons: [
-          { season: { id: 11, title: '合集A', state: 0, sections: [{ id: 111, title: '分集1' }, { id: 112, title: '分集2' }] } },
-          { season: { id: 22, title: '草稿合集', state: -6, sections: [] } },
-          { season: { id: 33, title: '合集B', state: 0, sections: [] } },
+          // B站真实结构：分集在顶层 sections.sections（嵌套），season.sections 常为空。
+          { season: { id: 11, title: '合集A', state: 0 }, sections: { sections: [{ id: 111, title: '分集1' }, { id: 112, title: '分集2' }] } },
+          { season: { id: 22, title: '草稿合集', state: -6 }, sections: { sections: [{ id: 221, title: '分集X' }] } },
+          { season: { id: 33, title: '合集B', state: 0 } },
         ],
       },
     }),
@@ -230,6 +231,47 @@ test('GET /api/seasons 合集 no_section 字段缺失时默认 false（兼容上
     });
   } finally {
     app.locals.seasonsFetch = undefined;
+    srv.close();
+  }
+});
+
+// ───────────────────────── /api/seasons 嵌套 sections.sections（需求①回归实测） ─────────────────────────
+// 实测（2026-08）：合集「绵绵不绝」no_section=1，但顶层 sections.sections 含默认「正片」分集。
+// 旧实现只读 season.sections（为空）→ 前端分集下拉恒空 → sectionId 空 → task.js 跳过合集后置。
+// 回归：必须从嵌套路径取分集（no_section 标志不可靠，不能据此跳过）。
+test('GET /api/seasons no_section=1 但 sections.sections 含默认正片分集：正常返回分集', async () => {
+  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
+  app.locals.seasonsFetch = async () => ({
+    ok: true,
+    json: async () => ({
+      code: 0,
+      data: {
+        seasons: [
+          {
+            season: { id: 8700479, title: '绵绵不绝', state: 0, no_section: 1 },
+            sections: { sections: [{ id: 9695491, title: '正片' }] },
+          },
+        ],
+      },
+    }),
+  });
+  // 补拉 stub 故意返回「假分集」：若代码误发起补拉会混入，断言即失败。
+  app.locals.seasonSectionFetch = async () => ({
+    ok: true,
+    json: async () => ({ code: 0, data: { sections: [{ id: 999, title: '不该出现' }] } }),
+  });
+  const srv = await startServer();
+  try {
+    const { status, body } = await getJSON(srv, '/api/seasons');
+    assert.equal(status, 200);
+    assert.deepEqual(body, {
+      seasons: [
+        { id: '8700479', title: '绵绵不绝', sections: [{ id: '9695491', title: '正片' }], no_section: true },
+      ],
+    });
+  } finally {
+    app.locals.seasonsFetch = undefined;
+    app.locals.seasonSectionFetch = async () => ({ ok: true, json: async () => ({ code: 0, data: { sections: [] } }) });
     srv.close();
   }
 });

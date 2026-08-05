@@ -43,17 +43,72 @@ test('add: 始终 -404 耗尽抛错', async () => {
   assert.strictEqual(calls, 20);
 });
 
-test('add: 请求体含 sectionId + episodes(charging_pay:0)', async () => {
+test('add: 官方 JSON 格式（URL 带 t/csrf，body 为 sectionId+episodes+csrf）', async () => {
+  let urlSeen = '';
   let bodySeen = '';
-  const fetchFn = async (url, opts) => { bodySeen = opts.body; return fakeResp({ code: 0 }); };
+  let headersSeen = null;
+  const fetchFn = async (url, opts) => {
+    urlSeen = url;
+    bodySeen = opts.body;
+    headersSeen = opts.headers;
+    return fakeResp({ code: 0 });
+  };
   await season.add('7630305', 11, 22, '标题', 'csrf', 'c', { deps: { fetchFn, sleep: async () => {} } });
-  assert.ok(bodySeen.includes('sectionId=7630305'), '应包含 sectionId');
-  assert.ok(bodySeen.includes('csrf=csrf'));
-  const m = bodySeen.match(/episodes=(.*)$/);
-  assert.ok(m, '应包含 episodes');
-  const ep = JSON.parse(decodeURIComponent(m[1]));
-  assert.strictEqual(ep[0].aid, 11);
-  assert.strictEqual(ep[0].cid, 22);
-  assert.strictEqual(ep[0].title, '标题');
-  assert.strictEqual(ep[0].charging_pay, 0);
+  assert.match(
+    urlSeen,
+    /^https:\/\/member\.bilibili\.com\/x2\/creative\/web\/season\/section\/episodes\/add\?t=\d+&csrf=csrf$/
+  );
+  assert.strictEqual(headersSeen['Content-Type'], 'application/json');
+  const parsed = JSON.parse(bodySeen);
+  assert.strictEqual(parsed.sectionId, 7630305);
+  assert.strictEqual(parsed.csrf, 'csrf');
+  assert.deepStrictEqual(parsed.episodes, [{ aid: 11, cid: 22, title: '标题' }]);
+});
+
+// ── resolveFirstSectionId：按合集解析首个分集（存量配置 seasonId→sectionId 兜底）──
+test('resolveFirstSectionId: 优先取顶层 sections.sections（嵌套）首个分集（绵绵不绝 实测形态）', async () => {
+  const fetchFn = async () => fakeResp({
+    code: 0,
+    data: {
+      seasons: [
+        { season: { id: 8700479, title: '绵绵不绝', no_section: 1 }, sections: { sections: [{ id: 9695491, title: '正片' }] } },
+      ],
+    },
+  });
+  const id = await season.resolveFirstSectionId('8700479', 'c', { deps: { fetchFn } });
+  assert.strictEqual(id, '9695491');
+});
+
+test('resolveFirstSectionId: 顶层无分集时回退 season.sections', async () => {
+  const fetchFn = async () => fakeResp({
+    code: 0,
+    data: { seasons: [{ season: { id: 1, title: 'A', sections: [{ id: 222, title: '分集' }] } }] },
+  });
+  const id = await season.resolveFirstSectionId('1', 'c', { deps: { fetchFn } });
+  assert.strictEqual(id, '222');
+});
+
+test('resolveFirstSectionId: 两处均无分集返回 null', async () => {
+  const fetchFn = async () => fakeResp({ code: 0, data: { seasons: [{ season: { id: 1, title: 'A' } }] } });
+  const id = await season.resolveFirstSectionId('1', 'c', { deps: { fetchFn } });
+  assert.strictEqual(id, null);
+});
+
+test('resolveFirstSectionId: 未命中 / code!=0 / 非 200 / 网络错误 均返回 null', async () => {
+  const notFound = await season.resolveFirstSectionId('999', 'c', {
+    deps: { fetchFn: async () => fakeResp({ code: 0, data: { seasons: [] } }) },
+  });
+  assert.strictEqual(notFound, null);
+  const badCode = await season.resolveFirstSectionId('1', 'c', {
+    deps: { fetchFn: async () => fakeResp({ code: -101, message: '未登录' }) },
+  });
+  assert.strictEqual(badCode, null);
+  const notOk = await season.resolveFirstSectionId('1', 'c', {
+    deps: { fetchFn: async () => ({ ok: false, json: async () => ({}) }) },
+  });
+  assert.strictEqual(notOk, null);
+  const netErr = await season.resolveFirstSectionId('1', 'c', {
+    deps: { fetchFn: async () => { throw new Error('boom'); } },
+  });
+  assert.strictEqual(netErr, null);
 });

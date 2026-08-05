@@ -14,6 +14,24 @@ function writeCookies(obj) {
 }
 
 process.env.BILIUP_DATA_DIR = TMP;
+// 预置 config（seasonId=11），让 store 首次惰性读取时就带上合集，供 /api/season/detect 用例使用。
+fs.writeFileSync(path.join(TMP, 'config.json'), JSON.stringify({
+  seasonId: '11',
+  sectionId: '111',
+  comment: 'c',
+  desc: 'd',
+  tags: [],
+  tid: 17,
+  copyright: 1,
+  noReprint: 1,
+  line: 'bda2',
+  uid: 1,
+  defaultTags: '',
+  biliupExePath: '',
+  ffmpegPath: '',
+  cookiesPath: path.join(TMP, 'cookies.json'),
+  loginInfoPath: path.join(TMP, 'login_info.json'),
+}), 'utf8');
 
 const app = require('../server');
 
@@ -95,6 +113,55 @@ test('GET /api/seasons 接口异常：降级 {seasons:[]}（不抛 500）', asyn
     assert.deepEqual(body, { seasons: [] });
   } finally {
     app.locals.seasonsFetch = undefined;
+    srv.close();
+  }
+});
+
+// ── /api/season/detect：检测最近发布但未加入所选合集的稿件 ──
+test('GET /api/season/detect：未入合集且晚于合集创建时间 → 列为候选', async () => {
+  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
+
+  app.locals.seasonDetectFetch = async (url) => {
+    const u = String(url);
+    if (u.includes('/archives/sp')) {
+      return {
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            arc_audits: [
+              { Archive: { aid: 1001, bvid: 'BV1AA', title: '新视频', state: 0 }, season_add_state: 0 },
+              { Archive: { aid: 1002, bvid: 'BV1BB', title: '已入合集', state: 0 }, season_add_state: 2 },
+            ],
+          },
+        }),
+      };
+    }
+    if (u.includes('/seasons?')) {
+      return {
+        ok: true,
+        json: async () => ({ code: 0, data: { seasons: [{ season: { id: 11, ctime: 1785000000 } }] } }),
+      };
+    }
+    if (u.includes('/x/web-interface/view?bvid=BV1AA')) {
+      return {
+        ok: true,
+        json: async () => ({ code: 0, data: { aid: 1001, cid: 555, pubdate: 1785900000, ugc_season: null, pages: [{ cid: 555 }] } }),
+      };
+    }
+    return { ok: true, json: async () => ({ code: 0, data: { ugc_season: { id: 11 } } }) };
+  };
+
+  const srv = await startServer();
+  try {
+    const { status, body } = await getJSON(srv, '/api/season/detect?limit=20');
+    assert.equal(status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.candidates.length, 1, '只有未入合集的稿件应列为候选');
+    assert.equal(body.candidates[0].aid, 1001);
+    assert.equal(body.candidates[0].cid, 555);
+  } finally {
+    app.locals.seasonDetectFetch = undefined;
     srv.close();
   }
 });
@@ -376,3 +443,4 @@ test('matchGenreTags：规则表外返回空数组；空输入安全', () => {
   assert.deepEqual(app.matchGenreTags(''), []);
   assert.deepEqual(app.matchGenreTags(undefined), []);
 });
+

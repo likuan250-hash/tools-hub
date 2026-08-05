@@ -33,6 +33,13 @@ test('parseUploadOutput: 仅 aid（无 bvid）也能解析', () => {
   assert.strictEqual(r.bvid, null);
 });
 
+test('parseUploadOutput: 兼容 biliup ResponseData 的 Number(...) aid 形态', () => {
+  const out = 'ResponseData { code: 0, data: Some(Object {"aid": Number(117042187343755), "bvid": String("BV19LM16MExz")}) }';
+  const r = biliup.parseUploadOutput(out);
+  assert.strictEqual(r.bvid, 'BV19LM16MExz');
+  assert.strictEqual(r.aid, 117042187343755);
+});
+
 test('runUpload: 调用 runViaTempScript 并解析', async () => {
   const fakeScript = { content: 'x', shell: 'ps1' };
   const deps = {
@@ -82,6 +89,21 @@ test('getVideoInfo: 非 -404 错误码立即失败（不重试）', async () => 
     /未登录/
   );
   assert.strictEqual(calls, 1, '非 -404 应立即失败');
+});
+
+test('getVideoInfo: 62003（定时发布待发布）→ 立即失败且标记 scheduled，不重试', async () => {
+  let calls = 0;
+  const fetchFn = async () => { calls += 1; return { json: async () => ({ code: 62003, message: '稿件已审核通过，等待发布中' }) }; };
+  let err = null;
+  try {
+    await biliup.getVideoInfo({ bvid: 'BVx' }, { deps: { fetchFn, sleep: async () => {} }, onLog: () => {} });
+  } catch (e) {
+    err = e;
+  }
+  assert.ok(err, '应抛出错误');
+  assert.equal(err.code, 62003);
+  assert.equal(err.scheduled, true);
+  assert.strictEqual(calls, 1, '62003 不应重试');
 });
 
 test('getVideoInfo: 指数退避间隔符合 5s/7s 且封顶 30s', async () => {

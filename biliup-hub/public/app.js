@@ -788,6 +788,103 @@
   $("submitBtn").addEventListener("click", openConfirm);
   $("confirmOk").addEventListener("click", () => { closeConfirm(); submit(); });
 
+  // ── 检测补合集：拉最近发布、不在所选合集的稿件，勾选后一键补加 ──
+  let detectCandidates = [];
+  function openDetectModal() {
+    const mask = $("seasonDetectMask");
+    if (mask) openModal(mask);
+  }
+  function closeDetectModal() {
+    const mask = $("seasonDetectMask");
+    if (mask) closeModal(mask);
+  }
+  function renderDetectCandidates(list) {
+    const el = $("seasonDetectList");
+    if (!el) return;
+    if (!list || !list.length) {
+      el.innerHTML = '<div style="padding:12px 0;color:var(--text-dim)">没有发现未加入所选合集的稿件。</div>';
+      return;
+    }
+    el.innerHTML = list.map((c, i) => {
+      const dt = c.pubdate ? new Date(c.pubdate * 1000).toLocaleString() : "";
+      return '<label style="display:flex;align-items:flex-start;gap:8px;padding:7px 4px;border-bottom:1px dashed var(--glass-border);cursor:pointer;">'
+        + '<input type="checkbox" data-idx="' + i + '" checked style="margin-top:3px;" />'
+        + '<span style="flex:1;min-width:0;">' + (c.title || c.bvid || c.aid) + (dt ? ' <span style="opacity:.6;font-size:11px;">' + dt + "</span>" : "") + "</span></label>";
+    }).join("");
+  }
+  async function runSeasonDetect() {
+    const btn = $("scanJobsBtn");
+    if (btn) btn.disabled = true;
+    try {
+      const resp = await fetch("/api/season/detect?limit=20");
+      const j = await resp.json();
+      if (!resp.ok || !j.ok) {
+        logLine("检测补合集失败: " + ((j && j.error) || resp.status), "err");
+        toast("检测失败：" + ((j && j.error) || resp.status), "err");
+        return;
+      }
+      detectCandidates = (j.candidates || []).filter((c) => c && (c.aid || c.bvid));
+      const hint = $("seasonDetectHint");
+      if (hint) {
+        hint.textContent = detectCandidates.length
+          ? "以下稿件尚未加入所选合集，勾选后点「加入所选合集」："
+          : "最近发布的稿件都已加入所选合集（或暂无新的可补稿件）。";
+      }
+      renderDetectCandidates(detectCandidates);
+      openDetectModal();
+    } catch (e) {
+      logLine("检测补合集异常: " + e.message, "err");
+      toast("检测异常", "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+  async function submitDetectAdd() {
+    const boxes = Array.prototype.slice.call(document.querySelectorAll('#seasonDetectList input[type="checkbox"]'));
+    const selected = boxes
+      .filter((b) => b.checked)
+      .map((b) => {
+        const c = detectCandidates[Number(b.getAttribute("data-idx"))];
+        return c ? { aid: c.aid, cid: c.cid, title: c.title } : null;
+      })
+      .filter(Boolean);
+    if (!selected.length) {
+      toast("未选择任何稿件", "err");
+      return;
+    }
+    const btn = $("seasonDetectOk");
+    if (btn) btn.disabled = true;
+    try {
+      const resp = await fetch("/api/season/add-many", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: selected }),
+      });
+      const j = await resp.json();
+      if (j && j.ok) {
+        logLine("补加合集完成：成功 " + j.okCount + "/" + j.total, "ok");
+        toast("补加成功 " + j.okCount + "/" + j.total, "ok");
+        closeDetectModal();
+      } else {
+        logLine("补加合集失败: " + ((j && j.error) || resp.status), "err");
+        toast("补加失败：" + ((j && j.error) || resp.status), "err");
+      }
+    } catch (e) {
+      logLine("补加合集异常: " + e.message, "err");
+      toast("补加异常", "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+  const detectBtn = $("scanJobsBtn");
+  if (detectBtn) detectBtn.addEventListener("click", runSeasonDetect);
+  const detectOk = $("seasonDetectOk");
+  if (detectOk) detectOk.addEventListener("click", submitDetectAdd);
+  const detectCancel = $("seasonDetectCancel");
+  if (detectCancel) detectCancel.addEventListener("click", closeDetectModal);
+  const detectClose = $("seasonDetectClose");
+  if (detectClose) detectClose.addEventListener("click", closeDetectModal);
+
   // ── 健康探活（#5：检测服务是否离线）──
   async function refreshHealth() {
     try {

@@ -172,7 +172,7 @@ async function run(req, ctx) {
       log('uploading', '上传已结束但未解析到稿件标识（完整日志已落盘 .tmp/upload-*.log，待人工/根治核对）');
     }
 
-    // 4) getVideoInfo（重试应对 -404）
+    // 4) getVideoInfo（重试应对 -404；62003 定时发布待发布直接抛「等待发布」，不再 120 轮空转）
     setStage('uploading', '等待稿件索引');
     const videoInfo = await biliupM.getVideoInfo(ref, {
       onLog: (m) => log('uploading', m),

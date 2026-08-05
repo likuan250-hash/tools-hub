@@ -455,6 +455,184 @@ app.post('/api/upload', (req, res) => {
     .finally(finish);
 });
 
+// ── 合集补加：检测最新发布 + 批量加入 ──
+// 定时发布的稿件发布前被 B 站锁定无法加合集；用户发布完成后点「检测补合集」，
+// 拉最近发布的稿件，找出还没加入所选合集的，前端勾选确认后批量补加。
+const SEASON_DETECT_ARCHIVE_URL = 'https://member.bilibili.com/x2/creative/web/archives/sp';
+const SEASON_VIEW_URL = 'https://api.bilibili.com/x/web-interface/view';
+
+// 拉最近发布的稿件（创作中心接口），只保留已发布（state=0）且带 bvid/aid 的。
+// 归属判断统一以公开接口 ugc_season.id 为准（season_add_state 语义不可靠，不做预筛）。
+async function fetchRecentArchives(cf, limit, fetchFnOverride) {
+  const fetchFn = fetchFnOverride || (app.locals && app.locals.seasonDetectFetch) || getSeasonsFetch();
+  const url = SEASON_DETECT_ARCHIVE_URL + '?pn=1&ps=' + Math.max(1, Math.min(50, Number(limit) || 20));
+  const resp = await fetchFn(url, {
+    headers: {
+      'Cookie': cookies.toHeader(cf),
+      'Referer': 'https://member.bilibili.com/',
+      'User-Agent': USER_AGENT,
+    },
+  });
+  if (!resp.ok) return [];
+  const json = await resp.json();
+  if (!json || json.code !== 0) return [];
+  const audits = Array.isArray(json.data && json.data.arc_audits) ? json.data.arc_audits : [];
+  const out = [];
+  for (const a of audits) {
+    const ar = a && a.Archive;
+    if (!ar) continue;
+    if (Number(ar.state) !== 0) continue; // 只检测已发布（定时未发布 state 非 0）
+    const aid = Number(ar.aid);
+    const bvid = ar.bvid ? String(ar.bvid) : '';
+    if (!aid && !bvid) continue;
+    out.push({ aid, bvid, title: String(ar.title || ''), pubdate: Number(ar.pubdate) || 0 });
+  }
+  return out;
+}
+
+// 取所选合集的创建时间（ctime，秒），用于过滤「合集创建前」的旧稿件。
+async function fetchSeasonCtime(seasonId, cf, fetchFnOverride) {
+  const fetchFn = fetchFnOverride || getSeasonsFetch();
+  const url = 'https://member.bilibili.com/x2/creative/web/seasons?pn=1&ps=50&t=' + Math.floor(Date.now() / 1000);
+  try {
+    const resp = await fetchFn(url, {
+      headers: {
+        'Cookie': cookies.toHeader(cf),
+        'Referer': 'https://member.bilibili.com/',
+        'User-Agent': USER_AGENT,
+      },
+    });
+    if (!resp.ok) return 0;
+    const json = await resp.json();
+    if (!json || json.code !== 0) return 0;
+    const seasons = Array.isArray(json.data && json.data.seasons) ? json.data.seasons : [];
+    const s = seasons.find((x) => x && x.season && String(x.season.id) === String(seasonId));
+    return s && s.season && Number(s.season.ctime) ? Number(s.season.ctime) : 0;
+  } catch (e) {
+    logger.warn('[season-detect] 查询合集创建时间失败:', e.message);
+    return 0;
+  }
+}
+
+// 查公开接口确认稿件所属合集（ugc_season.id）与 cid；62003=待发布、-404=未索引，均返回 null。
+async function fetchVideoSeason(item, fetchFnOverride) {
+  const fetchFn = fetchFnOverride || getSeasonsFetch();
+  const url = SEASON_VIEW_URL + (item.bvid
+    ? '?bvid=' + encodeURIComponent(item.bvid)
+    : '?aid=' + encodeURIComponent(item.aid));
+  try {
+    const resp = await fetchFn(url, {
+      headers: { 'User-Agent': USER_AGENT, 'Referer': 'https://www.bilibili.com/' },
+    });
+    const json = await resp.json();
+    if (json && json.code === 0 && json.data) {
+      const us = json.data.ugc_season;
+      const cid = Number((json.data.pages && json.data.pages[0] && json.data.pages[0].cid) || json.data.cid);
+      return {
+        seasonId: us && us.id != null ? Number(us.id) : null,
+        cid: cid || null,
+        pubdate: Number(json.data.pubdate) || 0,
+      };
+    }
+  } catch (e) {
+    logger.warn('[season-detect] 查询稿件合集失败:', e.message);
+  }
+  return null;
+}
+
+// 检测：返回最近已发布但【不在所选合集】的稿件列表。
+app.get('/api/season/detect', async (req, res) => {
+  try {
+    const config = store.getConfig();
+    const cf = cookies.load(config.cookiesPath);
+    if (!cookies.validate(cf)) {
+      return res.status(400).json({ ok: false, error: 'cookies 无效：缺少 SESSDATA 或 bili_jct' });
+    }
+    if (!config.seasonId) {
+      return res.status(400).json({ ok: false, error: '尚未选择合集，请先在设置中选择要补加的合集' });
+    }
+    const limit = Number(req.query && req.query.limit) || 20;
+    const archives = await fetchRecentArchives(cf, limit, app.locals && app.locals.seasonDetectFetch);
+    const seasonCtime = await fetchSeasonCtime(config.seasonId, cf, app.locals && app.locals.seasonDetectFetch);
+    const candidates = [];
+    for (const item of archives) {
+      const info = await fetchVideoSeason(item, app.locals && app.locals.seasonDetectFetch);
+      // 公开接口查不到（未发布/未索引）→ 跳过本轮；已属于所选合集 → 跳过
+      if (!info) continue;
+      if (info.seasonId != null && info.seasonId === Number(config.seasonId)) continue;
+      // 合集创建前的旧稿件不提示（避免把历史未入合集视频全翻出来）
+      if (seasonCtime && info.pubdate && info.pubdate < seasonCtime) continue;
+      candidates.push(Object.assign({}, item, {
+        cid: info.cid,
+        pubdate: info.pubdate || item.pubdate,
+      }));
+    }
+    res.json({
+      ok: true,
+      seasonId: config.seasonId,
+      seasonCtime,
+      candidates,
+      checked: candidates.length,
+    });
+  } catch (e) {
+    logger.error('[season-detect] 检测失败:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// 补加：把勾选的稿件加入所选合集（逐条走 season.add，含 -404 重试）。
+app.post('/api/season/add-many', async (req, res) => {
+  try {
+    const config = store.getConfig();
+    const cf = cookies.load(config.cookiesPath);
+    if (!cookies.validate(cf)) {
+      return res.status(400).json({ ok: false, error: 'cookies 无效：缺少 SESSDATA 或 bili_jct' });
+    }
+    if (!config.seasonId) {
+      return res.status(400).json({ ok: false, error: '尚未选择合集，请先在设置中选择要补加的合集' });
+    }
+    const items = Array.isArray(req.body && req.body.items) ? req.body.items : [];
+    if (!items.length) {
+      return res.status(400).json({ ok: false, error: '未选择任何稿件' });
+    }
+    const season = require('./lib/season');
+    let sectionId = config.sectionId;
+    if (!sectionId) {
+      const resolved = await season.resolveFirstSectionId(config.seasonId, cookies.toHeader(cf), { deps: {} });
+      if (resolved) sectionId = resolved;
+    }
+    if (!sectionId) {
+      return res.status(400).json({ ok: false, error: '所选合集无法解析分集，无法补加' });
+    }
+    const csrf = cookies.getCsrf(cf);
+    const cookieHeader = cookies.toHeader(cf);
+    const results = [];
+    let okCount = 0;
+    for (const it of items) {
+      const aid = Number(it.aid);
+      const cid = Number(it.cid);
+      if (!aid || !cid) {
+        results.push({ aid, ok: false, error: '缺少 aid/cid（需先检测获取 cid）' });
+        continue;
+      }
+      try {
+        await season.add(sectionId, aid, cid, String(it.title || ''), csrf, cookieHeader, {
+          onLog: (m) => logger.info('[season-detect] ' + m),
+          deps: {},
+        });
+        okCount += 1;
+        results.push({ aid, ok: true });
+      } catch (e) {
+        results.push({ aid, ok: false, error: e.message });
+      }
+    }
+    res.json({ ok: true, okCount, total: items.length, results });
+  } catch (e) {
+    logger.error('[season-detect] 补加失败:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ── 兜底错误中间件（#5 根因止血：避免未捕获异常冒泡导致进程退出）──
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {

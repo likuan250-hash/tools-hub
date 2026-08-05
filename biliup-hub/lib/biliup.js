@@ -32,10 +32,12 @@ const DEFAULT_DEPS = {
 function parseUploadOutput(stdout) {
   const text = String(stdout || '');
   // 优先匹配 JSON 形态：{"bvid":"BV...","aid":123} 或 "aid":123,"bvid":"BV..."
+  // biliup-rs 实际输出中 aid 在 ResponseData 里为 "aid": Number(117042187343755) 形态，
+  // 支持 Number(...) 包裹，避免定时投稿 aid 解析成空。
   const bvidMatch = text.match(/BV[0-9A-Za-z]+/);
   const bvid = bvidMatch ? bvidMatch[0] : null;
   let aid = null;
-  const aidJson = text.match(/"(?:aid|AVID)"\s*:\s*(\d+)/i);
+  const aidJson = text.match(/"(?:aid|AVID)"\s*:\s*(?:Number\(\s*)?(\d+)/i);
   if (aidJson) aid = Number(aidJson[1]);
   else {
     const aidPlain = text.match(/aid[=:\s]+(\d+)/i);
@@ -183,6 +185,14 @@ async function getVideoInfo(ref, opts = {}) {
         if (i < MAX) await deps.sleep(wait);
         continue;
       }
+      // 定时发布：稿件已过审但未到发布时间，公开接口查不到；不是 -404 索引延迟，
+      // 直接报「定时发布待发布」，不再空转重试。
+      if (json && json.code === 62003) {
+        const err = new Error('稿件已通过审核，等待定时发布 (code=62003)');
+        err.code = 62003;
+        err.scheduled = true;
+        throw err;
+      }
       // 其他非 0 码：立即失败（如 -101 未登录 / -404 之外的错误）
       throw new Error('getVideoInfo 返回 code=' + (json && json.code) + ' msg=' + (json && json.message));
     } catch (e) {
@@ -198,7 +208,11 @@ async function getVideoInfo(ref, opts = {}) {
       break;
     }
   }
-  throw new Error('getVideoInfo 重试耗尽(' + MAX + '/指数退避 5s→30s)：' + (lastErr && lastErr.message));
+  const finalErr = new Error('getVideoInfo 重试耗尽(' + MAX + '/指数退避 5s→30s)：' + (lastErr && lastErr.message));
+  // 保留业务错误特征（如 62003 定时发布待发布），供调用方区分「定时」与「真失败」。
+  if (lastErr && lastErr.code) finalErr.code = lastErr.code;
+  if (lastErr && lastErr.scheduled) finalErr.scheduled = true;
+  throw finalErr;
 }
 
 module.exports = { runUpload, getVideoInfo, parseUploadOutput, writeUploadLog, detectBiliupApiFailure, DEFAULT_DEPS, USER_AGENT };

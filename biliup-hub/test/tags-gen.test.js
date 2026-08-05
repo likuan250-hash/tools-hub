@@ -40,7 +40,7 @@ test('genTags: 去扩展名 + 基础分词（空格/_/-）', () => {
   const r = genTags('Fallout4_Gameplay_HD.mp4', '', '单机游戏');
   // Fallout4 / Gameplay 保留；HD 命中停用词被过滤；默认标签 单机游戏 叠加
   assert.ok(r.split(',').includes('Fallout4'), '应含 Fallout4');
-  assert.ok(r.split(',').includes('Gameplay'), '应含 Gameplay');
+  assert.ok(!r.split(',').includes('Gameplay'), 'Gameplay 为泛化词应被过滤（需求②/C）');
   assert.ok(r.split(',').includes('单机游戏'), '应叠加默认标签 单机游戏');
   assert.ok(!r.split(',').includes('HD'), 'HD 应被停用词过滤');
   assert.ok(!r.split(',').includes('mp4'), '扩展名 mp4 不应残留');
@@ -51,7 +51,7 @@ test('genTags: 中文文件名按分隔符分词', () => {
   const r = genTags('辐射4 实况 - 第1期.mp4', '', '');
   assert.ok(r.split(',').includes('辐射4'), '应含 辐射4');
   assert.ok(r.split(',').includes('实况'), '应含 实况');
-  assert.ok(r.split(',').includes('第1期'), '应含 第1期（整体不被拆）');
+  assert.ok(!r.split(',').includes('第1期'), '序号 第1期 应被过滤（需求②/C）');
 });
 
 test('genTags: 过滤停用词与过短词（≤1 字）', () => {
@@ -111,12 +111,25 @@ test('genTags: 序号前缀剥离 + 敏感词过滤（正当防卫4 场景）', 
   const r = genTags('【游戏268】正当防卫4 官方中文+全DLC+免安装硬盘版 免费学习版下载.mp4', '', '');
   const parts = r.split(',');
   assert.ok(parts.includes('正当防卫4'), '应含 正当防卫4（序号前缀剥离后）');
-  assert.ok(parts.includes('全DLC'), '应保留 全DLC（内容关键词）');
+  assert.ok(!parts.includes('全DLC'), '全DLC 为版本描述词应被过滤（需求②/C）');
   assert.ok(!parts.some((p) => p.includes('【') || p.includes('】')), '不应含方括号残留');
   assert.ok(!parts.some((p) => p.includes('游戏268')), '不应含序号前缀 游戏268');
   assert.ok(!parts.some((p) => p.includes('学习版')), '不应含敏感词 学习版 子串');
   assert.ok(!parts.some((p) => p.includes('官方中文')), '不应含版本描述词 官方中文');
   assert.ok(!parts.some((p) => p.includes('免安装')), '不应含版本描述词 免安装');
+});
+
+test('genTags: 纯数字/序号/版本冗余词整体过滤（需求②/C）', () => {
+  const genTags = makeGenTags();
+  const r = genTags('268 第1期 全DLC DLC 官方 Gameplay 正当防卫4', '', '');
+  const parts = r.split(',');
+  assert.ok(parts.includes('正当防卫4'), '应含 正当防卫4');
+  assert.ok(!parts.includes('268'), '纯数字 268 应被过滤');
+  assert.ok(!parts.includes('第1期'), '序号 第1期 应被过滤');
+  assert.ok(!parts.includes('全DLC'), '版本词 全DLC 应被过滤');
+  assert.ok(!parts.includes('DLC'), '版本词 DLC 应被过滤');
+  assert.ok(!parts.includes('官方'), '泛化词 官方 应被过滤');
+  assert.ok(!parts.includes('Gameplay'), '泛化词 Gameplay 应被过滤');
 });
 
 test('genTags: 纯英文标题分词合理（Elden Ring Official Launch Trailer）', () => {

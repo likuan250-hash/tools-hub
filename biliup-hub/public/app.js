@@ -1,6 +1,7 @@
 // biliup-hub/public/app.js —— 前端逻辑
 // pickFile 选视频 / 参数读写 / 发布模式 + 二次确认 / 消费 /api/upload SSE /
 // 状态胶囊(#1) / 投稿日志默认隐藏(#4) / 账号头像+扫码登录(#7) / 健康探活(#5)。
+/* global ico, selectPreserve, coerceInt */
 (function () {
   "use strict";
   const api = window.electronAPI;
@@ -33,7 +34,7 @@
   // 自包含（停用词内联），便于单测独立抽取；不依赖模块作用域变量。
   function genTags(fileName, title, defaultTags) {
     // 停用词：中文虚词/泛化词/格式后缀 + 游戏分享场景常见"版本描述词"（纯版本描述、非内容关键词，防进 B 站标签）。
-    // 注意：保留 全DLC / DLC / 官方 等可能作为内容关键词的词。
+    // 版本/冗余描述词（全DLC/DLC/官方/Gameplay 等）一并过滤：作为 B 站标签既无检索价值也显得潦草（需求②/C）。
     const STOP_WORDS = new Set([
       '的', '了', '是', '在', '和', '与', '及', '也', '都', '就', '而', '吗', '呢', '啊',
       '吧', '哦', '啦', '嘛', '我们', '你们', '他们', '我', '你', '他', '她', '它', '这',
@@ -41,6 +42,7 @@
       'mkv', 'avi', 'flv', 'mov', 'webm', 'bilibili', 'b站', 'the', 'a', 'an', 'of', 'to',
       'and', 'or', 'on', 'in', 'at', 'by', 'with', 'my', 'your', 'for', '1080p', '720p',
       'game', 'play', 'part', 'ep', 'episode',
+      'gameplay', '全dlc', 'dlc', '官方',
       // 游戏分享场景常见"版本描述词"（纯版本描述，非内容关键词）
       '学习版', '免费学习版', '免费学习版下载', '学习版下载', '破解版', '官方中文',
       '硬盘版', '免安装', '免安装硬盘版', '中文版', '官方中文版', '完整版', '绿色版',
@@ -61,6 +63,8 @@
       if (!t) return;
       if (t.length <= 1) return; // 过短词（含单字）过滤
       if (t.length > 12) return; // 超长 token 过滤（防序号/描述粘连残留）
+      if (/^\d+$/.test(t)) return; // 纯数字（序号残留，如 268）
+      if (/^第\d+[期集话章弹]?$/.test(t)) return; // 第N期/集/话 等序号，无检索价值
       const key = t.toLowerCase();
       if (seen.has(key)) return; // 去重
       if (STOP_WORDS.has(key)) return; // 停用词过滤

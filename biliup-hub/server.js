@@ -29,7 +29,7 @@ function getSeasonSectionFetch() {
   try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
 }
 
-// 标签推荐代理用的 fetch（需求②：调 B站 x/tag/suggest）；便于单测注入 app.locals.tagSuggestFetch。
+// 标签推荐代理用的 fetch（需求②：调 B站投稿官方推荐接口）；便于单测注入 app.locals.tagSuggestFetch。
 function getTagSuggestFetch() {
   try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
 }
@@ -67,8 +67,9 @@ async function fetchSeasonSections(seasonId, cf, fetchFnOverride) {
     }));
 }
 
-// ── 标签推荐（需求②）：从 B站 x/tag/suggest 响应中提取 tag_name，做多层结构容错 ──
-// 兼容 data.tag[].tag_name / data.tags[].tag_name / data[].tag_name（数组在 data 内任意层级）。
+// ── 标签推荐（需求②）：从 B站投稿官方推荐接口响应中提取标签名，做多层结构容错 ──
+// 兼容 data.tags[].tag（官方 tag/recommend）/ data.tag[].tag_name / data[].tag_name
+// （数组在 data 内任意层级）。
 const TAG_SUGGEST_BLACKLIST = new Set([
   '广告', '推广', '官方', 'bilibili', 'b站', 'b站官方', '番剧', '直播', 'av', 'av号',
   // 游戏分享场景敏感/版本描述词（防 suggest 接口推荐回来时漏网，与前端 genTags 保持一致）
@@ -90,6 +91,9 @@ function collectTagNames(node, out, depth) {
   }
   if (typeof node.tag_name === 'string' && node.tag_name.trim()) {
     out.push(node.tag_name.trim());
+  }
+  if (typeof node.tag === 'string' && node.tag.trim()) {
+    out.push(node.tag.trim());
   }
   for (const key of Object.keys(node)) {
     const val = node[key];
@@ -114,6 +118,43 @@ function filterSuggestedTags(names) {
     if (out.length >= TAG_SUGGEST_MAX) break;
   }
   return out;
+}
+
+// ── 标签推荐关键词清洗（需求②/C 配套）──
+// 把原始文件名/标题规整成适合官方 tag/recommend 的干净关键词：
+// 剥【游戏NNN】序号前缀、去扩展名、去版本描述词/敏感词/序号词，保留内容词（最多前 4 个，空格连接）。
+// 与前端 genTags 的停用词/敏感词保持同源口径（版本描述词 = 游戏分享场景非内容关键词）。
+const SUGGEST_KEYWORD_STOP = new Set([
+  // 版本描述词（与前端 genTags STOP_WORDS 同步）
+  '官方中文', '官方中文版', '免安装', '免安装硬盘版', '硬盘版', '学习版', '免费学习版',
+  '免费学习版下载', '学习版下载', '破解版', '中文版', '完整版', '绿色版', '安装版', '便携版',
+  // 泛化/格式词
+  '下载', '免费', '游戏', '视频', '投稿', '高清', '完整', '版', 'hd', '1080p', '720p',
+  'bilibili', 'b站', 'the', 'a', 'an', 'of', 'to', 'and', 'or', 'on', 'in', 'at', 'by',
+  'with', 'for', 'game', 'play', 'part', 'ep', 'episode', '全dlc', 'dlc', 'gameplay', '官方',
+]);
+const SUGGEST_KEYWORD_SENSITIVE = ['学习版', '破解版', '盗版'];
+
+function cleanSuggestKeyword(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) return '';
+  const cleaned = text
+    .replace(/\.[a-z0-9]+$/i, '') // 去扩展名
+    .replace(/^【[^】]*】/, ''); // 剥【游戏NNN】/【NNN】序号前缀
+  const seps = /[\s\-_·。，、,.\|/\\+【】（）《》：「」；！？…\x22\x27]+/;
+  const out = [];
+  for (const rawTok of cleaned.split(seps)) {
+    const t = (rawTok || '').trim();
+    if (!t || t.length <= 1 || t.length > 20) continue;
+    const key = t.toLowerCase();
+    if (SUGGEST_KEYWORD_STOP.has(key)) continue;
+    if (SUGGEST_KEYWORD_SENSITIVE.some((s) => key.includes(s))) continue;
+    if (/^\d+$/.test(t)) continue; // 纯数字
+    if (/^第\d+[期集话章弹]?$/.test(t)) continue; // 第N期/集/话 序号
+    out.push(t);
+    if (out.length >= 4) break;
+  }
+  return out.join(' ');
 }
 
 const app = express();
@@ -305,19 +346,33 @@ app.get('/api/avatar', async (req, res) => {
   }
 });
 
-// ── 标签推荐（需求②：调 B站 x/tag/suggest，同源代理避免 CORS；离线/失败降级 {tags:[]}）──
-// 仅做关键词透传 + 响应提取，不抛 500、不阻断前端；前端拿到空数组时走 genTags fallback。
+// ── 标签推荐（需求②：调 B站投稿官方推荐接口 member.bilibili.com/x/vupre/web/tag/recommend）──
+// 需登录 Cookie（SESSDATA/bili_jct），参数 title（清洗后的关键词）+ typeid（分区，取配置）
+// + copyright（原创/转载，取配置）。旧接口 api.bilibili.com/x/tag/suggest 已下线（404），
+// 此接口为投稿中心现行方案。未登录/失败/离线一律降级 {tags:[]}，不抛 500、不阻断前端；
+// 前端拿到空数组时走 genTags fallback。
 app.get('/api/tags/suggest', async (req, res) => {
   const kw = (req.query && req.query.keyword) || '';
   if (typeof kw !== 'string' || !kw.trim()) {
     return res.json({ tags: [] });
   }
   try {
+    const config = store.getConfig();
+    let cf = null;
+    try { cf = cookies.load(config.cookiesPath); } catch (e) { /* 未登录/文件缺失，走降级 */ }
+    if (!cf || !cookies.validate(cf)) {
+      return res.json({ tags: [] }); // 未登录没有官方推荐，前端走 genTags fallback
+    }
     const fetchFn = (app.locals && app.locals.tagSuggestFetch) || getTagSuggestFetch();
-    const url = 'https://api.bilibili.com/x/tag/suggest?keyword=' + encodeURIComponent(kw.trim());
+    const title = cleanSuggestKeyword(kw) || kw.trim();
+    const url = 'https://member.bilibili.com/x/vupre/web/tag/recommend?title='
+      + encodeURIComponent(title)
+      + '&typeid=' + encodeURIComponent(String(config.tid || 17))
+      + '&copyright=' + encodeURIComponent(String(config.copyright || 1));
     const upstream = await fetchFn(url, {
       headers: {
-        'Referer': 'https://www.bilibili.com/',
+        'Cookie': cookies.toHeader(cf),
+        'Referer': 'https://member.bilibili.com/',
         'User-Agent': USER_AGENT,
       },
     });
@@ -485,4 +540,5 @@ process.on('uncaughtException', (e) => logger.error('未捕获异常:', e));
 process.on('unhandledRejection', (r) => logger.error('未处理的 Promise 拒绝:', r));
 
 // 便于单测 require（实际启动走上面的 startServer）
+app.cleanSuggestKeyword = cleanSuggestKeyword; // 导出纯函数供单测直接验证
 module.exports = app;

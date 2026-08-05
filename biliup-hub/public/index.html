@@ -615,6 +615,16 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     :root, [data-theme="dark"] {
       --glass-bg: rgba(255, 255, 255, 0.32);
       --glass-border: rgba(255, 255, 255, 0.42);
+      /* v2.7.22 暗色对比度同步（与 kdocs v2.7.21 一致，WCAG AA 实测驱动） */
+      --fg-2: #e2e8f0;
+      --muted: #cbd5e1;
+      --hist-meta: #e0e6f5;
+      --surface: rgba(255, 255, 255, 0.26); /* 面板微暗: 0.32→0.26, 根因是面板太亮压低对比 */
+    }
+    /* placeholder 提亮且不透明度全开（原 .8 进一步降对比） */
+    :root, [data-theme="dark"] textarea::placeholder, [data-theme="dark"] input::placeholder {
+      color: var(--muted);
+      opacity: 1;
     }
     [data-theme="light"] {
       --bg-1: #dde6ff; --bg-2: #e9edfb; --bg-3: #e6ddfb;

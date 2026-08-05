@@ -333,6 +333,7 @@
   // ── 合集/分集级联下拉（#H）──
   // seasonSections: seasonId -> [{ id, title }]，供分集下拉级联填充。
   let seasonSections = Object.create(null);
+  let seasonNoSection = Object.create(null);
   // prevSection: 用户/历史已选分集（优先保留其有效选择）；不传则按当前下拉值。
   function fillSections(seasonId, prevSection) {
     const selSection = $("cfgSection");
@@ -387,12 +388,14 @@
         selSeason.length = 1; // 仅保留默认空项「不使用合集」
         selSection.length = 1;
         seasonSections = Object.create(null);
+        seasonNoSection = Object.create(null);
         for (const s of seasons) {
           const opt = document.createElement("option");
           opt.value = String(s.id);
           opt.textContent = (s.title != null && s.title !== "") ? s.title : s.id;
           selSeason.appendChild(opt);
           seasonSections[s.id] = Array.isArray(s.sections) ? s.sections : [];
+          if (s.no_section) seasonNoSection[s.id] = true;
         }
         // 回填此前选中的合集（已登录命中真实合集则选中，否则 selectPreserve 追加「其它」）。
         if (prevSeason) selectPreserve(selSeason, prevSeason);
@@ -833,8 +836,7 @@
   });
 
   // ── 初始化 ──
-  loadConfig();
-  refreshSeasons(); // 登录态下拉级联：populate 后排回 loadConfig 已设值
+  refreshSeasons().finally(() => loadConfig()); // chain: 先 populate 下拉再 apply cfg 避免 race
   refreshAccount();
   refreshHealth();
   setInterval(refreshHealth, 20000); // 每 20s 探活

@@ -23,11 +23,20 @@
 // 避免无声出一个「点投稿必失败」的包。
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const httpUtil = require('../material-hub/lib/http');
 
-/** biliup-rs 官方 latest release 元数据接口（与 build.yml 第 105 行保持一致）。 */
-const RELEASE_API = 'https://api.github.com/repos/biliup/biliup-rs/releases/latest';
+/**
+ * 固定版本：与代码注释里实测的 CLI 语法（v0.2.4）严格对齐，禁止漂移到 latest——
+ * 上游升级 CLI 参数可能变化，用 latest 会「构建时无感换语法、装包后投稿必失败」。
+ * 升级 biliup-rs 时需同步：改 BILIUP_VERSION + 重算 BILIUP_SHA256（对 Windows zip）。
+ */
+const BILIUP_VERSION = 'v0.2.4';
+/** biliupR-${BILIUP_VERSION}-x86_64-windows.zip 的 SHA256（2026-08-05 实测）。 */
+const BILIUP_SHA256 = 'bdd3d7a56f00aea580cd3e609fd4b1748085e68ea2f1527d4aa8ff06b9796365';
+/** 固定版本 release 元数据接口（不再用 /latest）。 */
+const RELEASE_API = 'https://api.github.com/repos/biliup/biliup-rs/releases/tags/' + BILIUP_VERSION;
 /** 目标目录：biliup-hub/bin（真实二进制不进 git，由本脚本 / CI 现拉）。 */
 const BIN_DIR = path.resolve(__dirname, '..', 'biliup-hub', 'bin');
 /** 目标文件：运行时与打包后路径均按 biliup-hub/bin/biliup.exe 定位。 */
@@ -76,6 +85,31 @@ function shouldSkipDownload(size, min = MIN_VALID_BYTES) {
   if (typeof size !== 'number' || !Number.isFinite(size)) return false;
   const floor = typeof min === 'number' && Number.isFinite(min) && min >= 0 ? min : MIN_VALID_BYTES;
   return size > floor;
+}
+
+/** 计算文件 SHA256（小写 hex）。 */
+function sha256Of(file, fsImpl) {
+  const f = fsImpl || fs;
+  return crypto.createHash('sha256').update(f.readFileSync(file)).digest('hex').toLowerCase();
+}
+
+/**
+ * 校验文件 SHA256 与期望值一致；不一致抛错（调用方应让构建失败）。
+ * @param {string} file 文件绝对路径
+ * @param {string} expected 期望的小写/大写 hex 均可
+ * @param {object} [fsImpl] 单测注入
+ * @returns {boolean} 一致返回 true
+ */
+function verifySha256(file, expected, fsImpl) {
+  const actual = sha256Of(file, fsImpl);
+  if (String(expected || '').toLowerCase() !== actual) {
+    throw new Error(
+      'SHA256 校验失败: ' + path.basename(file) +
+      ' 实际=' + actual + ' 期望=' + expected +
+      '。若升级了 biliup-rs 版本，请同步更新 BILIUP_SHA256 常量。'
+    );
+  }
+  return true;
 }
 
 /**
@@ -412,9 +446,9 @@ async function main() {
 
   // 明确打印走没走代理，便于排查「一直超时」类问题
   console.log('[prepare-biliup-bin] 网络通道: ' + httpUtil.describeProxy(RELEASE_API));
-  console.log('[prepare-biliup-bin] 查询最新 release: ' + RELEASE_API);
+  console.log('[prepare-biliup-bin] 查询固定版本 release: ' + RELEASE_API);
   const release = await fetchLatestRelease(process.env);
-  console.log('[prepare-biliup-bin] 最新版本: ' + (release.tag_name || release.name || '未知'));
+  console.log('[prepare-biliup-bin] 版本: ' + (release.tag_name || release.name || BILIUP_VERSION));
 
   const asset = pickWindowsAsset(release.assets);
   if (!asset) {
@@ -441,6 +475,12 @@ async function main() {
       '[prepare-biliup-bin] 下载完成 ' + humanSize(bytes) + '，耗时 ' +
         ((Date.now() - startedAt) / 1000).toFixed(1) + 's',
     );
+
+    // 下载物完整性校验：与固定版本 zip 的 SHA256 比对，防止上游资产被替换/下载被篡改。
+    // 注意：browser_download_url 的预签名地址不区分文件版本，必须靠校验和兜底。
+    console.log('[prepare-biliup-bin] 校验 SHA256（固定版本 ' + BILIUP_VERSION + '）...');
+    verifySha256(downloadPath, BILIUP_SHA256, fs);
+    console.log('[prepare-biliup-bin] SHA256 校验通过');
 
     if (isZip) {
       const extractDir = path.join(workDir, 'unzip');
@@ -493,7 +533,7 @@ if (require.main === module) {
       console.error('[prepare-biliup-bin] 失败：' + (e && e.message ? e.message : String(e)));
       console.error('[prepare-biliup-bin] 若为网络问题，请确认 HTTP_PROXY / HTTPS_PROXY 环境变量已正确设置');
       console.error(
-        '[prepare-biliup-bin] 手动补救：从 https://github.com/biliup/biliup-rs/releases/latest ' +
+        '[prepare-biliup-bin] 手动补救：从 https://github.com/biliup/biliup-rs/releases/tag/' + BILIUP_VERSION + ' ' +
           '下载 Windows x64 包，解出 biliup.exe 放到 ' + BILIUP_DEST,
       );
       process.exit(1);
@@ -504,6 +544,8 @@ module.exports = {
   // 纯函数（单测主战场）
   humanSize,
   shouldSkipDownload,
+  sha256Of,
+  verifySha256,
   isZipName,
   pickWindowsAsset,
   resolveTokenHeaders,
@@ -519,6 +561,8 @@ module.exports = {
   downloadAsset,
   main,
   // 常量
+  BILIUP_VERSION,
+  BILIUP_SHA256,
   RELEASE_API,
   BIN_DIR,
   BILIUP_DEST,

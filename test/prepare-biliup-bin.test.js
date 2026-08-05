@@ -15,6 +15,10 @@ const {
   resolveTokenHeaders,
   describeApiFailure,
   pickExtractedExe,
+  sha256Of,
+  verifySha256,
+  BILIUP_VERSION,
+  BILIUP_SHA256,
   RELEASE_API,
   BILIUP_DEST,
   MIN_VALID_BYTES,
@@ -27,7 +31,12 @@ test("require 该脚本不会触发下载主流程（导出齐全、常量正确
   assert.strictEqual(typeof pickWindowsAsset, "function");
   assert.strictEqual(typeof shouldSkipDownload, "function");
   assert.strictEqual(MIN_VALID_BYTES, 1024 * 1024);
-  assert.strictEqual(RELEASE_API, "https://api.github.com/repos/biliup/biliup-rs/releases/latest");
+  assert.strictEqual(BILIUP_VERSION, "v0.2.4");
+  assert.match(BILIUP_SHA256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(
+    RELEASE_API,
+    "https://api.github.com/repos/biliup/biliup-rs/releases/tags/" + BILIUP_VERSION,
+  );
   assert.deepStrictEqual(TOKEN_ENV_KEYS, ["GH_TOKEN", "GITHUB_TOKEN"]);
 });
 
@@ -271,4 +280,23 @@ test("humanSize：分档输出可读文案", () => {
   assert.strictEqual(humanSize(15 * 1024 * 1024), "15.0MB");
   assert.strictEqual(humanSize(undefined), "0B");
   assert.strictEqual(humanSize(null), "0B");
+});
+
+/* ---------- SHA256 校验 ---------- */
+
+test("sha256Of / verifySha256：一致通过，不一致抛清晰错误", () => {
+  const os = require("os");
+  const fs = require("fs");
+  const tmp = path.join(os.tmpdir(), "biliup_sha_" + Date.now() + ".bin");
+  fs.writeFileSync(tmp, "hello tools-hub");
+  const expected = require("crypto").createHash("sha256").update("hello tools-hub").digest("hex");
+  assert.strictEqual(sha256Of(tmp), expected);
+  assert.strictEqual(verifySha256(tmp, expected.toUpperCase()), true); // 大小写不敏感
+  assert.throws(() => verifySha256(tmp, "0".repeat(64)), /SHA256 校验失败/);
+  fs.unlinkSync(tmp);
+});
+
+test("BILIUP_SHA256 与固定版本一致（防误改常量导致构建时才发现）", () => {
+  // 该哈希来自 biliup-rs v0.2.4 官方 release 资产 biliupR-v0.2.4-x86_64-windows.zip（2026-08-05 实测）
+  assert.strictEqual(BILIUP_SHA256, "bdd3d7a56f00aea580cd3e609fd4b1748085e68ea2f1527d4aa8ff06b9796365");
 });

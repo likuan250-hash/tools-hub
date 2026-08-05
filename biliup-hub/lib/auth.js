@@ -15,9 +15,12 @@
 // 流程：get_qrcode → web_confirm_qrcode → login_by_qrcode（轮询）。任何一步失败回落本地兜底拼装。
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const store = require('./store');
 const logger = require('./logger');
+const cookies = require('./cookies');
+const secret = require('./crypto');
 
 const GEN_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/generate';
 const POLL_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/poll';
@@ -194,9 +197,7 @@ async function verifyCookies(cookiesObj, opts = {}) {
  */
 function saveCookies(cookiesObj, opts = {}) {
   const p = opts.path || store.getCookiesPath();
-  const dir = path.dirname(p);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(cookiesObj, null, 2), 'utf8');
+  cookies.save(p, cookiesObj); // AES-256-GCM 加密落盘，磁盘上不再有明文 SESSDATA
   logger.info('[auth] 登录 cookie 已写入', p);
   return p;
 }
@@ -358,7 +359,8 @@ function saveLoginInfo(loginInfo, opts = {}) {
   const p = opts.path || store.getLoginInfoPath();
   const dir = path.dirname(p);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(loginInfo, null, 2), 'utf8');
+  // AES-256-GCM 加密落盘；biliup.exe 上传前经 materializeLoginInfo 解密到临时文件使用
+  fs.writeFileSync(p, JSON.stringify(secret.encryptObj(loginInfo)), 'utf8');
   logger.info('[auth] biliup LoginInfo 已写入', p);
   return p;
 }
@@ -558,10 +560,39 @@ function loadLoginInfo(filePath, opts = {}) {
   try {
     if (!filePath || !f.existsSync(filePath)) return null;
     const raw = f.readFileSync(filePath, 'utf8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // 新版加密 blob → 解密；旧版明文 → 直接返回（兼容升级前遗留文件）
+    return secret.isEncrypted(parsed) ? secret.decryptObj(parsed) : parsed;
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * 把 login_info.json 解密为临时明文文件，供 biliup.exe -u 读取（CLI 只认明文）。
+ * 上传结束后调用方必须调用 cleanup() 删除临时文件，避免明文 token 残留。
+ * @param {string} loginInfoPath login_info.json 完整路径
+ * @param {{fs?:Object, tmpDir?:string}} [opts] opts.fs 可注入（单测 mock）
+ * @returns {{path:string, cleanup:()=>void}}
+ * @throws {Error} loginInfo 无法读取时抛出（调用方应中断上传）
+ */
+function materializeLoginInfo(loginInfoPath, opts = {}) {
+  const f = opts.fs || fs;
+  const info = loadLoginInfo(loginInfoPath, { fs: f });
+  if (!info) {
+    throw new Error('login_info.json 无法读取或不存在: ' + loginInfoPath);
+  }
+  const tmpPath = path.join(
+    opts.tmpDir || os.tmpdir(),
+    'biliup-logininfo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.json'
+  );
+  f.writeFileSync(tmpPath, JSON.stringify(info), 'utf8');
+  return {
+    path: tmpPath,
+    cleanup: () => {
+      try { f.unlinkSync(tmpPath); } catch (_) { /* 已删除或不存在 */ }
+    },
+  };
 }
 
 /**
@@ -606,6 +637,7 @@ module.exports = {
   isLoginInfoFresh,
   refreshToken,
   loadLoginInfo,
+  materializeLoginInfo,
   clearSession,
   LOGIN_INFO_SAFE_BUFFER_SECONDS,
   // TV 登录流程相关（复刻 biliup-rs credential.rs）：供单测与上层复用

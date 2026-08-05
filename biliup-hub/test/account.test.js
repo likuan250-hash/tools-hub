@@ -123,7 +123,10 @@ test('auth.pollQrcode: 成功(0) 解析 Set-Cookie → success + cookies', async
 test('auth.saveCookies: 写入对象形态 cookies.json', async () => {
   const p = path.join(os.tmpdir(), 'biliup-save-' + Date.now() + '.json');
   auth.saveCookies({ SESSDATA: 'a', bili_jct: 'b' }, { path: p });
-  const obj = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const raw = fs.readFileSync(p, 'utf8');
+  // 加密落盘：明文键名不应出现在文件里
+  assert.ok(!raw.includes('SESSDATA'), 'cookies.json 不应包含明文 SESSDATA');
+  const obj = require('../lib/crypto').decryptObj(JSON.parse(raw));
   assert.strictEqual(obj.SESSDATA, 'a');
   assert.strictEqual(obj.bili_jct, 'b');
   fs.unlinkSync(p);

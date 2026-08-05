@@ -24,6 +24,11 @@ function baseMocks() {
       ensureFreshLoginInfo: async () => {},
       loadLoginInfo: () => ({ token_info: { access_token: 'OLD', refresh_token: 'RT' } }),
       refreshToken: async () => ({ token_info: { access_token: 'NEW' } }),
+      // 加密登录态 → 临时明文文件（task.run 上传前调用，finally 中 cleanup）
+      materializeLoginInfo: () => ({
+        path: path.join(os.tmpdir(), 'biliup_li_materialized_' + Date.now() + '.json'),
+        cleanup: () => {},
+      }),
     },
     biliup: {
       runUpload: async () => ({ bvid: 'BV1', aid: 1 }),
@@ -270,8 +275,8 @@ test('task.run: 上传前 ensureFreshLoginInfo 临期主动 refresh（不重换 
   assert.equal(result.ok, true, '临期刷新成功后应投稿成功');
   assert.equal(refreshHit, true, '临期应触发 refreshToken');
   assert.equal(exchangeHit, false, 'refresh 成功不应再走 TV 换取');
-  // 验证写盘已刷新为最新 token。
-  const written = JSON.parse(fs.readFileSync(liPath, 'utf8'));
+  // 验证写盘已刷新为最新 token（saveLoginInfo 加密落盘，需走 loadLoginInfo 读取）。
+  const written = require('../lib/auth').loadLoginInfo(liPath);
   assert.equal(written.token_info.access_token, 'REFRESHED_AT', '登录态文件应被刷新为新 token');
   assert.ok(written.token_info.token_created_at > 0, '刷新后 token_created_at 应更新');
   fs.unlinkSync(liPath);

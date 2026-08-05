@@ -86,8 +86,9 @@ const CHILDREN = {
     env: Object.assign({}, process.env, {
       TOOLSHUB_VERSION: app.getVersion(),
       MATERIAL_PORT: "3700",
-      // 素材落盘根目录（不存在时由子进程自动 mkdir -p，见 lib/name.js）
-      MATERIAL_OUTPUT_DIR: "E:\\素材\\",
+      // 素材落盘根目录（不存在时由子进程自动 mkdir -p，见 lib/name.js）。
+      // 默认 E:\素材\ 与历史一致；可用环境变量 TOOLSHUB_MATERIAL_DIR 覆盖（换盘符/换机器时无需改代码）。
+      MATERIAL_OUTPUT_DIR: process.env.TOOLSHUB_MATERIAL_DIR || "E:\\素材\\",
     }),
     proc: null,
     running: false,
@@ -138,13 +139,15 @@ function relocateNetdiskData() {
     log("netdisk 数据目录:", userDataDir);
   }
 
-  // .env：以 userData 为准；首次安装时若 userData 没有则从 resources 迁移
+  // .env：以 userData 为准。安装包内不含 .env（extraResources filter 排除 !**/.env，
+  // 防止公开 Release 携带本机凭证），「从 resources 迁移」分支只覆盖开发/手动拷贝场景；
+  // 用户自定义 .env 应放在 userData/netdisk-hub/.env，启动时同步到 resources 供子进程读取。
   const srcEnv = path.join(NETDISK_DIR, ".env");
   const dstEnv = path.join(userDir, ".env");
   if (!fs.existsSync(dstEnv) && fs.existsSync(srcEnv) && fs.statSync(srcEnv).size > 0) {
     fs.copyFileSync(srcEnv, dstEnv);
   }
-  // 启动时把 userData/.env 同步回 resources（NSIS 升级可能覆盖 resources/.env）
+  // 启动时把 userData/.env 同步回 resources（子进程 cwd 为 resources/netdisk-hub，只读该处 .env）
   if (fs.existsSync(dstEnv) && fs.statSync(dstEnv).size > 0) {
     fs.copyFileSync(dstEnv, srcEnv);
   }
@@ -464,6 +467,7 @@ function createMainWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true, // 渲染进程沙箱化：preload 仅用 contextBridge/ipcRenderer，兼容沙箱
       webviewTag: true, // 允许在壳体内使用 <webview> 内嵌工具页面
     },
   });

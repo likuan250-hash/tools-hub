@@ -74,6 +74,19 @@ async function run(req, ctx) {
     return { ok: false, error: msg };
   }
 
+  // 加密登录态 → 上传前解密到临时明文文件（biliup.exe -u 只认明文 LoginInfo）；
+  // 上传结束（含失败/重试）后在 finally 中删除，避免明文 token 残留磁盘。
+  let materialized = null;
+  try {
+    materialized = authM.materializeLoginInfo(config.loginInfoPath);
+    config.loginInfoPath = materialized.path;
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : '登录态解密失败';
+    logger.error('[task] 生成临时登录态失败:', msg);
+    emit({ type: 'error', stage: 'pending', message: msg });
+    return { ok: false, error: msg };
+  }
+
   // 标题：请求给定优先；否则 mp4 去扩展名
   let title = (req.title || '').trim();
   if (!title) {
@@ -217,6 +230,9 @@ async function run(req, ctx) {
     logger.error('[task] 投稿失败 @' + stage + ':', e.message);
     emit({ type: 'error', stage, message: e.message });
     return { ok: false, error: e.message, stage };
+  } finally {
+    // 无论成功/失败/重试路径，都必须删除临时明文登录态
+    if (materialized) { try { materialized.cleanup(); } catch (_) {} }
   }
 }
 

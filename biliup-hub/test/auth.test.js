@@ -85,7 +85,8 @@ test('ensureLoginInfo: 兑换接口失败 → 本地兜底拼装并落盘到指�
   const fetchFn = async () => ({ json: async () => ({ code: -101, message: '未登录' }) });
   const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
   assert.equal(p, tmp);
-  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  // saveLoginInfo 已加密落盘，读取需走 loadLoginInfo（自动解密）
+  const written = auth.loadLoginInfo(tmp);
   assert.ok(written.cookie_info && Array.isArray(written.cookie_info.cookies));
   assert.equal(written.cookie_info.cookies[0].name, 'SESSDATA');
   assert.ok(written.token_info && 'access_token' in written.token_info);
@@ -96,7 +97,7 @@ test('ensureLoginInfo: 兑换接口抛网络异常 → 回落本地兜底（不�
   const tmp = path.join(os.tmpdir(), 'biliup_li_throw_' + Date.now() + '.json');
   const fetchFn = async () => { throw new Error('network down'); };
   const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
-  const written = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const written = auth.loadLoginInfo(p);
   assert.equal(written.cookie_info.cookies[0].name, 'SESSDATA');
   fs.unlinkSync(tmp);
 });
@@ -139,7 +140,7 @@ test('ensureLoginInfo: TV 流程成功 → 落盘整体等于服务端 LoginInfo
   };
   const fetchFn = makeTvSuccessFetch(finalData);
   const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
-  const written = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const written = auth.loadLoginInfo(p);
   // 本地兜底的 token_info 为 { mid:0, access_token:'', expires_in:0 }；若误回落，deepEqual 必失败。
   assert.deepStrictEqual(written, finalData);
   fs.unlinkSync(tmp);
@@ -319,7 +320,7 @@ test('refreshToken: 成功用例 → 返回更新后的 loginInfo、新 token �
   assert.equal(r.cookie_info.cookies[0].value, 'X');
   assert.deepStrictEqual(r.sso, ['SESSDATA=X']);
   // 写盘验证 saveLoginInfo 被调用（用 tmpdir 避免污染真实磁盘）。
-  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  const written = auth.loadLoginInfo(tmp);
   assert.equal(written.token_info.access_token, 'NEW');
   fs.unlinkSync(tmp);
 });
@@ -398,7 +399,7 @@ test('ensureLoginInfo: 已有未过期有效 token → 复用，不发起任何 
   const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
   assert.equal(p, tmp, '应返回同一路径（直接复用）');
   assert.equal(fetchCount, 0, '复用有效 token 时不应发起任何 TV 请求');
-  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  const written = auth.loadLoginInfo(tmp);
   assert.equal(written.token_info.access_token, 'EXISTING_AT', '应保留原有效 token，未被重换覆盖');
   fs.unlinkSync(tmp);
 });
@@ -425,7 +426,7 @@ test('ensureLoginInfo: token 已过期 → 重新发起 TV 换取并落盘新 to
   const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
   assert.equal(p, tmp);
   assert.equal(exchanged, true, '过期 token 应触发 TV 换取');
-  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  const written = auth.loadLoginInfo(tmp);
   assert.equal(written.token_info.access_token, 'NEW_TV_AT', '过期 token 应被重新换取的新 token 覆盖');
   fs.unlinkSync(tmp);
 });
@@ -452,7 +453,7 @@ test('ensureLoginInfo: 兜底空 token（access_token 为空）→ 仍走 TV 换
   const p = await auth.ensureLoginInfo(webCookies, { path: tmp, deps: { fetchFn } });
   assert.equal(p, tmp);
   assert.equal(exchanged, true, '空 token 应触发 TV 换取，不得复用');
-  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  const written = auth.loadLoginInfo(tmp);
   assert.equal(written.token_info.access_token, 'EXCHANGED_AT', '应落盘换取得到的新 token');
   fs.unlinkSync(tmp);
 });
@@ -514,7 +515,7 @@ test('ensureFreshLoginInfo: 临期 token → 主动 refreshToken 成功后复用
   assert.equal(p, tmp);
   assert.equal(refreshEndpointHit, true, '临期应触发 refresh');
   assert.equal(exchangeCalled, false, 'refresh 成功不应再走 TV 换取');
-  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  const written = auth.loadLoginInfo(tmp);
   assert.equal(written.token_info.access_token, 'REFRESHED_AT', '应写回刷新后的新 token');
   fs.unlinkSync(tmp);
 });
@@ -562,7 +563,7 @@ test('ensureFreshLoginInfo: refresh 失败 → 回退 TV 换取（exchange）', 
   assert.equal(p, tmp);
   assert.equal(refreshEndpointHit, true, '应尝试 refresh');
   assert.equal(exchangeCalled, true, 'refresh 失败应回退 TV 换取');
-  const written = JSON.parse(fs.readFileSync(tmp, 'utf8'));
+  const written = auth.loadLoginInfo(tmp);
   assert.equal(written.token_info.access_token, 'EXCHANGED_AT', '应落盘换取得到的新 token');
   fs.unlinkSync(tmp);
 });

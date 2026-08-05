@@ -16,10 +16,18 @@
 // 幂等：已存在且体积 > 1MB 直接跳过；失败 process.exit(1)，避免无声出一个缺二进制的包。
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const httpUtil = require('../material-hub/lib/http');
 
-/** yt-dlp 官方 latest 直链（302 跳转到 release-assets.githubusercontent.com，需跟随重定向）。 */
-const YT_DLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
+/**
+ * 固定版本：升级时同步改 YT_DLP_VERSION + 重算 YT_DLP_EXE_SHA256（官方 SHA2-256SUMS）。
+ * 不用 latest 的原因：yt-dlp 发布频繁，行为/参数可能变化，构建必须可复现。
+ */
+const YT_DLP_VERSION = '2026.07.04';
+/** yt-dlp.exe @ ${YT_DLP_VERSION} 的 SHA256（官方 SHA2-256SUMS，2026-08-05 核对）。 */
+const YT_DLP_EXE_SHA256 = '52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8';
+/** yt-dlp 官方固定版本直链（302 跳转到 release-assets.githubusercontent.com，需跟随重定向）。 */
+const YT_DLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/download/' + YT_DLP_VERSION + '/yt-dlp.exe';
 /** 目标目录：material-hub/bin（已在 material-hub/.gitignore 中忽略，不进 git）。 */
 const BIN_DIR = path.resolve(__dirname, '..', 'material-hub', 'bin');
 /** 目标文件。 */
@@ -46,6 +54,31 @@ function existingSize(file) {
     /* 不存在即视为未就位 */
   }
   return 0;
+}
+
+/** 计算文件 SHA256（小写 hex）。 */
+function sha256Of(file, fsImpl) {
+  const f = fsImpl || fs;
+  return crypto.createHash('sha256').update(f.readFileSync(file)).digest('hex').toLowerCase();
+}
+
+/**
+ * 校验文件 SHA256 与期望值一致；不一致抛错（调用方应让构建失败）。
+ * @param {string} file 文件绝对路径
+ * @param {string} expected 期望的 hex（大小写均可）
+ * @param {object} [fsImpl] 单测注入
+ * @returns {boolean} 一致返回 true
+ */
+function verifySha256(file, expected, fsImpl) {
+  const actual = sha256Of(file, fsImpl);
+  if (String(expected || '').toLowerCase() !== actual) {
+    throw new Error(
+      'SHA256 校验失败: ' + path.basename(file) +
+      ' 实际=' + actual + ' 期望=' + expected +
+      '。若升级了 yt-dlp 版本，请同步更新 YT_DLP_EXE_SHA256 常量。'
+    );
+  }
+  return true;
 }
 
 /**
@@ -100,7 +133,9 @@ async function main() {
 
   const already = existingSize(YT_DLP_DEST);
   if (already) {
-    console.log('[prepare-material-bins] yt-dlp.exe 已就位（' + humanSize(already) + '），跳过下载');
+    // 已就位也要校验哈希：防止半截/被替换的旧文件混进安装包
+    verifySha256(YT_DLP_DEST, YT_DLP_EXE_SHA256, fs);
+    console.log('[prepare-material-bins] yt-dlp.exe 已就位且 SHA256 校验通过（' + humanSize(already) + '），跳过下载');
     console.log('[prepare-material-bins] 路径: ' + YT_DLP_DEST);
     return;
   }
@@ -109,7 +144,9 @@ async function main() {
   console.log('[prepare-material-bins] 网络通道: ' + httpUtil.describeProxy(YT_DLP_URL));
   console.log('[prepare-material-bins] 下载 yt-dlp.exe <- ' + YT_DLP_URL);
   const bytes = await download(YT_DLP_URL, YT_DLP_DEST);
+  verifySha256(YT_DLP_DEST, YT_DLP_EXE_SHA256, fs);
   console.log('[prepare-material-bins] yt-dlp.exe 已就位（' + humanSize(bytes) + '）');
+  console.log('[prepare-material-bins] SHA256 校验通过（' + YT_DLP_VERSION + '）');
   console.log('[prepare-material-bins] 路径: ' + YT_DLP_DEST);
 }
 
@@ -127,4 +164,8 @@ if (require.main === module) {
     });
 }
 
-module.exports = { main, download, existingSize, humanSize, YT_DLP_URL, YT_DLP_DEST, BIN_DIR, MIN_VALID_BYTES };
+module.exports = {
+  main, download, existingSize, sha256Of, verifySha256, humanSize,
+  YT_DLP_URL, YT_DLP_DEST, BIN_DIR, MIN_VALID_BYTES,
+  YT_DLP_VERSION, YT_DLP_EXE_SHA256,
+};

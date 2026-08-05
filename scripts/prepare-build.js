@@ -37,34 +37,12 @@ if (!fs.existsSync(NODE_DEST) && NODE_SRC) {
   console.log("[prepare-build] no node.exe source found, fork will fall back to system node");
 }
 
-// 复制 netdisk-hub/.env（百度/夸克/迅雷凭证与目标目录配置），使其被 extraResources 打包进
-// resources/netdisk-hub/.env。CI 包也可由 build.yml 的 secrets.NETDISK_ENV 步骤写入（二者二选一）。
-// 注意：netdisk-hub/.gitignore 已忽略 .env，本地副本不会进 git（凭证安全）。
-function copyNetdiskEnv() {
-  const dest = path.join(ROOT, "netdisk-hub", ".env");
-  if (fs.existsSync(dest) && fs.statSync(dest).size > 0) {
-    console.log("[prepare-build] netdisk-hub/.env already present, skip");
-    return;
-  }
-  const candidates = [
-    process.env.NETDISK_ENV_SRC,
-    path.join(ROOT, "netdisk-hub", ".env"),
-    path.join(ROOT, "..", "netdisk-hub", ".env"),
-  ].filter(Boolean);
-  for (const src of candidates) {
-    if (fs.existsSync(src) && fs.statSync(src).size > 0) {
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.copyFileSync(src, dest);
-      console.log("[prepare-build] copied netdisk-hub/.env <- " + src);
-      return;
-    }
-  }
-  console.log(
-    "[prepare-build] no netdisk-hub/.env source; CI 请配 secrets.NETDISK_ENV, 或本地放 .env 后 build",
-  );
-}
-
-copyNetdiskEnv();
+// ── netdisk .env 说明（重要，勿再「顺手打进去」）──
+// package.json 的 extraResources filter 明确排除了 netdisk-hub/**/.env（`!**/.env`），
+// 安装包内永远不带任何 .env —— 否则公开 Release 会把本机代理/凭证发给所有下载者。
+// 运行时全部配置都有代码内默认值（BAIDU_APP_DIR=/apps/netdisk_hub、QUARK_FOLDER=netdisk_hub、PORT=3000），
+// 用户如需自定义 .env，由主进程 main.js 从 userData/netdisk-hub/.env 启动时同步到 resources 再读。
+// 本脚本不再做任何 .env 复制。
 
 // ── 构建期内联共享样式 ──
 // 根因修复：打包后 asar 内 CSS @import 跨目录('../shared/...')曾整份加载失败，

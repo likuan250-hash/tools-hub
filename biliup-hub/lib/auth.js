@@ -21,6 +21,7 @@ const logger = require('./logger');
 
 const GEN_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/generate';
 const POLL_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/poll';
+const NAV_URL = 'https://api.bilibili.com/x/web-interface/nav'; // cookie 有效性验证
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1';
 const REFERER = 'https://passport.bilibili.com/';
 
@@ -151,6 +152,39 @@ async function pollQrcode(key, opts = {}) {
   }
   // 86038 等：过期 / 失效
   return { status: 'expired' };
+}
+
+/**
+ * 验证扁平 web cookie 是否有效（扫码登录后自动校验，防「显示登录成功但实际投稿 -412」）。
+ * 调 B站 nav 接口：code=0 且 isLogin=true → 有效（顺带取 uname/mid）；-101 → 登录态无效；网络异常 → ok:false。
+ * @param {Object} cookiesObj 扁平 web cookie（含 SESSDATA/bili_jct）
+ * @param {{deps?:Object}} [opts] opts.deps.fetchFn 可注入（单测）
+ * @returns {Promise<{ok:boolean, code:number, uname?:string, mid?:number, message:string}>}
+ */
+async function verifyCookies(cookiesObj, opts = {}) {
+  const deps = opts.deps || {};
+  const fetchFn = deps.fetchFn || getFetch();
+  if (!cookiesObj || !cookiesObj.SESSDATA) {
+    return { ok: false, code: -101, message: '缺少 SESSDATA（cookie 不完整）' };
+  }
+  const cookieStr = Object.keys(cookiesObj)
+    .filter((k) => cookiesObj[k] != null && String(cookiesObj[k]) !== '')
+    .map((k) => `${k}=${cookiesObj[k]}`)
+    .join('; ');
+  try {
+    const resp = await fetchFn(NAV_URL, {
+      method: 'GET',
+      headers: { 'User-Agent': USER_AGENT, 'Referer': 'https://www.bilibili.com/', 'Cookie': cookieStr },
+    });
+    const json = await resp.json();
+    if (json && json.code === 0 && json.data && json.data.isLogin) {
+      return { ok: true, code: 0, uname: json.data.uname, mid: json.data.mid, message: '登录态有效' };
+    }
+    const code = json && typeof json.code === 'number' ? json.code : -1;
+    return { ok: false, code, message: (json && json.message) || '登录态无效' };
+  } catch (e) {
+    return { ok: false, code: -1, message: '网络异常: ' + ((e && e.message) || e) };
+  }
 }
 
 /**
@@ -562,6 +596,7 @@ module.exports = {
   generateQrcode,
   pollQrcode,
   saveCookies,
+  verifyCookies,
   parseSetCookie,
   buildLoginInfoFromWebCookies,
   exchangeLoginInfo,

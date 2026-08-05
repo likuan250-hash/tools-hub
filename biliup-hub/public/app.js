@@ -628,7 +628,17 @@
         $("loginStatus").textContent = "已扫码，请在手机上确认…";
       } else if (j.status === "success") {
         stopLogin();
-        $("loginStatus").textContent = "登录成功";
+        // 显示 cookie 自动验证结果（后端 /api/login/poll 已调 B站 nav 校验）
+        const v = j.verified;
+        if (v && v.ok) {
+          toast("登录成功 ✓ @" + (v.uname || "B站账号"), "ok");
+          $("loginStatus").textContent = "登录成功，cookie 有效";
+        } else if (v) {
+          toast("登录成功，但 cookie 验证未通过：" + (v.message || "请检查登录态"), "err");
+          $("loginStatus").textContent = "[警告] cookie 验证未通过，投稿可能失败";
+        } else {
+          toast("登录成功", "ok");
+        }
         refreshAccount();
         loadConfig(); // cookies 可能已就绪
         refreshSeasons(); // 登录态刷新后重新拉取合集列表并回填选中项

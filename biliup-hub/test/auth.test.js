@@ -590,3 +590,34 @@ test('ensureFreshLoginInfo: web cookie 无效 + 无可用 token → 抛清晰错
     '错误信息应直白指出登录态失效请重新扫码，实际: ' + errMsg);
   fs.unlinkSync(tmp);
 });
+
+// ── verifyCookies：扫码登录后自动验证 cookie 有效性（v2.7.24 新增）──
+test('verifyCookies 有效 cookie → ok:true 且返回昵称', async () => {
+  const fetchFn = async () => ({ json: async () => ({ code: 0, data: { isLogin: true, uname: '测试UP', mid: 123 } }) });
+  const v = await auth.verifyCookies({ SESSDATA: 'abc', bili_jct: 'def' }, { deps: { fetchFn } });
+  assert.equal(v.ok, true);
+  assert.equal(v.uname, '测试UP');
+  assert.equal(v.mid, 123);
+});
+
+test('verifyCookies 无效 cookie（-101 未登录）→ ok:false', async () => {
+  const fetchFn = async () => ({ json: async () => ({ code: -101, message: '账号未登录' }) });
+  const v = await auth.verifyCookies({ SESSDATA: 'expired', bili_jct: 'x' }, { deps: { fetchFn } });
+  assert.equal(v.ok, false);
+  assert.equal(v.code, -101);
+});
+
+test('verifyCookies 缺少 SESSDATA → ok:false（不发请求）', async () => {
+  let called = 0;
+  const fetchFn = async () => { called++; return { json: async () => ({ code: 0 }) }; };
+  const v = await auth.verifyCookies({ bili_jct: 'x' }, { deps: { fetchFn } });
+  assert.equal(v.ok, false);
+  assert.equal(called, 0, '缺 SESSDATA 不应发起网络请求');
+});
+
+test('verifyCookies 网络异常 → ok:false 且不抛错', async () => {
+  const fetchFn = async () => { throw new Error('network down'); };
+  const v = await auth.verifyCookies({ SESSDATA: 'abc' }, { deps: { fetchFn } });
+  assert.equal(v.ok, false);
+  assert.ok(/网络异常/.test(v.message));
+});

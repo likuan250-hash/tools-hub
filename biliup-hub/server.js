@@ -361,6 +361,16 @@ app.get('/api/login/poll', async (req, res) => {
           logger.warn('[login] 生成 biliup LoginInfo 失败（上传前会重试）:', e.message);
         });
         account.invalidate(); // 立即使 /api/account 缓存失效，反映新登录态
+        // 自动验证 cookie 有效性（防「显示登录成功但投稿 -412」）：调 B站 nav 确认登录态
+        try {
+          const v = await auth.verifyCookies(r.cookies);
+          r.verified = v;
+          if (v.ok) logger.info('[login] cookie 验证通过:', v.uname || '(未知昵称)');
+          else logger.warn('[login] cookie 验证未通过:', v.message, 'code=' + v.code);
+        } catch (ve) {
+          r.verified = { ok: false, code: -1, message: '验证异常: ' + ve.message };
+          logger.warn('[login] cookie 验证异常:', ve.message);
+        }
       } catch (e) {
         logger.error('[login] 写 cookie 失败:', e.message);
       }

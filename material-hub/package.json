@@ -1,6 +1,6 @@
 {
   "name": "material-hub",
-  "version": "2.7.15",
+  "version": "2.7.16",
   "description": "素材搜集工具（tools-hub 第四个子工具）：输入游戏名 → 建号文件夹 → 官方封面 + 官方宣传片落盘素材库",
   "main": "server.js",
   "scripts": {

@@ -72,3 +72,7 @@ else
   echo "�? 资产不完整（�? latest.yml �? Setup exe），请检�? CI 日志"
   exit 1
 fi
+
+# Upload offline data-pack asset (data-pack.json): App pulls it silently on startup for incremental game-mapping updates.
+echo "upload data-pack asset data-pack.json ..."
+"$GH" release upload "$TAG" --repo "$REPO" kdocs-tool/lib/data-pack.json --clobber || echo "WARN: data-pack upload failed (non-fatal)"

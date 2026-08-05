@@ -1,7 +1,7 @@
 // tools-hub 主进程（Electron）
 // 职责：单实例锁、fork 四个 node 子进程(kdocs/netdisk/biliup/material)、原生文件对话框、状态推送、看门狗、自动更新。
 // 启动后渲染进程显示入口页；点击卡片后在同一窗口内以 <webview> 标签打开工具。
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell, net } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { fork, spawnSync } = require("child_process");
@@ -516,6 +516,31 @@ function setupAutoUpdater() {
   autoUpdater.on("error", (err) => sendUpdate("error", { message: err.message }));
 }
 
+// ── 离线数据包静默增量更新（方案 A：启动后台拉取，失败静默回退内置）──
+// 数据包 data-pack.json（中文名→英文名 override + 英文名→AppID）随 Release 发布（release.sh 上传为资产），
+// App 启动时从 releases/latest/download/data-pack.json 拉取，版本更高则写入 {userData}/kdocs-tool/data/ 缓存；
+// kdocs-tool 子进程（KDOCS_DATA_DIR 指向该目录）下次查询自动用新数据（见 kdocs-tool/lib/datapack.js）。
+// 用 Electron net.fetch：认系统代理 + 系统证书库（比子进程代理感知层更通用）。失败/超时/版本非法一律静默。
+async function refreshDataPack() {
+  try {
+    const url = "https://github.com/likuan250-hash/tools-hub/releases/latest/download/data-pack.json";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const res = await net.fetch(url, { signal: controller.signal, headers: { "User-Agent": "ToolsHub" } });
+    clearTimeout(timer);
+    if (!res.ok) return;
+    const txt = await res.text();
+    const j = JSON.parse(txt);
+    if (!j || typeof j.version !== "number" || j.version < 1) return;
+    const dir = path.join(app.getPath("userData"), "kdocs-tool", "data");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "data-pack.json"), txt, "utf8");
+    log("data-pack 更新成功 v" + j.version);
+  } catch (e) {
+    log("data-pack 拉取失败（静默回退内置）:", e && e.message ? e.message : e);
+  }
+}
+
 // ── IPC ──
 ipcMain.handle("get-version", () => app.getVersion());
 ipcMain.handle("get-status", () => statusPayload());
@@ -592,6 +617,8 @@ app.whenReady().then(() => {
   startChild(CHILDREN.biliup);
   startChild(CHILDREN.material);
   setupAutoUpdater();
+  // 数据包静默增量更新（后台 fire-and-forget，失败静默回退内置，不阻塞启动）
+  refreshDataPack().catch(() => {});
   // 子进程启动需要一点时间，稍后推一次状态
   setTimeout(pushStatus, 1500);
   // #5 A：启动健康看门狗（biliup 中途崩溃会自动拉起，网盘/金山同样受益且不受影响）

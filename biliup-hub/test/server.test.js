@@ -24,14 +24,6 @@ app.locals.seasonSectionFetch = async () => ({
   json: async () => ({ code: 0, data: { sections: [] } }),
 });
 
-// 默认注入一个不发起真实网络的「标签推荐」fetch stub，避免 /api/tags/suggest 测试触发真实请求。
-// （上游为 B站投稿官方推荐接口 member.bilibili.com/x/vupre/web/tag/recommend。）
-// 具体用例可在各自 test 内覆盖 app.locals.tagSuggestFetch。
-app.locals.tagSuggestFetch = async () => ({
-  ok: true,
-  json: async () => ({ code: 0, data: { tag: [] } }),
-});
-
 function startServer() {
   return new Promise((resolve) => {
     const srv = app.listen(0, '127.0.0.1', () => resolve(srv));
@@ -276,191 +268,10 @@ test('GET /api/seasons no_section=1 但 sections.sections 含默认正片分集�
   }
 });
 
-// ───────────────────────── /api/tags/suggest（需求②） ─────────────────────────
-test('GET /api/tags/suggest 兼容旧结构：解析 data.tag[].tag_name，取前 N=5 个', async () => {
+// ───────────────────────── /api/tags/suggest（需求②修订） ─────────────────────────
+// 不再调 B站官方 tag/recommend：推荐 = 标题提取游戏名 + 本地类型规则，前端合并固定默认标签。
+test('GET /api/tags/suggest 正当防卫4：返回 游戏名 + 类型标签（动作/开放世界），无无关标签', async () => {
   writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => ({
-    ok: true,
-    json: async () => ({
-      code: 0,
-      data: {
-        tag: [
-          { tag_name: '单机游戏' }, { tag_name: 'RPG' }, { tag_name: '开放世界' },
-          { tag_name: '游戏实况' }, { tag_name: '攻略' }, { tag_name: '多余标签' },
-        ],
-      },
-    }),
-  });
-  const srv = await startServer();
-  try {
-    const { status, body } = await getJSON(srv, '/api/tags/suggest?keyword=' + encodeURIComponent('辐射4'));
-    assert.equal(status, 200);
-    assert.deepEqual(body, { tags: ['单机游戏', 'RPG', '开放世界', '游戏实况', '攻略'] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 兼容 data.tags[].tag_name', async () => {
-  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => ({
-    ok: true,
-    json: async () => ({ code: 0, data: { tags: [{ tag_name: '烹饪' }, { tag_name: '美食' }] } }),
-  });
-  const srv = await startServer();
-  try {
-    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
-    assert.deepEqual(body, { tags: ['烹饪', '美食'] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 兼容 data 直接为数组 data[].tag_name', async () => {
-  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => ({
-    ok: true,
-    json: async () => ({ code: 0, data: [{ tag_name: 'A' }, { tag_name: 'B' }] }),
-  });
-  const srv = await startServer();
-  try {
-    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
-    assert.deepEqual(body, { tags: ['A', 'B'] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 深层嵌套也能提取（data.x.list[].tag_name）', async () => {
-  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => ({
-    ok: true,
-    json: async () => ({ code: 0, data: { result: { list: [{ tag_name: '嵌套A' }, { tag_name: '嵌套B' }] } } }),
-  });
-  const srv = await startServer();
-  try {
-    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
-    assert.deepEqual(body, { tags: ['嵌套A', '嵌套B'] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 过滤黑名单/无意义标签（广告/bilibili 等）', async () => {
-  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => ({
-    ok: true,
-    json: async () => ({
-      code: 0,
-      data: { tag: [{ tag_name: '广告' }, { tag_name: 'bilibili' }, { tag_name: '实况' }, { tag_name: '攻略' }] },
-    }),
-  });
-  const srv = await startServer();
-  try {
-    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
-    assert.deepEqual(body, { tags: ['实况', '攻略'] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 过滤敏感词（学习版/破解版 子串，与前端 genTags 一致）', async () => {
-  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => ({
-    ok: true,
-    json: async () => ({
-      code: 0,
-      data: { tag: [{ tag_name: '正当防卫4' }, { tag_name: '免费学习版下载' }, { tag_name: '全DLC' }, { tag_name: '破解版' }] },
-    }),
-  });
-  const srv = await startServer();
-  try {
-    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
-    assert.deepEqual(body, { tags: ['正当防卫4', '全DLC'] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest fetch 抛异常：降级 {tags:[]}（不抛 500）', async () => {
-  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => { throw new Error('network down'); };
-  const srv = await startServer();
-  try {
-    const { status, body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
-    assert.equal(status, 200);
-    assert.deepEqual(body, { tags: [] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 上游非 200：降级 {tags:[]}（不抛 500）', async () => {
-  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => ({ ok: false, status: 502, json: async () => ({}) });
-  const srv = await startServer();
-  try {
-    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
-    assert.deepEqual(body, { tags: [] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 上游 JSON 解析失败：降级 {tags:[]}（不抛 500）', async () => {
-  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
-  app.locals.tagSuggestFetch = async () => ({ ok: true, json: async () => { throw new Error('bad json'); } });
-  const srv = await startServer();
-  try {
-    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=x');
-    assert.deepEqual(body, { tags: [] });
-  } finally {
-    app.locals.tagSuggestFetch = undefined;
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 缺 keyword：返回 {tags:[]}', async () => {
-  const srv = await startServer();
-  try {
-    const { status, body } = await getJSON(srv, '/api/tags/suggest');
-    assert.equal(status, 200);
-    assert.deepEqual(body, { tags: [] });
-  } finally {
-    srv.close();
-  }
-});
-
-test('GET /api/tags/suggest 官方推荐接口：URL 参数 + Cookie 头 + data.tags[].tag 解析', async () => {
-  writeCookies({ SESSDATA: 'sess', bili_jct: 'jct' });
-  let captured = null;
-  app.locals.tagSuggestFetch = async (url, opts) => {
-    captured = { url, headers: opts && opts.headers };
-    return {
-      ok: true,
-      json: async () => ({
-        code: 0,
-        message: '0',
-        ttl: 1,
-        data: {
-          tags: [
-            { tag: '正当防卫4', checked: true },
-            { tag: '单机游戏', checked: true },
-            { tag: '开放世界', checked: false },
-            { tag: '广告', checked: false },
-          ],
-        },
-      }),
-    };
-  };
   const srv = await startServer();
   try {
     const { status, body } = await getJSON(
@@ -468,49 +279,100 @@ test('GET /api/tags/suggest 官方推荐接口：URL 参数 + Cookie 头 + data.
       '/api/tags/suggest?keyword=' + encodeURIComponent('【游戏268】正当防卫4 官方中文+全DLC+免安装硬盘版 免费学习版下载.mp4'),
     );
     assert.equal(status, 200);
-    assert.deepEqual(body, { tags: ['正当防卫4', '单机游戏', '开放世界'] }); // 广告 被黑名单过滤
-    assert.ok(captured, '应调用上游官方推荐接口');
-    const u = new URL(captured.url);
-    assert.equal(u.pathname, '/x/vupre/web/tag/recommend');
-    assert.equal(u.searchParams.get('title'), '正当防卫4'); // 脏关键词已清洗为游戏名
-    assert.equal(u.searchParams.get('typeid'), '17'); // 配置 tid（单机游戏）
-    assert.equal(u.searchParams.get('copyright'), '1'); // 配置 copyright
-    assert.match(captured.headers.Cookie, /SESSDATA=sess/);
-    assert.equal(captured.headers.Referer, 'https://member.bilibili.com/');
+    assert.deepEqual(body, { tags: ['正当防卫4', '动作游戏', '开放世界'] });
   } finally {
-    app.locals.tagSuggestFetch = undefined;
     srv.close();
   }
 });
 
-test('GET /api/tags/suggest 未登录：降级 {tags:[]} 且不发起上游请求', async () => {
-  try { fs.unlinkSync(path.join(TMP, 'cookies.json')); } catch (e) { /* 已不存在 */ }
-  let called = false;
-  app.locals.tagSuggestFetch = async () => { called = true; return { ok: true, json: async () => ({}) }; };
+test('GET /api/tags/suggest EA SPORTS FC 26：返回 游戏名 + 体育/足球类型', async () => {
+  writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
   const srv = await startServer();
   try {
-    const { status, body } = await getJSON(srv, '/api/tags/suggest?keyword=' + encodeURIComponent('正当防卫4'));
-    assert.equal(status, 200);
-    assert.deepEqual(body, { tags: [] });
-    assert.equal(called, false, '未登录不应发起上游请求');
+    const { body } = await getJSON(
+      srv,
+      '/api/tags/suggest?keyword=' + encodeURIComponent('【游戏269】EA SPORTS FC 26 官方中文+全DLC+免安装硬盘版 免费学习版下载'),
+    );
+    assert.deepEqual(body, { tags: ['EA SPORTS FC 26', '体育游戏', '足球游戏'] });
   } finally {
-    app.locals.tagSuggestFetch = undefined;
     srv.close();
-    writeCookies({ SESSDATA: 'x', bili_jct: 'y' }); // 恢复登录态，避免影响后续用例
   }
 });
 
-test('cleanSuggestKeyword：脏文件名清洗为游戏名', () => {
+test('GET /api/tags/suggest 规则表外游戏：只有游戏名（不混入无关标签）', async () => {
+  const srv = await startServer();
+  try {
+    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=' + encodeURIComponent('【游戏999】某冷门独立游戏 官方中文版'));
+    assert.deepEqual(body, { tags: ['某冷门独立游戏'] });
+  } finally {
+    srv.close();
+  }
+});
+
+test('GET /api/tags/suggest 缺 keyword / 无有效游戏名：返回 {tags:[]}', async () => {
+  const srv = await startServer();
+  try {
+    const { status, body } = await getJSON(srv, '/api/tags/suggest');
+    assert.equal(status, 200);
+    assert.deepEqual(body, { tags: [] });
+    const body2 = await getJSON(srv, '/api/tags/suggest?keyword=' + encodeURIComponent('第3期'));
+    assert.deepEqual(body2.body, { tags: [] });
+  } finally {
+    srv.close();
+  }
+});
+
+test('GET /api/tags/suggest 未登录也能推荐（本地提取，无网络依赖）', async () => {
+  writeCookies({});
+  const srv = await startServer();
+  try {
+    const { body } = await getJSON(srv, '/api/tags/suggest?keyword=' + encodeURIComponent('正当防卫4 官方中文版'));
+    assert.deepEqual(body, { tags: ['正当防卫4', '动作游戏', '开放世界'] });
+  } finally {
+    srv.close();
+    writeCookies({ SESSDATA: 'x', bili_jct: 'y' });
+  }
+});
+
+// ── extractGameName：从标题/文件名提取游戏名 ──
+test('extractGameName：脏文件名清洗为游戏名（正当防卫4）', () => {
   assert.equal(
-    app.cleanSuggestKeyword('【游戏268】正当防卫4 官方中文+全DLC+免安装硬盘版 免费学习版下载.mp4'),
+    app.extractGameName('【游戏268】正当防卫4 官方中文+全DLC+免安装硬盘版 免费学习版下载.mp4'),
     '正当防卫4',
   );
 });
 
-test('cleanSuggestKeyword：中英混合/序号/空输入', () => {
-  assert.equal(app.cleanSuggestKeyword('辐射4 实况 - 第1期.mp4'), '辐射4 实况');
-  assert.equal(app.cleanSuggestKeyword('Elden Ring Official Launch Trailer'), 'Elden Ring Official Launch'); // 前 4 词
-  assert.equal(app.cleanSuggestKeyword('   '), '');
-  assert.equal(app.cleanSuggestKeyword(''), '');
-  assert.equal(app.cleanSuggestKeyword(undefined), '');
+test('extractGameName：保留英文名数字与中文冒号（EA SPORTS FC 26 / 光环：战役进化）', () => {
+  assert.equal(app.extractGameName('【游戏269】EA SPORTS FC 26 官方中文+全DLC+免安装硬盘版 免费学习版下载'), 'EA SPORTS FC 26');
+  assert.equal(app.extractGameName('【游戏264】光环：战役进化 官方中文+高级版+免安装硬盘版 免费学习版下载'), '光环：战役进化');
+});
+
+test('extractGameName：剥尾部第N期/纯数字/空输入', () => {
+  assert.equal(app.extractGameName('辐射4 实况 - 第1期.mp4'), '辐射4 实况');
+  assert.equal(app.extractGameName('2024'), '');
+  assert.equal(app.extractGameName('   '), '');
+  assert.equal(app.extractGameName(''), '');
+  assert.equal(app.extractGameName(undefined), '');
+});
+
+// ── matchGenreTags：本地类型规则 ──
+test('matchGenreTags：正当防卫4 → 动作/开放世界（不含足球类）', () => {
+  assert.deepEqual(app.matchGenreTags('正当防卫4'), ['动作游戏', '开放世界']);
+});
+
+test('matchGenreTags：EA SPORTS FC 26 → 体育/足球；光环 → 射击', () => {
+  assert.deepEqual(app.matchGenreTags('EA SPORTS FC 26'), ['体育游戏', '足球游戏']);
+  assert.deepEqual(app.matchGenreTags('光环：战役进化'), ['射击游戏']);
+});
+
+test('matchGenreTags：多规则命中跨规则去重（森林之子 → 生存+恐怖）', () => {
+  const tags = app.matchGenreTags('森林之子');
+  assert.ok(tags.includes('生存游戏'), '应含生存游戏: ' + JSON.stringify(tags));
+  assert.ok(tags.includes('恐怖游戏'), '应含恐怖游戏: ' + JSON.stringify(tags));
+});
+
+test('matchGenreTags：规则表外返回空数组；空输入安全', () => {
+  assert.deepEqual(app.matchGenreTags('某冷门独立游戏'), []);
+  assert.deepEqual(app.matchGenreTags(''), []);
+  assert.deepEqual(app.matchGenreTags(undefined), []);
 });

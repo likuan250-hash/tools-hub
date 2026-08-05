@@ -29,11 +29,6 @@ function getSeasonSectionFetch() {
   try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
 }
 
-// 标签推荐代理用的 fetch（需求②：调 B站投稿官方推荐接口）；便于单测注入 app.locals.tagSuggestFetch。
-function getTagSuggestFetch() {
-  try { return require('undici').fetch; } catch { return (globalThis.fetch || global.fetch); }
-}
-
 // 合集分集补拉：部分账号的 seasons 列表接口不返回 sections（分集下拉空），
 // 需单独调 season/section 详情接口补齐（需求①：保证「选合集即生效」在分集缺失时也能补齐）。
 // 上游返回结构不稳定，做多层兼容：data.sections / data.meta.sections。
@@ -67,94 +62,83 @@ async function fetchSeasonSections(seasonId, cf, fetchFnOverride) {
     }));
 }
 
-// ── 标签推荐（需求②）：从 B站投稿官方推荐接口响应中提取标签名，做多层结构容错 ──
-// 兼容 data.tags[].tag（官方 tag/recommend）/ data.tag[].tag_name / data[].tag_name
-// （数组在 data 内任意层级）。
-const TAG_SUGGEST_BLACKLIST = new Set([
-  '广告', '推广', '官方', 'bilibili', 'b站', 'b站官方', '番剧', '直播', 'av', 'av号',
-  // 游戏分享场景敏感/版本描述词（防 suggest 接口推荐回来时漏网，与前端 genTags 保持一致）
-  '学习版', '免费学习版', '免费学习版下载', '学习版下载', '破解版', '官方中文',
-  '硬盘版', '免安装', '免安装硬盘版', '中文版', '官方中文版', '完整版', '绿色版',
-  '安装版', '便携版',
-]);
-// 绝对敏感词：tag 只要包含即整体丢弃（与前端 genTags 的 ABS_SENSITIVE 保持一致）。
-const TAG_SUGGEST_SENSITIVE = ['学习版', '破解版', '盗版'];
-const TAG_SUGGEST_MAX = 5;
+// ── 标签推荐（需求② 修订）：游戏名 + 本地类型规则，不依赖 B站官方 tag/recommend 接口 ──
+// 实测（2026-08-05）：官方 tag/recommend 对非热门游戏（如「正当防卫4」）只返回通用标签
+// （演示/教程攻略/下载教程/足球游戏/游戏试玩…）——游戏名永远不会出现，且混入无关标签；
+// 对热门游戏（赛博朋克2077/光环）偶尔能命中但不可靠；B站搜索接口需 wbi 签名、视频标签接口已下线。
+// 故推荐改为：标题提取游戏名（必有）+ 本地规则表命中「游戏类型」标签，由前端与固定默认标签合并。
+// 版本/描述词 = 游戏分享场景非内容关键词（与前端 genTags STOP_WORDS 同源口径）。
+const GAME_NAME_STRIP_WORDS = [
+  // 长度降序：先剥长短语避免残词（如先剥「免费学习版下载」再剥「学习版」）。
+  '免费学习版下载', '官方中文版', '免安装硬盘版', '学习版下载', '官方中文',
+  '免安装', '免费学习版', '学习版', '破解版', '硬盘版', '中文版', '完整版',
+  '绿色版', '安装版', '便携版', '全DLC', '高级版', '豪华版', '年度版',
+  '终极版', '黄金版', '下载', '免费',
+];
+const GAME_NAME_SENSITIVE = ['学习版', '破解版', '盗版'];
 
-// 递归收集所有 tag_name（任意嵌套层级），去重保留首次出现顺序。
-function collectTagNames(node, out, depth) {
-  if (out.length >= 100) return; // 安全阀：响应体很小，避免极端结构无限膨胀
-  if (!node || typeof node !== 'object') return;
-  if (Array.isArray(node)) {
-    for (const item of node) collectTagNames(item, out, depth + 1);
-    return;
-  }
-  if (typeof node.tag_name === 'string' && node.tag_name.trim()) {
-    out.push(node.tag_name.trim());
-  }
-  if (typeof node.tag === 'string' && node.tag.trim()) {
-    out.push(node.tag.trim());
-  }
-  for (const key of Object.keys(node)) {
-    const val = node[key];
-    if (val && typeof val === 'object') collectTagNames(val, out, depth + 1);
-  }
-}
+// 游戏名关键词 → 类型标签（需求②修订）：按标题/游戏名子串匹配，可多规则命中、跨规则去重。
+// 新游戏补类型 = 在数组加一行（match 命中关键词，tags 为要补的类型标签），命中规则表外游戏
+// 只有游戏名 + 固定默认标签（不混入无关标签）。
+const GAME_GENRE_RULES = [
+  // 体育
+  { match: ['足球', 'fifa', '实况', 'pes', 'ea sports fc'], tags: ['体育游戏', '足球游戏'] },
+  { match: ['nba', '篮球'], tags: ['体育游戏', '篮球游戏'] },
+  // 竞速
+  { match: ['赛车', '极限竞速', 'forza', '极品飞车', 'nfs', 'gt赛车'], tags: ['竞速游戏', '赛车游戏'] },
+  // 射击
+  { match: ['使命召唤', '战地', '荣誉勋章', '狙击', '光环', 'halo', '毁灭战士', 'doom', '无主之地', '守望先锋', '反恐精英', 'apex', '泰坦陨落'], tags: ['射击游戏'] },
+  // 动作 / 开放世界
+  { match: ['正当防卫', 'gta', '侠盗猎车', '黑道圣徒', '看门狗', '荒野大镖客', '刺客信条', '赛博朋克', 'cyberpunk'], tags: ['动作游戏', '开放世界'] },
+  { match: ['战神', '鬼泣', '猎天使', '只狼', '仁王', '黑神话', '双人成行', '双影奇境', '古墓丽影', '地狱之刃'], tags: ['动作游戏'] },
+  { match: ['双人成行', '双影奇境', '分手厨房'], tags: ['合作游戏'] },
+  // 角色扮演
+  { match: ['巫师', '上古卷轴', '博德之门', '辐射', 'fallout', '艾尔登法环', 'elden ring', '质量效应', '最终幻想', '勇者斗恶龙', '宝可梦', '暗黑破坏神', '神界', '龙腾世纪'], tags: ['角色扮演', 'RPG'] },
+  // 策略
+  { match: ['文明', '帝国时代', '全面战争', '全战', '群星', '星际争霸', '英雄无敌', 'xcom'], tags: ['策略游戏'] },
+  // 生存 / 恐怖
+  { match: ['森林之子', '森林', '我的世界', 'rust', '方舟', 'raft', '英灵神殿', '饥荒'], tags: ['生存游戏'] },
+  { match: ['生化危机', '寂静岭', '逃生', '死亡空间', 'outlast', '森林之子'], tags: ['恐怖游戏'] },
+  // 解谜
+  { match: ['传送门', '见证者', '纪念碑谷', '锈湖'], tags: ['解谜游戏'] },
+];
 
-// 过滤无意义/广告标签 + 去重 + 限长，返回干净的字符串数组（前 N 个）。
-function filterSuggestedTags(names) {
+// 按标题/游戏名匹配类型规则，返回去重后的类型标签（最多 6 个）。
+function matchGenreTags(raw) {
+  const key = String(raw == null ? '' : raw).toLowerCase();
   const seen = new Set();
   const out = [];
-  for (const raw of names) {
-    const t = String(raw).trim();
-    if (!t) continue;
-    if (t.length > 20) continue; // 过长视为异常/无意义
-    const key = t.toLowerCase();
-    if (TAG_SUGGEST_BLACKLIST.has(t) || TAG_SUGGEST_BLACKLIST.has(key)) continue;
-    if (TAG_SUGGEST_SENSITIVE.some((s) => key.includes(s))) continue; // 敏感词子串过滤
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-    if (out.length >= TAG_SUGGEST_MAX) break;
+  for (const rule of GAME_GENRE_RULES) {
+    if (!rule.match.some((m) => key.includes(m))) continue;
+    for (const t of rule.tags) {
+      const k = t.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(t);
+      if (out.length >= 6) break;
+    }
   }
   return out;
 }
 
-// ── 标签推荐关键词清洗（需求②/C 配套）──
-// 把原始文件名/标题规整成适合官方 tag/recommend 的干净关键词：
-// 剥【游戏NNN】序号前缀、去扩展名、去版本描述词/敏感词/序号词，保留内容词（最多前 4 个，空格连接）。
-// 与前端 genTags 的停用词/敏感词保持同源口径（版本描述词 = 游戏分享场景非内容关键词）。
-const SUGGEST_KEYWORD_STOP = new Set([
-  // 版本描述词（与前端 genTags STOP_WORDS 同步）
-  '官方中文', '官方中文版', '免安装', '免安装硬盘版', '硬盘版', '学习版', '免费学习版',
-  '免费学习版下载', '学习版下载', '破解版', '中文版', '完整版', '绿色版', '安装版', '便携版',
-  // 泛化/格式词
-  '下载', '免费', '游戏', '视频', '投稿', '高清', '完整', '版', 'hd', '1080p', '720p',
-  'bilibili', 'b站', 'the', 'a', 'an', 'of', 'to', 'and', 'or', 'on', 'in', 'at', 'by',
-  'with', 'for', 'game', 'play', 'part', 'ep', 'episode', '全dlc', 'dlc', 'gameplay', '官方',
-]);
-const SUGGEST_KEYWORD_SENSITIVE = ['学习版', '破解版', '盗版'];
-
-function cleanSuggestKeyword(raw) {
-  const text = String(raw == null ? '' : raw).trim();
-  if (!text) return '';
-  const cleaned = text
+// 从标题/文件名提取「游戏名」标签：保留原文分隔符与数字（如「EA SPORTS FC 26」「光环：战役进化」）。
+function extractGameName(raw) {
+  const text = String(raw == null ? '' : raw)
     .replace(/\.[a-z0-9]+$/i, '') // 去扩展名
     .replace(/^【[^】]*】/, ''); // 剥【游戏NNN】/【NNN】序号前缀
-  const seps = /[\s\-_·。，、,.\|/\\+【】（）《》：「」；！？…\x22\x27]+/;
-  const out = [];
-  for (const rawTok of cleaned.split(seps)) {
-    const t = (rawTok || '').trim();
-    if (!t || t.length <= 1 || t.length > 20) continue;
-    const key = t.toLowerCase();
-    if (SUGGEST_KEYWORD_STOP.has(key)) continue;
-    if (SUGGEST_KEYWORD_SENSITIVE.some((s) => key.includes(s))) continue;
-    if (/^\d+$/.test(t)) continue; // 纯数字
-    if (/^第\d+[期集话章弹]?$/.test(t)) continue; // 第N期/集/话 序号
-    out.push(t);
-    if (out.length >= 4) break;
+  let s = text;
+  for (const w of GAME_NAME_STRIP_WORDS) {
+    s = s.split(w).join(' ');
   }
-  return out.join(' ');
+  // 折叠连续分隔符为单个空格（保留中文冒号/书名号等名称内分隔）。
+  s = s.replace(/[\s\-_·,，、.|/\\+()（）【】]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  s = s.replace(/\s*第\d+[期集话章弹]?\s*$/g, '').trim(); // 剥尾部「第N期/集」
+  if (!s || s.length < 2) return '';
+  if (/^\d+$/.test(s)) return ''; // 纯数字
+  if (/^第\d+[期集话章弹]?$/.test(s)) return ''; // 序号
+  const key = s.toLowerCase();
+  if (GAME_NAME_SENSITIVE.some((x) => key.includes(x))) return '';
+  return s;
 }
 
 const app = express();
@@ -354,43 +338,17 @@ app.get('/api/avatar', async (req, res) => {
 // + copyright（原创/转载，取配置）。旧接口 api.bilibili.com/x/tag/suggest 已下线（404），
 // 此接口为投稿中心现行方案。未登录/失败/离线一律降级 {tags:[]}，不抛 500、不阻断前端；
 // 前端拿到空数组时走 genTags fallback。
+// 需求②修订：不再调 B站官方 tag/recommend（实测对非热门游戏只回泛标签、不含游戏名），
+// 推荐 = 标题提取的游戏名 + 本地规则表命中的类型标签；前端合并固定默认标签（无需登录、离线可用）。
 app.get('/api/tags/suggest', async (req, res) => {
   const kw = (req.query && req.query.keyword) || '';
   if (typeof kw !== 'string' || !kw.trim()) {
     return res.json({ tags: [] });
   }
-  try {
-    const config = store.getConfig();
-    let cf = null;
-    try { cf = cookies.load(config.cookiesPath); } catch (e) { /* 未登录/文件缺失，走降级 */ }
-    if (!cf || !cookies.validate(cf)) {
-      return res.json({ tags: [] }); // 未登录没有官方推荐，前端走 genTags fallback
-    }
-    const fetchFn = (app.locals && app.locals.tagSuggestFetch) || getTagSuggestFetch();
-    const title = cleanSuggestKeyword(kw) || kw.trim();
-    const url = 'https://member.bilibili.com/x/vupre/web/tag/recommend?title='
-      + encodeURIComponent(title)
-      + '&typeid=' + encodeURIComponent(String(config.tid || 17))
-      + '&copyright=' + encodeURIComponent(String(config.copyright || 1));
-    const upstream = await fetchFn(url, {
-      headers: {
-        'Cookie': cookies.toHeader(cf),
-        'Referer': 'https://member.bilibili.com/',
-        'User-Agent': USER_AGENT,
-      },
-    });
-    if (!upstream.ok) {
-      return res.json({ tags: [] });
-    }
-    const json = await upstream.json().catch(() => null);
-    const names = [];
-    collectTagNames(json, names, 0);
-    const tags = filterSuggestedTags(names);
-    res.json({ tags });
-  } catch (e) {
-    logger.warn('[tags/suggest] 标签推荐失败（降级空数组）: ' + e.message);
-    res.json({ tags: [] });
-  }
+  const name = extractGameName(kw);
+  if (!name) return res.json({ tags: [] });
+  const genres = matchGenreTags(kw + ' ' + name);
+  res.json({ tags: [name].concat(genres) });
 });
 
 // ── 扫码登录：生成二维码（#7）──
@@ -543,5 +501,6 @@ process.on('uncaughtException', (e) => logger.error('未捕获异常:', e));
 process.on('unhandledRejection', (r) => logger.error('未处理的 Promise 拒绝:', r));
 
 // 便于单测 require（实际启动走上面的 startServer）
-app.cleanSuggestKeyword = cleanSuggestKeyword; // 导出纯函数供单测直接验证
+app.extractGameName = extractGameName; // 导出纯函数供单测直接验证
+app.matchGenreTags = matchGenreTags; // 导出纯函数供单测直接验证
 module.exports = app;

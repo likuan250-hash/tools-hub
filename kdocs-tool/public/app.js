@@ -307,8 +307,10 @@ function closeModal() {
 }
 
 // ── P08：轻量任务历史（localStorage，跨会话持久，无新依赖）──
+// 副标题/片段提取工具独立于 public/history-meta.js（UMD：浏览器挂 window.HistoryMeta，Node require 拿导出）
 const HISTORY_KEY_KDOCS = "toolshub:history:kdocs";
 const HISTORY_MAX = 50;
+const { extractVersion, countDiskLinks, buildHistorySubtitle } = (typeof window !== "undefined" && window.HistoryMeta) ? window.HistoryMeta : {};
 function loadHistory(key) {
   try { return JSON.parse(localStorage.getItem(key) || "[]") || []; } catch { return []; }
 }
@@ -318,6 +320,13 @@ function pushHistory(key, entry) {
   if (list.length > HISTORY_MAX) list.length = HISTORY_MAX;
   try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* 隐私模式可能抛错，忽略 */ }
   return list;
+}
+
+// 写入历史（兼容旧记录：旧 {ok,title,status,ts} 缺新字段时渲染自动回退默认值）
+function writeKdocsHistory(ok, title, status, extra) {
+  const entry = { ok: !!ok, title: String(title || "（未命名）"), status: String(status || (ok ? "成功" : "失败")), ts: Date.now() };
+  if (extra && typeof extra === "object") Object.assign(entry, extra);
+  pushHistory(HISTORY_KEY_KDOCS, entry);
 }
 function writeKdocsHistory(ok, title, status) {
   pushHistory(HISTORY_KEY_KDOCS, { ts: Date.now(), ok: !!ok, title: title || "（未命名）", status: status || "" });
@@ -451,16 +460,21 @@ async function runAuto(text, opts = {}) {
           // 有记录即可查看（创建/更新/跳过/封面缺失均视为有记录可查；整体失败时若已建记录也允许查看）
           kdocsViewBtn.style.display = d.recordId ? "block" : "none";
 
-          // P08：写一条录入历史（成功/失败 + 稿件标题 + 时间 + 简要状态）
+          // P08：写一条录入历史（成功/失败 + 稿件标题 + 时间 + 细分状态 + 副标题/原始片段）
           {
             const p = parseInput(text);
             const title = d.gameName || (p && p.gameName) || (currentParsed && currentParsed.gameName) || "（未命名）";
-            let ok = true, status = "成功";
-            if (!d.success) { ok = false; status = "部分步骤失败"; }
-            else if (d.coverStatus === "failed") { ok = true; status = "完成(封面缺失)"; }
-            else if (d.action === "skipped") { ok = true; status = "已跳过"; }
-            else if (d.action === "updated") { ok = true; status = "已更新链接"; }
-            writeKdocsHistory(ok, title, status);
+            let ok = true, status = "成功", state = "success";
+            if (!d.success) { ok = false; status = "部分步骤失败"; state = "partial"; }
+            else if (d.coverStatus === "failed") { ok = true; status = "封面缺失"; state = "coverMissing"; }
+            else if (d.action === "skipped") { ok = true; status = "已跳过"; state = "skipped"; }
+            else if (d.action === "updated") { ok = true; status = "已更新"; state = "updated"; }
+            else if (d.action === "created") { ok = true; status = "创建"; state = "created"; }
+            writeKdocsHistory(ok, title, status, {
+              state,
+              subtitle: buildHistorySubtitle(text),
+              snippet: String(text || "").slice(0, 80),
+            });
           }
         }
       }
@@ -468,7 +482,11 @@ async function runAuto(text, opts = {}) {
   } catch (e) {
     const p = parseInput(text);
     const title = (p && p.gameName) || (currentParsed && currentParsed.gameName) || "（未命名）";
-    writeKdocsHistory(false, title, "请求异常");
+    writeKdocsHistory(false, title, "请求异常", {
+      state: "exception",
+      subtitle: buildHistorySubtitle(text),
+      snippet: String(text || "").slice(0, 80),
+    });
     addLog("err", "请求失败: " + e.message);
     autoSummary.className = "result-summary fail";
     autoSummary.textContent = "执行异常";
@@ -519,12 +537,17 @@ function renderKdocsHistory() {
   if (!list.length) { historyList.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('inbox') + '</span>还没有录入记录</div>'; return; }
   historyList.innerHTML = list.map((h) => {
     const time = new Date(h.ts).toLocaleString("zh-CN");
-    const badge = h.ok ? "成功" : "失败";
+    const state = h.state || (h.ok ? "success" : "err");
+    const badge = h.status || (h.ok ? "成功" : "失败");
+    const subtitleHtml = h.subtitle ? `<div class="history-subtitle">${esc(h.subtitle)}</div>` : "";
+    const snippetHtml = h.snippet ? `<div class="history-snippet">${esc(h.snippet)}${h.snippet.length >= 80 ? "…" : ""}</div>` : "";
     return `<div class="history-item">
       <span class="history-dot ${h.ok ? "ok" : "err"}"></span>
       <div class="history-main">
         <div class="history-title">${esc(h.title)}</div>
-        <div class="history-meta">${esc(badge + (h.status ? " · " + h.status : ""))} · ${esc(time)}</div>
+        ${subtitleHtml}
+        <div class="history-meta"><span class="history-badge ${esc(state)}">${esc(badge)}</span> · ${esc(time)}</div>
+        ${snippetHtml}
       </div>
     </div>`;
   }).join("");

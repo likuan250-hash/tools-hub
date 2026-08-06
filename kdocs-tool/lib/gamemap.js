@@ -30,13 +30,23 @@ function normZh(s) {
  */
 function lookupEnglishNameOffline(gameName) {
   if (!gameName || !String(gameName).trim()) return '';
-  const n = normZh(gameName);
-  if (!n) return '';
+  const raw = String(gameName).trim();
   // 1) 手工精选兜底（data-pack：内置 + 可增量更新，最高优先，覆盖率虽小但零误判）
   const pack = getActiveDataPack();
-  if (pack.gameNames[n]) return pack.gameNames[n];
-  // 2) 大库精确
-  if (BIG[n]) return BIG[n];
+  // 候选构造在 normZh 之前（normZh 会把括号符号抹掉，导致无法再删括号段）
+  const stripBrackets = (s) => String(s).replace(/[（(][^)）]*[)）]/g, " ").replace(/\s+/g, " ").trim();
+  const stripEdition = (s) => String(s).replace(
+    /豪华版|豪华|年度版|黄金版|白金版|终极版|决定版|完整版|完全版|典藏版|收藏版|珍藏版|官方中文|全DLC|全dcl|免安装|硬盘版|学习版|免费|绿色版|高级版|破解版|复刻版|重制版|数字版|非虚拟机|中文版|Deluxe Edition|Complete Edition|Game of the Year|GOTY|Ultimate Edition|Definitive Edition|Collector'?s Edition|Remastered|Remake|Edition|v\d+(\.\d+)*/gi, " "
+  ).replace(/\s+/g, " ").trim();
+  const candidates = [raw, stripBrackets(raw), stripEdition(raw), stripBrackets(stripEdition(raw)), stripEdition(stripBrackets(raw))];
+  const seen = new Set();
+  for (const c of candidates) {
+    const nn = normZh(c);
+    if (!nn || seen.has(nn)) continue;
+    seen.add(nn);
+    if (pack.gameNames[nn]) return pack.gameNames[nn];
+    if (BIG[nn]) return BIG[nn];
+  }
   return '';
 }
 

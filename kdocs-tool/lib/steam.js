@@ -19,8 +19,15 @@ async function searchSteamAppId(gameName, fetchImpl) {
   const getJson = fetchImpl || fetchJsonProxy;
   if (!gameName) return null;
   // 离线优先：常见游戏直接命中 AppID，零网络依赖（storesearch 在受限网络下连不上，fork 子进程不继承代理变量）
-  const offline = lookupAppIdOffline(gameName);
-  if (offline) return offline;
+  // 带版本词（Deluxe/Game of the Year/Remastered…）时离线库只有基础名，需同时试剥词后的变体，
+  // 避免「Split Fiction Deluxe Edition」离线不中而白白走在线。
+  const offlineVariants = [gameName];
+  const strippedName = String(gameName).replace(EDITION_RE_G, "").replace(/\s+/g, " ").trim();
+  if (strippedName && strippedName !== String(gameName).trim()) offlineVariants.push(strippedName);
+  for (const v of offlineVariants) {
+    const offline = lookupAppIdOffline(v);
+    if (offline) return offline;
+  }
   const norm = (s) => String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, "");
   const variants = [];
   const push = (t) => { const v = String(t == null ? "" : t).trim(); if (v && !variants.includes(v)) variants.push(v); };
@@ -28,7 +35,7 @@ async function searchSteamAppId(gameName, fetchImpl) {
   // 剥中文噪声标签 + 版本号 → 核心名（如「巫师3：狂猎 年度版 v1.6 官方中文」→「巫师3：狂猎」）
   push(cleanGameName(String(gameName).trim()));
   // 剥英文版本词（Game of the Year / Remastered / Definitive ...）得到基础英文名，提升精确匹配率
-  push(String(gameName).replace(EDITION_WORDS, "").replace(/\s+/g, " ").trim());
+  push(String(gameName).replace(EDITION_RE_G, "").replace(/\s+/g, " ").trim());
   for (const term of variants) {
     const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&l=english&cc=CN`;
     let j = null;
@@ -398,6 +405,8 @@ const EDITION_RULES = [
   { re: /典藏版|收藏版|珍藏版/, suffix: "Collector's Edition" },
 ];
 const EDITION_WORDS = /remaster|remake|definitive|deluxe|gold|platinum|complete|collector|goty|game of the year|ultimate|edition/i;
+/** 全局剥词用（EDITION_WORDS 无 g 标志用于 test()，剥词需 g 才能剥掉叠词）。 */
+const EDITION_RE_G = /remaster|remake|definitive|deluxe|gold|platinum|complete|collector|goty|game of the year|ultimate|edition/gi;
 
 /** 纯函数：从原始输入检测版本后缀（中文 → 英文）。可单测。 */
 function detectEditionSuffix(raw) {

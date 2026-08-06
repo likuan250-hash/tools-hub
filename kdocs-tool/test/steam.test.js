@@ -466,8 +466,8 @@ test("searchSteamAppId 版本词降级：GOTY 全名无条目时降级到基础�
     return { items: [{ id: 292030, name: "The Witcher 3: Wild Hunt" }] };
   };
   const id = await searchSteamAppId("The Witcher 3: Wild Hunt Game of the Year", fakeFetch);
-  assert.strictEqual(id, "292030", "GOTY 全名无条目时应降级到基础名命中");
-  assert.ok(calls.length >= 2, "应对多个候选查询词都发起请求");
+  assert.strictEqual(id, "292030", "GOTY 全名应离线剥词降级到基础名命中");
+  assert.strictEqual(calls.length, 0, "离线库有基础名时应直接命中，不发任何在线请求");
 });
 
 test("searchSteamAppId 中文名剥噪声标签命中（cleanGameName 核心名）", async () => {

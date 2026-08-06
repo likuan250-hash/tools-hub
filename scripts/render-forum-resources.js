@@ -49,6 +49,7 @@ const SUFFIX_WORDS = [
   "存档",
   "MOD",
   "mod",
+  "整合包",
   "整合",
   "联动",
   "模拟器",
@@ -62,6 +63,17 @@ const SUFFIX_WORDS = [
   "系列",
   "三部曲",
   "中文",
+  "最新",
+  "搬运",
+  "附视频",
+  "视频安装",
+  "安装教程",
+  "安装视频",
+  "美化",
+  "模组",
+  "补丁",
+  "解锁",
+  "联机",
 ];
 const NUM_VERSION = /\bv\d+(?:\.\d+)+\b/gi;
 const BARE_VERSION = /\b\d+(?:\.\d+)+\b/g;
@@ -80,10 +92,52 @@ function gameName(raw) {
   let s = String(raw || "");
   // 取 《》 内核心名（去掉英文括号说明）
   const m = /《([^》]+)》/.exec(s);
+  const b = [...s.matchAll(/【([^】]+)】/g)].map((x) => x[1]);
   if (m) s = m[1];
+  else if (b.length) s = b.join(" "); // 无《》的 MOD 整合帖取【】内（全部段）
   s = s.replace(/[（(]\s*[A-Za-z0-9][^）)]*[）)]/g, " "); // 去英文注释
   s = s.replace(NUM_VERSION, " ");
   s = stripWords(s);
+  // MOD 整合帖残留清理：只删明显的模板噪声，保留游戏名
+  for (const w of [
+    "最新",
+    "整合包",
+    "MOD",
+    "mod",
+    "Mod",
+    "美化",
+    "模组",
+    "视频教程",
+    "安装教程",
+    "安装视频",
+    "视频安装",
+    "附视频",
+    "附安装",
+    "教程",
+    "实用功能",
+    "服装替换",
+    "清凉",
+    "工具盒",
+    "盒子",
+    "显血",
+    "DPS",
+    "视角扩大",
+    "人物",
+    "武器",
+    "Npc",
+    "NPC",
+    "功能",
+    "优化",
+    "捏脸",
+    "转性",
+    "附",
+    "包",
+    "！",
+    "!",
+  ]) {
+    s = s.split(w).join(" ");
+  }
+  s = s.replace(/\b\d{2,4}\+?/g, " ").replace(/\+\s*\d+/g, " "); // 100+ / 120+ 数量
   return s.replace(/\s+/g, " ").trim();
 }
 

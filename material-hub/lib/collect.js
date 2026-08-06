@@ -206,7 +206,10 @@ class CollectService {
     emit('cover_download', STEP_COVER, '应用所选封面（' + (picked.label || picked.source || 'user') + '）…', null, {
       url: choice.url, source: picked.source || 'user', interactive: true,
     });
-    return this.cover.applyCandidate(choice.url, outDir, { emit, source: picked.source || 'user' });
+    const applied = await this.cover.applyCandidate(choice.url, outDir, { emit, source: picked.source || 'user' });
+    // 用户主动勾选（非超时自动）视为「确认保留」：即便降级也不再被抽帧覆盖
+    applied.userConfirmed = choice.auto !== true;
+    return applied;
   }
 
   /**
@@ -480,12 +483,17 @@ class CollectService {
     // ── 4. 抽帧兜底（主视频抽帧，最终兜底）——Bug B 的决定性修复 ──
     //      触发条件：封面完全没拿到，或只拿到不达标的降级图（YouTube 720p）。
     //      前提：本轮已有可用视频。抽帧产出的就是视频原生分辨率，1080p 视频必得 1920×1080。
-    // 官方来源（Steam 官方图 / YouTube 官方缩略图）即便不达标也保留，不再用视频抽帧覆盖
-    // （用户明确要求「发售宣传图优先于高清/视频帧」）。
-    const OFFICIAL_COVER_SOURCES = ['youtube', 'steam-cdn', 'steam-cdn-hero', 'steam-cdn-lowres'];
-    const needFallback = (!coverRes.ok || (coverRes.degraded === true && OFFICIAL_COVER_SOURCES.indexOf(coverRes.source) < 0)) && !!videoPath;
+    // 官方来源（Steam 官方图 / YouTube 官方缩略图）与用户指定/勾选的封面即便不达标也保留，
+    // 不再用视频抽帧覆盖（用户明确要求「发售宣传图优先于高清/视频帧」且「我指定的必须最优先」）。
+    const PRESERVE_COVER_SOURCES = ['youtube', 'steam-cdn', 'steam-cdn-hero', 'steam-cdn-lowres', 'user'];
+    const needFallback = (!coverRes.ok
+      || (coverRes.degraded === true
+        && PRESERVE_COVER_SOURCES.indexOf(coverRes.source) < 0
+        && coverRes.userConfirmed !== true)) && !!videoPath;
     if (needFallback) {
-      const why = coverRes.ok ? '网络封面仅 720p 降级图' : '规范 10 级封面来源均失败';
+      const why = coverRes.ok
+        ? '网络封面仅 720p 降级图'
+        : (coverRes.source === 'user' ? '用户指定封面下载失败' : '规范 10 级封面来源均失败');
       emit('cover_extract', STEP_COVER, why + '，改用主视频抽帧兜底…', null, {
         reason: coverRes.reason || 'cover-degraded', video: videoPath,
       });

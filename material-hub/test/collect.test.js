@@ -699,7 +699,7 @@ function fakeInteractiveCover(over = {}) {
     async applyCandidate(url, outDir, opts) {
       calls.applyCandidate.push({ url, outDir, opts });
       if (over.applyThrows) throw over.applyThrows;
-      return {
+      return Object.assign({
         ok: true,
         source: (opts && opts.source) || 'user',
         file: COVER_FILE,
@@ -707,7 +707,7 @@ function fakeInteractiveCover(over = {}) {
         width: 1920,
         height: 1080,
         url,
-      };
+      }, over.applyResult || {});
     },
   };
 }
@@ -786,4 +786,55 @@ test('交互式封面：无候选 → 直接失败走抽帧兜底（不发 cover
   assert.equal(probe.calls.extractFrame.length, 1);
   assert.equal(result.coverOk, true);
   assert.equal(result.cover.source, 'ffmpeg-frame');
+});
+
+test('交互式封面：主动勾选降级候选（非官方源）→ 确认保留，不再被抽帧覆盖', async () => {
+  const cover = fakeInteractiveCover({
+    applyResult: { ok: true, degraded: true, width: 640, height: 360, source: 'wallhaven' },
+  });
+  const probe = fakeProbe();
+  const svc = new CollectService({
+    name: fakeName(),
+    cover,
+    trailer: fakeTrailer(),
+    probe,
+    env: fakeEnv(),
+    logger: fakeLogger(),
+    fs: fakeFs([]),
+  });
+  const events = [];
+  const p = svc.run(
+    { name: '正当防卫4', outDir: OUT_DIR, coverInteractive: true },
+    { onEvent: (ev) => events.push(ev) },
+  );
+  const ev = await waitEvent(events, 'cover_candidates');
+  const pickedUrl = ev.detail.candidates[1].url;
+  assert.equal(svc.chooseCover(ev.detail.requestId, pickedUrl), true);
+  const result = await p;
+  assert.equal(result.coverOk, true);
+  assert.equal(result.cover.source, 'wallhaven');
+  assert.equal(result.cover.degraded, true);
+  assert.equal(probe.calls.extractFrame.length, 0, '用户勾选确认后不再抽帧覆盖');
+  assert.equal(ofType(events, 'cover_extract').length, 0);
+});
+
+test('用户指定封面 URL（user 源）降级 → 保留，不触发抽帧覆盖', async () => {
+  const probe = fakeProbe();
+  const cover = fakeCover({
+    result: {
+      ok: true,
+      degraded: true,
+      source: 'user',
+      file: COVER_FILE,
+      path: path.join(FOLDER, COVER_FILE),
+      width: 640,
+      height: 360,
+    },
+  });
+  const { result, events } = await runCollect({ probe, cover }, { coverUrl: 'https://x.example/cover.jpg' });
+  assert.equal(result.coverOk, true);
+  assert.equal(result.cover.source, 'user');
+  assert.equal(result.cover.degraded, true);
+  assert.equal(probe.calls.extractFrame.length, 0, '用户指定封面不触发抽帧');
+  assert.equal(ofType(events, 'cover_extract').length, 0);
 });

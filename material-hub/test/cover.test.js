@@ -329,6 +329,19 @@ test('pickRelevantSteamAppId 只取标题相关项，绝不退回首条', () => 
   assert.equal(pickRelevantSteamAppId(null, normalizeTokens('x')), '');
 });
 
+test('pickRelevantSteamAppId：40,000 前缀数字不误放行初代/周年纪念版', () => {
+  const tokens = normalizeTokens('Warhammer 40,000: Space Marine 2');
+  // 商店结果里周年纪念版排在最前（无续作编号 2），必须跳过取到真正的 Space Marine 2
+  assert.equal(pickRelevantSteamAppId({
+    total: 3,
+    items: [
+      { id: 1361210, name: 'Warhammer 40,000: Space Marine - Anniversary Edition' },
+      { id: 2183900, name: 'Warhammer 40,000: Space Marine 2' },
+      { id: 55150, name: 'Warhammer 40,000: Space Marine' },
+    ],
+  }, tokens), '2183900');
+});
+
 test('resolveSteamAppId 入参优先 → 缓存命中 → storesearch 反查', async () => {
   const storeUrl = 'https://store.steampowered.com/api/storesearch/?term=' + encodeURIComponent('Just Cause 4') + '&l=english&cc=US';
 
@@ -979,6 +992,14 @@ test('isRelevantCandidate 续作编号必须对上（挡住同系列前作错配
   assert.equal(isRelevantCandidate('elden-ring-malenia', elden), true);
   assert.equal(isRelevantCandidate('elden-ring-shadow-of-the-erdtree', elden), true);
   assert.equal(isRelevantCandidate('dark-souls-3', elden), false);
+});
+
+test('isRelevantCandidate 系列共享前缀数字（40,000）不误放行前作', () => {
+  const q = normalizeTokens('Warhammer 40,000: Space Marine 2');
+  assert.equal(isRelevantCandidate('warhammer 40,000 space marine', q), false, '初代无 2，拒绝');
+  assert.equal(isRelevantCandidate('warhammer 40,000 space marine anniversary edition', q), false, '周年纪念版无 2，拒绝');
+  assert.equal(isRelevantCandidate('warhammer 40,000 space marine 2', q), true);
+  assert.equal(isRelevantCandidate('warhammer-40000-space-marine-2-3840x2160', q), true, 'slug 数字连写也能命中续作标记');
 });
 
 test('isRelevantCandidate 中文查询词走整段子串匹配；无实义词一律判不相关', () => {

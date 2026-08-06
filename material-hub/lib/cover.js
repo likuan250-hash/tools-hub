@@ -369,7 +369,13 @@ function isRelevantCandidate(candidate, queryTokens, opts = {}) {
   const need = Math.max(1, Math.ceil(words.length * ratio));
   if (hit < need) return false;
 
-  if (nums.length && !nums.some((n) => candSet.has(n))) return false;
+  if (nums.length) {
+    // 续作编号必须对上：取查询词里「最后一个数字」作为续作标记（如「Space Marine 2」的 2）。
+    // 「Warhammer 40,000: Space Marine 2」里的 40/000 是系列共享前缀数字，
+    // 用 some() 会放行没有「2」的初代/周年纪念版 → 拿错 Steam appid。
+    // 候选里数字连写（如 slug 的 40000）不影响续作标记匹配。
+    if (!candSet.has(nums[nums.length - 1])) return false;
+  }
   return true;
 }
 

@@ -313,7 +313,7 @@ test('【Bug B 核心】网络封面 6 级全失败 + 视频成功 → 抽帧兜
   assert.equal(done.ok, true);
 });
 
-test('【Bug B 核心】YouTube 720p 降级图会被抽帧结果覆盖', async () => {
+test('YouTube 官方 720p 缩略图保留，不再被抽帧覆盖（发售宣传图优先）', async () => {
   const probe = fakeProbe({ frame: { ok: true, seek: '00:00:05' }, size: { ok: true, width: 1920, height: 1080 } });
   const cover = fakeCover({
     result: {
@@ -329,14 +329,14 @@ test('【Bug B 核心】YouTube 720p 降级图会被抽帧结果覆盖', async (
   const { result, events } = await runCollect({ probe, cover });
 
   assert.equal(result.success, true);
-  assert.equal(result.cover.source, 'ffmpeg-frame');
-  assert.equal(result.cover.height, 1080);
-  assert.equal(result.cover.degraded, false);
-  assert.equal(probe.calls.extractFrame.length, 1);
-  assert.ok(ofType(events, 'cover_extract')[0].msg.includes('720p'));
+  assert.equal(result.cover.source, 'youtube');
+  assert.equal(result.cover.height, 720);
+  assert.equal(result.cover.degraded, true);
+  assert.equal(probe.calls.extractFrame.length, 0, '官方图不触发抽帧');
+  assert.equal(ofType(events, 'cover_extract').length, 0);
 });
 
-test('抽帧失败但手上有降级图 → 保留降级图，仍判成功（有总比没有强）', async () => {
+test('YouTube 官方图直接采纳，仍判成功（有总比没有强）', async () => {
   const probe = fakeProbe({ frame: { ok: false, reason: 'extract-failed', error: 'ffmpeg 退出码 1' } });
   const cover = fakeCover({
     result: { ok: true, degraded: true, source: 'youtube', file: COVER_FILE, path: path.join(FOLDER, COVER_FILE), width: 1280, height: 720 },
@@ -347,9 +347,7 @@ test('抽帧失败但手上有降级图 → 保留降级图，仍判成功（有
   assert.equal(result.coverOk, true);
   assert.equal(result.cover.source, 'youtube');
   assert.equal(result.cover.degraded, true);
-  const kept = ofType(events, 'cover_download').find((e) => e.msg.includes('保留降级封面'));
-  assert.ok(kept);
-  assert.equal(kept.detail.degraded, true);
+  assert.equal(probe.calls.extractFrame.length, 0);
 });
 
 test('抽帧产出低于 1280×720 时标记 degraded 但不判失败', async () => {

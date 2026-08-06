@@ -1,16 +1,17 @@
 // lib/cover.js —— 封面获取：严格按《素材搜集规则》「封面来源优先级」实现多级降级。
 //
-// 封面来源优先级链（10 级，见 fetchCover 的 order 数组；第 11 级 ffmpeg 抽帧由 collect.js 编排）：
-//   1  steam-cdn         Steam 官方图 · 达标档（library_hero_2x / page_bg_generated_v6b）   需 steamAppId
-//   2  wallhaven         公开 JSON API（免 key）                                              英文查询词
-//   3  reddit            公开 JSON API（免 key，★带相关性闸门）                                英文查询词
-//   4  user              用户指定 URL（直链）                                                 位置不变
-//   5  4kwallpapers      Bing 图片搜索（cn.bing.com，国内可直连）                             英文查询词
-//   6  alphacoders       Bing 图片搜索                                                       英文查询词
-//   7  game-sites        Bing 图片搜索（6 站 OR 合并，1 次请求）                              英文查询词
-//   8  chinese-sites     Bing 图片搜索（5 站 OR 合并，中文原名）                              ⚠可能带水印
-//   9  steam-cdn-lowres  Steam 官方图 · 降级档（library_hero，仅 1920×620）                  需 steamAppId，degraded=true
-//  10 youtube            缩略图 · 降级档（maxresdefault）                                     需 videoId
+// 封面来源优先级链（11 级，见 fetchCover 的 order 数组；第 12 级 ffmpeg 抽帧由 collect.js 编排）：
+//   1  steam-cdn         Steam 官方宣传主视觉（capsule_616x353 / header）                    需 steamAppId
+//   2  youtube           官方宣传片缩略图（maxresdefault，发行商官方 key art）                需 videoId
+//   3  steam-cdn-hero    Steam 官方宽幅横幅（library_hero_2x / page_bg，非宣传主视觉）       需 steamAppId
+//   4  wallhaven         公开 JSON API（免 key）                                              英文查询词
+//   5  reddit            公开 JSON API（免 key，★带相关性闸门）                                英文查询词
+//   6  user              用户指定 URL（直链）                                                 位置不变
+//   7  4kwallpapers      Bing 图片搜索（cn.bing.com，国内可直连）                             英文查询词
+//   8  alphacoders       Bing 图片搜索                                                       英文查询词
+//   9  game-sites        Bing 图片搜索（6 站 OR 合并，1 次请求）                              英文查询词
+//  10  chinese-sites     Bing 图片搜索（5 站 OR 合并，中文原名）                              ⚠可能带水印
+//  11  steam-cdn-lowres  Steam 官方图 · 降级档（library_hero，仅 1920×620）                  需 steamAppId，degraded=true
 //
 // 设计要点（v2.7.0 重构：DuckDuckGo 站内搜 → Bing 图片搜索 + Steam CDN 官方图）：
 //   · Bing 图片搜索的 `m.murl` 直接给原图直链，替代旧的「DDG 搜 → 抓详情页 → 抽直链」三段式；
@@ -51,8 +52,10 @@ const BING_ACCEPT_LANGUAGE = 'zh-CN,zh;q=0.9,en;q=0.8';
 const BING_REFERER = 'https://cn.bing.com/';
 /** Steam CDN 官方图基础地址（cdn.akamai.steamstatic.com）。 */
 const STEAM_CDN_BASE = 'https://cdn.akamai.steamstatic.com/steam/apps';
-/** Steam CDN 达标档资源（library_hero_2x 最优选；page_bg 兜底）。 */
-const STEAM_CDN_STRICT = ['library_hero_2x.jpg', 'page_bg_generated_v6b.jpg'];
+/** Steam CDN 官方宣传主视觉（商店胶囊图/头图，发行商上传的 key art）。 */
+const STEAM_CDN_STRICT = ['capsule_616x353_2x.jpg', 'capsule_616x353.jpg', 'header.jpg'];
+/** Steam CDN 官方宽幅横幅（商店页顶部 hero / 背景图，非宣传主视觉，仅作兜底）。 */
+const STEAM_CDN_HERO = ['library_hero_2x.jpg', 'page_bg_generated_v6b.jpg'];
 /** Steam CDN 降级档资源（library_hero 仅 1920×620，必不达标）。 */
 const STEAM_CDN_LOWRES = ['library_hero.jpg'];
 /** wallhaven 公开搜索 API（免 key）。 */
@@ -440,6 +443,7 @@ function parseSteamAppName(json, appId) {
 /** 来源标识 → 中文展示名（前端 detail.source 直接用得上）。 */
 const SOURCE_LABEL = {
   'steam-cdn': 'Steam 官方图',
+  'steam-cdn-hero': 'Steam 官方横幅',
   'steam-cdn-lowres': 'Steam 官方图（低分辨率）',
   '4kwallpapers': '4kwallpapers.com',
   alphacoders: 'alphacoders.com',
@@ -1391,7 +1395,7 @@ class CoverFetcher {
   buildSteamCdnCandidates(appId, tier) {
     const id = String(appId == null ? '' : appId).trim();
     if (!/^\d+$/.test(id)) return [];
-    const files = tier === 'lowres' ? STEAM_CDN_LOWRES : STEAM_CDN_STRICT;
+    const files = tier === 'hero' ? STEAM_CDN_HERO : (tier === 'lowres' ? STEAM_CDN_LOWRES : STEAM_CDN_STRICT);
     return files.map((f) => this.buildSteamCdnUrl(id, f));
   }
 
@@ -1439,17 +1443,18 @@ class CoverFetcher {
    */
   async fromSteamCdn(appId, outDir, opts = {}) {
     const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const tier = opts.tier === 'lowres' ? 'lowres' : 'strict';
-    const source = tier === 'lowres' ? 'steam-cdn-lowres' : 'steam-cdn';
+    const tier = opts.tier === 'hero' ? 'hero' : (opts.tier === 'lowres' ? 'lowres' : 'strict');
+    const source = tier === 'lowres' ? 'steam-cdn-lowres' : (tier === 'hero' ? 'steam-cdn-hero' : 'steam-cdn');
     const id = String(appId == null ? '' : appId).trim();
     if (!id) return { ok: false, error: '无可用 Steam appid', source };
     const urls = this.buildSteamCdnCandidates(id, tier);
-    const requireMin = tier !== 'lowres';
+    // 官方图一律优先采纳（capsule 最大 1232×706 不满足 1920×1080 门槛），尺寸不达标标 degraded，
+    // 由 collect.js 对「非官方来源」才用抽帧覆盖。
+    const requireMin = false;
     const r = await this.tryCandidates(urls, outDir, { emit, source, requireMin });
     if (!r.ok) return r;
-    // lowres 档：实测尺寸未达门槛则标记 degraded（由 collect.js 优先用抽帧覆盖）
-    const degraded = tier === 'lowres'
-      && !meetsMinSize({ width: r.width, height: r.height }, { width: MIN_WIDTH, height: MIN_HEIGHT });
+    // 实测尺寸未达门槛则标记 degraded
+    const degraded = !meetsMinSize({ width: r.width, height: r.height }, { width: MIN_WIDTH, height: MIN_HEIGHT });
     return Object.assign({}, r, { degraded, source });
   }
 
@@ -1744,7 +1749,8 @@ class CoverFetcher {
       null, Object.assign({ level: 'info' }, meta));
 
     // 规范《封面来源优先级》表格顺序；userUrlFirst 仅在调用方显式要求时改变位次
-    let order = ['steam-cdn', 'wallhaven', 'reddit', 'user', '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites', 'steam-cdn-lowres', 'youtube'];
+  // youtube（官方宣传片缩略图）提级到壁纸站之前：无 Steam 页的游戏（PS5 独占等）也优先用发行商官方图
+  let order = ['steam-cdn', 'youtube', 'steam-cdn-hero', 'wallhaven', 'reddit', 'user', '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites', 'steam-cdn-lowres'];
     if (opts.userUrlFirst === true) order = ['user'].concat(order.filter((s) => s !== 'user'));
     if (Array.isArray(opts.sources) && opts.sources.length) {
       order = order.filter((s) => opts.sources.indexOf(s) >= 0);
@@ -1754,7 +1760,7 @@ class CoverFetcher {
       // 缺少必需入参的来源直接跳过，不计入失败
       if (source === 'user' && !normalizeUrl(opts.coverUrl)) continue;
       if (source === 'youtube' && !String(opts.videoId || '').trim()) continue;
-      if ((source === 'steam-cdn' || source === 'steam-cdn-lowres') && !steamAppId) continue;
+      if ((source === 'steam-cdn' || source === 'steam-cdn-hero' || source === 'steam-cdn-lowres') && !steamAppId) continue;
 
       tried.push(source);
       // 只有「靠关键词检索」的英文站才需要多轮查询词；user/youtube 是直链，跑一轮即可
@@ -1773,6 +1779,7 @@ class CoverFetcher {
         }
         try {
           if (source === 'steam-cdn') r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: 'strict' });
+          else if (source === 'steam-cdn-hero') r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: 'hero' });
           else if (source === 'steam-cdn-lowres') r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: 'lowres' });
           else if (source === 'wallhaven') r = await this.fromWallhaven(name, outDir, { emit, query });
           else if (source === 'reddit') r = await this.fromReddit(name, outDir, { emit, query: name });
@@ -1865,6 +1872,7 @@ module.exports = {
   pickRelevantSteamAppId,
   STEAM_CDN_BASE,
   STEAM_CDN_STRICT,
+  STEAM_CDN_HERO,
   STEAM_CDN_LOWRES,
   GAME_MEDIA_SITES,
   CHINESE_WALLPAPER_SITES,

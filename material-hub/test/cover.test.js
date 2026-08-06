@@ -306,6 +306,11 @@ test('buildSteamCdnUrl / buildSteamCdnCandidates 拼官方图地址，非数字 
   const c = new CoverFetcher({ fetch: fakeFetch({}), fs: fakeFs() });
   assert.equal(c.buildSteamCdnUrl('123', 'library_hero_2x.jpg'), STEAM_CDN_BASE + '/123/library_hero_2x.jpg');
   assert.deepEqual(c.buildSteamCdnCandidates('123', 'strict'), [
+    STEAM_CDN_BASE + '/123/capsule_616x353_2x.jpg',
+    STEAM_CDN_BASE + '/123/capsule_616x353.jpg',
+    STEAM_CDN_BASE + '/123/header.jpg',
+  ]);
+  assert.deepEqual(c.buildSteamCdnCandidates('123', 'hero'), [
     STEAM_CDN_BASE + '/123/library_hero_2x.jpg',
     STEAM_CDN_BASE + '/123/page_bg_generated_v6b.jpg',
   ]);
@@ -355,7 +360,8 @@ test('resolveSteamAppId 入参优先 → 缓存命中 → storesearch 反查', a
 
 test('fromSteamCdn strict 档强制尺寸门槛；lowres 档跳过门槛但如实标 degraded', async () => {
   const fs = fakeFs();
-  const strictUrls = ['https://cdn.akamai.steamstatic.com/steam/apps/123/library_hero_2x.jpg', 'https://cdn.akamai.steamstatic.com/steam/apps/123/page_bg_generated_v6b.jpg'];
+  const strictUrls = ['https://cdn.akamai.steamstatic.com/steam/apps/123/capsule_616x353_2x.jpg', 'https://cdn.akamai.steamstatic.com/steam/apps/123/capsule_616x353.jpg', 'https://cdn.akamai.steamstatic.com/steam/apps/123/header.jpg'];
+  const heroUrl = 'https://cdn.akamai.steamstatic.com/steam/apps/123/library_hero_2x.jpg';
   const lowresUrl = 'https://cdn.akamai.steamstatic.com/steam/apps/123/library_hero.jpg';
 
   // strict：达标 → ok，degraded=false
@@ -366,9 +372,11 @@ test('fromSteamCdn strict 档强制尺寸门槛；lowres 档跳过门槛但如�
   assert.equal(r1.degraded, false);
   assert.equal(r1.width, 1920);
 
-  // strict：全部不达标 → 失败
+  // strict：官方图不达标也采纳，标 degraded（官方宣传图优先于高清门槛）
   const c2 = makeCover({ [strictUrls[0]]: { buf: jpegBuf(640, 480) } }, fs);
-  assert.equal((await c2.fromSteamCdn('123', 'D:\\out', { tier: 'strict' })).ok, false);
+  const r2 = await c2.fromSteamCdn('123', 'D:\\out', { tier: 'strict' });
+  assert.equal(r2.ok, true);
+  assert.equal(r2.degraded, true);
 
   // lowres：不达标也落盘，但 degraded=true
   const c3 = makeCover({ [lowresUrl]: { buf: jpegBuf(640, 480) } }, fs);
@@ -376,6 +384,12 @@ test('fromSteamCdn strict 档强制尺寸门槛；lowres 档跳过门槛但如�
   assert.equal(r3.ok, true);
   assert.equal(r3.source, 'steam-cdn-lowres');
   assert.equal(r3.degraded, true);
+
+  // hero 档：横幅图（library_hero_2x）达标即采纳，source=steam-cdn-hero
+  const c5 = makeCover({ [heroUrl]: { buf: jpegBuf(1920, 620) } }, fs);
+  const r5 = await c5.fromSteamCdn('123', 'D:\\out', { tier: 'hero' });
+  assert.equal(r5.ok, true);
+  assert.equal(r5.source, 'steam-cdn-hero');
 
   // 非数字 appid → 直接失败
   const c4 = makeCover({}, fs);
@@ -626,7 +640,7 @@ test('全部来源失败时返回 cover-all-sources-failed 并列出尝试过的
   const r = await c.fetchCover('X', 'D:\\out', { coverUrl: 'https://a.com/x.jpg', videoId: 'v1' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'cover-all-sources-failed');
-  assert.deepEqual(r.tried, ['wallhaven', 'reddit', 'user', '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites', 'youtube']);
+  assert.deepEqual(r.tried, ['youtube', 'wallhaven', 'reddit', 'user', '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites']);
   assert.ok(r.error.includes('wallhaven'));
 });
 
@@ -1074,7 +1088,7 @@ test('fromReddit 相关性闸门：只采纳标题相关的贴，无关热门贴
 });
 
 test('fetchCover steam-cdn 优先级最高：有 appid 时先取官方图', async () => {
-  const hero = 'https://cdn.akamai.steamstatic.com/steam/apps/123/library_hero_2x.jpg';
+  const hero = 'https://cdn.akamai.steamstatic.com/steam/apps/123/capsule_616x353_2x.jpg';
   const c = makeCover({
     // resolveSteamAppId 命中缓存（直接传 steamAppId）
     [hero]: { buf: jpegBuf(1920, 1080) },

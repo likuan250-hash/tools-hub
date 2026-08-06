@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updatedAt": "2026-08-05",
+  "version": 2,
+  "updatedAt": "2026-08-06",
   "gameNames": {
     "巫师3": "The Witcher 3: Wild Hunt",
     "巫师3狂猎": "The Witcher 3: Wild Hunt",
@@ -36,7 +36,8 @@
     "仁王2": "Nioh 2",
     "巫师2": "The Witcher 2: Assassins of Kings",
     "巫师": "The Witcher",
-    "只狼影逝二度": "Sekiro: Shadows Die Twice"
+    "只狼影逝二度": "Sekiro: Shadows Die Twice",
+    "007初露锋芒": "007: First Light"
   },
   "appIds": {
     "The Witcher 3: Wild Hunt": "292030",
@@ -66,6 +67,7 @@
     "Marvel's Spider-Man": "1817070",
     "Nioh 2": "1325200",
     "The Witcher 2: Assassins of Kings": "20920",
-    "The Witcher": "20900"
+    "The Witcher": "20900",
+    "007: First Light": "3768760"
   }
 }

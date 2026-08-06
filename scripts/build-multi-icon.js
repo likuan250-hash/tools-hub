@@ -23,6 +23,62 @@ function crc32(buf) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+/** 解码 PNG（支持 8bit RGBA/RGB，filter 0-4），返回 { width, height, rgba }。 */
+function decodePng(buf) {
+  if (buf.length < 24 || buf.readUInt32BE(0) !== 0x89504e47) throw new Error('非 PNG');
+  let pos = 8;
+  let width = 0, height = 0, bitDepth = 0, colorType = 0;
+  const idat = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString('ascii', pos + 4, pos + 8);
+    const data = buf.slice(pos + 8, pos + 8 + len);
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0); height = data.readUInt32BE(4);
+      bitDepth = data[8]; colorType = data[9];
+    } else if (type === 'IDAT') {
+      idat.push(data);
+    } else if (type === 'IEND') break;
+    pos += 12 + len;
+  }
+  if (!width || !height || bitDepth !== 8 || (colorType !== 6 && colorType !== 2)) {
+    throw new Error('不支持的 PNG 格式: ' + width + 'x' + height + ' depth=' + bitDepth + ' ct=' + colorType);
+  }
+  const ch = colorType === 6 ? 4 : 3;
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = width * ch;
+  const out = Buffer.alloc(width * height * 4);
+  const prev = Buffer.alloc(stride);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (stride + 1);
+    const filter = raw[rowStart];
+    const row = Buffer.alloc(stride);
+    for (let x = 0; x < stride; x++) {
+      const a = raw[rowStart + 1 + x];
+      const b = x >= ch ? row[x - ch] : 0;
+      const c = prev[x];
+      let v = a;
+      if (filter === 1) v = a + b;
+      else if (filter === 2) v = a + c;
+      else if (filter === 3) v = a + ((b + c) >> 1);
+      else if (filter === 4) {
+        const p = b + c - prev[x >= ch ? x - ch : 0];
+        const pa = Math.abs(p - b), pb = Math.abs(p - c), pc = Math.abs(p - (b + c - p));
+        v = a + (pa <= pb && pa <= pc ? b : (pb <= pc ? c : p));
+      }
+      row[x] = v & 0xff;
+    }
+    for (let x = 0; x < width; x++) {
+      out[(y * width + x) * 4] = row[x * ch];
+      out[(y * width + x) * 4 + 1] = row[x * ch + 1];
+      out[(y * width + x) * 4 + 2] = row[x * ch + 2];
+      out[(y * width + x) * 4 + 3] = ch === 4 ? row[x * ch + 3] : 255;
+    }
+    prev.set(row);
+  }
+  return { width, height, rgba: out };
+}
+
 function encodePng(width, height, rgba) {
   const raw = Buffer.alloc(height * (1 + width * 4));
   for (let y = 0; y < height; y++) {
@@ -64,6 +120,34 @@ function scaleBilinear(src, sw, sh, dw, dh) {
 }
 
 function main() {
+  // 优先使用渲染好的多尺寸 PNG（scripts/render-icon-pngs.js 产出），直接打包，不做二次缩放
+  const renderDir = path.join(ROOT, 'build', '.icon-render');
+  if (fs.existsSync(path.join(renderDir, 'icon-256.png'))) {
+    const entries = [];
+    const datas = [];
+    for (const s of SIZES) {
+      const png = fs.readFileSync(path.join(renderDir, 'icon-' + s + '.png'));
+      decodePng(png); // 校验有效
+      datas.push(png);
+      entries.push(Buffer.concat([Buffer.from([
+        s === 256 ? 0 : s, s === 256 ? 0 : s, 0, 0,
+        0, 0, 32, 0,
+      ]), Buffer.alloc(8)]));
+    }
+    const header = Buffer.alloc(6);
+    header.writeUInt16LE(0, 0); header.writeUInt16LE(1, 2); header.writeUInt16LE(SIZES.length, 4);
+    let offset = 6 + entries.length * 16;
+    entries.forEach((e, i) => {
+      e.writeUInt32LE(datas[i].length, 8);
+      e.writeUInt32LE(offset, 12);
+      offset += datas[i].length;
+    });
+    fs.writeFileSync(OUT, Buffer.concat([header, ...entries, ...datas]));
+    console.log('written', OUT, SIZES.join('/'), 'total', offset, 'B (from PNG render)');
+    return;
+  }
+
+  // 兜底：单张 BMP 源图缩放打包
   const b = fs.readFileSync(SRC);
   const width = b.readUInt32LE(4);
   const heightRaw = b.readUInt32LE(8); // ICO BMP 条目 = 2×实际高度（含 AND mask）

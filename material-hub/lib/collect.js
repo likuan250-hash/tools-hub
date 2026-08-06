@@ -371,9 +371,10 @@ class CollectService {
     } else {
       let dl = { ok: false, error: '未执行' };
       try {
-        trailerInfo = await this.trailer.searchTrailer(searchName, {
+        const trailerCands = await this.trailer.searchTrailerCandidates(searchName, {
           emit, developer: opts.developer,
         });
+        trailerInfo = trailerCands && trailerCands.length ? trailerCands[0] : null;
         if (!trailerInfo) {
           dl = { ok: false, reason: 'trailer-not-found', error: '未搜索到符合规范的官方宣传片' };
           // YouTube 没搜到 → 如果有 Steam appid，尝试从 Steam 商店页下载官方预告片
@@ -394,6 +395,7 @@ class CollectService {
           }
         } else {
           dl = await this.trailer.download(searchName, reserved.folder, envInfo, {
+            candidates: trailerCands,
             info: trailerInfo,
             emit,
             index: reserved.index,

@@ -74,7 +74,7 @@ function fakeName(over = {}) {
  * @returns {object}
  */
 function fakeTrailer(over = {}) {
-  const calls = { setBinaries: [], search: [], download: [], transcode: [] };
+  const calls = { setBinaries: [], search: [], searchCandidates: [], download: [], transcode: [] };
   return {
     calls,
     setBinaries(p) { calls.setBinaries.push(p); },
@@ -84,6 +84,15 @@ function fakeTrailer(over = {}) {
       return over.info === undefined
         ? { id: 'vid123', title: 'Just Cause 4 - Launch Trailer', url: 'https://youtu.be/vid123', channel: 'Square Enix' }
         : over.info;
+    },
+    async searchTrailerCandidates(name, opts) {
+      calls.searchCandidates.push({ name, opts });
+      if (over.searchThrows) throw over.searchThrows;
+      if (over.candidates !== undefined) return over.candidates;
+      const info = over.info === undefined
+        ? { id: 'vid123', title: 'Just Cause 4 - Launch Trailer', url: 'https://youtu.be/vid123', channel: 'Square Enix' }
+        : over.info;
+      return info ? [info] : null;
     },
     async download(name, dir, env, opts) {
       calls.download.push({ name, dir, env, opts });
@@ -261,7 +270,7 @@ test('先下视频后取封面：宣传片 videoId 透传给封面模块（第 6
   await runCollect({ cover, trailer }, { coverUrl: 'https://example.com/my.jpg' });
 
   // 顺序：searchTrailer 先于 fetchCover
-  assert.equal(trailer.calls.search.length, 1);
+  assert.equal(trailer.calls.searchCandidates.length, 1);
   assert.equal(cover.calls.length, 1);
   assert.equal(cover.calls[0].opts.videoId, 'vid123');
   assert.equal(cover.calls[0].opts.coverUrl, 'https://example.com/my.jpg');
@@ -406,7 +415,7 @@ test('yt-dlp 缺失时给出明确报错与引导，封面仍继续走 → parti
   const trailer = fakeTrailer();
   const { result, events } = await runCollect({ env, trailer });
 
-  assert.equal(trailer.calls.search.length, 0);
+  assert.equal(trailer.calls.searchCandidates.length, 0);
   assert.equal(trailer.calls.download.length, 0);
   assert.equal(result.trailerOk, false);
   assert.equal(result.coverOk, true);
@@ -465,7 +474,21 @@ test('download 的命名参数（编号 / 英文名 / 版本描述 / kind）如�
   assert.equal(o.englishName, 'Just Cause 4');
   assert.equal(o.versionDesc, '官方中文+全DLC');
   assert.equal(o.kind, 'main');
-  assert.equal(trailer.calls.search[0].opts.developer, 'Avalanche Studios');
+  assert.equal(trailer.calls.searchCandidates[0].opts.developer, 'Avalanche Studios');
+});
+
+test('宣传片完整候选列表透传给 download（下载失败自动换候选的前提）', async () => {
+  const c1 = { id: 'v1', title: 'Just Cause 4 - Launch Trailer', url: 'https://youtu.be/v1', channel: 'Square Enix', score: 125 };
+  const c2 = { id: 'v2', title: 'Just Cause 4 - Official Trailer', url: 'https://youtu.be/v2', channel: 'Avalanche Studios', score: 100 };
+  const trailer = fakeTrailer({ candidates: [c1, c2] });
+  const { result, deps } = await runCollect({ trailer });
+
+  assert.equal(result.trailerOk, true);
+  const o = trailer.calls.download[0].opts;
+  assert.equal(Array.isArray(o.candidates), true);
+  assert.equal(o.candidates.length, 2);
+  assert.equal(o.candidates[0].url, 'https://youtu.be/v1');
+  assert.equal(o.candidates[1].url, 'https://youtu.be/v2');
 });
 
 // ───────────────────────── 复用路径（Bug A 贯通） ─────────────────────────

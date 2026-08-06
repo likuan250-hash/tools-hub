@@ -65,6 +65,8 @@ const DURATION_MIN = 60;
 const DURATION_MAX = 300;
 /** 规范《视频要求》：1080p。 */
 const TARGET_HEIGHT = 1080;
+/** 下载失败时最多依次尝试的候选数（年龄限制/网络失败自动换下一个）。 */
+const TRAILER_DOWNLOAD_ATTEMPTS = 5;
 /** 判定「yt-dlp 该不该走代理」时使用的代表性目标地址（yt-dlp 全程只访问 YouTube）。 */
 const PROXY_PROBE_URL = 'https://www.youtube.com/';
 
@@ -398,6 +400,31 @@ class TrailerDownloader {
   }
 
   /**
+   * 按规范打分对候选排序，返回完整排序列表（最优在前）。
+   * 供「下载失败自动换下一个候选」使用；pickBest 只取第一条，语义一致。
+   * @param {Array<object>} items yt-dlp 检索结果
+   * @param {string} gameName 游戏名
+   * @param {{developer?: string, minScore?: number}} [opts]
+   * @returns {Array<object>} 带 score/kind/tier/reasons 的候选数组（已按分数降序）
+   */
+  rankCandidates(items, gameName, opts = {}) {
+    const list = Array.isArray(items) ? items.filter((i) => i && i.id) : [];
+    const minScore = Number.isFinite(opts.minScore) ? opts.minScore : 0;
+    const scored = list.map((item, idx) => {
+      const s = this.scoreCandidate(item, gameName, opts);
+      return Object.assign({}, item, {
+        score: s.score,
+        kind: s.kind,
+        tier: s.tier,
+        reasons: s.reasons,
+        idx,
+      });
+    });
+    scored.sort((a, b) => (b.score - a.score) || (a.idx - b.idx));
+    return scored.filter((c) => c.score >= minScore);
+  }
+
+  /**
    * 构造 yt-dlp 下载参数（逐字对齐规范《搜索策略》第 3 步给出的命令）。
    * 无 ffmpeg 时无法合流，只能退到单文件流。
    * @param {string} url 视频页地址
@@ -475,7 +502,7 @@ class TrailerDownloader {
    * @param {{emit?: Function, limit?: number, developer?: string, minScore?: number}} [opts]
    * @returns {Promise<object|null>} 最佳候选（含 score/kind/tier）；无命中返回 null
    */
-  async searchTrailer(name, opts = {}) {
+  async searchTrailerCandidates(name, opts = {}) {
     const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
     // 本机直连 YouTube 可能被墙，检测到代理就显式传给 yt-dlp 子进程
     const args = this.withProxyArgs(this.buildSearchArgs(name, { limit: opts.limit }));
@@ -508,19 +535,31 @@ class TrailerDownloader {
       emit('trailer_search', STEP_SEARCH, '未检索到候选视频', null);
       return null;
     }
-    const best = this.pickBest(items, name, { developer: opts.developer, minScore: opts.minScore });
-    if (!best) {
+    const candidates = this.rankCandidates(items, name, { developer: opts.developer, minScore: opts.minScore });
+    if (!candidates.length) {
       emit('trailer_search', STEP_SEARCH, '检索到 ' + items.length + ' 条，但均不满足官方宣传片筛选标准', null, {
         total: items.length,
       });
       return null;
     }
+    const best = candidates[0];
     emit('trailer_search', STEP_SEARCH,
       '命中 ' + (best.channel ? best.channel + ' · ' : '') + best.title + '（评分 ' + best.score + '）', null, {
         title: best.title, url: best.url, channel: best.channel,
         score: best.score, kind: best.kind, tier: best.tier, total: items.length,
       });
-    return best;
+    return candidates;
+  }
+
+  /**
+   * 检索并按规范筛选宣传片，返回最佳候选。
+   * @param {string} name 游戏名
+   * @param {{emit?: Function, limit?: number, developer?: string, minScore?: number}} [opts]
+   * @returns {Promise<object|null>} 最佳候选（含 score/kind/tier）；无命中返回 null
+   */
+  async searchTrailer(name, opts = {}) {
+    const list = await this.searchTrailerCandidates(name, opts);
+    return list && list.length ? list[0] : null;
   }
 
   /**
@@ -542,9 +581,26 @@ class TrailerDownloader {
     if (env.ytDlp === false) {
       return { ok: false, reason: 'yt-dlp-not-found', error: '未检测到 yt-dlp，无法下载宣传片' };
     }
-    const info = opts.info || (await this.searchTrailer(name, { emit, developer: opts.developer }));
-    if (!info) {
+
+    // 候选来源优先级：显式候选列表（collect.js 传入完整排序）> 单个 info > 重新检索
+    let candidates = Array.isArray(opts.candidates) ? opts.candidates : [];
+    if (!candidates.length && opts.info) candidates = [opts.info];
+    if (!candidates.length) {
+      const list = await this.searchTrailerCandidates(name, { emit, developer: opts.developer });
+      candidates = list || [];
+    }
+    if (!candidates.length) {
       return { ok: false, reason: 'trailer-not-found', error: '未搜索到符合规范的官方宣传片' };
+    }
+    // 去重 + 限制尝试次数（下载失败自动换下一个候选，年龄限制/网络失败不再直接判死）
+    const seen = new Set();
+    const list = [];
+    for (const c of candidates) {
+      const url = String(c && c.url || '').trim();
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      list.push(c);
+      if (list.length >= TRAILER_DOWNLOAD_ATTEMPTS) break;
     }
 
     // 规范《视频命名规范》：文件名在下载前就定死，不再沿用 YouTube 原始英文标题
@@ -556,47 +612,67 @@ class TrailerDownloader {
     });
     const base = targetName.replace(/\.[^.]+$/, '');
     const outPath = path.join(dir, targetName);
-    const args = this.withProxyArgs(this.buildDownloadArgs(info.url, outPath, env));
 
-    emit('trailer_download', STEP_DOWNLOAD, '下载 1080p mp4：' + targetName, null, {
-      url: info.url, title: info.title, file: targetName, proxy: this.resolveProxyUrl(),
-    });
-    let r = null;
-    try {
-      r = await runCommand(this.ytDlpCmd(), args, {
-        spawn: this.spawn,
-        timeout: TIMEOUT_DOWNLOAD,
-        env: Object.assign({}, process.env, { PYTHONUTF8: '1' }),
-        onLine: (line) => emit('log', STEP_DOWNLOAD, '[yt-dlp] ' + line, null, { level: 'info' }),
-      });
-    } catch (e) {
-      return { ok: false, reason: 'yt-dlp-failed', error: 'yt-dlp 执行失败：' + e.message };
+    let last = null;
+    for (let i = 0; i < list.length; i += 1) {
+      const info = list[i];
+      const multi = list.length > 1;
+      emit('trailer_download', STEP_DOWNLOAD,
+        '下载 1080p mp4：' + targetName + (multi ? '（候选 ' + (i + 1) + '/' + list.length + '）' : ''), null, {
+          url: info.url, title: info.title, file: targetName,
+          proxy: this.resolveProxyUrl(), attempt: i + 1, total: list.length,
+        });
+      const args = this.withProxyArgs(this.buildDownloadArgs(info.url, outPath, env));
+      let r = null;
+      try {
+        r = await runCommand(this.ytDlpCmd(), args, {
+          spawn: this.spawn,
+          timeout: TIMEOUT_DOWNLOAD,
+          env: Object.assign({}, process.env, { PYTHONUTF8: '1' }),
+          onLine: (line) => emit('log', STEP_DOWNLOAD, '[yt-dlp] ' + line, null, { level: 'info' }),
+        });
+      } catch (e) {
+        last = { ok: false, reason: 'yt-dlp-failed', error: 'yt-dlp 执行失败：' + e.message };
+        if (i < list.length - 1) {
+          emit('log', STEP_DOWNLOAD, '[trailer] 候选 ' + (i + 1) + ' 下载异常，尝试下一个候选…', null, { level: 'warn' });
+        }
+        continue;
+      }
+
+      const produced = this.findDownloaded(dir, base);
+      if (!produced) {
+        last = {
+          ok: false,
+          reason: r.code !== 0 ? 'yt-dlp-failed' : 'trailer-file-missing',
+          error: r.code !== 0 ? 'yt-dlp 退出码 ' + r.code : '下载完成但未找到产出文件',
+        };
+        if (i < list.length - 1) {
+          emit('log', STEP_DOWNLOAD, '[trailer] 候选 ' + (i + 1) + ' 失败（' + last.error + '），尝试下一个候选…', null, { level: 'warn' });
+        }
+        continue;
+      }
+
+      const result = {
+        ok: true,
+        file: produced,
+        path: path.join(dir, produced),
+        title: info.title,
+        url: info.url,
+        channel: info.channel || '',
+        score: info.score,
+        attempts: i + 1,
+      };
+
+      // 规范《最终验证》：确认分辨率
+      const probed = await this.probeResolution(result.path, { emit });
+      if (probed.ok) {
+        result.width = probed.width;
+        result.height = probed.height;
+        result.hd = probed.height >= TARGET_HEIGHT;
+      }
+      return result;
     }
-
-    const produced = this.findDownloaded(dir, base);
-    if (!produced) {
-      const detail = r.code !== 0 ? 'yt-dlp 退出码 ' + r.code : '下载完成但未找到产出文件';
-      return { ok: false, reason: r.code !== 0 ? 'yt-dlp-failed' : 'trailer-file-missing', error: detail };
-    }
-
-    const result = {
-      ok: true,
-      file: produced,
-      path: path.join(dir, produced),
-      title: info.title,
-      url: info.url,
-      channel: info.channel || '',
-      score: info.score,
-    };
-
-    // 规范《最终验证》：确认分辨率
-    const probed = await this.probeResolution(result.path, { emit });
-    if (probed.ok) {
-      result.width = probed.width;
-      result.height = probed.height;
-      result.hd = probed.height >= TARGET_HEIGHT;
-    }
-    return result;
+    return last || { ok: false, reason: 'yt-dlp-failed', error: '宣传片下载失败' };
   }
 
   /**

@@ -512,6 +512,67 @@ test('download 区分 yt-dlp 失败与产出文件缺失', async () => {
   assert.equal(r2.reason, 'trailer-file-missing');
 });
 
+test('download 首候选失败自动换下一个候选（年龄限制/下载错误不再直接判死）', async () => {
+  const calls = [];
+  const target = '【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4';
+  const entries = []; // 初始为空：候选失败不产生文件，候选成功才"落盘"
+  const t = new TrailerDownloader({
+    spawn: fakeSpawn((cmd, args) => {
+      const isV1 = args[args.length - 1].indexOf('v1') >= 0;
+      if (!isV1) entries.push(target); // 第二个候选（v2）下载成功
+      return isV1 ? { code: 1 } : { code: 0 };
+    }, calls),
+    fs: fakeFs(entries),
+    probe: fakeProbe({ ok: true, width: 1920, height: 1080 }),
+    ytDlpPath: 'E:\\bin\\yt-dlp.exe',
+  });
+  const r = await t.download('正当防卫4', 'E:\\素材\\【游戏268】正当防卫4', { ytDlp: true, ffmpeg: true }, {
+    candidates: [
+      { id: 'v1', title: 'A - Launch Trailer', url: 'https://youtu.be/v1', channel: 'XBOX', score: 125 },
+      { id: 'v2', title: 'B - Official Trailer', url: 'https://youtu.be/v2', channel: 'Publisher', score: 100 },
+    ],
+    index: 268,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.url, 'https://youtu.be/v2');
+  assert.equal(r.attempts, 2);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].args[calls[0].args.length - 1], 'https://youtu.be/v1');
+  assert.equal(calls[1].args[calls[1].args.length - 1], 'https://youtu.be/v2');
+});
+
+test('download 全部候选失败返回最后错误，且尝试次数封顶', async () => {
+  const calls = [];
+  const t = new TrailerDownloader({
+    spawn: fakeSpawn({ code: 1 }, calls),
+    fs: fakeFs([]),
+    ytDlpPath: 'E:\\bin\\yt-dlp.exe',
+  });
+  const cands = [];
+  for (let i = 1; i <= 8; i += 1) cands.push({ id: 'v' + i, title: 'T' + i, url: 'https://youtu.be/v' + i });
+  const r = await t.download('正当防卫4', 'dir', { ytDlp: true, ffmpeg: true }, { candidates: cands, index: 268 });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'yt-dlp-failed');
+  assert.ok(r.error.includes('退出码 1'));
+  assert.equal(calls.length, 5); // TRAILER_DOWNLOAD_ATTEMPTS 封顶
+});
+
+test('searchTrailerCandidates 返回完整排序候选列表，searchTrailer 取第一条', async () => {
+  const out = JSON.stringify({
+    id: 'v1', title: 'Just Cause 4 - Release Date Trailer', url: 'https://youtu.be/v1', channel: 'Square Enix', duration: 120,
+  })
+    + '\n' + JSON.stringify({
+      id: 'v2', title: 'Just Cause 4 - Launch Trailer', url: 'https://youtu.be/v2', channel: 'Square Enix', duration: 120,
+    });
+  const t = make({ plan: { stdout: out, code: 0 } });
+  const list = await t.searchTrailerCandidates('Just Cause 4', {});
+  assert.equal(list.length, 2);
+  assert.equal(list[0].url, 'https://youtu.be/v2');
+  assert.equal(list[1].url, 'https://youtu.be/v1');
+  const best = await t.searchTrailer('Just Cause 4', {});
+  assert.equal(best.url, 'https://youtu.be/v2');
+});
+
 test('probeResolution 未注入 probe 或 ffprobe 失败时不阻断下载结果', async () => {
   const noProbe = make({ entries: [] });
   const r1 = await noProbe.probeResolution('a.mp4');

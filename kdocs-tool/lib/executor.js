@@ -1,4 +1,4 @@
-﻿// ── 一键执行编排 ──
+// ── 一键执行编排 ──
 const fs = require("fs");
 const path = require("path");
 const steam = require("./steam");
@@ -19,6 +19,7 @@ const DEFAULT_DEPS = {
   fetchAppIdFromWikidata: steam.fetchAppIdFromWikidata,
   fetchAppIdFromBaiduBaike: steam.fetchAppIdFromBaiduBaike,
   fetchAppIdFromWebSearch: steam.fetchAppIdFromWebSearch,
+  fetchWikiIntro: steam.fetchWikiIntro,
   resolveEnglishName: steam.resolveEnglishName,
   downloadCover: steam.downloadCover,
   downloadCoverFromUrl: steam.downloadCoverFromUrl,
@@ -208,10 +209,18 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     introProvenance = "Steam官方";
     ok({ name: "游戏介绍生成（Steam 官方）", desc });
   } else {
-    // 兜底占位（非标题、非免责声明），显式标注待人工校对，而非静默空
-    desc = "介绍待补充";
-    introProvenance = "占位";
-    skip({ name: "游戏介绍生成", reason: "Steam 无官方描述，已占位待人工补充" });
+    // 兜底1：维基百科词条首段（Steam 官方描述不可达时；zh 优先，en 兜底）
+    const wiki = await deps.fetchWikiIntro(en, parsed.gameName);
+    if (wiki && wiki.text) {
+      desc = wiki.text;
+      introProvenance = "维基百科";
+      ok({ name: "游戏介绍生成（维基百科）", desc });
+    } else {
+      // 兜底占位（非标题、非免责声明），显式标注待人工校对，而非静默空
+      desc = "介绍待补充";
+      introProvenance = "占位";
+      skip({ name: "游戏介绍生成", reason: "Steam 无官方描述，已占位待人工补充" });
+    }
   }
 
   // 4. 下载封面（优先级：Steam 官方 CDN → 手动链接 → 留空）

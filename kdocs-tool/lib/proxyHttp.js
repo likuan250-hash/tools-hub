@@ -26,6 +26,77 @@ const PROXY_ENV_KEYS_HTTPS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_
 const PROXY_ENV_KEYS_HTTP = ["HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"];
 /** NO_PROXY 环境变量查找顺序。 */
 const NO_PROXY_ENV_KEYS = ["NO_PROXY", "no_proxy"];
+/** 自动探测本地代理时的单端口探测超时（ms）。 */
+const PROBE_TIMEOUT = 2500;
+/** 自动探测的本地常见代理端口（按出现频率排序；.proxy 显式配置优先）。 */
+const LOCAL_PROXY_PORTS = [7990, 7890, 7897, 10809, 10808, 1080, 8888, 2080];
+/** 自动探测的验证目标（须在墙外，能过 CONNECT 即说明代理可用）。 */
+const PROBE_TARGET = "www.google.com";
+/** 环境变量开关：设置后禁用本地代理自动探测（高级用户强制直连）。 */
+const AUTO_PROXY_DISABLE_ENV = "KDOCS_NO_AUTO_PROXY";
+/** 自动探测结果缓存：undefined=未探测；'none'=探测过没找到；其余为解析后的代理对象。 */
+let autoProxyCache = undefined;
+/** 探测 in-flight 去重（避免并发请求重复探测）。 */
+let autoProxyPromise = null;
+
+/**
+ * 探测本机是否运行常见代理端口（127.0.0.1），结果缓存进程内。
+ * @param {object} [env] 环境变量来源（测试注入）
+ * @param {number[]} [ports] 待探测端口（默认 LOCAL_PROXY_PORTS）
+ * @returns {Promise<object|null>}
+ */
+async function detectLocalProxy(env, ports) {
+  const src = env && typeof env === "object" ? env : process.env;
+  if (String(firstEnv(src, [AUTO_PROXY_DISABLE_ENV, AUTO_PROXY_DISABLE_ENV.toLowerCase()])) === "1") return null;
+  if (autoProxyCache !== undefined) return autoProxyCache;
+
+  const probe = async (port) => {
+    try {
+      const sock = await openProxyTunnel(
+        { hostname: "127.0.0.1", port, auth: "" },
+        PROBE_TARGET,
+        443,
+        PROBE_TIMEOUT
+      );
+      try { sock.destroy(); } catch (e) { /* 已销毁 */ }
+      return true;
+    } catch (e) { return false; }
+  };
+
+  let found = null;
+  const list = Array.isArray(ports) && ports.length ? ports : LOCAL_PROXY_PORTS;
+  for (const port of list) {
+    const listening = await new Promise((resolve) => {
+      const sock = require("net").connect({ host: "127.0.0.1", port });
+      const timer = setTimeout(() => { try { sock.destroy(); } catch (e) { /* ignore */ } resolve(false); }, 300);
+      sock.on("connect", () => { clearTimeout(timer); sock.destroy(); resolve(true); });
+      sock.on("error", () => { clearTimeout(timer); resolve(false); });
+    });
+    if (!listening) continue;
+    if (await probe(port)) {
+      found = parseProxyUrl("http://127.0.0.1:" + port);
+      if (found) break;
+    }
+  }
+  autoProxyCache = found || "none";
+  return found;
+}
+
+/** 确保自动探测执行过（懒触发一次；单测注入 env 不触发）。 */
+function ensureProxyAsync(env) {
+  const src = env && typeof env === "object" ? env : process.env;
+  if (src !== process.env) return Promise.resolve(null);
+  if (autoProxyCache !== undefined) return Promise.resolve(autoProxyCache === "none" ? null : autoProxyCache);
+  if (autoProxyPromise) return autoProxyPromise;
+  autoProxyPromise = detectLocalProxy(process.env).finally(() => { autoProxyPromise = null; });
+  return autoProxyPromise;
+}
+
+/** 清空自动探测缓存（测试用）。 */
+function resetAutoProxyCache() {
+  autoProxyCache = undefined;
+  autoProxyPromise = null;
+}
 
 /** 按给定顺序取第一个非空环境变量值。 */
 function firstEnv(env, keys) {
@@ -119,6 +190,7 @@ function resolveProxy(target, env) {
         }
       }
     } catch (e) { /* 文件不存在或不可读，静默跳过 */ }
+    if (autoProxyCache && autoProxyCache !== "none") return autoProxyCache;
   }
   return null;
 }
@@ -251,12 +323,13 @@ function requestText(url, timeoutMs, env, depth, acceptJson) {
 
 /** 代理感知 GET 文本，失败返回 null（绝不抛错）。 */
 function fetchTextProxy(url, opts = {}) {
-  return requestText(url, opts.timeout || 10000, opts.env, 0, false);
+  return ensureProxyAsync(opts.env).then(() => requestText(url, opts.timeout || 10000, opts.env, 0, false));
 }
 
 /** 代理感知 GET JSON，失败（含非 JSON）返回 null（绝不抛错）。 */
 function fetchJsonProxy(url, opts = {}) {
-  return requestText(url, opts.timeout || 10000, opts.env, 0, true)
+  return ensureProxyAsync(opts.env)
+    .then(() => requestText(url, opts.timeout || 10000, opts.env, 0, true))
     .then((t) => {
       if (t == null) return null;
       try { return JSON.parse(t); } catch (e) { return null; }
@@ -266,5 +339,7 @@ function fetchJsonProxy(url, opts = {}) {
 module.exports = {
   firstEnv, pickProxyEnv, parseProxyUrl, parseNoProxy, shouldBypassProxy, resolveProxy,
   openProxyTunnel, fetchTextProxy, fetchJsonProxy, requestText,
+  detectLocalProxy, ensureProxyAsync, resetAutoProxyCache,
+  LOCAL_PROXY_PORTS, PROBE_TARGET,
   PROXY_ENV_KEYS_HTTPS, PROXY_ENV_KEYS_HTTP, NO_PROXY_ENV_KEYS,
 };

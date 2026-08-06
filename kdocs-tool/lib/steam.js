@@ -220,6 +220,38 @@ async function fetchAppIdFromWikidata(gameName) {
   return "";
 }
 
+/**
+ * 维基百科游戏介绍兜底（Steam 官方描述不可达时使用）。
+ * zh 搜中文名取词条首段；无词条则 en 搜英文名。失败/过短返回 null（绝不抛错）。
+ * @param {string} englishName 英文名（可空）
+ * @param {string} chineseName 中文名（可空）
+ * @returns {Promise<{text:string, source:string}|null>}
+ */
+async function fetchWikiIntro(englishName, chineseName) {
+  const candidates = [
+    { lang: "zh", q: chineseName || englishName },
+    { lang: "en", q: englishName || chineseName },
+  ];
+  for (const { lang, q } of candidates) {
+    if (!q) continue;
+    try {
+      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&format=json&srlimit=1`;
+      const s = await fetchJsonProxy(searchUrl, { timeout: 8000 });
+      const title = s && s.query && s.query.search && s.query.search[0] && s.query.search[0].title;
+      if (!title) continue;
+      const extUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&explaintext&titles=${encodeURIComponent(title)}&format=json&redirects=1`;
+      const e = await fetchJsonProxy(extUrl, { timeout: 8000 });
+      const pages = (e && e.query && e.query.pages) || {};
+      const pg = Object.values(pages)[0];
+      const text = pg && pg.extract ? String(pg.extract).trim() : "";
+      if (text.length >= 40) {
+        return { text: text.replace(/\s*\n+\s*/g, "\n").slice(0, 800), source: lang };
+      }
+    } catch (_) { /* 单语言失败继续下一语言 */ }
+  }
+  return null;
+}
+
 /** 百度百科：best-effort，从词条页 HTML 抽 Steam 链接里的 AppID。失败静默返回空。 */
 async function fetchAppIdFromBaiduBaike(gameName) {
   if (!gameName) return "";
@@ -558,7 +590,7 @@ module.exports = {
   parseSteamAppIdFromText, fetchAppIdFromWikidata, fetchAppIdFromBaiduBaike, fetchAppIdFromWebSearch,
   parseSteamSizeFromRequirements, resolveEnglishName, extractEnglishNameFromWikidata, extractEnglishNameFromBaidu,
   extractEnglishNameFromWikiSnippet, extractEnglishNameFromWikiInfobox, fetchEnglishNameFromWikipedia,
-  fetchEnglishNameFromBangumi, isLatinName, cnNameSimilarity,
+  fetchEnglishNameFromBangumi, isLatinName, cnNameSimilarity, fetchWikiIntro,
   detectEditionSuffix, augmentWithEdition,
   cleanGameName, stripSubtitle, tryDownload, isImageMagic,
 };

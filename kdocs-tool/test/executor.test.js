@@ -28,6 +28,7 @@ function baseDeps(over = {}) {
     fetchAppIdFromWikidata: async () => null,
     fetchAppIdFromBaiduBaike: async () => null,
     fetchAppIdFromWebSearch: async () => null,
+    fetchWikiIntro: async () => null, // 默认无维基介绍（走占位）
     resolveEnglishName: async () => "", // 默认解析不到英文名（走中文名匹配）
     downloadCover: async () => { downloadCoverCount++; return "/fake/steam.jpg"; },
     downloadCoverFromUrl: async () => { downloadFromUrlCount++; return "/fake/cover.jpg"; },
@@ -96,12 +97,25 @@ test("含免责声明的介绍被丢弃（Steam 官方描述命中黑名单）�
     searchSteamAppId: async () => "12345",
     getSteamAppDetails: async () => ({ shortDescription: "该游戏经核实无真实公开资料，疑似虚构，请勿轻信。", size: "" }),
   });
-  const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
+  const res = await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
   assert.strictEqual(lastCreate["游戏介绍"], "介绍待补充", "免责声明应被丢弃并占位，而非用标题兜底");
   assert.strictEqual(res.introProvenance, "占位");
   assert.strictEqual(res.needsReview, true);
   assert.deepStrictEqual(lastCreate["游戏信息"], ["免安装硬盘版", "PC游戏", "全DLC"], "游戏信息仅含勾选分类标签，不再写 ⚠需人工校对");
+});
+
+test("Steam 描述不可达时走维基百科兜底（provenance=维基百科，非占位）", async () => {
+  const deps = baseDeps({
+    searchSteamAppId: async () => "12345",
+    getSteamAppDetails: async () => null, // Steam 官方描述拿不到
+    fetchWikiIntro: async () => ({ text: "《007 初露锋芒》是一款由 IO Interactive 开发的第一人称潜行射击游戏。", source: "zh" }),
+  });
+  const res = await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
+  const { lastCreate } = deps._state();
+  assert.strictEqual(lastCreate["游戏介绍"], "《007 初露锋芒》是一款由 IO Interactive 开发的第一人称潜行射击游戏。");
+  assert.strictEqual(res.introProvenance, "维基百科");
+  assert.strictEqual(res.needsReview, false, "维基介绍 + 大小齐全不算待校对");
 });
 
 test("大小缺失时不再提示手动填写，直接不写入游戏大小字段", async () => {

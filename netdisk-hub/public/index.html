@@ -273,8 +273,12 @@
 
     /* ── 格式化分享文本(默认收起) ── */
     .fmt-body { margin-top: 14px; }
-    .fmt-actions { display: flex; gap: 10px; margin-top: 12px; }
-    .fmt-actions .btn.ghost, .fmt-actions .auth-btn { padding: 10px 20px; font-size: 14px; }
+    .fmt-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: nowrap; }
+    .fmt-actions .btn.ghost, .fmt-actions .auth-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      white-space: nowrap; padding: 12px 24px; font-size: 15px;
+    }
+    .fmt-actions .app-ico { width: 20px; height: 20px; }
 
     @media (max-width: 680px) { .cards { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } .batch-preview { grid-template-columns: 1fr; } }
 

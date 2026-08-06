@@ -834,6 +834,7 @@ fmtFill.addEventListener('click', () => {
   refreshUI();
   document.getElementById('batchText').scrollIntoView({ behavior: 'smooth', block: 'center' });
   batchText.focus();
+  closeModal(); // 填入后关闭格式化弹窗
 });
 
 loadAccounts();

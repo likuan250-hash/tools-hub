@@ -1,4 +1,4 @@
-﻿// ── Steam 搜索 + 封面下载 ──
+// ── Steam 搜索 + 封面下载 ──
 const https = require("https");
 const http = require("http");
 const fs = require("fs");
@@ -128,6 +128,8 @@ function downloadCover(gameName, appid, coverDir) {
     `${cdn}/header.jpg`,             // 横版 header，最后兜底（比例不佳）
     `${fas}/header.jpg`,
     `${aka}/header.jpg`,
+    `${fas}/library_hero.jpg`,       // 新游戏/未上架仅有 hero 横版大图时兜底（如 007 First Light 3768760）
+    `${cdn}/library_hero.jpg`,
   ];
   return (async () => {
     let lastErr;

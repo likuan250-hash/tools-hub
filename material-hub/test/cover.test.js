@@ -16,6 +16,7 @@ const {
   hasCjk,
   isLatinTitle,
   cleanEnglishTitle,
+  extractEmbeddedEnglishTitle,
   buildQueryPlan,
   parseSteamSearchAppId,
   parseSteamAppName,
@@ -1202,4 +1203,45 @@ test('applyCandidate：非法 URL 直接失败', async () => {
   const r = await cover.applyCandidate('  ', 'E:\\素材\\x', { source: 'user' });
   assert.equal(r.ok, false);
   assert.equal(r.source, 'user');
+});
+
+// ─────────────────────── 混合标题内嵌英文名提取 ───────────────────────
+
+test('extractEmbeddedEnglishTitle：混合标题提取最长拉丁片段并剥版本尾巴', () => {
+  assert.equal(
+    extractEmbeddedEnglishTitle('战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 官方中文+全DLC 免安装硬盘版'),
+    'Warhammer 40,000: Space Marine 2',
+  );
+  assert.equal(
+    extractEmbeddedEnglishTitle('塞尔达传说 旷野之息 The Legend of Zelda: Breath of the Wild'),
+    'The Legend of Zelda: Breath of the Wild',
+  );
+  assert.equal(extractEmbeddedEnglishTitle('GTA 5 侠盗猎车手5'), 'GTA 5');
+  assert.equal(extractEmbeddedEnglishTitle('只狼：影逝二度 Sekiro: Shadows Die Twice v1.06'), 'Sekiro: Shadows Die Twice');
+});
+
+test('extractEmbeddedEnglishTitle：无内嵌英文名返回空串', () => {
+  assert.equal(extractEmbeddedEnglishTitle('正当防卫4'), '');
+  assert.equal(extractEmbeddedEnglishTitle('只狼：影逝二度'), '');
+  assert.equal(extractEmbeddedEnglishTitle(''), '');
+  assert.equal(extractEmbeddedEnglishTitle('Elden Ring'), ''); // 纯拉丁不归它管
+});
+
+test('resolveEnglishTitle：混合标题直接提取内嵌英文名，不发任何请求', async () => {
+  const calls = [];
+  const cover = makeCover(async () => { calls.push('fetch'); return { ok: false }; }, fakeFs());
+  const r = await cover.resolveEnglishTitle(
+    '战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 官方中文+全DLC 免安装硬盘版',
+    { lookup: false },
+  );
+  assert.equal(r.title, 'Warhammer 40,000: Space Marine 2');
+  assert.equal(r.source, 'embedded');
+  assert.equal(calls.length, 0);
+});
+
+test('resolveEnglishTitle：纯中文名仍走维基反查（内嵌提取为空）', async () => {
+  const cover = makeCover(async () => ({ ok: false }), fakeFs());
+  const r = await cover.resolveEnglishTitle('只狼：影逝二度', { lookup: false });
+  assert.equal(r.title, '');
+  assert.equal(r.source, 'none');
 });

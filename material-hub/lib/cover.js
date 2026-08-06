@@ -393,6 +393,30 @@ function cleanEnglishTitle(raw) {
 }
 
 /**
+ * 从「中文名 + 英文名」混合标题里提取内嵌英文名。
+ * 典型输入：「战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 官方中文+全DLC 免安装硬盘版」。
+ * 策略：取「以字母开头、含至少 2 个字母」的最长连续拉丁片段，再剥版本尾巴（v14.0 / v1.2.3）。
+ * 纯拉丁标题不在这里处理（isLatinTitle 已短路）。
+ * @param {string} raw 原始游戏名
+ * @returns {string} 提取出的英文名；无则返回空串
+ */
+function extractEmbeddedEnglishTitle(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s || !hasCjk(s)) return '';
+  const runs = s.match(/[A-Za-z][A-Za-z0-9 .,'&:()\-.]*/g) || [];
+  let best = '';
+  for (const run of runs) {
+    const letters = (run.match(/[A-Za-z]/g) || []).length;
+    if (letters < 2) continue;
+    if (run.length > best.length) best = run;
+  }
+  if (!best) return '';
+  // 剥版本尾巴：英文名不带 v14.0 / v1.2.3 这类后缀
+  best = best.replace(/\s*v?\d+(?:\.\d+){1,3}\s*$/i, '');
+  return cleanEnglishTitle(best);
+}
+
+/**
  * 构造查询词计划：英文名优先，原名兜底（缺陷 3 的「双轮策略」）。
  * 两者等价（忽略大小写）时只保留一条，避免白跑一轮网络请求。
  * @param {string} gameName 原始游戏名
@@ -866,14 +890,15 @@ class CoverFetcher {
    * 优先级：
    *   1. `opts.englishTitle` —— 调用方显式给的，最可信，不发任何请求；
    *   2. 原名本身就是拉丁标题（`Elden Ring` / `Nioh 2`）—— 它就是英文名；
-   *   3. 维基百科反查（zh.wikipedia.org → langlinks.en）；
-   *   4. YouTube 搜索兜底（yt-dlp 搜视频标题）；
-   *   5. 全都拿不到 → 返回空英文名，**不报错**。
+   *   3. 混合标题里内嵌的英文名直接提取（如「战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 …」）；
+   *   4. 维基百科反查（zh.wikipedia.org → langlinks.en）；
+   *   5. YouTube 搜索兜底（yt-dlp 搜视频标题）；
+   *   6. 全都拿不到 → 返回空英文名，**不报错**。
    *
    * @param {string} gameName 游戏名
    * @param {{englishTitle?: string, emit?: Function, lookup?: boolean}} [opts]
    *   lookup=false 可关闭 Steam 网络反查（单测与离线场景用）
-   * @returns {Promise<{title: string, source: 'opts'|'origin'|'steam'|'none', appId?: string}>}
+   * @returns {Promise<{title: string, source: 'opts'|'origin'|'embedded'|'steam'|'none', appId?: string}>}
    */
   async resolveEnglishTitle(gameName, opts = {}) {
     const name = String(gameName == null ? '' : gameName).trim();
@@ -881,6 +906,9 @@ class CoverFetcher {
     if (given) return { title: given, source: 'opts' };
     if (!name) return { title: '', source: 'none' };
     if (isLatinTitle(name)) return { title: name, source: 'origin' };
+    // 混合标题内嵌英文名直接提取，免维基/YouTube 反查，离线也稳
+    const embedded = extractEmbeddedEnglishTitle(name);
+    if (embedded) return { title: embedded, source: 'embedded' };
     if (opts.lookup === false) return { title: '', source: 'none' };
 
     if (this.englishTitleCache.has(name)) return this.englishTitleCache.get(name);
@@ -1997,6 +2025,7 @@ module.exports = {
   hasCjk,
   isLatinTitle,
   cleanEnglishTitle,
+  extractEmbeddedEnglishTitle,
   buildQueryPlan,
   parseSteamSearchAppId,
   parseSteamAppName,

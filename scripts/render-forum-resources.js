@@ -57,7 +57,6 @@ const SUFFIX_WORDS = [
   "整合包",
   "整合",
   "联动",
-  "模拟器",
   "镜像",
   "完整",
   "版本",
@@ -98,8 +97,8 @@ const SUFFIX_WORDS = [
   "失地复苏",
   "集成",
 ];
-const NUM_VERSION = /\bv\d+(?:\.\d+)+\b/gi;
-const BARE_VERSION = /\b\d+(?:\.\d+)+\b/g;
+const NUM_VERSION = /\bv\d+(?:\.\d+)+[a-z0-9]*\b/gi;
+const BARE_VERSION = /\b\d+(?:\.\d+)+[a-z0-9]*\b/g;
 
 function stripWords(s) {
   for (let i = 0; i < 5; i++) {
@@ -119,12 +118,26 @@ function gameName(raw) {
   if (m) s = m[1];
   else if (b.length) s = b.join(" ");
   s = s.replace(/[《》【】]/g, " ");
-  s = s.replace(/[（(]\s*[A-Za-z0-9][^）)]*[）)]/g, " ");
+  // 括号内的英文名保留并追加（如「杀戮尖塔2（Slay the Spire 2）」），其余括号内容删除
+  const enParts = [...s.matchAll(/[（(]([A-Za-z][A-Za-z0-9 .:'\-]*\s[A-Za-z0-9 .:'\-]+)[）)]/g)]
+    .map((m) => m[1])
+    .filter((p) => {
+      const pn = normEn(p);
+      const sn = normEn(s.replace(/[（(][^）)]*[）)]/g, ""));
+      return (
+        !pn ||
+        !sn.includes(pn) ||
+        ![...enTokens(p)].every((t) => enTokens(s.replace(/[（(][^）)]*[）)]/g, "")).has(t))
+      );
+    });
+  s = s.replace(/[（(][^）)]*[）)]/g, " ");
+  s += " " + enParts.join(" ");
   s = s.replace(NUM_VERSION, " ");
   s = stripWords(s);
   for (const w of [
     "最新",
     "整合包",
+    "更新",
     "MOD",
     "mod",
     "Mod",
@@ -161,7 +174,8 @@ function gameName(raw) {
     s = s.split(w).join(" ");
   }
   s = s.replace(/[+＋]/g, " ").replace(/\s+/g, " ");
-  s = s.replace(/\bv?\d[\d.]*(?:[a-z]\d*)?\b/gi, " ");
+  s = s.replace(/\bv?\d+(?:\.\d+)+\b/gi, " ");
+  s = s.replace(/\bv\d+\b/gi, " ");
   s = s.replace(/^[\s+＋.:：·]*|[\s+＋.:：·]*$/g, " ").replace(/\s{2,}/g, " ");
   return s.replace(/\s+/g, " ").trim();
 }
@@ -176,7 +190,7 @@ function biliGameName(raw, knownNames) {
   const nz = normZh(s);
   let best = "";
   for (const k of knownNames) {
-    if (nz.includes(k)) {
+    if (k.length >= 3 && nz.includes(k)) {
       if (k.length > normZh(best).length) best = k;
     }
   }
@@ -246,6 +260,61 @@ function enTokens(s) {
   );
 }
 
+function wordContains(long, short) {
+  if (!short || short.length < 8 || !long) return false;
+  const idx = long.indexOf(short);
+  if (idx === -1) return false;
+  const before = idx > 0 ? long[idx - 1] : "";
+  const after = idx + short.length < long.length ? long[idx + short.length] : "";
+  return !/[a-z0-9]/i.test(before) && !/[a-z0-9]/i.test(after);
+}
+
+// 英文版本词尾缀（normEn 后形态）：资源名是 hotName 的扩展时，剩余部分仅允许版本词
+const EN_VERSION_TAIL_RE =
+  /^(remastered|deluxe|complete|goty|ultimate|gold|directors?cut|hd|collection|learningedition|standard|digitaldeluxe|enhanced|definitive|anniversary|remake|rebirth|reloaded|upgrade)$/;
+
+function enSameGameExt(e, ge) {
+  if (ge.length > e.length && ge.includes(e)) {
+    const rest = ge.replace(e, "");
+    return /^\d+$/.test(rest) || EN_VERSION_TAIL_RE.test(rest);
+  }
+  return true;
+}
+
+// 版本词尾缀（normZh 后形态）：较长名去掉较短名后若只剩这些词，视为同一游戏
+const VERSION_TAIL_RE =
+  /^(重制版|豪华版|完全版|年度版|终极版|黄金版|导演剪辑版|高清版|学习版|合集|完整版|典藏版|数字豪华版|中文版|加强版|增强版|决定版|超级版|大师版|究极版|高清重制版|remastered|deluxe|complete|goty|ultimate|gold|directors?cut|hd|collection|learningedition|standard|digitaldeluxe)*$/;
+
+// gz 包含 z 时，判断剩余部分是否仅为版本词（避免「我的世界→我的世界：传奇」这类不同游戏误配）
+function isSameGameExt(z, gz) {
+  const rest = gz.replace(z, "");
+  if (/[\u4e00-\u9fff]/.test(rest)) return VERSION_TAIL_RE.test(rest);
+  // 剩余部分为英文名/纯数字时，版本数字必须与 z 一致（防「使命召唤→使命召唤5」类泛前缀误配）
+  const zNums = z.match(/\d+/g) || [];
+  const rNums = rest.match(/\d+/g) || [];
+  return rNums.every((n) => zNums.includes(n));
+}
+
+// 版本数字一致性：双方都带版本号但无交集 → 视为不同代游戏（防 Spider-Man 2 ↔ 1 代、FC 27 ↔ FC 等）
+function versionNums(s) {
+  const n = new Set();
+  const t = String(s || "").trim();
+  // 只取末尾词中的版本号，避免把「Left 4 Dead」中间的 4 等误当版本
+  const tail = t.split(/[\s/]+/).pop() || "";
+  for (const m of tail.matchAll(/\d+/g)) n.add(m[0]);
+  for (const m of tail.matchAll(/[一二三四五六七八九十]+/g)) n.add(m[0]);
+  if (/^(?:X{1,3}|IX|IV|V?I{1,3})$/i.test(tail)) n.add(tail.toLowerCase());
+  return n;
+}
+
+function numConflict(a, b) {
+  const na = versionNums(a);
+  const nb = versionNums(b);
+  if (!na.size || !nb.size) return na.size > 0 || nb.size > 0;
+  for (const x of na) if (nb.has(x)) return false;
+  return true;
+}
+
 const esc = (s) =>
   String(s).replace(
     /[&<>"']/g,
@@ -269,6 +338,7 @@ function groupResources(authors) {
 
 // 热门游戏名 → 资源（中英双通道 + gamemap 桥接 + 英文词级匹配）
 function matchHot(hotName, groups) {
+  hotName = String(hotName || "").replace(/[®™]/g, "");
   const z = normZh(hotName);
   const e = normEn(hotName);
   const zhEn = normEn(lookupEnglishNameOffline(hotName) || "");
@@ -280,25 +350,29 @@ function matchHot(hotName, groups) {
     let ok = false;
     if (gz && z) {
       if (gz === z) ok = true;
-      else if (z.length >= 3 && gz.includes(z)) ok = true;
-      else if (gz.length >= 3 && z.includes(gz)) ok = true;
+      else if (z.length >= 4 && gz.includes(z) && isSameGameExt(z, gz)) ok = true;
+      else if (gz.length >= 4 && z.includes(gz) && isSameGameExt(gz, z)) ok = true;
     }
     if (
       !ok &&
       e &&
       ge &&
       e.length >= 5 &&
+      !numConflict(hotName, g.name) &&
+      enSameGameExt(e, ge) &&
       (ge === e || (ge.includes(e) && e.length >= 8) || (e.includes(ge) && ge.length >= 8))
     )
       ok = true;
+    if (!ok && zhEn && gEn && (zhEn === gEn || wordContains(gEn, zhEn) || wordContains(zhEn, gEn)))
+      ok = true;
+    // 反向桥接：hotName 为英文、资源为中文时，用资源中文名→英文名比对
     if (
       !ok &&
-      zhEn &&
+      e &&
       gEn &&
-      zhEn.length >= 5 &&
-      (zhEn === gEn ||
-        (zhEn.includes(gEn) && gEn.length >= 8) ||
-        (gEn.includes(zhEn) && zhEn.length >= 8))
+      e.length >= 5 &&
+      !numConflict(hotName, g.name) &&
+      (e === gEn || wordContains(e, gEn) || wordContains(gEn, e))
     )
       ok = true;
     if (!ok && e && ge && e.length >= 5 && ge.length >= 5) {
@@ -308,7 +382,8 @@ function matchHot(hotName, groups) {
       a.forEach((t) => {
         if (b.has(t)) shared++;
       });
-      if (shared >= 2 && (shared >= a.size || shared >= b.size)) ok = true;
+      if (shared >= 2 && shared >= a.size && shared >= b.size && !numConflict(hotName, g.name))
+        ok = true;
     }
     if (ok) hits.push(g);
   }
@@ -335,10 +410,59 @@ function renderResourceRows(groups) {
     .join("");
 }
 
-function renderHotTable(list, groups) {
+// 网游/手游黑名单：资源帖本身均为 PC 单机学习版，命中资源即视为 PC 单机，仅排除明显联机向作品
+const ONLINE_BLACKLIST = [
+  "王者荣耀",
+  "和平精英",
+  "原神",
+  "崩坏",
+  "星穹铁道",
+  "绝区零",
+  "三角洲行动",
+  "暗区突围",
+  "永劫无间",
+  "英雄联盟",
+  "穿越火线",
+  "CS2",
+  "Counter-Strike",
+  "PUBG",
+  "Apex",
+  "守望先锋",
+  "无畏契约",
+  "VALORANT",
+  "War Thunder",
+  "World of Warships",
+  "战舰世界",
+  "坦克世界",
+  "蛋仔派对",
+  "雀魂",
+  "漫威争锋",
+  "第五人格",
+  "逆水寒",
+  "天涯明月刀",
+  "剑网3",
+  "剑灵",
+  "Dota 2",
+  "永劫",
+];
+
+function isOnlineGame(name) {
+  const s = name ? String(name).toLowerCase() : "";
+  return ONLINE_BLACKLIST.some((w) => s.includes(w.toLowerCase()));
+}
+
+// 热门榜只保留「有资源帖 ∧ PC 单机」的条目
+function hotWithResource(list, groups) {
   return list
+    .map((h) => ({ ...h, hits: matchHot(h.name, groups) }))
+    .filter((h) => h.hits.length > 0 && !isOnlineGame(h.name));
+}
+
+function renderHotTable(list, groups) {
+  return hotWithResource(list, groups)
+    .slice(0, 50)
     .map((h, i) => {
-      const hits = matchHot(h.name, groups);
+      const hits = h.hits;
       const links = hits.length
         ? hits
             .map((g) =>
@@ -356,8 +480,16 @@ function renderHotTable(list, groups) {
                 .join(" "),
             )
             .join(" ")
-        : '<span class="muted">无资源帖</span>';
-      return "<tr><td>" + (i + 1) + "</td><td>" + esc(h.name) + "</td><td>" + links + "</td></tr>";
+        : "";
+      return (
+        "<tr><td>" +
+        (i + 1) +
+        "</td><td>" +
+        esc(String(h.name).replace(/[®™]/g, "")) +
+        "</td><td>" +
+        links +
+        "</td></tr>"
+      );
     })
     .join("");
 }
@@ -381,7 +513,10 @@ function main() {
   // 已知游戏名库：资源帖游戏名（zh+en 归一化）+ gamemap 中文键
   const known = new Set();
   for (const g of groups) {
-    known.add(normZh(g.name));
+    const gz = normZh(g.name);
+    known.add(gz);
+    const zhCore = gz.replace(/[a-z0-9]+/g, "");
+    if (zhCore.length >= 2) known.add(zhCore);
     const en = normEn(g.name);
     if (en.length >= 4) known.add(en);
     const enName = lookupEnglishNameOffline(g.name);
@@ -425,16 +560,24 @@ function main() {
     "）</th></tr>" +
     renderResourceRows(groups) +
     "</table></div>" +
-    '<div class="pane"><h2>Steam 全球热销 Top50</h2><table><tr><th>#</th><th>游戏</th><th>对应资源</th></tr>' +
+    '<div class="pane"><h2>Steam 热销 Top50（已有资源帖）</h2>' +
+    '<p class="count">口径：Steam 热销榜前 200 ∩ 论坛已有资源帖（共 ' +
+    hotWithResource(hot.steam, groups).length +
+    " 款），按 Steam 排名取前 50</p>" +
+    "<table><tr><th>#</th><th>游戏</th><th>对应资源</th></tr>" +
     renderHotTable(hot.steam, groups) +
     "</table>" +
-    '<h2>B站游戏区热门 Top50</h2><p class="count">来源：B站游戏区排行榜（' +
+    '<h2>B站游戏区热门 Top50（已有资源帖）</h2><p class="count">口径：B站游戏区排行 ∩ 已有资源帖（共 ' +
+    hotWithResource(biliGames, groups).length +
+    " 款），按播放量取前 50（" +
     esc(hot.generatedAt) +
     "）</p>" +
     "<table><tr><th>#</th><th>视频/游戏</th><th>播放</th><th>对应资源</th></tr>" +
-    biliGames
+    hotWithResource(biliGames, groups)
+      .sort((a, b) => b.play - a.play)
+      .slice(0, 50)
       .map((h, i) => {
-        const hits = matchHot(h.name, groups);
+        const hits = h.hits;
         const links = hits.length
           ? hits
               .map((g) =>
@@ -452,7 +595,7 @@ function main() {
                   .join(" "),
               )
               .join(" ")
-          : '<span class="muted">无资源帖</span>';
+          : "";
         return (
           "<tr><td>" +
           (i + 1) +

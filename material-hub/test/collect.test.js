@@ -668,3 +668,122 @@ test('未传 outDir 时使用规范默认根目录 E:\\素材\\', async () => {
   await svc.run({ name: '正当防卫4' });
   assert.equal(name.calls[0].outputDir, 'E:\\素材\\');
 });
+
+// ─────────────────────── 交互式封面选择 ───────────────────────
+
+/** 交互式测试用 CoverFetcher 替身：collectCandidates 直接返回固定候选。 */
+function fakeInteractiveCover(over = {}) {
+  const calls = { collectCandidates: [], applyCandidate: [] };
+  return {
+    calls,
+    async resolveEnglishTitle(gameName, opts) {
+      const eng = opts && opts.englishTitle ? opts.englishTitle : '';
+      return { title: eng, source: eng ? 'opts' : 'none' };
+    },
+    async collectCandidates(gameName, opts) {
+      calls.collectCandidates.push({ gameName, opts });
+      if (over.collectThrows) throw over.collectThrows;
+      return over.candidates === undefined
+        ? {
+            ok: true,
+            candidates: [
+              { url: 'https://cdn.akamai.steamstatic.com/steam/apps/517630/capsule_616x353_2x.jpg', source: 'steam-cdn', label: 'Steam 官方图' },
+              { url: 'https://w.wallhaven.cc/full/xx/wallhaven-abc.jpg', source: 'wallhaven', label: 'wallhaven.cc' },
+            ],
+            queryPlan: ['Just Cause 4'],
+            englishTitle: '',
+            steamAppId: '517630',
+          }
+        : over.candidates;
+    },
+    async applyCandidate(url, outDir, opts) {
+      calls.applyCandidate.push({ url, outDir, opts });
+      if (over.applyThrows) throw over.applyThrows;
+      return {
+        ok: true,
+        source: (opts && opts.source) || 'user',
+        file: COVER_FILE,
+        path: path.join(outDir, COVER_FILE),
+        width: 1920,
+        height: 1080,
+        url,
+      };
+    },
+  };
+}
+
+/** 轮询等待指定类型事件出现。 */
+async function waitEvent(events, type, ms = 3000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const ev = events.find((e) => e.type === type);
+    if (ev) return ev;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error('等待事件超时: ' + type);
+}
+
+test('交互式封面：发出 cover_candidates → chooseCover 选中 → 应用所选 URL', async () => {
+  const cover = fakeInteractiveCover();
+  const svc = new CollectService({
+    name: fakeName(),
+    cover,
+    trailer: fakeTrailer(),
+    probe: fakeProbe(),
+    env: fakeEnv(),
+    logger: fakeLogger(),
+    fs: fakeFs([]),
+  });
+  const events = [];
+  const p = svc.run(
+    { name: '正当防卫4', outDir: OUT_DIR, coverInteractive: true },
+    { onEvent: (ev) => events.push(ev) },
+  );
+  const ev = await waitEvent(events, 'cover_candidates');
+  assert.equal(ev.detail.candidates.length, 2);
+  assert.equal(ev.detail.candidates[0].source, 'steam-cdn');
+  const pickedUrl = ev.detail.candidates[1].url;
+  assert.equal(svc.chooseCover(ev.detail.requestId, pickedUrl), true);
+  const result = await p;
+  assert.equal(result.coverOk, true);
+  assert.equal(cover.calls.applyCandidate.length, 1);
+  assert.equal(cover.calls.applyCandidate[0].url, pickedUrl);
+  assert.equal(cover.calls.applyCandidate[0].opts.source, 'wallhaven');
+});
+
+test('交互式封面：跳过选择 → 走主视频抽帧兜底', async () => {
+  const cover = fakeInteractiveCover();
+  const probe = fakeProbe();
+  const svc = new CollectService({
+    name: fakeName(),
+    cover,
+    trailer: fakeTrailer(),
+    probe,
+    env: fakeEnv(),
+    logger: fakeLogger(),
+    fs: fakeFs([]),
+  });
+  const events = [];
+  const p = svc.run(
+    { name: '正当防卫4', outDir: OUT_DIR, coverInteractive: true },
+    { onEvent: (ev) => events.push(ev) },
+  );
+  const ev = await waitEvent(events, 'cover_candidates');
+  assert.equal(svc.chooseCover(ev.detail.requestId, ''), true);
+  const result = await p;
+  assert.equal(cover.calls.applyCandidate.length, 0);
+  assert.equal(probe.calls.extractFrame.length, 1);
+  assert.equal(result.coverOk, true);
+  assert.equal(result.cover.source, 'ffmpeg-frame');
+});
+
+test('交互式封面：无候选 → 直接失败走抽帧兜底（不发 cover_candidates）', async () => {
+  const cover = fakeInteractiveCover({ candidates: { ok: false, candidates: [], reason: 'cover-no-candidates', error: '无候选封面' } });
+  const probe = fakeProbe();
+  const { result, events } = await runCollect({ cover, probe }, { coverInteractive: true });
+  assert.equal(ofType(events, 'cover_candidates').length, 0);
+  assert.equal(cover.calls.applyCandidate.length, 0);
+  assert.equal(probe.calls.extractFrame.length, 1);
+  assert.equal(result.coverOk, true);
+  assert.equal(result.cover.source, 'ffmpeg-frame');
+});

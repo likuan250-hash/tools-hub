@@ -1821,6 +1821,172 @@ class CoverFetcher {
       queryUsed: queryPlan[0] || name,
     }, meta);
   }
+
+  /**
+   * 只收集候选封面直链（不下载、不落盘），供前端弹窗预览选择。
+   * 与 fetchCover 同序同源，但每个来源最多取 MAX_CANDIDATES_PER_SOURCE 张，
+   * 总上限 MAX_PICK_CANDIDATES(12)；Steam 官方图（含 hero 兜底）排在最前。
+   * @param {string} gameName 游戏名
+   * @param {{
+   *   emit?: Function, coverUrl?: string, videoId?: string,
+   *   englishTitle?: string, steamAppId?: string,
+   *   originalName?: string, userUrlFirst?: boolean,
+   *   resolveEnglish?: boolean, resolveSteam?: boolean
+   * }} [opts] 与 fetchCover 语义一致
+   * @returns {Promise<{ok: boolean, candidates: Array<{url: string, source: string, label: string, degraded?: boolean}>, reason?: string, error?: string, queryPlan?: string[], englishTitle?: string, englishTitleSource?: string, steamAppId?: string}>}
+   */
+  async collectCandidates(gameName, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const name = String(gameName == null ? '' : gameName).trim();
+    const MAX_PICK_CANDIDATES = 12;
+
+    const english = await this.resolveEnglishTitle(name, {
+      englishTitle: opts.englishTitle,
+      emit,
+      lookup: opts.resolveEnglish !== false,
+    });
+    const queryPlan = buildQueryPlan(name, english.title);
+    if (!queryPlan.length) queryPlan.push(name);
+    const steamAppId = await this.resolveSteamAppId(queryPlan[0] || name, {
+      steamAppId: opts.steamAppId,
+      emit,
+      lookup: opts.resolveSteam !== false,
+    });
+    const meta = {
+      queryPlan: queryPlan.slice(),
+      englishTitle: english.title || '',
+      englishTitleSource: english.source || 'none',
+      steamAppId,
+    };
+
+    let order = ['steam-cdn', 'youtube', 'steam-cdn-hero', 'wallhaven', 'reddit', 'user',
+      '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites', 'steam-cdn-lowres'];
+    if (opts.userUrlFirst === true) order = ['user'].concat(order.filter((s) => s !== 'user'));
+
+    const seen = new Set();
+    const candidates = [];
+    const push = (url, source, extra) => {
+      const clean = normalizeUrl(url);
+      if (!clean || seen.has(clean)) return;
+      seen.add(clean);
+      candidates.push(Object.assign({ url: clean, source, label: SOURCE_LABEL[source] || source }, extra));
+    };
+
+    for (const source of order) {
+      if (candidates.length >= MAX_PICK_CANDIDATES) break;
+      if (source === 'user' && !normalizeUrl(opts.coverUrl)) continue;
+      if (source === 'youtube' && !String(opts.videoId || '').trim()) continue;
+      if ((source === 'steam-cdn' || source === 'steam-cdn-hero' || source === 'steam-cdn-lowres') && !steamAppId) continue;
+
+      try {
+        if (source === 'steam-cdn') {
+          this.buildSteamCdnCandidates(steamAppId, 'strict').forEach((u) => push(u, 'steam-cdn'));
+        } else if (source === 'steam-cdn-hero') {
+          this.buildSteamCdnCandidates(steamAppId, 'hero').forEach((u) => push(u, 'steam-cdn-hero', { degraded: true }));
+        } else if (source === 'steam-cdn-lowres') {
+          this.buildSteamCdnCandidates(steamAppId, 'lowres').forEach((u) => push(u, 'steam-cdn-lowres', { degraded: true }));
+        } else if (source === 'youtube') {
+          push(this.youtubeThumbUrl(opts.videoId), 'youtube');
+        } else if (source === 'user') {
+          push(opts.coverUrl, 'user');
+        } else if (source === 'wallhaven') {
+          const r = await this.httpJson(this.buildWallhavenApiUrl(name));
+          if (r.ok) {
+            this.parseWallhavenResults(r.json).slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, 'wallhaven'));
+          }
+        } else if (source === 'reddit') {
+          const query = String(name || '').trim();
+          const queryTokens = query ? normalizeTokens(query) : [];
+          for (const sub of ['gamewallpaper', 'wallpapers']) {
+            const url = 'https://www.reddit.com/r/' + sub + '/search.json?q='
+              + encodeURIComponent(query) + '&sort=relevance&limit=10&restrict_sr=on';
+            const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
+            if (!res.ok) continue;
+            const posts = (res.json && res.json.data && res.json.data.children) || [];
+            for (const p of posts) {
+              const postUrl = (p.data && p.data.url) || '';
+              if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(postUrl)) continue;
+              if (queryTokens.length
+                && !isRelevantCandidate(p.data.title || '', queryTokens)
+                && !isRelevantCandidate(extractSlugFromUrl(postUrl), queryTokens)) {
+                continue;
+              }
+              push(postUrl, 'reddit');
+            }
+            if (candidates.length >= MAX_PICK_CANDIDATES) break;
+          }
+        } else if (source === 'chinese-sites') {
+          const cname = String(opts.originalName || name || '').trim();
+          if (cname) {
+            const urls = await this.discoverViaBing(CHINESE_WALLPAPER_SITES, cname, {
+              emit, extra: '壁纸', source: 'chinese-sites', query: cname,
+            });
+            urls.slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, source));
+          }
+        } else {
+          const plan = ENGLISH_QUERY_SOURCES.indexOf(source) >= 0 ? queryPlan : [name];
+          for (const query of plan) {
+            let urls = [];
+            if (source === '4kwallpapers') {
+              urls = await this.discoverViaBing('4kwallpapers.com', query, { emit, extra: 'key art', source: '4kwallpapers', query });
+            } else if (source === 'alphacoders') {
+              urls = await this.discoverViaBing('alphacoders.com', query, { emit, extra: 'wallpaper', source: 'alphacoders', query });
+            } else if (source === 'game-sites') {
+              urls = await this.discoverViaBing(GAME_MEDIA_SITES, query, { emit, extra: 'wallpaper', source: 'game-sites', query });
+            }
+            urls.slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, source));
+            if (candidates.length >= MAX_PICK_CANDIDATES) break;
+          }
+        }
+      } catch (e) {
+        emit('log', STEP_SEARCH,
+          '[cover] ' + (SOURCE_LABEL[source] || source) + ' 候选收集异常：'
+          + (e && e.message ? e.message : String(e)),
+          null, { level: 'info' });
+      }
+    }
+
+    return Object.assign({
+      ok: candidates.length > 0,
+      candidates,
+      reason: candidates.length ? '' : 'cover-no-candidates',
+      error: candidates.length ? '' : '无候选封面',
+    }, meta);
+  }
+
+  /**
+   * 应用用户选中的候选直链：下载 → 校验真实分辨率 → 落盘为封面。
+   * 与 fromYouTube 一致：用户明确选中即使不达标也落盘，但如实标注 degraded。
+   * @param {string} url 候选直链
+   * @param {string} outDir 目标目录
+   * @param {{emit?: Function, source?: string}} [opts]
+   * @returns {Promise<{ok: boolean, degraded?: boolean, file?: string, path?: string, width?: number, height?: number, url?: string, source?: string, error?: string}>}
+   */
+  async applyCandidate(url, outDir, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const source = opts.source || 'user';
+    const clean = normalizeUrl(url);
+    if (!clean) return { ok: false, error: '无效封面 URL', source };
+    emit('cover_download', STEP_DOWNLOAD, 'GET ' + (SOURCE_LABEL[source] || source) + ' 候选图…', null, { url: clean, source });
+    const got = await this.fetchImage(clean, opts.fetchOpts || {});
+    if (!got.ok) return { ok: false, error: got.error, source };
+    const meets = meetsMinSize(got.size, { width: MIN_WIDTH, height: MIN_HEIGHT });
+    const saved = await this.saveCover(got.buf, got.size, outDir);
+    if (!saved.ok) return { ok: false, error: saved.error, source };
+    return {
+      ok: true,
+      degraded: !meets,
+      file: saved.file,
+      path: saved.path,
+      width: got.size.width,
+      height: got.size.height,
+      format: got.size.format,
+      converted: saved.converted === true,
+      bytes: got.buf.length,
+      url: clean,
+      source,
+    };
+  }
 }
 
 module.exports = {

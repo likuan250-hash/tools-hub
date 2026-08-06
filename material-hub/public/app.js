@@ -40,6 +40,7 @@ const STEP_NAMES = {
 const GROUP_OF_TYPE = {
   scan: "scan",
   cover_search: "cover",
+  cover_candidates: "cover",
   cover_download: "cover",
   cover_extract: "cover",
   trailer_search: "trailer",
@@ -103,6 +104,10 @@ const stepState = {};
 const stepEls = {};
 /** 是否有请求在执行中（防重复点击）。 */
 let running = false;
+/** 交互式封面选择状态。 */
+let coverRequestId = "";
+let coverPickUrl = "";
+let coverCands = [];
 
 /**
  * HTML 转义（所有服务端文本进 innerHTML 前必须过一遍）。
@@ -430,10 +435,99 @@ function handleEvent(ev) {
     return;
   }
 
+  if (type === "cover_candidates") {
+    openCoverPicker(ev);
+    return;
+  }
+  if (type === "cover_download" || type === "cover_extract" || type === "done" || type === "error") {
+    // 流程已继续（应用所选/抽帧/结束），收起弹窗
+    closeCoverPicker();
+  }
+
   const group = GROUP_OF_TYPE[type];
   if (!group) return;
   addLog(ev.ok === true ? "ok" : "info", "[" + group + "] " + (ev.msg || ""));
   applyStep(group, ev);
+}
+
+/**
+ * 打开封面候选弹窗（cover_candidates 事件）。
+ * @param {object} ev SSE 事件 {type, step, msg, detail:{requestId, candidates, meta}}
+ */
+function openCoverPicker(ev) {
+  const detail = ev.detail || {};
+  const cands = Array.isArray(detail.candidates) ? detail.candidates : [];
+  coverRequestId = String(detail.requestId || "");
+  coverCands = cands;
+  coverPickUrl = "";
+
+  const modal = $("coverModal");
+  const grid = $("coverModalGrid");
+  if (!modal || !grid) return;
+  const meta = detail.meta || {};
+  $("coverModalTitle").textContent = "选择封面";
+  $("coverModalSub").textContent = (meta.queryUsed ? meta.queryUsed + " · " : "") + "共 " + cands.length + " 张候选";
+  grid.innerHTML = "";
+
+  cands.forEach((c, i) => {
+    const card = document.createElement("label");
+    card.className = "cover-cand";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "coverPick";
+    radio.value = c.url;
+    radio.addEventListener("change", () => {
+      coverPickUrl = c.url;
+      const ok = $("coverOkBtn");
+      if (ok) ok.disabled = false;
+    });
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.alt = "";
+    img.addEventListener("error", () => card.classList.add("broken"));
+    img.src = c.url;
+    const metaEl = document.createElement("span");
+    metaEl.className = "cover-cand-meta";
+    metaEl.textContent = (i + 1) + ". " + (c.label || c.source || "候选");
+    card.appendChild(radio);
+    card.appendChild(img);
+    card.appendChild(metaEl);
+    grid.appendChild(card);
+  });
+
+  const ok = $("coverOkBtn");
+  if (ok) ok.disabled = true;
+  modal.hidden = false;
+}
+
+/** 收起封面候选弹窗。 */
+function closeCoverPicker() {
+  const modal = $("coverModal");
+  if (modal) modal.hidden = true;
+  coverRequestId = "";
+}
+
+/**
+ * 提交封面选择（确定/自动选/跳过统一走这里）。
+ * @param {string} url 选中的直链；空串 = 跳过（走抽帧兜底）
+ */
+async function sendCoverChoice(url) {
+  const id = coverRequestId;
+  closeCoverPicker();
+  if (!id) return;
+  try {
+    const r = await fetch("/api/cover/choose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: id, url: url || "" }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      addLog("warn", "封面选择提交失败（" + (d.error || r.status) + "）");
+    }
+  } catch (e) {
+    addLog("warn", "封面选择提交失败：" + e.message);
+  }
 }
 
 // ── 事件绑定 ──
@@ -452,6 +546,10 @@ collectBtn.onclick = () => {
 gameName.addEventListener("keydown", (e) => {
   if (e.key === "Enter") collectBtn.click();
 });
+
+$("coverOkBtn").onclick = () => sendCoverChoice(coverPickUrl);
+$("coverAutoBtn").onclick = () => sendCoverChoice(coverCands.length ? coverCands[0].url : "");
+$("coverSkipBtn").onclick = () => sendCoverChoice("");
 
 // 状态 tab 仅做「查看」切换，不影响执行（未就绪的 tab 处于 disabled）
 stateTabs.querySelectorAll("button").forEach((btn) => {

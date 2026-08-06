@@ -1142,3 +1142,64 @@ test('isYouTubeTitleRelevant：拉丁搜索词共享实词 → 采纳；无关 �
   assert.equal(isYouTubeTitleRelevant('Elden Ring Official Trailer', 'Elden Ring'), true);
   assert.equal(isYouTubeTitleRelevant('How to make Connect 4 game', 'Just Cause 4'), false);
 });
+
+// ─────────────────────── 交互式候选收集 / 应用 ───────────────────────
+
+test('collectCandidates：Steam 官方图优先 + 去重 + 上限 + 来源标签', async () => {
+  const cover = makeCover(async () => ({ ok: false }), fakeFs());
+  const r = await cover.collectCandidates('正当防卫4', {
+    englishTitle: 'Just Cause 4',
+    steamAppId: '517630',
+    resolveEnglish: false,
+    resolveSteam: false,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.candidates.length > 0, true);
+  assert.equal(r.candidates[0].source, 'steam-cdn');
+  assert.equal(r.candidates[0].label, 'Steam 官方图');
+  assert.equal(r.steamAppId, '517630');
+  // 去重：同一 URL 只出现一次
+  const urls = r.candidates.map((c) => c.url);
+  assert.equal(new Set(urls).size, urls.length);
+  // 上限：总候选不超过 12
+  assert.equal(r.candidates.length <= 12, true);
+  // 每条候选都带可预览直链
+  for (const c of r.candidates) {
+    assert.ok(/^https?:\/\//.test(c.url), c.url);
+    assert.ok(c.source && c.label);
+  }
+});
+
+test('collectCandidates：无 steamAppId 时跳过官方源；全部来源无果则 ok=false', async () => {
+  const cover = makeCover(async () => ({ ok: false }), fakeFs());
+  const r = await cover.collectCandidates('不存在的游戏', {
+    englishTitle: '',
+    resolveEnglish: false,
+    resolveSteam: false,
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.candidates.length, 0);
+  assert.equal(r.reason, 'cover-no-candidates');
+});
+
+test('applyCandidate：用户选中即落盘，低于 1280×720 如实标注 degraded', async () => {
+  const fs = fakeFs();
+  const cover = makeCover({
+    'https://x.example/cover.jpg': { buf: jpegBuf(640, 360) },
+  }, fs);
+  const r = await cover.applyCandidate('https://x.example/cover.jpg', 'E:\\素材\\【游戏268】正当防卫4', { source: 'youtube' });
+  assert.equal(r.ok, true);
+  assert.equal(r.degraded, true);
+  assert.equal(r.width, 640);
+  assert.equal(r.height, 360);
+  assert.equal(r.source, 'youtube');
+  assert.equal(r.url, 'https://x.example/cover.jpg');
+  assert.equal(fs.written.length, 1);
+});
+
+test('applyCandidate：非法 URL 直接失败', async () => {
+  const cover = makeCover(async () => ({ ok: false }), fakeFs());
+  const r = await cover.applyCandidate('  ', 'E:\\素材\\x', { source: 'user' });
+  assert.equal(r.ok, false);
+  assert.equal(r.source, 'user');
+});

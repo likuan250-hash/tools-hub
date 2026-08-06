@@ -40,6 +40,8 @@ const COVER_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
 const TRAILER_META_FILE = '.trailer.json';
 /** 规范《目录结构》里的投稿完成标记，不能被当成素材产物。 */
 const UPLOADED_MARK = '.uploaded';
+/** 交互式封面选择的等待上限；超时自动采用第一个候选（保持原自动行为，避免流程卡死）。 */
+const COVER_CHOICE_TIMEOUT_MS = 180 * 1000;
 
 /** 全流程编排服务。 */
 class CollectService {
@@ -57,6 +59,8 @@ class CollectService {
     this.cover = deps.cover || new CoverFetcher({ fs: this.fs, probe: this.probe });
     this.env = deps.env || new EnvDetector({ fs: this.fs });
     this.logger = deps.logger || loggerDefault;
+    /** 待处理的封面选择：requestId → {resolve}（由 /api/cover/choose 触发 resolve）。 */
+    this._coverChoices = new Map();
   }
 
   /**
@@ -117,6 +121,92 @@ class CollectService {
       if (!this.fs.existsSync(p)) return null;
       return JSON.parse(this.fs.readFileSync(p, 'utf8'));
     } catch (e) { return null; }
+  }
+
+  /**
+   * 提交一次封面选择（由 server 层 /api/cover/choose 转发）。
+   * @param {string} requestId 候选事件携带的请求 id
+   * @param {string} url 选中的候选直链；空串表示跳过（走抽帧兜底）
+   * @returns {boolean} 是否存在待处理的对应请求
+   */
+  chooseCover(requestId, url) {
+    const entry = this._coverChoices.get(requestId);
+    if (!entry) return false;
+    this._coverChoices.delete(requestId);
+    entry.resolve({ url: String(url || '').trim() });
+    return true;
+  }
+
+  /**
+   * 等待用户在前端弹窗中做封面选择；超时自动采用第一个候选（保持原自动行为）。
+   * @param {string} requestId 请求 id
+   * @param {number} timeoutMs 等待上限
+   * @returns {Promise<{url: string, auto?: boolean}>}
+   */
+  waitCoverChoice(requestId, timeoutMs) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (this._coverChoices.delete(requestId)) resolve({ url: '', auto: true });
+      }, timeoutMs);
+      this._coverChoices.set(requestId, {
+        resolve: (v) => { clearTimeout(timer); resolve(v); },
+      });
+    });
+  }
+
+  /**
+   * 交互式封面步骤：收集候选 → 弹窗选择 → 应用所选直链。
+   * 无候选时直接失败，交给上层走抽帧兜底。
+   * @param {string} searchName 检索用游戏名（英文名优先）
+   * @param {string} outDir 目标目录
+   * @param {{
+   *   emit?: Function, coverUrl?: string, videoId?: string,
+   *   englishTitle?: string, originalName?: string, steamAppId?: string
+   * }} [opts]
+   * @returns {Promise<object>} 与 cover.fetchCover 同构的结果对象
+   */
+  async runInteractiveCover(searchName, outDir, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const c = await this.cover.collectCandidates(searchName, {
+      emit,
+      coverUrl: opts.coverUrl,
+      videoId: opts.videoId,
+      englishTitle: opts.englishTitle,
+      originalName: opts.originalName,
+      steamAppId: opts.steamAppId,
+      userUrlFirst: !!opts.coverUrl,
+      resolveEnglish: false,
+    });
+    if (!c.candidates || !c.candidates.length) {
+      emit('log', STEP_COVER, '[cover] 未找到可预览的候选封面，走原有降级流程', null, { level: 'warn' });
+      return { ok: false, reason: 'cover-no-candidates', error: c.error || '无候选封面' };
+    }
+
+    const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    emit('cover_candidates', STEP_COVER, '找到 ' + c.candidates.length + ' 张候选封面，请选择', null, {
+      requestId,
+      candidates: c.candidates,
+      meta: {
+        queryUsed: (c.queryPlan && c.queryPlan[0]) || searchName,
+        englishTitle: c.englishTitle || '',
+        steamAppId: c.steamAppId || '',
+      },
+    });
+
+    const choice = await this.waitCoverChoice(requestId, opts.choiceTimeoutMs || COVER_CHOICE_TIMEOUT_MS);
+    if (choice.auto) {
+      emit('log', STEP_COVER, '[cover] 选择超时，自动采用第一个候选', null, { level: 'warn' });
+      choice.url = c.candidates[0].url;
+    }
+    if (!choice.url) {
+      emit('log', STEP_COVER, '[cover] 已跳过封面选择，走抽帧兜底', null, { level: 'info' });
+      return { ok: false, reason: 'cover-skipped-by-user', error: '未选择封面' };
+    }
+    const picked = c.candidates.find((it) => it.url === choice.url) || {};
+    emit('cover_download', STEP_COVER, '应用所选封面（' + (picked.label || picked.source || 'user') + '）…', null, {
+      url: choice.url, source: picked.source || 'user', interactive: true,
+    });
+    return this.cover.applyCandidate(choice.url, outDir, { emit, source: picked.source || 'user' });
   }
 
   /**
@@ -365,17 +455,22 @@ class CollectService {
     } else {
       try {
         // 英文名已在 1.5 步定稿，直接传入，不再让 cover.js 自己反查
-        coverRes = await this.cover.fetchCover(searchName, reserved.folder, {
+        const coverOpts = {
           emit,
           coverUrl: opts.coverUrl,
-          userUrlFirst: !!opts.coverUrl, // 用户指定封面 URL 时优先使用，跳过官方/壁纸源
           ytDlpPath: envInfo.ytDlpPath,
           englishTitle: searchName !== gameName ? searchName : '',
           originalName: gameName,
           steamAppId,
           videoId: trailerInfo && trailerInfo.id ? trailerInfo.id : '',
           resolveEnglish: false,
-        });
+        };
+        if (opts.coverInteractive === true) {
+          coverRes = await this.runInteractiveCover(searchName, reserved.folder, coverOpts);
+        } else {
+          coverRes = await this.cover.fetchCover(searchName, reserved.folder,
+            Object.assign({ userUrlFirst: !!opts.coverUrl }, coverOpts));
+        }
       } catch (e) {
         // cover.js 内部已全程 try/catch，这里只是最后一道保险
         coverRes = { ok: false, reason: 'cover-exception', error: e.message };

@@ -67,6 +67,25 @@
     </div>
   </section>
 
+  <!-- 交互式封面选择弹窗（cover_candidates 事件触发） -->
+  <div class="cover-modal" id="coverModal" hidden>
+    <div class="cover-modal-panel">
+      <div class="cover-modal-head">
+        <div>
+          <div class="cover-modal-title" id="coverModalTitle">选择封面</div>
+          <div class="cover-modal-sub" id="coverModalSub"></div>
+        </div>
+      </div>
+      <div class="cover-modal-grid" id="coverModalGrid"></div>
+      <div class="cover-modal-tip">缩略图直接加载远程图源，个别可能缓慢或失效（显示占位不影响选择）</div>
+      <div class="cover-modal-actions">
+        <button class="btn-ghost" id="coverAutoBtn" type="button">自动选第一个</button>
+        <button class="btn-ghost" id="coverSkipBtn" type="button">跳过（走抽帧）</button>
+        <button class="btn-primary" id="coverOkBtn" type="button" disabled>确定选用</button>
+      </div>
+    </div>
+  </div>
+
   <script>
 // 统一图标系统（单一来源；1.75 描边线性风格，跟随 currentColor）
 // 铁律：全站零 emoji —— 任何状态/装饰符号一律走本系统的 SVG，不使用 🎮🖼✓✕● 之类字符。

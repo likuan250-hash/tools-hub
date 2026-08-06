@@ -16,6 +16,12 @@ function getOutputDir() {
   return dir && dir.trim() ? dir : DEFAULT_OUTPUT_DIR;
 }
 
+/** 单一 CollectService 实例：封面选择（cover_candidates → /api/cover/choose）跨请求回调依赖同一实例。 */
+function getCollectService() {
+  if (!app.locals.collectService) app.locals.collectService = new CollectService();
+  return app.locals.collectService;
+}
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -109,9 +115,12 @@ app.post('/api/collect', (req, res) => {
   };
   req.on('close', () => { clearInterval(heartbeat); });
 
-  const service = (app.locals && app.locals.collectService) || new CollectService();
+  const service = getCollectService();
   logger.info('[collect] 开始：' + name + ' → ' + getOutputDir());
-  service.run({ name, outDir: getOutputDir(), forceTrailer, forceCover, coverUrl }, { onEvent: send })
+  service.run(
+    { name, outDir: getOutputDir(), forceTrailer, forceCover, coverUrl, coverInteractive: true },
+    { onEvent: send },
+  )
     .catch((e) => {
       logger.error('[collect] 流程异常:', e && e.message);
       send({
@@ -123,6 +132,21 @@ app.post('/api/collect', (req, res) => {
       });
     })
     .finally(finish);
+});
+
+// ── 交互式封面选择：前端弹窗勾选后提交，resolve collect.js 中挂起的 waitCoverChoice ──
+app.post('/api/cover/choose', (req, res) => {
+  const body = req.body || {};
+  const requestId = typeof body.requestId === 'string' ? body.requestId.trim() : '';
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!requestId) {
+    return res.status(400).json({ error: '缺少 requestId' });
+  }
+  const service = getCollectService();
+  if (!service.chooseCover(requestId, url)) {
+    return res.status(409).json({ error: '无待处理的封面选择（可能已超时或已处理）' });
+  }
+  res.json({ ok: true });
 });
 
 // ── 兜底错误中间件（避免未捕获异常冒泡导致进程退出被看门狗误判）──

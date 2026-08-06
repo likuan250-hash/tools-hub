@@ -25,6 +25,24 @@ function parseInput(text) {
   // 先提取英文原名（括号内）
   const m = firstLine.match(/[（(]([^）)]+)[）)]/);
   if (m) { englishName = m[1]; }
+  if (!englishName) {
+    // 无括号时取「中文名后内嵌的英文名」（如「战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 …」）。
+    // 直接命中 Steam 搜索，避免整条标题走 Bangumi/维基/百度模糊反查而错配 AppID（如 40K 系列拿到 Darktide）。
+    const runs = firstLine.match(/[A-Za-z][A-Za-z0-9 .,'&:()\-.]*/g) || [];
+    let best = "";
+    for (const run of runs) {
+      const trimmed = run.trim();
+      const letters = (trimmed.match(/[A-Za-z]/g) || []).length;
+      if (letters < 2) continue;
+      // 过滤 repack 噪音短串（如「DM」「DLC」）：多词标题或足够长的单段才算游戏名
+      if (!(trimmed.includes(" ") || trimmed.length >= 6)) continue;
+      if (trimmed.length > best.length) best = trimmed;
+    }
+    if (best) {
+      // 剥版本尾巴（v14.0 / v1.2.3），与中文名里的版本号处理保持一致
+      englishName = best.replace(/\s*v?\d+(?:\.\d+){1,3}\s*$/i, "").trim();
+    }
+  }
   // 游戏名：取括号前中文名；若无中文则用英文名；并去掉 Build/版本/补丁/免安装等长尾
   gameName = (m ? firstLine.substring(0, m.index).trim() : firstLine).replace(/\s*[Bb]uild\.\S+|\(?v?\d{4,}\S*\)?|\s*官方中文\+?|\+?升级补丁|\+?联机补丁|\s*免安装硬盘版|\s*免安装|\s*硬盘版/g, "").trim() || englishName;
   // 二次清洗：剥除版本号与 repack 标签噪音（如 v1.6.10721.0105 / 官方中文+预购特典+单独升级档），

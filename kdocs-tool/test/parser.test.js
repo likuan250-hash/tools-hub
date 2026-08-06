@@ -53,9 +53,18 @@ test("「大小：」前缀提取游戏大小", () => {
   assert.strictEqual(parseInput("a\n大小: 512MB").size, "512MB");
 });
 
-test("提取英文名（无中文括号时为空）", () => {
-  assert.strictEqual(parseInput("Hades II").englishName, "");
+test("提取英文名：括号优先，无括号时取内嵌英文名", () => {
+  assert.strictEqual(parseInput("Hades II").englishName, "Hades II");
   assert.strictEqual(parseInput("黑神话悟空（Black Myth Wukong）").englishName, "Black Myth Wukong");
+  // 中文名 + 空格 + 英文名（无括号）也能提取，并剥版本尾巴
+  assert.strictEqual(
+    parseInput("战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 官方中文+全DLC 免安装硬盘版").englishName,
+    "Warhammer 40,000: Space Marine 2",
+  );
+  // 纯中文名仍为空（交给 resolveEnglishName 在线解析）
+  assert.strictEqual(parseInput("艾尔登法环 黄金树幽影").englishName, "");
+  // repack 噪音短串（DM / DLC）不误判成英文名
+  assert.strictEqual(parseInput("某游戏 官方中文+全DLC 免安装硬盘版 3DM").englishName, "");
 });
 
 // ── H3：脏名清洗（版本号 + repack 标签全剥，保留副标题）──

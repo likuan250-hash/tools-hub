@@ -9,6 +9,15 @@ const fs = require("fs");
 const crypto = require("crypto");
 const http = require("http");
 
+// ── 更新/数据包网络：GitHub 相关域名绕过系统代理直连 ──
+// 背景：系统代理（WinINET 127.0.0.1:7990）对 GitHub 的 TLS 协商不稳定，
+// 曾报 net::ERR_SSL_VERSION_OR_CIPHER_MISMATCH 导致检查更新失败；GitHub 直连实测稳定。
+// 仅绕过 GitHub 域名，其余域名仍走系统代理，不影响 YouTube 等依赖代理的功能。
+app.commandLine.appendSwitch(
+  "proxy-bypass-list",
+  "github.com;api.github.com;*.githubusercontent.com;*.githubassets.com;*.github.io"
+);
+
 // 主进程中不依赖 Electron 运行时的纯函数（safeStr / copyDir），抽到 lib 以便独立单测。
 const { safeStr, copyDir } = require("./lib/host-utils");
 

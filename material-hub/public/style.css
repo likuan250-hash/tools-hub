@@ -93,7 +93,7 @@ body {
 .mod-head .left { display: flex; align-items: center; gap: 10px; }
 .mod-head .ico { font-size: 20px; }
 .mod-head .name { font-size: 16px; font-weight: 700; }
-.mod-head .ver { font-size: 12.5px; color: var(--text-dim); font-family: var(--mono-font); }
+    .mod-head .ver { font-size: 12.5px; color: var(--text-dim); font-family: var(--mono-font); }
 
 /* ===== 玻璃主卡片 ===== */
 .card {

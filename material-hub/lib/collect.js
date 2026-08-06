@@ -368,6 +368,7 @@ class CollectService {
         coverRes = await this.cover.fetchCover(searchName, reserved.folder, {
           emit,
           coverUrl: opts.coverUrl,
+          userUrlFirst: !!opts.coverUrl, // 用户指定封面 URL 时优先使用，跳过官方/壁纸源
           ytDlpPath: envInfo.ytDlpPath,
           englishTitle: searchName !== gameName ? searchName : '',
           originalName: gameName,

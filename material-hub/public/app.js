@@ -25,8 +25,6 @@ const coverName = $("coverName");
 const coverDim = $("coverDim");
 const doneFiles = $("doneFiles");
 const pathLine = $("pathLine");
-const verText = $("verText");
-
 /** 三态面板 id 映射（与 index.html 一致）。 */
 const PANELS = { empty: "panel-empty", running: "panel-running", done: "panel-done" };
 
@@ -463,8 +461,3 @@ stateTabs.querySelectorAll("button").forEach((btn) => {
   };
 });
 
-// 页头版本号（与 /api/version 契约一致，仅展示用）
-fetch("/api/version")
-  .then((r) => r.json())
-  .then((d) => { verText.textContent = "v" + (d && d.version ? d.version : "—"); })
-  .catch(() => { verText.textContent = ""; });

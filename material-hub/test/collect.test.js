@@ -526,6 +526,32 @@ test('force=true 时忽略既有产物强制重下', async () => {
   assert.equal(result.trailer.reused, false);
 });
 
+test('forceTrailer=true 单独勾选：只重下视频，封面复用', async () => {
+  const name = fakeName({ reserved: { reused: true } });
+  const fs = fakeFs(['封面.jpg', 'old.mp4']);
+  const trailer = fakeTrailer();
+  const cover = fakeCover();
+  const { result } = await runCollect({ name, fs, trailer, cover }, { forceTrailer: true });
+
+  assert.equal(trailer.calls.download.length, 1, '应重新下载视频');
+  assert.equal(cover.calls.length, 0, '封面应复用，不重下');
+  assert.equal(result.cover.source, 'reused');
+  assert.equal(result.trailer.reused, false);
+});
+
+test('forceCover=true 单独勾选：只重找封面，视频复用', async () => {
+  const name = fakeName({ reserved: { reused: true } });
+  const fs = fakeFs(['封面.jpg', 'old.mp4']);
+  const trailer = fakeTrailer();
+  const cover = fakeCover();
+  const { result } = await runCollect({ name, fs, trailer, cover }, { forceCover: true });
+
+  assert.equal(trailer.calls.download.length, 0, '视频应复用，不重下');
+  assert.equal(cover.calls.length, 1, '应重新获取封面');
+  assert.equal(result.trailer.reused, true);
+  assert.equal(result.cover.source, 'wallhaven');
+});
+
 // ───────────────────────── 失败与边界 ─────────────────────────
 
 test('游戏名为空时立即结束，不建目录不联网', async () => {

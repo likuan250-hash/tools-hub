@@ -348,7 +348,13 @@ app.get('/api/tags/suggest', async (req, res) => {
   const name = extractGameName(kw);
   if (!name) return res.json({ tags: [] });
   const genres = matchGenreTags(kw + ' ' + name);
-  res.json({ tags: [name].concat(genres) });
+  // 单标签上限 20 字（B 站硬限，超长直接 21005 拒稿）：
+  // 超长游戏名（如「零 ～红蝶～ 重制版 FATAL FRAME II Crimson Butterfly REMAKE」）丢弃，
+  // 前端收到空推荐后自动走 genTags 分词兜底，绝不整串进标签。
+  const tags = [];
+  if (name.length <= 20) tags.push(name);
+  for (const g of genres) if (g.length <= 20) tags.push(g);
+  res.json({ tags });
 });
 
 // ── 扫码登录：生成二维码（#7）──

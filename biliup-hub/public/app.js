@@ -87,6 +87,8 @@
     const add = (t) => {
       t = (t || "").trim();
       if (!t) return;
+      if (t.length > 20) return; // B 站单标签上限 20 字，超长直接 21005 拒稿
+      if (/学习版|破解版|盗版/i.test(t)) return; // 敏感词不进标签（B 站审核拒稿）
       const key = t.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);

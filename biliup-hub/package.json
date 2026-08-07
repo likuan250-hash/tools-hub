@@ -1,6 +1,6 @@
 {
   "name": "biliup-hub",
-  "version": "2.7.55",
+  "version": "2.7.56",
   "description": "B站自动投稿工具（tools-hub 第三个子工具）：上传 → 抽封面 → 合集后置 → 评论置顶 → 扫码登录",
   "main": "server.js",
   "scripts": {

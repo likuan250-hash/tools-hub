@@ -10,7 +10,12 @@ const cookies = require('./lib/cookies');
 const task = require('./lib/task');
 const account = require('./lib/account');
 const auth = require('./lib/auth');
+const pendingPin = require('./lib/pendingPin');
 const logger = require('./lib/logger');
+const EventEmitter = require('events');
+
+// 全局事件总线：待置顶队列完成等后台事件推送给前端（/api/events SSE）。
+const appBus = new EventEmitter();
 
 // 头像代理用的 UA（绕过 B站防盗链）；同源校验复用下方 origin 中间件。
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1';
@@ -498,6 +503,34 @@ app.post('/api/upload', (req, res) => {
     .finally(finish);
 });
 
+// ── 待置顶队列：查看 + 后台事件推送 ─────────────────────────
+app.get('/api/pending-pins', (req, res) => {
+  res.json({ ok: true, list: pendingPin.list() });
+});
+
+app.get('/api/events', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  const onEvent = (ev) => {
+    try {
+      res.write('data: ' + JSON.stringify(ev) + '\n\n');
+      if (typeof res.flush === 'function') res.flush();
+    } catch { /* 客户端已断开 */ }
+  };
+  appBus.on('event', onEvent);
+  const heartbeat = setInterval(() => {
+    try { res.write(': hb\n\n'); } catch { /* ignore */ }
+  }, 15000);
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    appBus.removeListener('event', onEvent);
+  });
+});
+
 // ── 合集补加：检测最新发布 + 批量加入 ──
 // 定时发布的稿件发布前被 B 站锁定无法加合集；用户发布完成后点「检测补合集」，
 // 拉最近发布的稿件，找出还没加入所选合集的，前端勾选确认后批量补加。
@@ -688,6 +721,10 @@ let server = null;
 function startServer(attempt = 0) {
   const srv = app.listen(PORT, '127.0.0.1', () => {
     logger.info(`biliup-hub 运行中 → http://localhost:${PORT} (仅本机绑定)`);
+    // 待置顶队列后台轮询：启动即补一次 + 每 3 分钟；完成后推事件给前端。
+    pendingPin.startPoller({
+      onDone: (job) => appBus.emit('event', { type: 'pendingPinDone', aid: job.aid, bvid: job.bvid, rpid: job.rpid }),
+    });
   });
   srv.on('error', (err) => {
     if (err.code === 'EADDRINUSE' && attempt < 30) {

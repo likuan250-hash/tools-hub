@@ -1032,6 +1032,18 @@
   setInterval(refreshHealth, 20000); // 每 20s 探活
   if (typeof window.bindStatusCursor === "function") window.bindStatusCursor(document);
 
+  // 后台事件订阅：定时发布「待置顶」自动完成 → toast + 日志
+  try {
+    const es = new EventSource("/api/events");
+    es.onmessage = (ev) => {
+      let d; try { d = JSON.parse(ev.data); } catch (_) { return; }
+      if (!d || d.type !== "pendingPinDone") return;
+      toast("定时发布评论已自动置顶" + (d.bvid ? "（" + d.bvid + "）" : ""), "ok");
+      logLine("后台自动置顶完成：" + (d.bvid || ("aid=" + d.aid)), "ok");
+    };
+    es.onerror = () => { try { es.close(); } catch (_) {} };
+  } catch (_) { /* EventSource 不可用则忽略 */ }
+
   // T02：首屏入场编排（零侵入：仅给 .wrap 首屏可见块挂 pop-in + --i，复用内联 macos-motion.css 的 stagger）
   function applyEntrance(scope, max) {
     try {

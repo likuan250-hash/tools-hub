@@ -32,6 +32,7 @@ function baseMocks() {
     },
     biliup: {
       runUpload: async () => ({ bvid: 'BV1', aid: 1 }),
+      getCreativeArchive: async () => ({ aid: 1, cid: 100, title: 't' }),
       getVideoInfo: async () => ({ aid: 1, cid: 100 }),
     },
     cover: {
@@ -48,6 +49,9 @@ function baseMocks() {
     comment: {
       post: async () => 999,
       pin: async () => {},
+    },
+    pendingPin: {
+      add: async () => {},
     },
     cookies: {
       validate: () => true,
@@ -359,6 +363,35 @@ test('task.run: 合集后置失败（非致命）→ 不阻断投稿，仍 done 
   assert.ok(logs.some((m) => /评论已发布并置顶/.test(m)), '评论置顶应在合集失败后继续执行');
 });
 
+// ── 定时发布评论置顶：pin 失败 → 入「待置顶」队列，任务仍成功 ──
+test('task.run: 置顶失败 → 评论已发并入待置顶队列，done 且日志提示发布后自动置顶', async () => {
+  const video = makeVideoFile();
+  let doneEvent = null;
+  const logs = [];
+  let pinDeferred = null;
+  const deps = baseMocks();
+  deps.comment.pin = async () => {
+    const err = new Error('评论置顶失败: code=-404 msg=啥都木有');
+    throw err;
+  };
+  deps.pendingPin.add = async (job) => { pinDeferred = job; };
+  const ctx = makeCtx(deps, '7630305');
+  ctx.onEvent = (ev) => {
+    if (ev.type === 'log') logs.push(ev.message);
+    if (ev.type === 'done') doneEvent = ev;
+  };
+
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true, '置顶失败不应阻断投稿');
+  assert.ok(doneEvent, '应正常 done');
+  assert.ok(pinDeferred, '应写入待置顶队列');
+  assert.equal(pinDeferred.aid, 1);
+  assert.equal(pinDeferred.rpid, 999);
+  assert.ok(logs.some((m) => /置顶将在发布后自动完成/.test(m)), '日志应提示发布后自动置顶');
+});
+
 // ── 用例11（需求①回归实测）：存量配置只有 seasonId（sectionId 为空）→ 上传时自动解析首个分集后置 ──
 // 实测背景：升级前 /api/seasons 读错分集字段（应为顶层 sections.sections），用户配置只存了
 // seasonId=8700479、sectionId='' → 合集后置被跳过。现在 task 侧兜底：按合集解析首个分集并调用 add。
@@ -436,4 +469,60 @@ test('task.run: 80 字以内标题原样提交，不做任何截断（游戏273 
 
   assert.equal(result.ok, true);
   assert.equal(sentTitle, title, '正常长度标题应原样提交');
+});
+
+// ── 定时发布：公开 getVideoInfo 62003，archive/view 仍可取 cid → 任务完成且合集加入 ──
+test('task.run: 定时发布（getVideoInfo 62003）→ archive/view 取 cid，合集仍成功且 done', async () => {
+  const video = makeVideoFile();
+  const deps = baseMocks();
+  let doneEvent = null;
+  let seasonCalled = false;
+  deps.biliup.getVideoInfo = async () => {
+    const err = new Error('稿件已通过审核，等待定时发布 (code=62003)');
+    err.code = 62003;
+    err.scheduled = true;
+    throw err;
+  };
+  deps.season.add = async (sectionId, aid, cid) => {
+    seasonCalled = true;
+    assert.equal(cid, 100, '定时发布也应用 archive/view 的真实 cid');
+  };
+  const ctx = makeCtx(deps, '7630305');
+  ctx.onEvent = (ev) => { if (ev.type === 'done') doneEvent = ev; };
+
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true, '定时发布不应因公开接口 62003 失败');
+  assert.equal(result.cid, 100);
+  assert.equal(seasonCalled, true, '定时发布提交后应立即加合集');
+  assert.ok(doneEvent && doneEvent.data.season === true, 'done 事件 season 应为 true');
+});
+
+// ── 双失败兜底：archive/view 失败 + 公开接口 62003 → 不算失败，done 且提示延后补加 ──
+test('task.run: 定时发布双失败（archive/view 失败 + 62003）→ 不判失败，跳过合集延后补加', async () => {
+  const video = makeVideoFile();
+  const deps = baseMocks();
+  let doneEvent = null;
+  let seasonCalled = false;
+  deps.biliup.getCreativeArchive = async () => {
+    throw new Error('archive/view 请求失败: ENOTFOUND');
+  };
+  deps.biliup.getVideoInfo = async () => {
+    const err = new Error('稿件已通过审核，等待定时发布 (code=62003)');
+    err.code = 62003;
+    err.scheduled = true;
+    throw err;
+  };
+  deps.season.add = async () => { seasonCalled = true; };
+  const ctx = makeCtx(deps, '7630305');
+  ctx.onEvent = (ev) => { if (ev.type === 'done') doneEvent = ev; };
+
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true, '定时发布上传成功不应判失败');
+  assert.equal(seasonCalled, false, '双失败时不应带 cid=0 强加合集');
+  assert.ok(doneEvent, '应仍发出 done 事件');
+  assert.equal(doneEvent.data.season, false, '延后补加时 season 应为 false');
 });

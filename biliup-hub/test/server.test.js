@@ -91,6 +91,32 @@ test('GET /api/seasons 登录态：保留 state=0，过滤 state=-6，映射 sec
   }
 });
 
+test('GET /api/pending-pins：返回待置顶队列（初始为空）', async () => {
+  const srv = await startServer();
+  try {
+    const { status, body } = await getJSON(srv, '/api/pending-pins');
+    assert.equal(status, 200);
+    assert.equal(body.ok, true);
+    assert.ok(Array.isArray(body.list));
+  } finally {
+    srv.close();
+  }
+});
+
+test('GET /api/events：SSE 事件流端点', async () => {
+  const srv = await startServer();
+  try {
+    const port = srv.address().port;
+    const resp = await fetch(`http://127.0.0.1:${port}/api/events`);
+    assert.equal(resp.status, 200);
+    assert.ok((resp.headers.get('content-type') || '').includes('text/event-stream'));
+    const reader = resp.body.getReader();
+    await reader.cancel();
+  } finally {
+    srv.close();
+  }
+});
+
 test('GET /api/seasons 未登录（cookies 无效）：降级 {seasons:[]}', async () => {
   writeCookies({}); // 缺少 SESSDATA / bili_jct
   const srv = await startServer();

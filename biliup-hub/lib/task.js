@@ -9,6 +9,7 @@ const command = require('./command');
 const biliup = require('./biliup');
 const season = require('./season');
 const comment = require('./comment');
+const pendingPin = require('./pendingPin');
 const cookies = require('./cookies');
 const auth = require('./auth');
 const biliupBin = require('./biliupBin');
@@ -42,6 +43,7 @@ async function run(req, ctx) {
   const commandM = subDeps.command || command;
   const seasonM = subDeps.season || season;
   const commentM = subDeps.comment || comment;
+  const pendingPinM = subDeps.pendingPin || pendingPin;
   const cookiesM = subDeps.cookies || cookies;
   const biliupBinM = subDeps.biliupBin || biliupBin;
 
@@ -204,13 +206,34 @@ async function run(req, ctx) {
       log('uploading', '上传已结束但未解析到稿件标识（完整日志已落盘 .tmp/upload-*.log，待人工/根治核对）');
     }
 
-    // 4) getVideoInfo（重试应对 -404；62003 定时发布待发布直接抛「等待发布」，不再 120 轮空转）
-    setStage('uploading', '等待稿件索引');
-    const videoInfo = await biliupM.getVideoInfo(ref, {
-      onLog: (m) => log('uploading', m),
-      deps: subDeps,
-    });
-    log('uploading', '稿件信息 aid=' + videoInfo.aid + ' cid=' + videoInfo.cid);
+    // 4) 稿件信息：优先走创作中心 archive/view（官方编辑页同源接口，定时待发布也能取真实 cid，
+    //    支撑「提交后立即加合集」）；失败再回退公开 getVideoInfo（保留 -404 重试兜底）。
+    setStage('uploading', '获取稿件信息');
+    let videoInfo;
+    try {
+      videoInfo = await biliupM.getCreativeArchive(ref, cookieHeader, {
+        onLog: (m) => log('uploading', m),
+        deps: subDeps,
+      });
+      log('uploading', '稿件信息（创作中心） aid=' + videoInfo.aid + ' cid=' + videoInfo.cid);
+    } catch (archiveErr) {
+      logger.warn('[task] archive/view 获取稿件信息失败，回退公开接口: ' + archiveErr.message);
+      try {
+        videoInfo = await biliupM.getVideoInfo(ref, {
+          onLog: (m) => log('uploading', m),
+          deps: subDeps,
+        });
+        log('uploading', '稿件信息 aid=' + videoInfo.aid + ' cid=' + videoInfo.cid);
+      } catch (infoErr) {
+        // 定时发布待发布：上传已成功，仅因公开接口 62003 取不到 cid —— 不算失败。
+        // 跳过合集后置（发布后可点「检测补加」），继续评论与 done。
+        if (!(infoErr && infoErr.scheduled)) throw infoErr;
+        logger.warn('[task] 定时发布待发布（archive/view 亦失败），暂取不到 cid，合集后置延后: ' + infoErr.message);
+        log('uploading', '定时发布待发布：暂取不到 cid，合集后置延后（发布后可点「检测补加」）');
+        videoInfo = { aid: ref.aid || 0, cid: 0, title: req.title || '' };
+        videoInfo.scheduledFallback = true;
+      }
+    }
 
     // 5) adding_season（坑点2：独立 API 后置；坑点4：-404 重试）
     // H: sectionId 为空串（用户未指定分集）时跳过合集后置，避免向后端传空 sectionId 报错。
@@ -229,7 +252,10 @@ async function run(req, ctx) {
         logger.warn('[task] 自动解析合集分集失败（非致命）: ' + e.message);
       }
     }
-    if (sectionId) {
+    if (videoInfo.scheduledFallback) {
+      setStage('adding_season', '跳过合集后置（定时待发布，发布后可用检测补加）');
+      log('adding_season', '定时待发布且取不到 cid，跳过合集后置（发布后可用检测补加）');
+    } else if (sectionId) {
       setStage('adding_season', '合集后置中');
       // 合集后置为非关键步骤（类比评论置顶，#③）：失败仅记录警告，不阻断投稿整体流程，
       // 也不影响后续评论置顶与 done。season.add 内部已含 -404 重试/传输重试，此处仅兜底其最终失败。
@@ -255,16 +281,28 @@ async function run(req, ctx) {
     let rpid;
     try {
       rpid = await commentM.post(videoInfo.aid, config.comment, csrf, cookieHeader, { deps: subDeps });
-      await commentM.pin(videoInfo.aid, rpid, csrf, cookieHeader, { deps: subDeps });
-      log('commenting', '评论已发布并置顶 rpid=' + rpid);
+      try {
+        await commentM.pin(videoInfo.aid, rpid, csrf, cookieHeader, { deps: subDeps });
+        log('commenting', '评论已发布并置顶 rpid=' + rpid);
+      } catch (pinErr) {
+        // 定时发布/索引延迟：置顶暂不可用 → 落「待置顶」队列，发布后由后台轮询自动补置顶。
+        try {
+          pendingPinM.add({ aid: videoInfo.aid, bvid: ref.bvid || '', rpid, comment: config.comment || '' });
+          logger.warn('[task] 置顶暂失败，已入待置顶队列（发布后自动补）: ' + pinErr.message);
+          log('commenting', '评论已发布 rpid=' + rpid + '，置顶将在发布后自动完成');
+        } catch (ppErr) {
+          logger.warn('[task] 待置顶队列写入失败: ' + ppErr.message);
+          log('commenting', '评论已发布 rpid=' + rpid + '，置顶失败且待置顶队列写入失败: ' + pinErr.message);
+        }
+      }
     } catch (commentErr) {
-      // 评论置顶为非关键步骤：失败仅记录警告，投稿任务仍算成功（继续 to done）。
-      logger.warn('[task] 评论发布/置顶失败（非致命，投稿已完成）: ' + commentErr.message);
-      log('commenting', '评论发布/置顶失败（非致命，已跳过）: ' + commentErr.message);
+      // 评论发布为非关键步骤：失败仅记录警告，投稿任务仍算成功（继续 to done）。
+      logger.warn('[task] 评论发布失败（非致命，投稿已完成）: ' + commentErr.message);
+      log('commenting', '评论发布失败（非致命，已跳过）: ' + commentErr.message);
     }
 
     // 7) done —— season 真实反映：仅当 sectionId（含自动解析）存在，即实际执行了合集后置才为 true。
-    const seasonAdded = !!sectionId;
+    const seasonAdded = !!sectionId && !videoInfo.scheduledFallback;
     setStage('done', '投稿完成');
     emit({
       type: 'done',

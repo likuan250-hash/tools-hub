@@ -215,4 +215,65 @@ async function getVideoInfo(ref, opts = {}) {
   throw finalErr;
 }
 
-module.exports = { runUpload, getVideoInfo, parseUploadOutput, writeUploadLog, detectBiliupApiFailure, DEFAULT_DEPS, USER_AGENT };
+/**
+ * 创作中心稿件详情（archive/view，官方编辑页同源接口）。
+ * 待发布/定时发布稿件也能返回真实 cid（公开接口 getVideoInfo 对这类稿件 -404/62003），
+ * 是「提交后立即加合集」的 cid 来源（与官方 addVideoToSeason 机制一致）。
+ * @param {{bvid?:string, aid?:number}} vid
+ * @param {string} cookieHeader 完整 Cookie 头（含 SESSDATA）
+ * @param {{onLog?:Function, deps?:Object}} [opts]
+ * @returns {Promise<{aid:number, cid:number, title:string}>}
+ */
+async function getCreativeArchive(vid, cookieHeader, opts = {}) {
+  const deps = Object.assign({}, DEFAULT_DEPS, opts.deps || {});
+  const fetchFn = deps.fetchFn || deps.getFetch();
+  const bvid = vid && vid.bvid;
+  const aid = vid && vid.aid;
+  if (!bvid && !aid) {
+    throw new Error('archive/view 缺少 bvid/aid，无法查询稿件信息');
+  }
+  const q = bvid
+    ? 'bvid=' + encodeURIComponent(bvid)
+    : 'aid=' + encodeURIComponent(aid);
+  const url = 'https://member.bilibili.com/x/vupre/web/archive/view?' + q + '&t=' + Date.now();
+  let resp;
+  try {
+    resp = await fetchFn(url, {
+      headers: {
+        'Cookie': cookieHeader,
+        'Referer': 'https://member.bilibili.com/',
+        'User-Agent': USER_AGENT,
+      },
+    });
+  } catch (e) {
+    throw new Error('archive/view 请求失败: ' + e.message);
+  }
+  let json;
+  try {
+    json = await resp.json();
+  } catch (e) {
+    throw new Error('archive/view 响应解析失败: ' + e.message);
+  }
+  if (!json || json.code !== 0 || !json.data) {
+    throw new Error('archive/view 返回 code=' + (json && json.code) + ' msg=' + (json && json.message));
+  }
+  const archive = json.data.archive || {};
+  const videos = Array.isArray(json.data.videos) ? json.data.videos : [];
+  const first = videos[0] || {};
+  return {
+    aid: Number(archive.aid) || Number(aid) || 0,
+    cid: Number(first.cid) || 0,
+    title: archive.title || first.title || '',
+  };
+}
+
+module.exports = {
+  runUpload,
+  getVideoInfo,
+  getCreativeArchive,
+  parseUploadOutput,
+  writeUploadLog,
+  detectBiliupApiFailure,
+  DEFAULT_DEPS,
+  USER_AGENT,
+};

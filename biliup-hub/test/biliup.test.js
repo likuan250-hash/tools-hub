@@ -260,3 +260,36 @@ test('runUpload(修复二-A 噪声行): stderr 含进度噪点 + -400 JSON → �
     (err) => err instanceof Error && err.message === 'biliup 上传失败(code=-400): 请求错误'
   );
 });
+
+// ── getCreativeArchive（archive/view：定时待发布也能取真实 cid）──
+test('getCreativeArchive: 成功返回 aid/cid/title', async () => {
+  const fetchFn = async (url) => {
+    assert.ok(url.includes('/x/vupre/web/archive/view?bvid=BV1'), '应带 bvid 查询');
+    return {
+      json: async () => ({
+        code: 0,
+        data: {
+          archive: { aid: 123, title: '标题' },
+          videos: [{ cid: 456 }],
+        },
+      }),
+    };
+  };
+  const info = await biliup.getCreativeArchive({ bvid: 'BV1' }, 'SESSDATA=x', { deps: { fetchFn } });
+  assert.deepEqual(info, { aid: 123, cid: 456, title: '标题' });
+});
+
+test('getCreativeArchive: 非 0 码抛错', async () => {
+  const fetchFn = async () => ({ json: async () => ({ code: -101, message: '未登录' }) });
+  await assert.rejects(
+    async () => await biliup.getCreativeArchive({ aid: 1 }, 'SESSDATA=x', { deps: { fetchFn } }),
+    (err) => err instanceof Error && /archive\/view 返回 code=-101/.test(err.message)
+  );
+});
+
+test('getCreativeArchive: 缺 bvid/aid 直接抛错', async () => {
+  await assert.rejects(
+    async () => await biliup.getCreativeArchive({}, 'SESSDATA=x', { deps: { fetchFn: async () => {} } }),
+    (err) => err instanceof Error && /缺少 bvid\/aid/.test(err.message)
+  );
+});

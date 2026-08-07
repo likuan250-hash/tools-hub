@@ -446,7 +446,8 @@ function extractEmbeddedEnglishTitle(raw) {
   if (!best) return '';
   // 剥版本尾巴：英文名不带 v14.0 / v1.2.3 这类后缀
   best = best.replace(/\s*v?\d+(?:\.\d+){1,3}\s*$/i, '');
-  return cleanEnglishTitle(best);
+  // 只清商标符号与尾部标点，绝不剥版本词——「Gears of War: Reloaded」的 Reloaded 是正式名一部分
+  return best.replace(/[™®©]/g, ' ').replace(/\s+/g, ' ').replace(/[\s:–—|-]+$/, '').trim();
 }
 
 /**
@@ -942,7 +943,10 @@ class CoverFetcher {
   async resolveEnglishTitle(gameName, opts = {}) {
     const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
     const name = String(gameName == null ? '' : gameName).trim();
-    const given = cleanEnglishTitle(opts.englishTitle);
+    // 传入的英文名视为权威完整名（用户手输或离线/wiki/YouTube 已解析结果），
+    // 只 trim 不再剥版本后缀——「Gears of War: Reloaded」的 Reloaded 是正式名一部分，
+    // 旧逻辑把它当版本词剥掉导致离线 AppID 与官方图全部失配。
+    const given = String(opts.englishTitle == null ? '' : opts.englishTitle).trim();
     if (given) return { title: given, source: 'opts' };
     if (!name) return { title: '', source: 'none' };
     if (isLatinTitle(name)) return { title: name, source: 'origin' };

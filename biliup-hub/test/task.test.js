@@ -380,3 +380,55 @@ test('task.run: seasonId 有、解析分集失败 → 跳过合集后置（seaso
   assert.equal(result.ok, true);
   assert.equal(result.season, false, '解析不到分集时应维持跳过语义');
 });
+
+// ── 标题 UTF-8 字节截断（B站 APP 接口 80 字节限长，中文 1 字=3 字节）──
+test('truncateTitleUtf8: 短标题原样返回', () => {
+  const t = '【游戏272】零.红蝶.重制版';
+  assert.equal(task.truncateTitleUtf8(t), t);
+});
+
+test('truncateTitleUtf8: 39 个中文字（99 字节）截到 ≤80 字节且不切断字符', () => {
+  const t = '【游戏272】零.红蝶.重制版 官方中文+豪华版+免安装硬盘版 免费学习版下载';
+  const out = task.truncateTitleUtf8(t);
+  assert.ok(Buffer.byteLength(out, 'utf8') <= 80, '截断后字节数应 ≤80');
+  assert.ok(t.startsWith(out.split('…')[0]), '截断结果应保留原标题头部（游戏名）');
+  assert.ok(t.endsWith(out.split('…').pop()), '截断结果应保留原标题尾部（免费学习版下载）');
+  assert.ok(out.includes('…'), '超长标题应带省略号');
+  assert.ok(!out.includes('�'), '不应出现半个字符');
+});
+
+test('truncateTitleUtf8: 恰 80 字节不截断；emoji（4 字节）不切断', () => {
+  const t80 = '【游戏272】零.红蝶.重制版 官方中文+豪华版+免安装硬盘版'; // <80 字节
+  const pad = 'a'.repeat(80 - Buffer.byteLength(t80, 'utf8'));
+  const exact = t80 + pad;
+  assert.equal(Buffer.byteLength(exact, 'utf8'), 80);
+  assert.equal(task.truncateTitleUtf8(exact), exact);
+
+  const emoji = '【游戏】🎮 免费学习版下载';
+  const out = task.truncateTitleUtf8(emoji, 6);
+  assert.ok(Buffer.byteLength(out, 'utf8') <= 6, 'emoji 截断后仍 ≤ 上限');
+  assert.ok(!out.includes('�'), '不应出现半个字符');
+});
+
+test('truncateTitleUtf8: 空/空白/null 返回空串', () => {
+  assert.equal(task.truncateTitleUtf8(''), '');
+  assert.equal(task.truncateTitleUtf8('   '), '');
+  assert.equal(task.truncateTitleUtf8(null), '');
+  assert.equal(task.truncateTitleUtf8(undefined), '');
+});
+
+test('task.run: 超长标题提交前被截断（command.buildPs1 收到截断后标题）', async () => {
+  const video = makeVideoFile();
+  const deps = baseMocks();
+  let sentTitle = '';
+  deps.command.buildPs1 = (req) => { sentTitle = req.title; return 'SCRIPT'; };
+  const longTitle = '【游戏272】零.红蝶.重制版 官方中文+豪华版+免安装硬盘版 免费学习版下载'; // 99 字节
+  const ctx = makeCtx(deps);
+  const result = await task.run({ videoPath: video, title: longTitle }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true);
+  assert.ok(Buffer.byteLength(sentTitle, 'utf8') <= 80, '提交给 biliup 的标题应 ≤80 字节');
+  assert.ok(sentTitle.includes('…'), '超长标题应被截短且带省略号');
+  assert.ok(longTitle.endsWith('免费学习版下载') && sentTitle.endsWith('免费学习版下载'), '应保留尾部关键信息');
+});

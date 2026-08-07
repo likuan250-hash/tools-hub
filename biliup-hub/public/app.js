@@ -250,6 +250,7 @@
         $("videoName").textContent = selectedVideo;
         const base = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
         $("titleInput").value = base; // 不再重复显示一行文件名
+        updateTitleCount(); // 同步标题字节计数（B站 APP 接口按 UTF-8 字节限长）
         $("submitHint").textContent = "已选择视频，点击投稿";
         if ($("clearBtn")) $("clearBtn").style.display = ""; // 显示「清空选择」（B）
         maybeAutoTag(); // #② 选入视频后自动生成标签（用户未手动填时）
@@ -271,6 +272,7 @@
       selectedVideo = "";
       $("videoName").textContent = "";
       $("titleInput").value = "";
+      updateTitleCount();
       const ti = $("tagsInput");
       if (ti) { ti.value = ""; ti.dataset.userEdited = ""; } // 重置标签（含手动编辑标记）
       $("submitHint").textContent = "选择视频后点击投稿（发布前会二次确认模式）";
@@ -285,7 +287,18 @@
   // 标题变化也可能改变自动标签（用户未手动填标签时）
   const titleInputEl = $("titleInput");
   if (titleInputEl) {
-    titleInputEl.addEventListener("input", maybeAutoTag);
+    titleInputEl.addEventListener("input", () => { maybeAutoTag(); updateTitleCount(); });
+  }
+
+  // 标题字节计数：B站 APP 投稿接口按 UTF-8 字节校验（上限 80 字节，中文 1 字=3 字节）。
+  // 超限标红，提交时后端仍会自动截断兜底（lib/task.js truncateTitleUtf8）。
+  function updateTitleCount() {
+    const el = $("titleCount");
+    const inp = $("titleInput");
+    if (!el || !inp) return;
+    const bytes = new TextEncoder().encode(inp.value || "").length;
+    el.textContent = String(bytes);
+    el.classList.toggle("over", bytes > 80);
   }
 
   // ── 发布模式切换（#C：根据选中显隐 dtimeInput；切到定时发布默认填 +1h）──

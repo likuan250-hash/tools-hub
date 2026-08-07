@@ -46,6 +46,7 @@ module.exports = function registerApiRoutes(app, ctx) {
       },
       quark: {
         connected: hasQuarkCred, pingOK: pingCache.quark,
+        expiresAt: quarkAcc ? quarkAcc.expiresAt : null,
         dir: {
           effective: (qDir && qDir.id === "0") ? "/" : "/" + ((qDir && qDir.name) || qDefault),
           userSet: !!qDir, name: (qDir && qDir.name) || qDefault,
@@ -53,6 +54,7 @@ module.exports = function registerApiRoutes(app, ctx) {
       },
       xunlei: {
         connected: hasXunleiCred, pingOK: pingCache.xunlei,
+        expiresAt: xunleiAcc ? xunleiAcc.expiresAt : null,
         dir: {
           effective: (xDir && !xDir.id) ? "/" : "/" + ((xDir && xDir.name) || "游戏"),
           userSet: !!xDir, name: (xDir && xDir.name) || "游戏",

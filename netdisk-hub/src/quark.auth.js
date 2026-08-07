@@ -62,11 +62,16 @@ async function startLogin() {
     const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
     if (!cookieStr) throw new Error('未读取到任何 Cookie');
 
-    store.saveAccount('quark', {
+    const save = {
       cookie: cookieStr,
       connected: true,
       loginAt: new Date().toISOString(),
-    });
+    };
+    // 登录态剩余天数：抓取 __pus/kpsession-id 的真实过期时间（秒 → ms），无 expires 则不写
+    const loginCookie = cookies.find((c) => LOGIN_COOKIE_NAMES.includes(c.name)
+      && typeof c.expires === 'number' && c.expires > 0);
+    if (loginCookie) save.expiresAt = loginCookie.expires * 1000;
+    store.saveAccount('quark', save);
     setState('done', '夸克网盘已连接,Cookie 已保存');
   } catch (e) {
     setState('error', '登录超时或失败: ' + e.message);

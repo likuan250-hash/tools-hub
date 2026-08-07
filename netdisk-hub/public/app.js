@@ -135,6 +135,20 @@ async function loadAccounts() {
         else msg = d;
         diag = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.75;color:var(--err)">诊断: ${msg}</div>`;
       }
+      // 登录态剩余天数（授权时抓取的 cookie 真实过期时间；无则显示有效期未知，不误报）
+      let ttlHTML = '';
+      if (connected && a.expiresAt) {
+        const days = Math.ceil((a.expiresAt - Date.now()) / 86400000);
+        if (days <= 0) {
+          ttlHTML = '<div><span class="ttl ttl-dead"><span class="p"></span>登录态已过期，请重新授权</span></div>';
+        } else if (days <= 7) {
+          ttlHTML = `<div><span class="ttl ttl-warn"><span class="p"></span>登录态剩余 ${days} 天，请提前重新授权</span></div>`;
+        } else {
+          ttlHTML = `<div><span class="ttl ttl-ok"><span class="p"></span>登录态剩余 ${days} 天</span></div>`;
+        }
+      } else if (connected) {
+        ttlHTML = '<div><span class="ttl ttl-none"><span class="p"></span>登录态有效期未知</span></div>';
+      }
       // 未连接必须授权; 已连接但「登录态真失效(baidu_errno)」才提示重新授权。
       // 仅网络探测不通(net_error)不算故障,不弹重授权(重授权救不了网络,反而误导)。
       const reallyBad = connected && a.pingOK === false && a.detail && a.detail.startsWith('baidu_errno');
@@ -155,6 +169,7 @@ async function loadAccounts() {
       return `<div class="card">
         <div class="name">${name}</div>
         <div class="status">${statusHTML(reallyBad ? 'err' : (connected ? 'ok' : 'off'), reallyBad ? '登录态失效' : (connected ? '已连接' : '未连接'))}</div>
+        ${ttlHTML}
         ${warn}${diag}
         ${dirRow}
         ${authLink}

@@ -43,6 +43,7 @@ async function startLogin() {
     await page.goto('https://pan.xunlei.com/', { waitUntil: 'domcontentloaded' });
 
     // 轮询 cookie:出现登录态即标记 connected。最长 600s 给用户充足时间。
+    let loginCookies = [];
     const ok = await new Promise((resolve) => {
       const t0 = Date.now();
       const iv = setInterval(async () => {
@@ -50,6 +51,7 @@ async function startLogin() {
         try {
           cookies = await context.cookies();
         } catch (e) {}
+        loginCookies = cookies;
         const xlNames = cookies.filter((c) => c.domain && c.domain.includes('xunlei')).map((c) => c.name).join(',');
         console.log('[xunlei-auth] xl cookies:', xlNames, '| hasLogin:', hasLoginCookie(cookies));
         if (hasLoginCookie(cookies)) {
@@ -64,10 +66,16 @@ async function startLogin() {
     });
 
     if (ok) {
+      // 登录态剩余天数：取登录态 cookie（非设备类）的真实过期时间，无则按 90 天兜底
+      const realExpires = loginCookies
+        .filter((c) => c.domain && c.domain.includes('xunlei') && c.value
+          && !/XLA_CI|deviceid|xl_fp/i.test(c.name)
+          && typeof c.expires === 'number' && c.expires > 0)
+        .reduce((m, c) => Math.max(m, c.expires), 0);
       store.saveAccount('xunlei', {
         connected: true,
         loginAt: new Date().toISOString(),
-        expiresAt: Date.now() + 90 * 24 * 3600 * 1000,
+        expiresAt: realExpires ? realExpires * 1000 : (Date.now() + 90 * 24 * 3600 * 1000),
       });
       setState('done', '迅雷网盘已连接');
     } else {

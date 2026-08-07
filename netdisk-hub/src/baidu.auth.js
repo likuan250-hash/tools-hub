@@ -88,11 +88,16 @@ async function startLogin() {
     }
 
     // 合并写入,不覆盖已有的 OAuth token/refreshToken
-    store.saveAccount('baidu', {
+    const save = {
       cookie: cookieStr,
       connected: true,
       loginAt: new Date().toISOString(),
-    });
+    };
+    // 登录态剩余天数：抓取 BDUSS 的真实过期时间（秒 → ms），无 expires（会话 cookie）则不写
+    const loginCookie = cookies.find((c) => LOGIN_COOKIE_NAMES.includes(c.name)
+      && typeof c.expires === 'number' && c.expires > 0);
+    if (loginCookie) save.expiresAt = loginCookie.expires * 1000;
+    store.saveAccount('baidu', save);
     setState('done', '百度网盘已连接(BDUSS 已保存且会话验证通过)');
   } catch (e) {
     setState('error', '登录超时或失败: ' + e.message);

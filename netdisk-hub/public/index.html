@@ -188,6 +188,18 @@
     .badge { font-size: 11px; padding: 2px 8px; border-radius: 8px; }
     .badge.ok { background: rgba(var(--ok-rgb),0.2); color: var(--ok); }
     .badge.fail { background: rgba(var(--err-rgb),0.2); color: var(--err); }
+    /* 登录态剩余天数徽章：正常绿 / 临期橙 / 过期红 / 未知灰 */
+    .ttl {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 600; margin-top: 8px;
+      padding: 4px 11px; border-radius: 999px; border: 1px solid;
+      backdrop-filter: blur(14px) saturate(150%);
+    }
+    .ttl .p { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+    .ttl-ok { color: var(--ok); background: rgba(var(--ok-rgb),0.14); border-color: rgba(var(--ok-rgb),0.45); }
+    .ttl-warn { color: var(--warn); background: rgba(251,191,36,0.14); border-color: rgba(251,191,36,0.5); }
+    .ttl-dead { color: var(--err); background: rgba(var(--err-rgb),0.16); border-color: rgba(var(--err-rgb),0.5); }
+    .ttl-none { color: var(--text-dim); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.2); }
     .empty-state, .empty, .history-empty {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 8px; color: var(--text-dim); font-size: 13px; text-align: center; padding: 28px 12px;

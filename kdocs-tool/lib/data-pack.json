@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "updatedAt": "2026-08-06",
+  "version": 3,
+  "updatedAt": "2026-08-07",
   "gameNames": {
     "巫师3": "The Witcher 3: Wild Hunt",
     "巫师3狂猎": "The Witcher 3: Wild Hunt",
@@ -37,7 +37,8 @@
     "巫师2": "The Witcher 2: Assassins of Kings",
     "巫师": "The Witcher",
     "只狼影逝二度": "Sekiro: Shadows Die Twice",
-    "007初露锋芒": "007: First Light"
+    "007初露锋芒": "007: First Light",
+    "战争机器：重装上阵": "Gears of War: Reloaded"
   },
   "appIds": {
     "The Witcher 3: Wild Hunt": "292030",
@@ -68,6 +69,7 @@
     "Nioh 2": "1325200",
     "The Witcher 2: Assassins of Kings": "20920",
     "The Witcher": "20900",
-    "007: First Light": "3768760"
+    "007: First Light": "3768760",
+    "Gears of War: Reloaded": "2523720"
   }
 }

@@ -14,6 +14,21 @@ const { spawn: spawnDefault } = require('child_process');
 const DEFAULT_TIMEOUT = 20 * 60 * 1000;
 
 /**
+ * 智能解码：UTF-8(fatal) 优先，失败回退 GBK。
+ * 中文 Windows 上 yt-dlp 等外部程序常输出 GBK，旧逻辑 String(chunk) 固定按 UTF-8 解码导致中文乱码。
+ * @param {Buffer|string} input
+ * @returns {string}
+ */
+function decodeText(input) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input));
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch (e) {
+    return new TextDecoder('gbk').decode(buf);
+  }
+}
+
+/**
  * 运行外部命令，逐行回调 stdout/stderr。
  * @param {string} cmd 命令名或可执行文件绝对路径
  * @param {string[]} args 参数数组
@@ -45,20 +60,22 @@ function runCommand(cmd, args, opts = {}) {
     let stdout = '';
     let stderr = '';
     let settled = false;
-    let tailOut = '';
-    let tailErr = '';
+    let rawOut = Buffer.alloc(0);
+    let rawErr = Buffer.alloc(0);
 
     const pump = (chunk, stream) => {
-      const text = String(chunk);
-      if (stream === 'stdout') { stdout += text; tailOut += text; } else { stderr += text; tailErr += text; }
-      let buf = stream === 'stdout' ? tailOut : tailErr;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      if (stream === 'stdout') rawOut = Buffer.concat([rawOut, buf]);
+      else rawErr = Buffer.concat([rawErr, buf]);
+      let raw = stream === 'stdout' ? rawOut : rawErr;
       let idx;
-      while ((idx = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, idx).replace(/\r$/, '');
-        buf = buf.slice(idx + 1);
+      while ((idx = raw.indexOf(0x0a)) >= 0) {
+        const line = decodeText(raw.slice(0, idx)).replace(/\r$/, '');
+        raw = raw.slice(idx + 1);
+        if (stream === 'stdout') { stdout += line + '\n'; rawOut = raw; }
+        else { stderr += line + '\n'; rawErr = raw; }
         if (line.trim()) onLine(line, stream);
       }
-      if (stream === 'stdout') tailOut = buf; else tailErr = buf;
     };
 
     if (child.stdout && child.stdout.on) child.stdout.on('data', (c) => pump(c, 'stdout'));
@@ -84,9 +101,11 @@ function runCommand(cmd, args, opts = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (rawOut.length) stdout += decodeText(rawOut) + '\n';
+      if (rawErr.length) stderr += decodeText(rawErr) + '\n';
       resolve({ code: code == null ? -1 : code, stdout, stderr });
     });
   });
 }
 
-module.exports = { runCommand, DEFAULT_TIMEOUT };
+module.exports = { runCommand, DEFAULT_TIMEOUT, decodeText };

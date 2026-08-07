@@ -580,7 +580,7 @@ test('fetchCover 按新规范顺序降级：steam-cdn 无 appid 跳过 → wallh
     if (url === img) return { buf: jpegBuf(1920, 1080) };
     return null; // 其它来源（Bing / reddit / Steam）一律无果
   });
-  const r = await c.fetchCover('Elden Ring', 'D:\\out', {
+  const r = await c.fetchCover('仁王3', 'D:\\out', {
     emit: (type, step, msg, ok, detail) => events.push({ type, msg, ok, detail }),
   });
   assert.equal(r.ok, true);
@@ -742,25 +742,25 @@ test('resolveEnglishTitle：原名本身是拉丁标题时直接复用，不打�
 });
 
 test('resolveEnglishTitle：中文名经维基百科反查拿到英文名并缓存', async () => {
-  const zhSearchUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('仁王2') + '&format=json&srlimit=1';
+  const zhSearchUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('仁王3') + '&format=json&srlimit=5';
   const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=123&format=json&lllimit=1';
-  const enPagesUrl = 'https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&titles=' + encodeURIComponent('Nioh 2') + '&format=json';
+  const enPagesUrl = 'https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&titles=' + encodeURIComponent('Nioh 3') + '&format=json';
   const wdUrl = 'https://www.wikidata.org/wiki/Special:EntityData/Q12345.json';
   const calls = [];
   const c = makeCover({
-    [zhSearchUrl]: { json: { query: { search: [{ pageid: 123, title: '仁王2' }] } } },
-    [llUrl]: { json: { query: { pages: { 123: { langlinks: [{ '*': 'Nioh 2' }] } } } } },
+    [zhSearchUrl]: { json: { query: { search: [{ pageid: 123, title: '仁王3' }] } } },
+    [llUrl]: { json: { query: { pages: { 123: { langlinks: [{ '*': 'Nioh 3' }] } } } } },
     [enPagesUrl]: { json: { query: { pages: { '-1': { pageprops: { wikibase_item: 'Q12345' } } } } } },
     [wdUrl]: { json: { entities: { Q12345: { claims: { P1733: [{ mainsnak: { datavalue: { value: '1325200' } } }] } } } } },
   }, null, calls);
-  const r = await c.resolveEnglishTitle('仁王2');
-  assert.equal(r.title, 'Nioh 2');
+  const r = await c.resolveEnglishTitle('仁王3');
+  assert.equal(r.title, 'Nioh 3');
   assert.equal(r.source, 'wiki');
   assert.equal(r.steamAppId, '1325200');
   assert.equal(calls.length, 4);
 
-  const again = await c.resolveEnglishTitle('仁王2');
-  assert.equal(again.title, 'Nioh 2');
+  const again = await c.resolveEnglishTitle('仁王3');
+  assert.equal(again.title, 'Nioh 3');
   assert.equal(again.steamAppId, '1325200');
   assert.equal(calls.length, 4);
 });
@@ -772,17 +772,17 @@ test('resolveEnglishTitle：维基百科查不到 / 出错时退回空英文名�
   assert.equal(r1.source, 'none');
 
   const c2 = makeCover(() => ({ throws: '连接被重置' }));
-  const r2 = await c2.resolveEnglishTitle('正当防卫4');
+  const r2 = await c2.resolveEnglishTitle('虚构游戏名测试');
   assert.equal(r2.title, '');
   assert.equal(r2.source, 'none');
 
-  const zhUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('黑神话悟空') + '&format=json&srlimit=1';
+  const zhUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('虚构游戏名测试') + '&format=json&srlimit=5';
   const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=999&format=json&lllimit=1';
   const c3 = makeCover({
-    [zhUrl]: { json: { query: { search: [{ pageid: 999, title: '黑神话：悟空' }] } } },
+    [zhUrl]: { json: { query: { search: [{ pageid: 999, title: '虚构游戏名测试' }] } } },
     [llUrl]: { json: { query: { pages: { 999: { langlinks: [] } } } } },
   });
-  const r3 = await c3.resolveEnglishTitle('黑神话悟空');
+  const r3 = await c3.resolveEnglishTitle('虚构游戏名测试');
   assert.equal(r3.title, '');
   assert.equal(r3.source, 'none');
 
@@ -857,14 +857,14 @@ test('fetchCover 原名即英文名时只跑一轮（不白费网络请求）', 
 });
 
 test('fetchCover 不传 englishTitle 时自动经维基百科反查（端到端链路）', async () => {
-  const zhUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('仁王2') + '&format=json&srlimit=1';
+  const zhUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent('仁王3') + '&format=json&srlimit=5';
   const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=123&format=json&lllimit=1';
   const img = 'https://w.wallhaven.cc/full/cd/wallhaven-nioh.jpg';
   const c = makeCover((url) => {
-    if (url === zhUrl) return { json: { query: { search: [{ pageid: 123, title: '仁王2' }] } } };
-    if (url === llUrl) return { json: { query: { pages: { 123: { langlinks: [{ '*': 'Nioh 2' }] } } } } };
+    if (url === zhUrl) return { json: { query: { search: [{ pageid: 123, title: '仁王3' }] } } };
+    if (url === llUrl) return { json: { query: { pages: { 123: { langlinks: [{ '*': 'Nioh 3' }] } } } } };
     if (url.includes('wallhaven.cc/api')) {
-      return url.includes(encodeURIComponent('Nioh 2'))
+      return url.includes(encodeURIComponent('Nioh 3'))
         ? { json: { data: [{ path: img, dimension_x: 3840, dimension_y: 2160 }] } }
         : { json: { data: [] } };
     }
@@ -872,12 +872,12 @@ test('fetchCover 不传 englishTitle 时自动经维基百科反查（端到端�
     return null;
   });
 
-  const r = await c.fetchCover('仁王2', 'D:\\out');
+  const r = await c.fetchCover('仁王3', 'D:\\out');
   assert.equal(r.ok, true);
-  assert.equal(r.englishTitle, 'Nioh 2');
+  assert.equal(r.englishTitle, 'Nioh 3');
   assert.equal(r.englishTitleSource, 'wiki');
-  assert.equal(r.queryUsed, 'Nioh 2');
-  assert.deepEqual(r.queryPlan, ['Nioh 2', '仁王2']);
+  assert.equal(r.queryUsed, 'Nioh 3');
+  assert.deepEqual(r.queryPlan, ['Nioh 3', '仁王3']);
 });
 
 test('fetchCover 全失败时也要带上查询词决策信息，便于排查', async () => {

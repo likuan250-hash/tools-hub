@@ -24,6 +24,8 @@ const fsDefault = require('fs');
 const path = require('path');
 const { readImageSize, meetsMinSize, extForImageFormat, MIN_WIDTH, MIN_HEIGHT } = require('./imagesize');
 const { proxyFetch } = require('./http');
+const { decodeText } = require('./runner');
+const { lookupOfflineEnglishName, lookupOfflineAppId } = require('./offline-map');
 
 /** 单次网络请求超时（经代理可能慢，取 30s）。 */
 const FETCH_TIMEOUT = 30 * 1000;
@@ -220,6 +222,31 @@ function isYouTubeTitleRelevant(candidate, query) {
     if (lowerCand.includes(t)) return true;
     return candTokens.some((w) => w.startsWith(t) || t.startsWith(w));
   });
+}
+
+/** wallhaven 标签里几乎无区分度的通用词，不参与相关性判定。 */
+const WALLHAVEN_GENERIC_TAGS = new Set([
+  'game', 'games', 'gaming', 'video', 'wallpaper', 'wallpapers', 'art', 'artwork', 'digital',
+  'anime', 'woman', 'women', 'girl', 'action', 'fantasy', 'dark', 'scenery', 'landscape',
+  'nature', 'city', 'night', 'battle', 'war', 'hero', 'epic', 'background', 'backgrounds',
+  'image', 'images', 'poster', 'posters', 'photo', 'photos', 'gameart', 'gameartwork',
+]);
+
+/**
+ * wallhaven 候选相关性闸门（纯函数）：查询词 ≥2 个有效词且候选带标签时，
+ * 要求至少一个有效词出现在标签里，挡掉只匹配到单个通用词的无关壁纸；
+ * 单一有效词 / 无标签不武断拒绝（wallhaven 标签常缺游戏名，误杀代价高于漏杀）。
+ * @param {object} item wallhaven API 条目（含 tags 数组）
+ * @param {{query?: string, queryTokens?: string[]}} [opts]
+ * @returns {boolean}
+ */
+function isWallhavenRelevant(item, opts = {}) {
+  const qTokens = Array.isArray(opts.queryTokens) ? opts.queryTokens : normalizeTokens(opts.query || '');
+  const words = qTokens.filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !WALLHAVEN_GENERIC_TAGS.has(t));
+  if (words.length < 2) return true;
+  const tags = Array.isArray(item && item.tags) ? item.tags.map((t) => String(t).toLowerCase()) : [];
+  if (!tags.length) return true;
+  return words.some((w) => tags.some((t) => t.includes(w)));
 }
 
 /**
@@ -756,15 +783,19 @@ class CoverFetcher {
     try {
       // 第一步：中文维基搜索
       const srUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch='
-        + encodeURIComponent(name) + '&format=json&srlimit=1';
+        + encodeURIComponent(name) + '&format=json&srlimit=5';
       const srRes = await this.httpJson(srUrl, { timeout: SEARCH_TIMEOUT });
       if (!srRes.ok) {
         return { title: '', source: 'none', error: 'Wikipedia 返回 ' + srRes.status };
       }
       const srData = srRes.json;
-      const page = (srData.query && srData.query.search || [])[0];
+      // 相关性闸门：搜索结果可能混入完全无关条目（实测「战争机器：重装上阵」首条是《黑客帝国动画版》），
+      // 只采纳与原名共享有效 token 的条目，取不到就交给 YouTube 兜底，绝不拿无关条目当英文名。
+      const srPages = (srData.query && srData.query.search) || [];
+      const qTokens = normalizeTokens(name);
+      const page = srPages.find((p) => isRelevantCandidate(p.title, qTokens, { minHitRatio: 0.5 }));
       if (!page) {
-        emit('log', STEP_SEARCH, '[cover] 维基百科未收录「' + name + '」', null, { level: 'info' });
+        emit('log', STEP_SEARCH, '[cover] 维基百科未找到与「' + name + '」相关的条目', null, { level: 'info' });
         return { title: '', source: 'none' };
       }
 
@@ -859,7 +890,7 @@ class CoverFetcher {
         const child = spawn(ytDlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
         child.stdout.on('data', (d) => chunks.push(d));
         child.stderr.on('data', () => {});
-        child.on('close', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        child.on('close', () => resolve(decodeText(Buffer.concat(chunks))));
         setTimeout(() => { try { child.kill(); } catch (e) { /* ignore */ } resolve(''); }, 12000);
       });
       if (!raw) return { title: '', source: 'none' };
@@ -907,6 +938,7 @@ class CoverFetcher {
    * @returns {Promise<{title: string, source: 'opts'|'origin'|'embedded'|'steam'|'none', appId?: string}>}
    */
   async resolveEnglishTitle(gameName, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
     const name = String(gameName == null ? '' : gameName).trim();
     const given = cleanEnglishTitle(opts.englishTitle);
     if (given) return { title: given, source: 'opts' };
@@ -916,6 +948,15 @@ class CoverFetcher {
     const embedded = extractEmbeddedEnglishTitle(name);
     if (embedded) return { title: embedded, source: 'embedded' };
     if (opts.lookup === false) return { title: '', source: 'none' };
+
+    // 离线映射优先（复用 kdocs-tool 共享数据：精选 data-pack + 2.5 万条大库），命中即用，不再打维基/YouTube
+    const offlineEn = lookupOfflineEnglishName(name);
+    if (offlineEn) {
+      emit('cover_search', STEP_SEARCH, '离线映射命中英文名：' + offlineEn, null, {
+        source: 'offline', englishTitle: offlineEn,
+      });
+      return { title: offlineEn, source: 'offline' };
+    }
 
     if (this.englishTitleCache.has(name)) return this.englishTitleCache.get(name);
     let r = { title: '', source: 'none' };
@@ -1109,6 +1150,7 @@ class CoverFetcher {
       const h = Number(it.dimension_y);
       // 维度字段缺失时不武断丢弃：下载后仍会做本地校验，这里只挡掉明确不达标的
       if (Number.isFinite(w) && Number.isFinite(h) && (w < minW || h < minH)) continue;
+      if (!isWallhavenRelevant(it, opts)) continue;
       const url = normalizeUrl(it.path);
       if (url) out.push(url);
     }
@@ -1449,6 +1491,14 @@ class CoverFetcher {
     if (this.steamAppIdCache.has(query)) return this.steamAppIdCache.get(query);
     if (opts.lookup === false) return '';
 
+    // 离线 AppID 优先（kdocs data-pack 精选映射），命中即用，免打 Steam
+    const offId = lookupOfflineAppId(query);
+    if (offId) {
+      this.steamAppIdCache.set(query, offId);
+      emit('cover_search', STEP_SEARCH, '离线映射命中 Steam AppID：' + offId, null, { source: 'offline', appId: offId });
+      return offId;
+    }
+
     const url = this.buildSteamSearchUrl(query);
     emit('cover_search', STEP_SEARCH, 'Steam storesearch 反查 appid（' + query + '）…', null, { source: 'steam-cdn', url });
     try {
@@ -1562,7 +1612,7 @@ class CoverFetcher {
       emit('log', STEP_SEARCH, '[cover] wallhaven 检索失败：' + r.error, null, { level: 'info' });
       return { ok: false, error: r.error, source: 'wallhaven', queryUsed: query };
     }
-    const urls = this.parseWallhavenResults(r.json);
+    const urls = this.parseWallhavenResults(r.json, { queryTokens: normalizeTokens(query) });
     if (!urls.length) {
       emit('log', STEP_SEARCH, '[cover] wallhaven 无满足 ≥1920×1080 的结果（q=' + query + '）', null, { level: 'info' });
       return { ok: false, error: 'wallhaven 无命中', source: 'wallhaven', queryUsed: query };
@@ -1926,7 +1976,8 @@ class CoverFetcher {
         } else if (source === 'wallhaven') {
           const r = await this.httpJson(this.buildWallhavenApiUrl(name));
           if (r.ok) {
-            this.parseWallhavenResults(r.json).slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, 'wallhaven'));
+            this.parseWallhavenResults(r.json, { queryTokens: normalizeTokens(name) })
+              .slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, 'wallhaven'));
           }
         } else if (source === 'reddit') {
           const query = String(name || '').trim();

@@ -159,6 +159,13 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
     const resolved = await deps.resolveEnglishName(parsed.gameName);
     if (resolved) { englishName = resolved; ok({ name: "游戏英文名", englishName }); }
     else skip({ name: "游戏英文名", reason: "未解析到（将直接用中文名匹配）" });
+  } else {
+    // 不静默跳过：输入已含英文名或 AppID 时也展示原因，避免用户误以为没解析英文名
+    doing({ name: "解析游戏英文名" });
+    skip({
+      name: "解析游戏英文名",
+      reason: englishName ? "输入已含英文名（" + englishName + "），跳过自动解析" : "已有 Steam AppID，跳过英文名解析",
+    });
   }
   const en = englishName; // 后续统一用 en / parsed.gameName 双语言匹配
 

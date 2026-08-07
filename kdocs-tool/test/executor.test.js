@@ -79,12 +79,12 @@ test("游戏大小优先级：Steam 官方 > 文本识别（parsed.size）", asy
     getSteamAppDetails: async () => ({ shortDescription: "x".repeat(20), size: "10GB" }),
   });
   await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "10G", "Steam 官方优先且归一化");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "10.0G", "Steam 官方优先且归一化");
 
   // Steam 无 → 文本识别优先
   deps = baseDeps({ getSteamAppDetails: async () => null });
   await autoExecute(baseParsed({ size: "5G" }), null, "/tmp", { deps });
-  assert.strictEqual(deps._state().lastCreate["游戏大小"], "5G", "Steam 无时文本识别优先且归一化");
+  assert.strictEqual(deps._state().lastCreate["游戏大小"], "5.0G", "Steam 无时文本识别优先且归一化");
 
   // 全空 → 不写字段
   deps = baseDeps({ getSteamAppDetails: async () => null });
@@ -320,9 +320,9 @@ test("查重未命中 → 正常创建（action=created），list_records 先于
 
 // ── 游戏大小优先级：Steam 官方 → 文本识别 → 空 ──
 test("resolveGameSize 优先级：Steam 官方 > 文本识别 > 空（并归一化）", () => {
-  assert.strictEqual(resolveGameSize({ steam: "40GB" }, ""), "40G", "Steam 官方优先且归一化");
-  assert.strictEqual(resolveGameSize({ steam: "40GB" }, "99G"), "40G", "Steam 官方严格优先于文本");
-  assert.strictEqual(resolveGameSize({}, "25G"), "25G", "无 Steam 时文本识别兜底且归一化");
+  assert.strictEqual(resolveGameSize({ steam: "40GB" }, ""), "40.0G", "Steam 官方优先且归一化");
+  assert.strictEqual(resolveGameSize({ steam: "40GB" }, "99G"), "40.0G", "Steam 官方严格优先于文本");
+  assert.strictEqual(resolveGameSize({}, "25G"), "25.0G", "无 Steam 时文本识别兜底且归一化");
   assert.strictEqual(resolveGameSize({}, ""), "", "全空返回空串（不写字段）");
 });
 
@@ -403,7 +403,7 @@ test("游戏大小兜底：Steam 官方大小在无网盘真实大小时生效",
   });
   const res = await autoExecute(baseParsed(), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
-  assert.strictEqual(lastCreate["游戏大小"], "40G", "Steam 大小经归一化 40GB→40G");
+  assert.strictEqual(lastCreate["游戏大小"], "40.0G", "Steam 大小经归一化 40GB→40.0G");
   assert.strictEqual(res.sizeProvenance, "Steam官方", "溯源标签应为 Steam官方");
 });
 
@@ -414,7 +414,7 @@ test("游戏大小兜底：仅 Steam 官方一个真实来源（无网盘大小�
   });
   const res = await autoExecute(baseParsed({ quarkUrl: "https://pan.quark.cn/s/x" }), null, "/tmp", { deps });
   const { lastCreate } = deps._state();
-  assert.strictEqual(lastCreate["游戏大小"], "40G", "Steam 大小经归一化 40GB→40G");
+  assert.strictEqual(lastCreate["游戏大小"], "40.0G", "Steam 大小经归一化 40GB→40.0G");
   assert.strictEqual(res.sizeProvenance, "Steam官方", "溯源标签应为 Steam官方（quarkUrl 不再触发任何大小步骤）");
 });
 

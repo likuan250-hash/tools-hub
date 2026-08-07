@@ -171,7 +171,10 @@ async function getSteamAppDetails(appid) {
   if (!appid) return null;
   const url = `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`;
   let j = null;
-  try { j = await fetchJsonProxy(url, { timeout: 10000 }); } catch { j = null; }
+  // 瞬错（代理 TLS 握手 / 超时）常见：失败自动重试 1 次再放弃，避免一次抽风就把大小/描述全丢
+  for (let attempt = 0; attempt < 2 && !j; attempt += 1) {
+    try { j = await fetchJsonProxy(url, { timeout: 10000 }); } catch { j = null; }
+  }
   if (!j) return null;
   const entry = j[String(appid)];
   if (entry && entry.success && entry.data) return parseSteamAppDetails(entry.data);

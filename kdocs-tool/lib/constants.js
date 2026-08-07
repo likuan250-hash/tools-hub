@@ -8,7 +8,8 @@ const INTRO_BLACKLIST = /疑似虚构|无法确认|经核实无真实|请勿轻�
 
 // ── 大小归一化 ──
 // 把各种写法（"30.7G" / "2T" / "512MB" / "800K" / "30.7GB"）统一为规范文档 §2.5 的
-// 短格式 "30.7G" / "2T" / "512M" / "800K"（一位小数，不写 GB/TB），便于跨来源一致与比较。
+// 短格式 "30.7G" / "2.0T" / "512.0M" / "800.0K"（固定保留一位小数，不写 GB/TB），
+// 便于跨来源一致与比较；整数也补 .0（45G → 45.0G），保证精确到小数点后一位。
 // 输入仍兼容长短两种写法（幂等：normalizeSize("30.7G") === normalizeSize("30.7GB") === "30.7G"）。
 // 纯函数，可单测；无法识别或非法值返回 ""。
 const SIZE_UNIT_RE = /(\d+(?:\.\d+)?)\s*(B|KB|K|MB|M|GB|G|TB|T)\b/i;
@@ -24,10 +25,8 @@ function normalizeSize(raw) {
   else if (unit === "MB") unit = "M";
   else if (unit === "GB") unit = "G";
   else if (unit === "TB") unit = "T";
-  // >=100 取整（如 512M / 123G），否则保留 1 位小数；去掉多余的 .0
-  let s = v >= 100 ? v.toFixed(0) : v.toFixed(1);
-  s = s.replace(/\.0$/, "");
-  return s + unit;
+  // 固定保留一位小数（不再 >=100 取整、不再剥 .0）
+  return v.toFixed(1) + unit;
 }
 
 function isBadIntro(s) {

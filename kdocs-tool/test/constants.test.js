@@ -6,25 +6,25 @@ const { normalizeSize, isBadIntro } = require("../lib/constants");
 test("normalizeSize 统一各种写法为 X.XG 短格式（§2.5）", () => {
   assert.strictEqual(normalizeSize("30.7G"), "30.7G");
   assert.strictEqual(normalizeSize("30.7GB"), "30.7G");
-  assert.strictEqual(normalizeSize("2T"), "2T");
-  assert.strictEqual(normalizeSize("2TB"), "2T");
-  assert.strictEqual(normalizeSize("512MB"), "512M");
-  assert.strictEqual(normalizeSize("800K"), "800K");
+  assert.strictEqual(normalizeSize("2T"), "2.0T");
+  assert.strictEqual(normalizeSize("2TB"), "2.0T");
+  assert.strictEqual(normalizeSize("512MB"), "512.0M");
+  assert.strictEqual(normalizeSize("800K"), "800.0K");
   assert.strictEqual(normalizeSize("1.5G"), "1.5G");
 });
 
 test("normalizeSize 短格式输入输出幂等（重复归一不变形）", () => {
   assert.strictEqual(normalizeSize(normalizeSize("30.7GB")), "30.7G");
-  assert.strictEqual(normalizeSize(normalizeSize("2TB")), "2T");
-  assert.strictEqual(normalizeSize("512M"), "512M");
-  assert.strictEqual(normalizeSize("800KB"), "800K");
+  assert.strictEqual(normalizeSize(normalizeSize("2TB")), "2.0T");
+  assert.strictEqual(normalizeSize("512M"), "512.0M");
+  assert.strictEqual(normalizeSize("800KB"), "800.0K");
   assert.strictEqual(normalizeSize("17.70G"), "17.7G", "夸克页 17.70G 应简化为 17.7G");
-  assert.strictEqual(normalizeSize("1024B"), "1024B", "B 单位保持 B");
+  assert.strictEqual(normalizeSize("1024B"), "1024.0B", "B 单位保持 B");
 });
 
-test("normalizeSize 大数值取整（>=100）", () => {
-  assert.strictEqual(normalizeSize("123G"), "123G");
-  assert.strictEqual(normalizeSize("512MB"), "512M");
+test("normalizeSize 大数值保留一位小数（>=100 不再取整）", () => {
+  assert.strictEqual(normalizeSize("123G"), "123.0G");
+  assert.strictEqual(normalizeSize("512.5MB"), "512.5M");
 });
 
 test("normalizeSize 无法识别或非法返回空串", () => {

@@ -134,7 +134,7 @@ async function run(req, ctx) {
 
     // 3) uploading —— 含 token 过期自愈：上传失败且为 -400 鉴权错误时，刷新/重换 token 后重试一次。
     setStage('uploading', '上传中');
-    const script = commandM.buildPs1(
+    let script = commandM.buildPs1(
       { videoPath, title, tags, desc: fullDesc, publishMode, dtime },
       config,
       coverPath
@@ -152,22 +152,39 @@ async function run(req, ctx) {
       if (/code=-400/.test(msg)) {
         const liPath = store.getLoginInfoPath();
         const loginInfo = authM.loadLoginInfo(liPath);
-        let refreshed = false;
+        let authRenewed = false;
         if (loginInfo) {
           // 退路①：用 refresh_token 静默刷新 access_token（写盘新 token）。
           const updated = await authM.refreshToken(loginInfo, { path: liPath, deps: subDeps });
           if (updated) {
-            refreshed = true;
+            authRenewed = true;
             log('uploading', 'access_token 已刷新，重试上传');
           }
         }
-        if (!refreshed) {
+        if (!authRenewed) {
           // 退路②：refresh_token 也失效时，用 web cookie 重新换 TV token（已验证可用逻辑）。
           try {
             await authM.ensureLoginInfo(cookiesFile, { path: liPath, deps: subDeps });
+            authRenewed = true;
             log('uploading', '已用 web cookie 重新换取登录态，重试上传');
           } catch (e2) {
             logger.warn('[task] 重新生成 biliup LoginInfo 失败:', e2.message);
+          }
+        }
+        // 关键：refresh/重换写的是「持久化加密文件」，而原脚本指向刷新前生成的「临时明文文件」，
+        // 直接重试会继续用旧 token 再次 -400。必须重新解密生成新临时文件并重建脚本。
+        if (authRenewed) {
+          if (materialized) { try { materialized.cleanup(); } catch (_) {} }
+          try {
+            materialized = authM.materializeLoginInfo(liPath);
+            config.loginInfoPath = materialized.path;
+            script = commandM.buildPs1(
+              { videoPath, title, tags, desc: fullDesc, publishMode, dtime },
+              config,
+              coverPath
+            );
+          } catch (e) {
+            logger.warn('[task] 重新生成临时登录态失败:', e.message);
           }
         }
         // 重试仅 1 次（最多 2 次总上传），避免死循环；仍抛 -400 则向上抛，由外层 catch 判失败。

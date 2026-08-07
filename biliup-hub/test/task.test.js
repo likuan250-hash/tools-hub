@@ -81,6 +81,16 @@ test('task.run: 上传首次 -400 → refreshToken 刷新成功后重试成功�
   const video = makeVideoFile();
   const calls = { runUpload: 0, refreshToken: 0, ensureLoginInfo: 0, ensureFallback: 0 };
   const deps = baseMocks();
+  let materializeCount = 0;
+  const materializedPaths = [];
+  deps.auth.materializeLoginInfo = (p) => {
+    materializeCount++;
+    const pp = path.join(os.tmpdir(), 'biliup_li_mat_' + materializeCount + '_' + Date.now() + '.json');
+    materializedPaths.push(pp);
+    return { path: pp, cleanup: () => {} };
+  };
+  const buildPs1Paths = [];
+  deps.command.buildPs1 = (req, cfg) => { buildPs1Paths.push(cfg && cfg.loginInfoPath); return 'SCRIPT'; };
   deps.auth.ensureLoginInfo = async (wc, o) => {
     calls.ensureLoginInfo++;
     if (o && o.deps) calls.ensureFallback++; // 仅退路调用会带 deps
@@ -104,6 +114,9 @@ test('task.run: 上传首次 -400 → refreshToken 刷新成功后重试成功�
   assert.equal(calls.runUpload, 2, '应重试一次，共 2 次上传');
   assert.equal(calls.refreshToken, 1, 'refreshToken 应被调用一次');
   assert.equal(calls.ensureFallback, 0, '刷新成功时不应走 ensureLoginInfo 退路');
+  assert.equal(materializeCount, 2, '刷新后应重新生成临时登录态（避免重试继续用旧 token）');
+  assert.equal(buildPs1Paths.length, 2, '刷新后应重建上传脚本');
+  assert.equal(buildPs1Paths[1], materializedPaths[1], '重试脚本应指向刷新后新生成的临时登录态文件');
 });
 
 // ── 用例2：-400 → refreshToken 返回 null（refresh_token 也失效）→ ensureLoginInfo 退路重试成功 ──

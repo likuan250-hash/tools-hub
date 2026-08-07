@@ -106,6 +106,23 @@ test('/api/accounts：xunlei 目录无 id 时生效路径为 "/"', async () => {
   assert.strictEqual(body.xunlei.dir.effective, '/', '无 id 应映射为根目录 /');
 });
 
+test('/api/accounts：无 expiresAt（会话级 Cookie）→ loginAt+90 天兜底估算并标记 estimated', async () => {
+  const loginAt = new Date('2026-07-29T13:08:30.912Z').toISOString();
+  store.saveAccount('baidu', { connected: true, cookie: 'BDUSS=x', loginAt });
+  const { body } = await get('/api/accounts');
+  const expectTs = new Date(loginAt).getTime() + 90 * 24 * 3600 * 1000;
+  assert.strictEqual(body.baidu.expiresAt, expectTs, '应返回 loginAt+90 天估算');
+  assert.strictEqual(body.baidu.expiresAtEstimated, true, '估算值应标记 estimated');
+});
+
+test('/api/accounts：有真实 expiresAt → 原样返回且 estimated=false', async () => {
+  const loginAt = new Date('2026-07-29T13:08:30.912Z').toISOString();
+  store.saveAccount('quark', { connected: true, cookie: '__pus=x', loginAt, expiresAt: 1793106609374 });
+  const { body } = await get('/api/accounts');
+  assert.strictEqual(body.quark.expiresAt, 1793106609374, '真实过期时间应原样返回');
+  assert.strictEqual(body.quark.expiresAtEstimated, false);
+});
+
 test('/api/dirs/quark：返回选中目录与 fallback', async () => {
   store.setDir('quark', { id: 'f1', name: 'f' });
   const { status, body } = await get('/api/dirs/quark');

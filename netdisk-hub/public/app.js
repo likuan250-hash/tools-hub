@@ -139,12 +139,13 @@ async function loadAccounts() {
       let ttlHTML = '';
       if (connected && a.expiresAt) {
         const days = Math.ceil((a.expiresAt - Date.now()) / 86400000);
+        const prefix = a.expiresAtEstimated ? "约 " : "";
         if (days <= 0) {
           ttlHTML = '<div><span class="ttl ttl-dead"><span class="p"></span>登录态已过期，请重新授权</span></div>';
         } else if (days <= 7) {
-          ttlHTML = `<div><span class="ttl ttl-warn"><span class="p"></span>登录态剩余 ${days} 天，请提前重新授权</span></div>`;
+          ttlHTML = `<div><span class="ttl ttl-warn"><span class="p"></span>登录态剩余 ${prefix}${days} 天，请提前重新授权</span></div>`;
         } else {
-          ttlHTML = `<div><span class="ttl ttl-ok"><span class="p"></span>登录态剩余 ${days} 天</span></div>`;
+          ttlHTML = `<div><span class="ttl ttl-ok"><span class="p"></span>登录态剩余 ${prefix}${days} 天</span></div>`;
         }
       } else if (connected) {
         ttlHTML = '<div><span class="ttl ttl-none"><span class="p"></span>登录态有效期未知</span></div>';

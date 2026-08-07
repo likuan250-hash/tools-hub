@@ -1,4 +1,4 @@
-﻿// netdisk-hub: API 路由(账号/转存/任务/目录/版本/更新/健康)
+// netdisk-hub: API 路由(账号/转存/任务/目录/版本/更新/健康)
 // 从 server.js 提取，由 server.js require 并调用。
 "use strict";
 
@@ -23,6 +23,22 @@ module.exports = function registerApiRoutes(app, ctx) {
     const quarkAcc = store.getAccount("quark");
     const xunleiAcc = store.getAccount("xunlei");
 
+    // 登录态剩余天数：优先用授权时抓取的 cookie 真实过期时间；百度/夸克登录 Cookie 是会话级
+    // （服务端不返回过期时间，与迅雷一致）→ 无 expiresAt 时按 loginAt+90 天兜底估算
+    // （与 xunlei.auth.js 的兜底一致），并标记 estimated 供前端显示「约」。
+    function effectiveExpiresAt(acc) {
+      if (!acc) return null;
+      if (acc.expiresAt) return { ts: acc.expiresAt, estimated: false };
+      if (acc.loginAt) {
+        const t = new Date(acc.loginAt).getTime();
+        if (Number.isFinite(t)) return { ts: t + 90 * 24 * 3600 * 1000, estimated: true };
+      }
+      return null;
+    }
+    const bExp = effectiveExpiresAt(baiduAcc);
+    const qExp = effectiveExpiresAt(quarkAcc);
+    const xExp = effectiveExpiresAt(xunleiAcc);
+
     const hasBaiduCookie = !!(baiduAcc && baiduAcc.cookie);
     const hasQuarkCred = !!(quarkAcc && quarkAcc.connected && quarkAcc.cookie);
     const hasXunleiCred = !!(xunleiAcc && xunleiAcc.connected);
@@ -41,12 +57,14 @@ module.exports = function registerApiRoutes(app, ctx) {
         connected: hasBaiduCookie, pingOK: pingCache.baidu,
         hasToken: !!(baiduAcc && baiduAcc.accessToken),
         hasCookie: hasBaiduCookie, detail: bDetail,
-        expiresAt: baiduAcc ? baiduAcc.expiresAt : null,
+        expiresAt: bExp && bExp.ts,
+        expiresAtEstimated: bExp ? bExp.estimated : false,
         dir: { effective: (bDir && bDir.id) || bDefault, userSet: !!bDir, name: (bDir && bDir.name) || bDefault },
       },
       quark: {
         connected: hasQuarkCred, pingOK: pingCache.quark,
-        expiresAt: quarkAcc ? quarkAcc.expiresAt : null,
+        expiresAt: qExp && qExp.ts,
+        expiresAtEstimated: qExp ? qExp.estimated : false,
         dir: {
           effective: (qDir && qDir.id === "0") ? "/" : "/" + ((qDir && qDir.name) || qDefault),
           userSet: !!qDir, name: (qDir && qDir.name) || qDefault,
@@ -54,7 +72,8 @@ module.exports = function registerApiRoutes(app, ctx) {
       },
       xunlei: {
         connected: hasXunleiCred, pingOK: pingCache.xunlei,
-        expiresAt: xunleiAcc ? xunleiAcc.expiresAt : null,
+        expiresAt: xExp && xExp.ts,
+        expiresAtEstimated: xExp ? xExp.estimated : false,
         dir: {
           effective: (xDir && !xDir.id) ? "/" : "/" + ((xDir && xDir.name) || "游戏"),
           userSet: !!xDir, name: (xDir && xDir.name) || "游戏",

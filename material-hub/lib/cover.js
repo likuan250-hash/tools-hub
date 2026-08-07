@@ -724,6 +724,8 @@ class CoverFetcher {
     this.englishTitleCache = new Map();
     // Steam appid 反查缓存（Steam CDN 双档用）
     this.steamAppIdCache = new Map();
+    // Steam 官方 API（appdetails）解析出的官方图直链缓存：同一 AppID 只请求一次
+    this.steamOfficialImageCache = new Map();
     // 直连优先三态：null=未探测，true=直连可用，false=不可用（Bing + Steam CDN 共享）
     this.directFirstOk = null;
     // Bing 单 run 请求计数（熔断）与节流时间戳
@@ -1476,6 +1478,32 @@ class CoverFetcher {
   }
 
   /**
+   * 从 Steam 官方 appdetails API 解析发行方官方图直链（header_image）。
+   * Steam 已把新资产迁移到带哈希的 shared.akamai 路径，旧固定 CDN 路径对新游戏经常 404；
+   * 官方 API 直接返回带哈希的真实直链，是唯一稳定的一手来源。失败静默返回空串。
+   * @param {string|number} appId Steam AppID
+   * @param {{emit?: Function}} [opts]
+   * @returns {Promise<string>} 官方图直链；未命中返回 ''
+   */
+  async fetchSteamOfficialImage(appId, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const id = String(appId == null ? '' : appId).trim();
+    if (!/^\d+$/.test(id)) return '';
+    if (this.steamOfficialImageCache.has(id)) return this.steamOfficialImageCache.get(id);
+    const url = 'https://store.steampowered.com/api/appdetails?appids=' + id + '&l=english&filters=basic';
+    emit('cover_search', STEP_SEARCH, 'Steam 官方 API 解析官方图（appid=' + id + '）…', null, { source: 'steam-cdn', url });
+    let img = '';
+    try {
+      const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
+      const data = res.ok && res.json && res.json[id] && res.json[id].data;
+      if (data) img = String(data.header_image || '').trim();
+    } catch (e) { /* 官方 API 失败静默降级，不影响后续固定路径 */ }
+    this.steamOfficialImageCache.set(id, img);
+    if (img) emit('cover_search', STEP_SEARCH, 'Steam 官方 API 命中官方图：' + img, null, { source: 'steam-cdn', headerImage: img });
+    return img;
+  }
+
+  /**
    * 反查 Steam appid：优先入参 → 命中缓存 → Steam storesearch（再经 pickRelevantSteamAppId 取相关项）。
    * @param {string} query 查询词（已是决策后的英文名或原名）
    * @param {{steamAppId?: string, emit?: Function, lookup?: boolean}} [opts]
@@ -1531,7 +1559,11 @@ class CoverFetcher {
     const source = tier === 'lowres' ? 'steam-cdn-lowres' : (tier === 'hero' ? 'steam-cdn-hero' : 'steam-cdn');
     const id = String(appId == null ? '' : appId).trim();
     if (!id) return { ok: false, error: '无可用 Steam appid', source };
-    const urls = this.buildSteamCdnCandidates(id, tier);
+    // 严格档：官方 API 直链（带哈希的真实路径）优先，旧固定路径兜底（兼容未迁移的老游戏）
+    const urls = tier === 'strict'
+      ? [await this.fetchSteamOfficialImage(id, { emit })].filter(Boolean)
+        .concat(this.buildSteamCdnCandidates(id, tier))
+      : this.buildSteamCdnCandidates(id, tier);
     // 官方图一律优先采纳（capsule 最大 1232×706 不满足 1920×1080 门槛），尺寸不达标标 degraded，
     // 由 collect.js 对「非官方来源」才用抽帧覆盖。
     const requireMin = false;
@@ -1964,6 +1996,8 @@ class CoverFetcher {
 
       try {
         if (source === 'steam-cdn') {
+          const official = await this.fetchSteamOfficialImage(steamAppId, { emit });
+          if (official) push(official, 'steam-cdn');
           this.buildSteamCdnCandidates(steamAppId, 'strict').forEach((u) => push(u, 'steam-cdn'));
         } else if (source === 'steam-cdn-hero') {
           this.buildSteamCdnCandidates(steamAppId, 'hero').forEach((u) => push(u, 'steam-cdn-hero', { degraded: true }));

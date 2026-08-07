@@ -16,6 +16,7 @@ process.env.NETDISK_KEY_FILE = path.join(TMP, '.masterkey');
 
 const store = require('../src/store');
 const registerApiRoutes = require('../src/routes-api');
+const progress = require('../src/progress');
 
 // ── 可变桩：doTransfer 行为可在测试间切换 ──────────────────
 let doTransferImpl = async () => ({ ok: true, file_list: [{ server_filename: 'a.iso' }], task_id: 'T1' });
@@ -44,7 +45,7 @@ before(async () => {
       listSubfolders: async () => [{ id: 'g1', name: '游戏' }],
     },
     doTransfer: (body) => doTransferImpl(body),
-    mapLimit: async (items, n, fn) => Promise.all(items.map(fn)),
+    mapLimit: async (items, n, fn) => Promise.all(items.map((it, i) => fn(it, i))),
     extractSurl: (s) => s,
     isValidShareLink: () => true,
     refreshPings: () => {},
@@ -224,4 +225,95 @@ test('/api/health：无配置且 fatal 返回 503', async () => {
   const res = await fetch(`http://127.0.0.1:${port2}/api/health`);
   assert.strictEqual(res.status, 503, '无配置且 fatal 应返回 503');
   srv2.close();
+});
+
+test('/api/transfer/events：SSE 端点返回 event-stream', async () => {
+  const r = await fetch(base + '/api/transfer/events?client=t-sse-1');
+  assert.strictEqual(r.status, 200);
+  assert.ok((r.headers.get('content-type') || '').includes('text/event-stream'));
+  const reader = r.body.getReader();
+  await reader.cancel();
+});
+
+test('/api/transfer/batch：带 client 时推送 step/log/done 事件（全部成功）', async () => {
+  const events = [];
+  const ch = progress.create('t-batch-ok');
+  ch.on('event', (ev) => events.push(ev));
+  doTransferImpl = async () => ({
+    ok: true,
+    files: [{ server_filename: 'a.iso', size: 1 }],
+    share: { link: 'https://pan.baidu.com/s/x', password: '8888' },
+  });
+  const { status, body } = await send('POST', '/api/transfer/batch', {
+    jobs: [{ provider: 'baidu' }, { provider: 'xunlei' }],
+    makeShare: true,
+    client: 't-batch-ok',
+    title: '测试',
+  });
+  assert.strictEqual(status, 200);
+  assert.strictEqual(body.ok, true);
+  assert.strictEqual(body.results.length, 2);
+  const steps = events.filter((e) => e.type === 'step');
+  assert.ok(steps.length >= 4, '每任务 2 步 × 2 任务，应至少 4 条 step');
+  assert.ok(steps.every((s) => s.step && typeof s.step.index === 'number'), 'step 应带数字 index');
+  const dones = events.filter((e) => e.type === 'done');
+  assert.strictEqual(dones.length, 1);
+  assert.strictEqual(dones[0].okCount, 2);
+  assert.strictEqual(dones[0].total, 2);
+  assert.ok(events.filter((e) => e.type === 'log').length >= 2, '应有多条日志');
+  progress.remove('t-batch-ok');
+});
+
+test('/api/transfer/batch：转存失败 → step 失败 + done okCount=0', async () => {
+  const events = [];
+  const ch = progress.create('t-batch-fail');
+  ch.on('event', (ev) => events.push(ev));
+  doTransferImpl = async () => ({ ok: false, error: '链接失效' });
+  const { status, body } = await send('POST', '/api/transfer/batch', {
+    jobs: [{ provider: 'baidu' }],
+    makeShare: false,
+    client: 't-batch-fail',
+  });
+  assert.strictEqual(status, 200);
+  assert.strictEqual(body.ok, true);
+  assert.strictEqual(body.results[0].ok, false);
+  const steps = events.filter((e) => e.type === 'step');
+  assert.ok(steps.some((s) => s.step.status === '失败'), '应有失败步骤');
+  const done = events.find((e) => e.type === 'done');
+  assert.strictEqual(done.okCount, 0);
+  progress.remove('t-batch-fail');
+});
+
+test('/api/transfer：带 client 时推送 step/done 事件（成功）', async () => {
+  const events = [];
+  const ch = progress.create('t-single-ok');
+  ch.on('event', (ev) => events.push(ev));
+  doTransferImpl = async () => ({ ok: true, files: [{ server_filename: 'a.iso' }], share: { link: 'https://pan.xunlei.com/s/x', password: 'z' } });
+  const { status, body } = await send('POST', '/api/transfer', {
+    provider: 'xunlei', link: 'https://pan.xunlei.com/s/x', makeShare: true, client: 't-single-ok', title: '单条',
+  });
+  assert.strictEqual(status, 200);
+  assert.strictEqual(body.ok, true);
+  const done = events.find((e) => e.type === 'done');
+  assert.ok(done, '应推送 done 事件');
+  assert.strictEqual(done.okCount, 1);
+  assert.ok(events.some((e) => e.type === 'step' && e.step.status === '成功'), '应有成功步骤');
+  progress.remove('t-single-ok');
+});
+
+test('/api/transfer：失败时推送失败 step + done okCount=0（400）', async () => {
+  const events = [];
+  const ch = progress.create('t-single-fail');
+  ch.on('event', (ev) => events.push(ev));
+  doTransferImpl = async () => ({ ok: false, error: '链接失效' });
+  const { status, body } = await send('POST', '/api/transfer', {
+    provider: 'baidu', link: 'https://pan.baidu.com/s/x', makeShare: true, client: 't-single-fail', title: '单条',
+  });
+  assert.strictEqual(status, 400);
+  assert.strictEqual(body.ok, false);
+  const done = events.find((e) => e.type === 'done');
+  assert.ok(done, '失败也应推送 done 事件');
+  assert.strictEqual(done.okCount, 0);
+  assert.ok(events.some((e) => e.type === 'step' && e.step.status === '失败'), '应有失败步骤');
+  progress.remove('t-single-fail');
 });

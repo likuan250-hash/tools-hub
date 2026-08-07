@@ -2,6 +2,8 @@
 // 从 server.js 提取，由 server.js require 并调用。
 "use strict";
 
+const progress = require("./progress");
+
 // 注册所有 API 路由到 app
 // ctx: { store, logger, baidu, quark, xunlei,
 //        doTransfer, mapLimit, extractSurl, isValidShareLink,
@@ -130,35 +132,136 @@ module.exports = function registerApiRoutes(app, ctx) {
 
   // ── 单条转存 ─────────────────────────────────────────
   app.post("/api/transfer", async (req, res) => {
+    const { client } = req.body;
+    const push = (ev) => { if (client) progress.emit(client, ev); };
+    const provName = { baidu: "百度网盘", xunlei: "迅雷网盘", quark: "夸克网盘" }[req.body.provider || "baidu"] || req.body.provider || "网盘";
+    const batchTitle = (req.body.title || "").trim() || "未命名";
+    push({ type: "step", step: { index: 0, name: "转存到" + provName + "（" + batchTitle + "）", status: "进行中" } });
+    if (req.body.makeShare) push({ type: "step", step: { index: 1, name: "生成分享（" + batchTitle + "）", status: "进行中" } });
+    push({ type: "log", level: "info", message: "开始重试转存到" + provName + "…" });
     try {
       const r = await doTransfer(req.body);
       if (!r.ok) {
+        push({ type: "step", step: { index: 0, name: "转存到" + provName + "（" + batchTitle + "）", status: "失败", reason: r.error || "" } });
+        push({ type: "log", level: "err", message: "转存失败：" + (r.error || "") });
+        if (req.body.makeShare) push({ type: "step", step: { index: 1, name: "生成分享（" + batchTitle + "）", status: "跳过", reason: "转存失败" } });
+        push({ type: "done", okCount: 0, total: 1, results: [r] });
         const code = /未授权/.test(r.error) ? 401 : 400;
         return res.status(code).json({ ok: false, error: r.error });
       }
+      const files = (r.files || []).length;
+      push({ type: "step", step: { index: 0, name: "转存到" + provName + "（" + batchTitle + "）", status: "成功", files, fromCache: r.fromCache || undefined } });
+      push({ type: "log", level: "ok", message: "转存成功" + (r.fromCache ? "（来自历史缓存）" : "，共 " + files + " 个文件") });
+      if (req.body.makeShare) {
+        if (r.share && r.share.link) {
+          push({ type: "step", step: { index: 1, name: "生成分享（" + batchTitle + "）", status: "成功", link: r.share.link, pwd: r.share.password || "" } });
+          push({ type: "log", level: "ok", message: "分享已生成：" + r.share.link });
+        } else {
+          const warn = !!r.needShare;
+          push({ type: "step", step: { index: 1, name: "生成分享（" + batchTitle + "）", status: warn ? "警告" : "跳过", reason: warn ? "历史转存未生成分享，需勾选「强制重转」补生成" : "未生成分享链接" } });
+          push({ type: "log", level: warn ? "warn" : "info", message: warn ? "历史无分享链接，需强制重转补生成" : "未生成分享链接" });
+        }
+      }
+      push({ type: "done", okCount: 1, total: 1, results: [r] });
       res.json({ ok: true, ...r });
     } catch (e) {
+      push({ type: "step", step: { index: 0, name: "转存到" + provName + "（" + batchTitle + "）", status: "失败", reason: e.message } });
+      push({ type: "log", level: "err", message: "转存异常：" + e.message });
+      if (req.body.makeShare) push({ type: "step", step: { index: 1, name: "生成分享（" + batchTitle + "）", status: "跳过", reason: "转存异常" } });
+      push({ type: "done", okCount: 0, total: 1, results: [{ ok: false, error: e.message }] });
       logger.error("单条转存异常:", e);
       res.status(500).json({ ok: false, error: e.message });
     }
   });
 
   // ── 批量转存 ─────────────────────────────────────────
+  // SSE 进度订阅：前端先 EventSource 打开本接口（?client=xxx），再带同一 client 提交批量转存，
+  // 转存过程中逐条推送 step/log，结束推 done。与 kdocs 一键执行同款实时进度模式。
+  app.get("/api/transfer/events", (req, res) => {
+    const clientId = String(req.query.client || "");
+    if (!clientId) return res.status(400).end();
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    const ch = progress.create(clientId);
+    const onEvent = (ev) => res.write("data: " + JSON.stringify(ev) + "\n\n");
+    ch.on("event", onEvent);
+    const heartbeat = setInterval(() => res.write(": hb\n\n"), 15000);
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      ch.removeListener("event", onEvent);
+      progress.remove(clientId);
+    });
+  });
+
   app.post("/api/transfer/batch", async (req, res) => {
     try {
-      const { jobs, makeShare, sharePassword, force } = req.body;
+      const { jobs, makeShare, sharePassword, force, client } = req.body;
       if (!Array.isArray(jobs) || !jobs.length) return res.status(400).json({ ok: false, error: "缺少任务" });
       logger.info("收到批量转存请求: " + jobs.length + " 个任务, makeShare=" + !!makeShare + ", force=" + !!force);
-      const results = await mapLimit(jobs, 3, async (job) => {
-        for (let attempt = 0; attempt <= 1; attempt++) {
-          const r = await doTransfer({ ...job, makeShare, sharePeriod: 0, sharePassword, force, title: (req.body.title || "").trim() });
-          if (r.ok || attempt > 0) return r;
-          logger.warn("[batch] transfer failed, retrying:", { provider: job.provider, error: r.error });
-          await new Promise(rs => setTimeout(rs, 1000));
+      const PROV_NAME = { baidu: "百度网盘", xunlei: "迅雷网盘", quark: "夸克网盘" };
+      const push = (ev) => { if (client) progress.emit(client, ev); };
+      const batchTitle = (req.body.title || "").trim() || "未命名";
+      push({ type: "log", level: "info", message: "开始批量转存：" + jobs.length + " 条链接" });
+      const results = await mapLimit(jobs, 3, async (job, idx) => {
+        const provName = PROV_NAME[job.provider] || job.provider;
+        const stepBase = idx * 2;
+        push({ type: "step", step: { index: stepBase, name: "转存到" + provName + "（" + batchTitle + "）", status: "进行中" } });
+        if (makeShare) push({ type: "step", step: { index: stepBase + 1, name: "生成分享（" + batchTitle + "）", status: "进行中" } });
+        push({ type: "log", level: "info", message: "[" + (idx + 1) + "/" + jobs.length + "] 转存到" + provName + "…" });
+        try {
+          for (let attempt = 0; attempt <= 1; attempt++) {
+            const r = await doTransfer({ ...job, makeShare, sharePeriod: 0, sharePassword, force, title: (req.body.title || "").trim() });
+            if (r.ok || attempt > 0) {
+            if (r.ok) {
+              const files = (r.files || []).length;
+              const fromCache = !!r.fromCache;
+              push({ type: "step", step: {
+                index: stepBase, name: "转存到" + provName + "（" + batchTitle + "）", status: "成功",
+                files, fromCache: fromCache || undefined,
+              } });
+              push({ type: "log", level: "ok", message: "[" + (idx + 1) + "] 转存成功" + (fromCache ? "（来自历史缓存）" : "，共 " + files + " 个文件") });
+              if (makeShare) {
+                if (r.share && r.share.link) {
+                  push({ type: "step", step: {
+                    index: stepBase + 1, name: "生成分享（" + batchTitle + "）", status: "成功",
+                    link: r.share.link, pwd: r.share.password || "",
+                  } });
+                  push({ type: "log", level: "ok", message: "[" + (idx + 1) + "] 分享已生成：" + r.share.link });
+                } else {
+                  const warn = !!r.needShare;
+                  push({ type: "step", step: {
+                    index: stepBase + 1, name: "生成分享（" + batchTitle + "）", status: warn ? "警告" : "跳过",
+                    reason: warn ? "历史转存未生成分享，需勾选「强制重转」补生成" : "未生成分享链接",
+                  } });
+                  push({ type: "log", level: warn ? "warn" : "info", message: "[" + (idx + 1) + "] " + (warn ? "历史无分享链接，需强制重转补生成" : "未生成分享链接") });
+                }
+              }
+            } else {
+              push({ type: "step", step: { index: stepBase, name: "转存到" + provName + "（" + batchTitle + "）", status: "失败", reason: r.error || "" } });
+              push({ type: "log", level: "err", message: "[" + (idx + 1) + "] 转存失败：" + (r.error || "") });
+              if (makeShare) push({ type: "step", step: { index: stepBase + 1, name: "生成分享（" + batchTitle + "）", status: "跳过", reason: "转存失败" } });
+            }
+              return r;
+            }
+            push({ type: "log", level: "warn", message: "[" + (idx + 1) + "] 转存失败，1s 后重试：" + (r.error || "") });
+            logger.warn("[batch] transfer failed, retrying:", { provider: job.provider, error: r.error });
+            await new Promise(rs => setTimeout(rs, 1000));
+          }
+        } catch (e) {
+          push({ type: "step", step: { index: stepBase, name: "转存到" + provName + "（" + batchTitle + "）", status: "失败", reason: e.message } });
+          push({ type: "log", level: "err", message: "[" + (idx + 1) + "] 转存异常：" + e.message });
+          if (makeShare) push({ type: "step", step: { index: stepBase + 1, name: "生成分享（" + batchTitle + "）", status: "跳过", reason: "转存异常" } });
+          return { ok: false, error: e.message };
         }
       });
       const okCount = results.filter((r) => r && r.ok).length;
       logger.info("批量转存完成: 成功 " + okCount + "/" + results.length);
+      push({ type: "log", level: okCount === results.length ? "ok" : "info", message: "批量转存完成：成功 " + okCount + "/" + results.length });
+      push({ type: "done", okCount, total: results.length, results });
       res.json({ ok: true, results });
     } catch (e) {
       logger.error("批量转存异常:", e);

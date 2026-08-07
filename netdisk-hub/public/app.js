@@ -471,6 +471,63 @@ function renderResults(results) {
 batchText.oninput = refreshUI;
 batchText.onpaste = () => setTimeout(refreshUI, 0);
 
+// ── 转存执行进度（SSE 实时，kdocs 一键执行同款语言）──
+const transferProgress = document.getElementById('transferProgress');
+const transferStepsEl = document.getElementById('transferSteps');
+const transferLogEl = document.getElementById('transferLog');
+let transferStepEls = [];
+let transferES = null;
+
+function transferAddLog(level, msg) {
+  if (!transferLogEl) return;
+  const line = document.createElement('div');
+  line.className = 'line lvl-' + (level || 'info');
+  line.textContent = msg || '';
+  transferLogEl.appendChild(line);
+  transferLogEl.scrollTop = transferLogEl.scrollHeight;
+}
+
+function renderTransferStep(s) {
+  if (!s || s.index == null) return;
+  const icon = s.status === '成功' ? ico('check') : s.status === '跳过' ? ico('skip') : s.status === '失败' ? ico('cross') : s.status === '警告' ? ico('warning') : ico('refresh');
+  const detailParts = [];
+  if (s.files != null) detailParts.push('文件数: ' + s.files);
+  if (s.fromCache) detailParts.push('来自历史缓存');
+  if (s.link) detailParts.push('<span class="link">' + escapeHtml(s.link) + '</span>' + (s.pwd ? '（' + escapeHtml(s.pwd) + '）' : ''));
+  if (s.reason) detailParts.push('<span class="err">' + escapeHtml(s.reason) + '</span>');
+  const detail = detailParts.join(' · ');
+  const lvl = { '进行中': 'info', '成功': 'ok', '失败': 'err', '跳过': 'off', '警告': 'warn' }[s.status] || 'info';
+  let item = transferStepEls[s.index];
+  if (!item) {
+    item = document.createElement('div');
+    item.className = 'step-item';
+    transferStepsEl.appendChild(item);
+    transferStepEls[s.index] = item;
+  }
+  item.innerHTML = '<span class="step-icon">' + icon + '</span><div class="step-body"><div class="step-name">' + statusHTML(lvl, escapeHtml(s.name + ' — ' + s.status)) + '</div>' + (detail ? '<div class="step-detail">' + detail + '</div>' : '') + '</div>';
+}
+
+function resetTransferProgress() {
+  if (!transferProgress) return;
+  transferStepsEl.innerHTML = '';
+  transferLogEl.innerHTML = '';
+  transferStepEls = [];
+  transferProgress.style.display = 'block';
+}
+
+function openTransferSSE(clientId) {
+  const es = new EventSource('/api/transfer/events?client=' + clientId);
+  transferES = es;
+  es.onmessage = (ev) => {
+    let d; try { d = JSON.parse(ev.data); } catch (_) { return; }
+    if (d.type === 'step' && d.step) renderTransferStep(d.step);
+    else if (d.type === 'log') transferAddLog(d.level, d.message);
+    else if (d.type === 'done') { transferAddLog('ok', '转存完成：成功 ' + d.okCount + '/' + d.total); es.close(); transferES = null; }
+  };
+  es.onerror = () => { es.close(); transferES = null; };
+  return es;
+}
+
 // 清空输入:一键清空分享文本框,并同步重置网盘勾选区与结果区
 const clearText = document.getElementById('clearText');
 clearText.onclick = () => {
@@ -491,6 +548,9 @@ batchBtn.onclick = async () => {
     return;
   }
   setExec(batchBtn, true);
+  const clientId = 't' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  resetTransferProgress();
+  const es = openTransferSSE(clientId);
   try {
     const r = await fetch('/api/transfer/batch', {
       method: 'POST',
@@ -500,6 +560,7 @@ batchBtn.onclick = async () => {
         makeShare: batchMakeShare.checked,
         force: forceRe.checked,
         title: parsedState.title || '',
+        client: clientId,
       }),
     });
     const d = await r.json();
@@ -510,6 +571,7 @@ batchBtn.onclick = async () => {
     batchErr.className = 'err show'; batchErr.innerHTML = statusHTML('err', ico('cross') + ' ' + e.message);
   } finally {
     setExec(batchBtn, false);
+    if (transferES) { transferES.close(); transferES = null; }
   }
 };
 
@@ -577,16 +639,20 @@ document.addEventListener('click', async (e) => {
   if (!link) return;
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = '重试中…';
+  const clientId = 't' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  resetTransferProgress();
+  const es = openTransferSSE(clientId);
   try {
     const r = await fetch('/api/transfer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, link, pwd, makeShare: true, force: true, title: parsedState.title || '' }),
+      body: JSON.stringify({ provider, link, pwd, makeShare: true, force: true, title: parsedState.title || '', client: clientId }),
     });
     const d = await r.json();
     if (d.ok) { loadTasks(); }
     else { toast('重试失败: ' + (d.error || ''), 'err'); btn.disabled = false; btn.textContent = old; }
   } catch (err) { btn.disabled = false; btn.textContent = old; }
+  finally { if (transferES) { transferES.close(); transferES = null; } }
 });
 
 // ── 统一弹窗机制（openModal/closeModal，对齐 biliup/kdocs，来去一致、回到原页、不丢上下文）──

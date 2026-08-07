@@ -385,6 +385,29 @@
       }
     }
   </style>
+  <style>
+    /* ── 转存执行进度（SSE 实时，kdocs 一键执行同款语言）── */
+    .exec-progress { margin-top: 16px; }
+    .progress-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; opacity: .85; }
+    #transferSteps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .step-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: rgba(128,128,128,.06); }
+    .step-icon { flex: none; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(128,128,128,.12); color: currentColor; }
+    .step-body { min-width: 0; flex: 1; }
+    .step-name { font-size: 13px; line-height: 1.5; }
+    .step-detail { margin-top: 2px; font-size: 12px; opacity: .7; word-break: break-all; }
+    .step-detail .link { color: var(--accent, #409eff); word-break: break-all; }
+    .step-detail .err { color: var(--danger, #e74c3c); }
+    .log-card { border-radius: 12px; background: rgba(128,128,128,.06); }
+    .log-card summary { padding: 10px 12px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: space-between; user-select: none; }
+    .log-card .chev { transition: transform .18s ease; }
+    .log-card[open] .chev { transform: rotate(180deg); }
+    .log-area { max-height: 220px; overflow: auto; padding: 0 12px 12px; font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.7; }
+    .log-area .line { white-space: pre-wrap; word-break: break-all; }
+    .log-area .line.lvl-ok { color: #2ecc71; }
+    .log-area .line.lvl-err { color: #e74c3c; }
+    .log-area .line.lvl-warn { color: #f39c12; }
+    .log-area .line.lvl-info { opacity: .85; }
+  </style>
   <!-- v0.1.43: 将 shared/tokens.css + shared/macos-motion.css + public/macos.css 内联，
        修复打包后 shared/ 被打入 app.asar 导致 server.js 子进程 fs 读不到 → 三样式全 404 → 零样式黑字。 -->
   <style>
@@ -906,6 +929,15 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="err" id="batchErr"></div>
       <div class="batch-preview" id="batchPreview"></div>
       <div class="batch-result" id="batchResult"></div>
+      <!-- 转存执行进度（SSE 实时，kdocs 一键执行同款语言） -->
+      <div class="exec-progress" id="transferProgress" style="display:none">
+        <div class="progress-title"><i class="app-ico" data-ico="settings"></i> 执行进度</div>
+        <div id="transferSteps"></div>
+        <details class="log-card" open>
+          <summary><span>执行日志</span><span class="chev">⌄</span></summary>
+          <div class="log-area" id="transferLog"></div>
+        </details>
+      </div>
     </div>
 
     <!-- 转存历史：已收敛为转存中心右上角 图标按钮触发的厚玻璃弹窗（见 #historyMask） -->

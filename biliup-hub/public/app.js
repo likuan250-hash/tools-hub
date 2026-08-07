@@ -290,15 +290,26 @@
     titleInputEl.addEventListener("input", () => { maybeAutoTag(); updateTitleCount(); });
   }
 
-  // 标题字节计数：B站 APP 投稿接口按 UTF-8 字节校验（上限 80 字节，中文 1 字=3 字节）。
-  // 超限标红，提交时后端仍会自动截断兜底（lib/task.js truncateTitleUtf8）。
+  // 标题/文件名计数：B站投稿接口按「字符数」校验（上限 80 字），且单P标题取文件名。
+  // 超限标红并拦截提交（提示用户自行修改/重命名），不自动截断。
   function updateTitleCount() {
     const el = $("titleCount");
     const inp = $("titleInput");
     if (!el || !inp) return;
-    const bytes = new TextEncoder().encode(inp.value || "").length;
-    el.textContent = String(bytes);
-    el.classList.toggle("over", bytes > 80);
+    const n = (inp.value || "").length;
+    el.textContent = String(n);
+    el.classList.toggle("over", n > 80);
+    const fc = $("fileNameCount");
+    if (fc) {
+      if (!selectedVideo) {
+        fc.textContent = "未选视频";
+        fc.classList.remove("over");
+      } else {
+        const base = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
+        fc.textContent = "文件名 " + base.length + "/80 字" + (base.length > 80 ? "（超限，请重命名文件）" : "");
+        fc.classList.toggle("over", base.length > 80);
+      }
+    }
   }
 
   // ── 发布模式切换（#C：根据选中显隐 dtimeInput；切到定时发布默认填 +1h）──
@@ -724,6 +735,17 @@
   async function submit() {
     if (running) return;
     if (!selectedVideo) { logLine("请先选择视频文件", "err"); toast("请先选择视频文件", "err"); return; }
+    // B站单P标题取文件名：文件名超 80 字必失败（code=21104），先拦截提示重命名，不自动截断。
+    const fileNameBase = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
+    if (fileNameBase.length > 80) {
+      const m = "文件名超 B 站 80 字限制（" + fileNameBase.length + " 字）：B站单P标题取文件名，发布会失败，请先重命名视频文件";
+      logLine(m, "err"); toast(m, "err"); return;
+    }
+    const titleVal = ($("titleInput").value || "").trim();
+    if (titleVal.length > 80) {
+      const m = "标题超 B 站 80 字限制（" + titleVal.length + " 字），请修改标题后再投稿";
+      logLine(m, "err"); toast(m, "err"); return;
+    }
     const mode = document.querySelector('input[name="mode"]:checked').value;
     let dtime = 0;
     if (mode === "dtime") {
@@ -736,7 +758,7 @@
       .split(/[，,]/).map((s) => s.trim()).filter(Boolean);
     const payload = {
       videoPath: selectedVideo,
-      title: ($("titleInput").value || "").trim(),
+      title: titleVal,
       tags,
       publishMode: mode,
       dtime,

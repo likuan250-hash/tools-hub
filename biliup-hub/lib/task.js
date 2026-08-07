@@ -17,50 +17,6 @@ const logger = require('./logger');
 
 const STAGES = ['pending', 'extracting_cover', 'uploading', 'adding_season', 'commenting', 'done', 'error'];
 
-// B站 APP 投稿接口（x/vu/app/add）对标题按 UTF-8 字节数校验（上限约 80 字节，中文 1 字=3 字节），
-// 报错 code=21104「标题过长,已经超过80个字符」。提交前按字节截断，且不切断多字节字符。
-// 例：39 个中文字 = 99 字节，必须截到 ≤80 字节才能通过。
-// 截断策略：保头 + … + 保尾（两侧各自回退到空格边界，避免切断中英文单词）。
-function prefixUtf8(s, limit) {
-  let out = '';
-  let bytes = 0;
-  for (const ch of s) {
-    const b = Buffer.byteLength(ch, 'utf8');
-    if (bytes + b > limit) break;
-    out += ch;
-    bytes += b;
-  }
-  return out;
-}
-
-function truncateTitleUtf8(title, maxBytes) {
-  const limit = (maxBytes === undefined) ? 80 : maxBytes;
-  const s = String(title == null ? '' : title).trim();
-  if (Buffer.byteLength(s, 'utf8') <= limit) return s;
-  const ELLIPSIS = '\u2026'; // … 3 字节
-  const eb = Buffer.byteLength(ELLIPSIS, 'utf8');
-  // 空间不足放省略号时，退化为安全前缀截断。
-  if (limit <= eb + 1) return prefixUtf8(s, limit);
-  const tailBudget = Math.floor((limit - eb) / 2);
-  const headBudget = limit - eb - tailBudget;
-  let head = prefixUtf8(s, headBudget);
-  const headSpace = head.lastIndexOf(' ');
-  if (headSpace > 0) head = head.slice(0, headSpace);
-  let tail = '';
-  let tailBytes = 0;
-  for (const ch of [...s].reverse()) {
-    const b = Buffer.byteLength(ch, 'utf8');
-    if (tailBytes + b > tailBudget) break;
-    tail = ch + tail;
-    tailBytes += b;
-  }
-  const tailSpace = tail.indexOf(' ');
-  if (tailSpace > 0) tail = tail.slice(tailSpace + 1);
-  if (!head || !tail) return prefixUtf8(s, limit);
-  const merged = head + ELLIPSIS + tail;
-  return Buffer.byteLength(merged, 'utf8') <= limit ? merged : prefixUtf8(s, limit);
-}
-
 /**
  * 执行一次完整投稿流程。
  * @param {Object} req 上传请求 { videoPath, tags, publishMode, dtime, title, params? }
@@ -101,6 +57,15 @@ async function run(req, ctx) {
     emit({ type: 'error', stage: 'pending', message: '视频文件不存在: ' + videoPath });
     return { ok: false, error: '视频文件不存在' };
   }
+  // B站投稿接口对「每个视频的标题」按 80 字符校验，且单P标题取「文件名（去扩展名）」——
+  // 文件名超 80 字必报 code=21104「第(N)个视频的标题过长,已经超过80个字符」，改标题栏无效。
+  // 这里在上传前直接拦截（不自动截断），提示用户自行重命名文件，避免白传一次大文件。
+  const baseName = path.basename(videoPath).replace(/\.[^.]+$/, '');
+  if (baseName.length > 80) {
+    const msg = `文件名超 B 站 80 字限制（${baseName.length} 字）：B站单P标题取文件名，请重命名视频文件后重新选择`;
+    emit({ type: 'error', stage: 'pending', message: msg });
+    return { ok: false, error: msg };
+  }
   if (!cookiesFile || !cookiesM.validate(cookiesFile)) {
     emit({ type: 'error', stage: 'pending', message: 'cookies 无效：缺少 SESSDATA 或 bili_jct' });
     return { ok: false, error: 'cookies 无效' };
@@ -137,11 +102,11 @@ async function run(req, ctx) {
     const base = path.basename(videoPath);
     title = base.replace(/\.[^.]+$/, '');
   }
-  // B站 APP 接口标题按 UTF-8 字节限长：超限直接截断，避免 21104「标题过长」导致上传白跑。
-  const titleRaw = title;
-  title = truncateTitleUtf8(title);
-  if (title !== titleRaw) {
-    log('pending', `标题超 B 站 80 字节限制，已自动截断（${Buffer.byteLength(titleRaw, 'utf8')}→${Buffer.byteLength(title, 'utf8')} 字节）：${title}`);
+  // 标题（投稿主标题）同样按 80 字符校验；超限直接报错提示修改，不自动截断。
+  if (title.length > 80) {
+    const msg = `标题超 B 站 80 字限制（${title.length} 字），请修改标题后重试`;
+    emit({ type: 'error', stage: 'pending', message: msg });
+    return { ok: false, error: msg };
   }
 
   // 完整 desc：基础简介（AIGC 合规头已于 #3 移除，不再注入）。
@@ -301,4 +266,4 @@ async function run(req, ctx) {
   }
 }
 
-module.exports = { run, STAGES, truncateTitleUtf8 };
+module.exports = { run, STAGES };

@@ -199,9 +199,25 @@ app.get(['/api/health', '/api/live'], (req, res) => {
 });
 
 // ── 配置读取（含 cookies 状态）──
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
   const config = store.getConfig();
   const ck = cookies.checkFile(config.cookiesPath);
+  if (ck.ok) {
+    // 文件字段齐全 ≠ 登录态有效：真实调 B 站 nav 接口验证 SESSDATA，
+    // 过期/失效时 UI 直接提示重新扫码，不再出现「显示正常但投稿报登录态失效」的误导。
+    const web = cookies.load(config.cookiesPath) || {};
+    const v = await Promise.race([
+      auth.verifyCookies(web, {}),
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, code: -1, message: '网络异常（校验超时）' }), 5000)),
+    ]);
+    ck.verified = true;
+    ck.ok = v.ok;
+    ck.uname = v.uname;
+    ck.message = v.message;
+  } else {
+    ck.verified = false;
+    ck.message = ck.error || '缺少 SESSDATA/bili_jct';
+  }
   res.json(Object.assign({}, config, { cookiesOk: ck.ok, cookiesDetail: ck }));
 });
 
@@ -227,9 +243,30 @@ app.get('/api/cookies/check', (req, res) => {
 });
 
 // ── 账号信息（B站头像/昵称，#7；带 5 分钟缓存）──
+// 登录态剩余天数：从 login_info 的 token_info 推算（token_created_at + expires_in - now）。
+// 无 TV token（cookie 兜底模式）→ days:null/status:cookie，前端显示「登录态正常」。
+function computeLoginTtl() {
+  try {
+    const li = auth.loadLoginInfo(store.getLoginInfoPath());
+    const ti = li && li.token_info;
+    if (!ti || !ti.access_token) {
+      return { days: null, status: 'cookie' };
+    }
+    if (ti.expires_in > 0 && ti.token_created_at > 0) {
+      const remaining = ti.token_created_at + ti.expires_in - Math.floor(Date.now() / 1000);
+      const days = Math.max(0, Math.ceil(remaining / 86400));
+      return { days, status: days <= 7 ? 'warn' : 'ok' };
+    }
+    return { days: null, status: 'ok', longLived: true };
+  } catch (e) {
+    return null;
+  }
+}
+
 app.get('/api/account', async (req, res) => {
   try {
     const info = await account.getAccount();
+    if (info && info.isLogin) info.loginTtl = computeLoginTtl();
     res.json(info);
   } catch (e) {
     logger.error('[account] 查询失败:', e.message);

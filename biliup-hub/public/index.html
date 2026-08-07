@@ -54,12 +54,26 @@
     .ver-badge:hover { color: var(--text); }
 
     /* ===== 账号区（#7 头像/昵称/登录按钮）===== */
-    .account-area { display: flex; align-items: center; gap: 8px; }
+    .account-area { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .acct-line { display: flex; align-items: center; gap: 8px; }
     .avatar {
       width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
       border: 1px solid var(--glass-border); cursor: pointer; background: var(--field-bg);
     }
     .nick-name { font-size: 13px; font-weight: 600; cursor: pointer; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* 登录态剩余天数徽章（账号区下方，醒目）：正常绿 / 临期橙 / 失效红 */
+    .login-ttl {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 600;
+      padding: 4px 11px; border-radius: var(--r-pill);
+      border: 1px solid; backdrop-filter: blur(14px) saturate(150%);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); cursor: pointer;
+      user-select: none; white-space: nowrap;
+    }
+    .login-ttl .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+    .ttl-ok { color: #6ee7b7; background: rgba(16, 185, 129, 0.16); border-color: rgba(110, 231, 183, 0.45); }
+    .ttl-warn { color: #fcd34d; background: rgba(245, 158, 11, 0.16); border-color: rgba(252, 211, 77, 0.5); }
+    .ttl-dead { color: #fda4af; background: rgba(244, 63, 94, 0.18); border-color: rgba(253, 164, 175, 0.5); }
 
     /* ===== panel（与网盘转存完全一致） ===== */
     .panel {

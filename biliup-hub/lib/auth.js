@@ -338,13 +338,14 @@ async function exchangeLoginInfo(webCookies, opts = {}) {
   if (!webCookies || !webCookies.SESSDATA || !webCookies.bili_jct) return null;
   try {
     const authCode = await tvGetQrcodeAuthCode(fetchFn, deps);
-    if (!authCode) return null;
+    if (!authCode) { logger.warn('[auth] TV token 换取失败：申请 auth_code 无结果'); return null; }
     const confirmed = await tvWebConfirmQrcode(fetchFn, webCookies, authCode);
-    if (!confirmed) return null;
+    if (!confirmed) { logger.warn('[auth] TV token 换取失败：web 确认二维码未通过（SESSDATA/bili_jct 可能被风控）'); return null; }
     const info = await tvLoginByQrcode(fetchFn, authCode, deps);
-    if (!info) return null;
+    if (!info) { logger.warn('[auth] TV token 换取失败：login_by_qrcode 轮询无结果'); return null; }
     return info;
   } catch (e) {
+    logger.warn('[auth] TV token 换取异常:', e && e.message ? e.message : e);
     return null;
   }
 }
@@ -544,6 +545,15 @@ async function ensureFreshLoginInfo(webCookies, opts = {}) {
   // 失败明确化（根因B）：最终落盘的 token 必须非空，否则直白抛错，禁止静默传空 token。
   const finalInfo = loadLoginInfo(path0, opts);
   if (!finalInfo || !finalInfo.token_info || !finalInfo.token_info.access_token) {
+    // 先验证 web cookie 是否真的失效：仅 nav 明确返回「未登录」才要求重新扫码；
+    // cookie 仍有效（或网络异常无法判定）时，换取失败只是网络/风控等瞬态，
+    // biliup 空 token 也能用 web cookie 上传（实测可用），不误报「登录态失效」。
+    const ck = await verifyCookies(webCookies, opts);
+    const cookieProvenDead = ck && ck.ok === false && ck.code !== -1;
+    if (!cookieProvenDead) {
+      logger.warn('[auth] web cookie 仍有效但 TV token 换取失败（网络/风控），用 cookie 兜底继续:', path0);
+      return path0;
+    }
     throw new Error('登录态失效，请重新扫码登录（web cookie 也无法换取有效 token）');
   }
   return path0;
@@ -632,6 +642,7 @@ module.exports = {
   buildLoginInfoFromWebCookies,
   exchangeLoginInfo,
   saveLoginInfo,
+  verifyCookies,
   ensureLoginInfo,
   ensureFreshLoginInfo,
   isLoginInfoFresh,

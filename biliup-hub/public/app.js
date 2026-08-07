@@ -331,7 +331,8 @@
       if ($("defaultTagsInput")) $("defaultTagsInput").value = cfg.defaultTags || "";
       window.__defaultTags = cfg.defaultTags || "";
       const ck = cfg.cookiesDetail || { ok: !!cfg.cookiesOk };
-      $("cookiesKpi").textContent = "cookies: " + (ck.ok ? "有效" : "缺失 SESSDATA/bili_jct");
+      const ckMsg = ck.message || (ck.ok ? "有效" : "缺失 SESSDATA/bili_jct");
+      $("cookiesKpi").textContent = "cookies: " + ckMsg;
       $("cookiesKpi").style.color = ck.ok ? "" : "#ff8a8a";
     } catch (e) {
       logLine("加载配置失败: " + e.message, "err");
@@ -480,6 +481,8 @@
     box.innerHTML = "";
     closeAccountMenu();
     if (info && info.isLogin) {
+      const line = document.createElement("div");
+      line.className = "acct-line";
       const img = document.createElement("img");
       img.className = "avatar";
       img.id = "avatar";
@@ -498,8 +501,26 @@
       name.textContent = info.uname || "用户";
       name.title = "点击打开菜单";
       name.addEventListener("click", (e) => { e.stopPropagation(); toggleAccountMenu(info, name); });
-      box.appendChild(img);
-      box.appendChild(name);
+      line.appendChild(img);
+      line.appendChild(name);
+      box.appendChild(line);
+      // 登录态剩余天数徽章（醒目）：正常绿 / 临期橙 / 失效红，点击唤起扫码
+      const ttl = info.loginTtl;
+      if (ttl) {
+        const badge = document.createElement("span");
+        let cls = "ttl-ok";
+        let text = "登录态正常";
+        if (ttl.days != null) {
+          if (ttl.days <= 0) { cls = "ttl-dead"; text = "登录态即将失效，请重新扫码"; }
+          else if (ttl.status === "warn") { cls = "ttl-warn"; text = "登录态剩余 " + ttl.days + " 天，请提前重新扫码"; }
+          else { text = "登录态剩余 " + ttl.days + " 天"; }
+        }
+        badge.className = "login-ttl " + cls;
+        badge.innerHTML = '<span class="dot"></span>' + text;
+        badge.title = "点击重新扫码登录";
+        badge.addEventListener("click", (e) => { e.stopPropagation(); openLogin(); });
+        box.appendChild(badge);
+      }
       buildAccountMenu(info); // 构建二级菜单（个人中心 / 退出登录）
     } else {
       const btn = document.createElement("button");

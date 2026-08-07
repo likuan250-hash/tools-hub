@@ -17,7 +17,7 @@
 const { spawn: spawnDefault } = require('child_process');
 const fsDefault = require('fs');
 const path = require('path');
-const { FilenameSanitizer } = require('./filename');
+const { FilenameSanitizer, MAX_LEN } = require('./filename');
 const { runCommand } = require('./runner');
 const { resolveProxy, toProxyUrl } = require('./http');
 
@@ -494,6 +494,22 @@ class TrailerDownloader {
     return this.sanitizer.buildLaunchTrailerName(index, gameName, { englishName: opts.englishName });
   }
 
+  /**
+   * 生成下载输出文件名：优先用候选视频的原始 YouTube 标题（用户要求「就用原始视频名，不用再重命名」），
+   * 无标题时退回规范命名（buildTargetName）兜底。
+   * @param {object} info 候选（含 title）
+   * @param {string} name 游戏名
+   * @param {object} [opts] buildTargetName 兜底参数
+   * @returns {string} 形如 'Warhammer 40,000_ Space Marine 2 - Launch Trailer.mp4'
+   */
+  buildOutputName(info, name, opts = {}) {
+    const rawTitle = String(info && info.title || '').trim();
+    if (rawTitle) {
+      return this.sanitizer.sanitize(rawTitle, { space: 'keep', max: MAX_LEN - 4 }) + '.mp4';
+    }
+    return this.buildTargetName(name, opts);
+  }
+
   // ─────────────────── 带 IO 的方法 ───────────────────
 
   /**
@@ -603,19 +619,13 @@ class TrailerDownloader {
       if (list.length >= TRAILER_DOWNLOAD_ATTEMPTS) break;
     }
 
-    // 规范《视频命名规范》：文件名在下载前就定死，不再沿用 YouTube 原始英文标题
-    const targetName = this.buildTargetName(name, {
-      index: opts.index,
-      kind: opts.kind,
-      englishName: opts.englishName,
-      versionDesc: opts.versionDesc,
-    });
-    const base = targetName.replace(/\.[^.]+$/, '');
-    const outPath = path.join(dir, targetName);
-
     let last = null;
     for (let i = 0; i < list.length; i += 1) {
       const info = list[i];
+      // 文件名：直接用候选视频的原始标题（不再套规范重命名）；无标题退回规范命名兜底
+      const targetName = this.buildOutputName(info, name, opts);
+      const base = targetName.replace(/\.[^.]+$/, '');
+      const outPath = path.join(dir, targetName);
       const multi = list.length > 1;
       emit('trailer_download', STEP_DOWNLOAD,
         '下载 1080p mp4：' + targetName + (multi ? '（候选 ' + (i + 1) + '/' + list.length + '）' : ''), null, {

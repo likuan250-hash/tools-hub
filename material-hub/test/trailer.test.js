@@ -452,10 +452,10 @@ test('searchTrailer 无候选 / 候选全不达标 / 命令异常均安全返回
   assert.equal(await boom.searchTrailer('x'), null);
 });
 
-test('download 用规范命名落盘，并用 ffprobe 校验实际分辨率', async () => {
+test('download 用原始视频标题落盘，并用 ffprobe 校验实际分辨率', async () => {
   const calls = [];
   const events = [];
-  const target = '【游戏267】忍者龙剑传4 The Two Masters Launch Trailer 免费学习版下载.mp4';
+  const target = 'NINJA GAIDEN 4 - Launch Trailer.mp4';
   const probe = fakeProbe({ ok: true, width: 1920, height: 1080 });
   const t = new TrailerDownloader({
     spawn: fakeSpawn({ code: 0 }, calls),
@@ -466,8 +466,6 @@ test('download 用规范命名落盘，并用 ffprobe 校验实际分辨率', as
 
   const r = await t.download('忍者龙剑传4', 'E:\\素材\\【游戏267】忍者龙剑传4', { ytDlp: true, ffmpeg: true }, {
     info: { id: 'v1', title: 'NINJA GAIDEN 4 - Launch Trailer', url: 'https://youtu.be/v1', channel: 'Koei Tecmo' },
-    index: 267,
-    englishName: 'The Two Masters',
     emit: (type, step, msg, ok, detail) => events.push({ type, msg, detail }),
   });
 
@@ -477,7 +475,7 @@ test('download 用规范命名落盘，并用 ffprobe 校验实际分辨率', as
   assert.equal(r.height, 1080);
   assert.equal(r.hd, true);
   assert.equal(r.channel, 'Koei Tecmo');
-  // 输出路径直接就是规范文件名，不再沿用 YouTube 原始英文标题
+  // 输出路径 = 原始视频标题（不再套【游戏NNN】…免费学习版下载 规范命名）
   const outArg = calls[0].args[calls[0].args.indexOf('-o') + 1];
   assert.equal(outArg, path.join('E:\\素材\\【游戏267】忍者龙剑传4', target));
   assert.equal(probe.calls.length, 1);
@@ -514,7 +512,7 @@ test('download 区分 yt-dlp 失败与产出文件缺失', async () => {
 
 test('download 首候选失败自动换下一个候选（年龄限制/下载错误不再直接判死）', async () => {
   const calls = [];
-  const target = '【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4';
+  const target = 'B - Official Trailer.mp4';
   const entries = []; // 初始为空：候选失败不产生文件，候选成功才"落盘"
   const t = new TrailerDownloader({
     spawn: fakeSpawn((cmd, args) => {
@@ -573,6 +571,18 @@ test('searchTrailerCandidates 返回完整排序候选列表，searchTrailer 取
   assert.equal(best.url, 'https://youtu.be/v2');
 });
 
+test('buildOutputName：优先原始标题，无标题退回规范命名', () => {
+  const t = make();
+  assert.equal(
+    t.buildOutputName({ title: 'Warhammer 40,000: Space Marine 2 - Launch Trailer' }, '正当防卫4', { index: 268 }),
+    'Warhammer 40,000_ Space Marine 2 - Launch Trailer.mp4',
+  );
+  assert.equal(
+    t.buildOutputName({}, '正当防卫4', { index: 268 }),
+    '【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4',
+  );
+});
+
 test('probeResolution 未注入 probe 或 ffprobe 失败时不阻断下载结果', async () => {
   const noProbe = make({ entries: [] });
   const r1 = await noProbe.probeResolution('a.mp4');
@@ -585,14 +595,14 @@ test('probeResolution 未注入 probe 或 ffprobe 失败时不阻断下载结果
   assert.equal(r2.error, 'ffprobe-not-found');
 
   // 即便校验失败，download 仍应判成功（视频已落盘）
-  const target = '【游戏001】x Launch Trailer 免费学习版下载.mp4';
+  const target = 'T.mp4';
   const t = new TrailerDownloader({
     spawn: fakeSpawn({ code: 0 }),
     fs: fakeFs([target]),
     probe: fakeProbe({ ok: false, error: 'boom' }),
   });
   const r3 = await t.download('x', 'dir', { ytDlp: true, ffmpeg: true }, {
-    info: { id: 'v', title: 'T', url: 'u' }, index: 1,
+    info: { id: 'v', title: 'T', url: 'u' },
   });
   assert.equal(r3.ok, true);
   assert.equal(r3.width, undefined);
@@ -733,7 +743,7 @@ test('searchTrailer 集成：检测到代理时把 --proxy 前置传给 yt-dlp �
 
 test('download 集成：下载参数也前置 --proxy，且 -o / -f / URL 顺序不受影响', async () => {
   const calls = [];
-  const target = '【游戏001】x Launch Trailer 免费学习版下载.mp4';
+  const target = 'T.mp4';
   const t = new TrailerDownloader({
     spawn: fakeSpawn({ code: 0 }, calls),
     fs: fakeFs([target]),
@@ -741,7 +751,7 @@ test('download 集成：下载参数也前置 --proxy，且 -o / -f / URL 顺序
     ytDlpPath: 'E:\\bin\\yt-dlp.exe',
   });
   await t.download('x', 'dir', { ytDlp: true, ffmpeg: true }, {
-    info: { id: 'v', title: 'T', url: 'https://youtu.be/v', channel: 'Koei Tecmo' }, index: 1,
+    info: { id: 'v', title: 'T', url: 'https://youtu.be/v', channel: 'Koei Tecmo' },
   });
   assert.equal(calls.length, 1);
   const args = calls[0].args;

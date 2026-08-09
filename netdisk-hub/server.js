@@ -75,7 +75,11 @@ app.get(['/tokens.css', '/macos-motion.css'], (req, res) => {
 // 静态资源防缓存: 每次都重新验证, 避免浏览器长期使用旧 app.js(曾导致「改了代码仍看到旧行为」)
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
-    if (/\.(js|css|html|htm)$/i.test(filePath)) {
+    if (/\.html?$/i.test(filePath)) {
+      // no-store：Chromium bfcache 可把旧文档从内存恢复（不发请求），no-cache 挡不住；
+      // 更新后标签页切回仍显示旧页面。no-store 强制每次真实加载，杜绝「改了没应用」。
+      res.setHeader('Cache-Control', 'no-store');
+    } else if (/\.(js|css)$/i.test(filePath)) {
       res.setHeader('Cache-Control', 'no-cache');
     }
   },

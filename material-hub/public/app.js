@@ -489,6 +489,14 @@ function openCoverPicker(ev) {
     const metaEl = document.createElement("span");
     metaEl.className = "cover-cand-meta";
     metaEl.textContent = (i + 1) + ". " + (c.label || c.source || "候选");
+    // 缩略图加载后附上真实分辨率（naturalWidth/Height，远程图不跨域也能读）
+    img.addEventListener("load", () => {
+      const nw = img.naturalWidth;
+      const nh = img.naturalHeight;
+      if (nw && nh) {
+        metaEl.textContent = (i + 1) + ". " + (c.label || c.source || "候选") + " · " + nw + "×" + nh;
+      }
+    });
     card.appendChild(radio);
     card.appendChild(img);
     card.appendChild(metaEl);

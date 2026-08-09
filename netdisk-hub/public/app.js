@@ -512,7 +512,7 @@ function resetTransferProgress() {
   transferStepsEl.innerHTML = '';
   transferLogEl.innerHTML = '';
   transferStepEls = [];
-  transferProgress.style.display = 'block';
+  transferProgress.classList.add('show');
 }
 
 function openTransferSSE(clientId) {

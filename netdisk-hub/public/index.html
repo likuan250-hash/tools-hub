@@ -387,16 +387,42 @@
   </style>
   <style>
     /* ── 转存执行进度（SSE 实时，kdocs 一键执行同款语言）── */
-    .exec-progress { margin-top: 16px; }
+    .exec-progress { margin-top: 16px; display: none; }
+    .exec-progress.show { display: block; animation: pop 0.4s ease; }
     .progress-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; opacity: .85; }
     #transferSteps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
     .step-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: rgba(128,128,128,.06); }
     .step-icon { flex: none; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(128,128,128,.12); color: currentColor; }
+    .step-item:has(.st-luxe--ok)   .step-icon { background: var(--ok); color: #fff; }
+    .step-item:has(.st-luxe--err)  .step-icon { background: var(--err); color: #fff; }
+    .step-item:has(.st-luxe--warn) .step-icon { background: var(--warn); color: #1b1f3b; }
+    .step-item:has(.st-luxe--info) .step-icon {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff;
+      box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.45);
+      animation: step-pulse 1.6s ease-in-out infinite;
+    }
+    .step-item:has(.st-luxe--off)  .step-icon { border-color: var(--text-dim); color: var(--text-dim); }
+    .step-item:has(.st-luxe--info) .step-body { position: relative; }
+    .step-item:has(.st-luxe--info) .step-body::after {
+      content: ""; display: block; margin-top: 8px; max-width: 220px; height: 6px; border-radius: 999px;
+      background: var(--field-bg);
+      background-image: linear-gradient(90deg, transparent, var(--accent-2), transparent);
+      background-size: 45% 100%; background-repeat: no-repeat;
+      animation: step-indeterminate 1.5s ease-in-out infinite;
+    }
     .step-body { min-width: 0; flex: 1; }
     .step-name { font-size: 13px; line-height: 1.5; }
     .step-detail { margin-top: 2px; font-size: 12px; opacity: .7; word-break: break-all; }
     .step-detail .link { color: var(--accent, #409eff); word-break: break-all; }
     .step-detail .err { color: var(--danger, #e74c3c); }
+    @keyframes step-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.45); }
+      50%      { box-shadow: 0 0 0 7px rgba(var(--accent-rgb), 0); }
+    }
+    @keyframes step-indeterminate {
+      from { background-position: -45% 0; }
+      to   { background-position: 145% 0; }
+    }
     .log-card { border-radius: 12px; background: rgba(128,128,128,.06); }
     .log-card summary { padding: 10px 12px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: space-between; user-select: none; }
     .log-card .chev { transition: transform .18s ease; }
@@ -930,7 +956,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="batch-preview" id="batchPreview"></div>
       <div class="batch-result" id="batchResult"></div>
       <!-- 转存执行进度（SSE 实时，kdocs 一键执行同款语言） -->
-      <div class="exec-progress" id="transferProgress" style="display:none">
+      <div class="exec-progress" id="transferProgress">
         <div class="progress-title"><i class="app-ico" data-ico="settings"></i> 执行进度</div>
         <div id="transferSteps"></div>
         <details class="log-card" open>

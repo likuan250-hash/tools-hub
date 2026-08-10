@@ -426,12 +426,12 @@
     }
     html[data-theme="dark"] #pvListMask .pv-item,
     html[data-theme="dark"] #pvAddMask .pv-field input {
-      background: linear-gradient(180deg, rgba(0,240,255,.07), rgba(0,240,255,.03));
-      border-color: rgba(0,240,255,.18);
+      background: linear-gradient(180deg, rgba(0,240,255,.10), rgba(0,240,255,.05));
+      border-color: rgba(0,240,255,.30);
     }
-    html[data-theme="dark"] #pvListMask .pv-item:hover { border-color: rgba(255,46,196,.5); }
+    html[data-theme="dark"] #pvListMask .pv-item:hover { border-color: rgba(255,46,196,.65); }
     html[data-theme="dark"] #pvListMask .pv-tabs button {
-      background: rgba(0,240,255,.07); border-color: rgba(0,240,255,.22); color: #9fe9f5;
+      background: rgba(0,240,255,.10); border-color: rgba(0,240,255,.30); color: #d8f7ff;
     }
     html[data-theme="dark"] #pvListMask .pv-tabs button.active {
       background: linear-gradient(135deg, #00f0ff, #ff2ec4); color: #050a14; border-color: transparent;
@@ -439,15 +439,21 @@
     }
     html[data-theme="dark"] #pvListMask .pv-check input,
     html[data-theme="dark"] #pvAddMask .pv-preset input { accent-color: #00f0ff; }
-    html[data-theme="dark"] #pvListMask .pv-del { color: #ff2ec4; }
-    html[data-theme="dark"] #pvListMask .pv-stats { color: #cfeaff; }
-    html[data-theme="dark"] #pvListMask .pv-th { color: rgba(207,234,255,.85); }
+    html[data-theme="dark"] #pvListMask .pv-del { color: #ff5ad1; }
+    html[data-theme="dark"] #pvListMask .pv-stats { color: #e8f8ff; }
+    html[data-theme="dark"] #pvListMask .pv-th { color: rgba(232,248,255,.92); }
     html[data-theme="dark"] #pvListMask .pv-item .pv-name,
-    html[data-theme="dark"] #pvListMask .pv-item .pv-date,
+    html[data-theme="dark"] #pvListMask .pv-item .pv-check,
     html[data-theme="dark"] #pvAddMask .pv-field label,
-    html[data-theme="dark"] #pvAddMask .pv-preset label { color: #d8f6ff; }
+    html[data-theme="dark"] #pvAddMask .pv-preset label { color: #ffffff; }
+    html[data-theme="dark"] #pvListMask .pv-item .pv-date { color: #e8f8ff; }
+    html[data-theme="dark"] #pvListMask .pv-item.done .pv-name { opacity: .75; }
+    html[data-theme="dark"] #pvAddMask .pv-field input { color: #ffffff; }
+    html[data-theme="dark"] #pvAddMask .pv-field input::placeholder { color: #8fb2c8; }
+    html[data-theme="dark"] #pvListMask .icon-btn,
+    html[data-theme="dark"] #pvAddMask .icon-btn { color: #d8f7ff; }
     html[data-theme="dark"] #pvListMask .icon-btn:hover,
-    html[data-theme="dark"] #pvAddMask .icon-btn:hover { border-color: rgba(0,240,255,.5); color: #00f0ff; }
+    html[data-theme="dark"] #pvAddMask .icon-btn:hover { border-color: rgba(0,240,255,.6); color: #00f0ff; }
 
     /* 方案A：@starting-style 入场/退场 + 行错峰（仅待发布清单弹窗） */
     #pvListMask, #pvAddMask {

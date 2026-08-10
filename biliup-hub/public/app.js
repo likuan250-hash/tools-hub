@@ -1091,9 +1091,6 @@
     pvListMask.classList.add("show");
     loadPendingVideos();
   });
-  pvListMask.addEventListener("click", (e) => {
-    if (e.target === pvListMask) pvListMask.classList.remove("show");
-  });
   $("pvCloseBtn").addEventListener("click", () => pvListMask.classList.remove("show"));
 
   $("pvAddBtn").addEventListener("click", () => {
@@ -1105,9 +1102,6 @@
   });
   $("pvAddCancel").addEventListener("click", () => pvAddMask.classList.remove("show"));
   $("pvAddClose").addEventListener("click", () => pvAddMask.classList.remove("show"));
-  pvAddMask.addEventListener("click", (e) => {
-    if (e.target === pvAddMask) pvAddMask.classList.remove("show");
-  });
   $("pvAddOk").addEventListener("click", async () => {
     const name = (pvNameInput.value || "").trim();
     if (!name) { toast("请输入视频名称", "err"); return; }

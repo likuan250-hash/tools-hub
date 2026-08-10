@@ -1030,8 +1030,11 @@
   let pvTab = "todo";
   const pvListMask = $("pvListMask");
   const pvAddMask = $("pvAddMask");
+  const pvSyncMask = $("pvSyncMask");
   const pvListEl = $("pvList");
   const pvStatsEl = $("pvStats");
+  const pvSyncBtn = $("pvSyncBtn");
+  const pvSyncText = $("pvSyncText");
   const pvNameInput = $("pvName");
   const pvDateInput = $("pvDate");
 
@@ -1047,6 +1050,31 @@
       pvList = [];
     }
     renderPendingVideos();
+  }
+
+  async function loadGhSync() {
+    try {
+      const r = await fetch("/api/gh-sync");
+      const d = await r.json();
+      pvSyncBtn.classList.remove("on", "err", "syncing");
+      if (!d.enabled || !d.hasToken) {
+        pvSyncText.textContent = "云端：未配置";
+      } else if (d.lastSync && d.lastSync.ok) {
+        const t = new Date(d.lastSync.ts);
+        const hh = String(t.getHours()).padStart(2, "0");
+        const mm = String(t.getMinutes()).padStart(2, "0");
+        pvSyncText.textContent = "云端：已同步 " + hh + ":" + mm;
+        pvSyncBtn.classList.add("on");
+      } else if (d.lastSync) {
+        pvSyncText.textContent = "云端：同步失败";
+        pvSyncBtn.classList.add("err");
+      } else {
+        pvSyncText.textContent = "云端：同步中…";
+        pvSyncBtn.classList.add("syncing");
+      }
+    } catch (_) {
+      pvSyncText.textContent = "云端：未知";
+    }
   }
 
   function pvSorted(arr) {
@@ -1090,8 +1118,35 @@
   $("pvOpenBtn").addEventListener("click", () => {
     pvListMask.classList.add("show");
     loadPendingVideos();
+    loadGhSync();
   });
   $("pvCloseBtn").addEventListener("click", () => pvListMask.classList.remove("show"));
+
+  $("pvSyncBtn").addEventListener("click", async () => {
+    try {
+      const r = await fetch("/api/gh-sync");
+      const d = await r.json();
+      $("pvSyncRepo").value = d.repo || "likuan250-hash/pending-videos-data";
+      $("pvSyncEnable").checked = !!d.enabled;
+      $("pvSyncToken").value = "";
+      pvSyncMask.classList.add("show");
+    } catch (_) { toast("读取配置失败", "err"); }
+  });
+  $("pvSyncCancel").addEventListener("click", () => pvSyncMask.classList.remove("show"));
+  $("pvSyncClose").addEventListener("click", () => pvSyncMask.classList.remove("show"));
+  $("pvSyncOk").addEventListener("click", async () => {
+    const body = {
+      enabled: $("pvSyncEnable").checked,
+      repo: $("pvSyncRepo").value.trim(),
+      token: $("pvSyncToken").value.trim(),
+    };
+    try {
+      await pvMutate("/api/gh-sync", { body: JSON.stringify(body) });
+      pvSyncMask.classList.remove("show");
+      await loadGhSync();
+      toast("已保存" + (body.token ? "，正在同步" : ""));
+    } catch (e) { toast(e.message, "err"); }
+  });
 
   $("pvAddBtn").addEventListener("click", () => {
     pvNameInput.value = "";

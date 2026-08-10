@@ -382,6 +382,19 @@
     #pvListMask .modal { max-width: 720px; width: calc(100vw - 48px); }
     #pvListMask .modal, #pvAddMask .modal { background: var(--solid-bg); }
     .pv-stats { font-size: 12px; opacity: .95; color: var(--text); margin-bottom: 12px; }
+    .pv-stats-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .pv-stats-row .pv-stats { margin-bottom: 0; }
+    .pv-sync {
+      display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+      border: 1px solid var(--glass-border); background: rgba(255,255,255,.06); color: var(--text-dim);
+      font-size: 12px; white-space: nowrap; transition: color .2s, border-color .2s;
+    }
+    .pv-sync:hover { color: var(--text); border-color: var(--accent); }
+    .pv-sync .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); flex: none; }
+    .pv-sync.on .dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+    .pv-sync.err .dot { background: var(--err); box-shadow: 0 0 6px var(--err); }
+    .pv-sync.syncing .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pvSyncPulse 1s infinite; }
+    @keyframes pvSyncPulse { 50% { opacity: .35; } }
     .pv-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
     .pv-tabs button { padding: 5px 16px; border-radius: 999px; border: 1px solid var(--glass-border); background: rgba(255,255,255,.10); color: var(--text); cursor: pointer; font-size: 13px; }
     .pv-tabs button.active { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border-color: transparent; }
@@ -411,21 +424,24 @@
       box-shadow: 0 0 0 1px rgba(0,240,255,.45), 0 8px 26px rgba(0,240,255,.35), 0 0 18px rgba(255,46,196,.25);
     }
     html[data-theme="dark"] #pvListMask .modal,
-    html[data-theme="dark"] #pvAddMask .modal {
+    html[data-theme="dark"] #pvAddMask .modal,
+    html[data-theme="dark"] #pvSyncMask .modal {
       position: relative;
       background: linear-gradient(180deg, #0c1220, #070b16);
       border-color: rgba(0,240,255,.25);
       box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 46px rgba(0,240,255,.14), 0 0 0 1px rgba(0,240,255,.20), inset 0 1px 0 rgba(255,255,255,.08);
     }
     html[data-theme="dark"] #pvListMask .modal::before,
-    html[data-theme="dark"] #pvAddMask .modal::before {
+    html[data-theme="dark"] #pvAddMask .modal::before,
+    html[data-theme="dark"] #pvSyncMask .modal::before {
       content: ""; position: absolute; inset: 0; border-radius: var(--r-lg); padding: 1px; pointer-events: none;
       background: linear-gradient(140deg, rgba(0,240,255,.7), rgba(255,46,196,.18) 40%, rgba(255,46,196,.65));
       -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
       -webkit-mask-composite: xor; mask-composite: exclude;
     }
     html[data-theme="dark"] #pvListMask .pv-item,
-    html[data-theme="dark"] #pvAddMask .pv-field input {
+    html[data-theme="dark"] #pvAddMask .pv-field input,
+    html[data-theme="dark"] #pvSyncMask .pv-field input {
       background: linear-gradient(180deg, rgba(0,240,255,.10), rgba(0,240,255,.05));
       border-color: rgba(0,240,255,.30);
     }
@@ -438,39 +454,48 @@
       box-shadow: 0 4px 16px rgba(0,240,255,.35);
     }
     html[data-theme="dark"] #pvListMask .pv-check input,
-    html[data-theme="dark"] #pvAddMask .pv-preset input { accent-color: #00f0ff; }
+    html[data-theme="dark"] #pvAddMask .pv-preset input,
+    html[data-theme="dark"] #pvSyncMask .pv-preset input { accent-color: #00f0ff; }
     html[data-theme="dark"] #pvListMask .pv-del { color: #ff5ad1; }
     html[data-theme="dark"] #pvListMask .pv-stats { color: #e8f8ff; }
     html[data-theme="dark"] #pvListMask .pv-th { color: rgba(232,248,255,.92); }
     html[data-theme="dark"] #pvListMask .pv-item .pv-name,
     html[data-theme="dark"] #pvListMask .pv-item .pv-check,
     html[data-theme="dark"] #pvAddMask .pv-field label,
-    html[data-theme="dark"] #pvAddMask .pv-preset label { color: #ffffff; }
+    html[data-theme="dark"] #pvAddMask .pv-preset label,
+    html[data-theme="dark"] #pvSyncMask .pv-field label,
+    html[data-theme="dark"] #pvSyncMask .pv-preset label { color: #ffffff; }
     html[data-theme="dark"] #pvListMask .pv-item .pv-date { color: #e8f8ff; }
     html[data-theme="dark"] #pvListMask .pv-item.done .pv-name { opacity: .75; }
-    html[data-theme="dark"] #pvAddMask .pv-field input { color: #ffffff; }
-    html[data-theme="dark"] #pvAddMask .pv-field input::placeholder { color: #8fb2c8; }
+    html[data-theme="dark"] #pvAddMask .pv-field input,
+    html[data-theme="dark"] #pvSyncMask .pv-field input { color: #ffffff; }
+    html[data-theme="dark"] #pvAddMask .pv-field input::placeholder,
+    html[data-theme="dark"] #pvSyncMask .pv-field input::placeholder { color: #8fb2c8; }
     html[data-theme="dark"] #pvListMask .icon-btn,
-    html[data-theme="dark"] #pvAddMask .icon-btn { color: #d8f7ff; }
+    html[data-theme="dark"] #pvAddMask .icon-btn,
+    html[data-theme="dark"] #pvSyncMask .icon-btn { color: #d8f7ff; }
     html[data-theme="dark"] #pvListMask .icon-btn:hover,
-    html[data-theme="dark"] #pvAddMask .icon-btn:hover { border-color: rgba(0,240,255,.6); color: #00f0ff; }
+    html[data-theme="dark"] #pvAddMask .icon-btn:hover,
+    html[data-theme="dark"] #pvSyncMask .icon-btn:hover { border-color: rgba(0,240,255,.6); color: #00f0ff; }
+    html[data-theme="dark"] .pv-sync { background: rgba(0,240,255,.08); border-color: rgba(0,240,255,.3); color: #d8f7ff; }
+    html[data-theme="dark"] .pv-sync:hover { color: #fff; border-color: rgba(0,240,255,.6); }
 
     /* 方案A：@starting-style 入场/退场 + 行错峰（仅待发布清单弹窗） */
-    #pvListMask, #pvAddMask {
+    #pvListMask, #pvAddMask, #pvSyncMask {
       display: flex; opacity: 0; visibility: hidden;
       transition: opacity .28s ease, visibility 0s linear .28s;
     }
-    #pvListMask.show, #pvAddMask.show {
+    #pvListMask.show, #pvAddMask.show, #pvSyncMask.show {
       opacity: 1; visibility: visible; animation: none;
       transition: opacity .28s ease, visibility 0s;
     }
-    #pvListMask .modal, #pvAddMask .modal {
+    #pvListMask .modal, #pvAddMask .modal, #pvSyncMask .modal {
       opacity: 0; transform: translateY(18px) scale(.95);
       transition: opacity .25s cubic-bezier(.22, 1, .36, 1), transform .38s cubic-bezier(.22, 1, .36, 1);
     }
-    #pvListMask.show .modal, #pvAddMask.show .modal { opacity: 1; transform: none; }
+    #pvListMask.show .modal, #pvAddMask.show .modal, #pvSyncMask.show .modal { opacity: 1; transform: none; }
     @starting-style {
-      #pvListMask.show .modal, #pvAddMask.show .modal { opacity: 0; transform: translateY(18px) scale(.95); }
+      #pvListMask.show .modal, #pvAddMask.show .modal, #pvSyncMask.show .modal { opacity: 0; transform: translateY(18px) scale(.95); }
     }
     #pvListMask .pv-item {
       opacity: 0; transform: translateY(10px);
@@ -1053,7 +1078,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
           <button class="icon-btn" id="pvCloseBtn" title="关闭" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span class="ib-label">关闭</span></button>
         </div>
       </div>
-      <div class="pv-stats" id="pvStats"></div>
+      <div class="pv-stats-row"><div class="pv-stats" id="pvStats"></div><button class="pv-sync" id="pvSyncBtn" type="button"><span class="dot"></span><span id="pvSyncText">云端：未配置</span></button></div>
       <div class="pv-tabs">
         <button class="seg-input" id="pvTabTodo" type="button">待完成</button>
         <button class="seg-input" id="pvTabDone" type="button">已完成</button>
@@ -1079,6 +1104,25 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="pv-modal-acts">
         <button class="btn ghost" id="pvAddCancel" type="button">取消</button>
         <button class="auth-btn" id="pvAddOk" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 云端同步配置弹窗 -->
+  <div class="modal-mask" id="pvSyncMask">
+    <div class="modal">
+      <div class="pv-modal-head">
+        <h3>云端同步配置</h3>
+        <button class="icon-btn" id="pvSyncClose" title="关闭" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="pv-field"><label>仓库（owner/repo）</label><input type="text" id="pvSyncRepo" placeholder="likuan250-hash/pending-videos-data" /></div>
+      <div class="pv-field"><label>GitHub Token（AES-256-GCM 加密保存，建议只授权清单仓库）</label><input type="password" id="pvSyncToken" placeholder="粘贴 GitHub Token" autocomplete="off" /></div>
+      <div class="pv-preset">
+        <label><input type="checkbox" id="pvSyncEnable" /> 启用自动同步</label>
+      </div>
+      <div class="pv-modal-acts">
+        <button class="btn ghost" id="pvSyncCancel" type="button">取消</button>
+        <button class="auth-btn" id="pvSyncOk" type="button">保存并同步</button>
       </div>
     </div>
   </div>

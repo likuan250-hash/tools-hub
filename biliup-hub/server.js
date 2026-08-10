@@ -554,6 +554,31 @@ app.delete('/api/pending-videos/:id', (req, res) => {
   pendingSync.pushLocal();
 });
 
+// GitHub 云端同步：状态查询 + 配置保存（token 经 AES-256-GCM 加密落盘）
+app.get('/api/gh-sync', (req, res) => {
+  res.json(Object.assign({ ok: true }, pendingSync.getStatus()));
+});
+
+app.post('/api/gh-sync', (req, res) => {
+  const body = req.body || {};
+  const config = store.getConfig();
+  const cur = config.ghSync || {};
+  config.ghSync = {
+    enabled: body.enabled === true,
+    repo: typeof body.repo === 'string' && body.repo.trim() ? body.repo.trim() : (cur.repo || 'likuan250-hash/pending-videos-data'),
+    path: typeof body.path === 'string' && body.path.trim() ? body.path.trim() : (cur.path || 'pending_videos.json'),
+  };
+  store.saveConfig(config);
+  if (typeof body.token === 'string' && body.token.trim()) pendingSync.saveToken(body.token.trim());
+  if (config.ghSync.enabled) {
+    pendingSync.pullAndMerge().then((ok) => {
+      res.json(Object.assign({ ok: true, synced: ok }, pendingSync.getStatus()));
+    });
+  } else {
+    res.json(Object.assign({ ok: true, synced: false }, pendingSync.getStatus()));
+  }
+});
+
 // ── 待置顶队列：查看 + 后台事件推送 ─────────────────────────
 app.get('/api/pending-pins', (req, res) => {
   res.json({ ok: true, list: pendingPin.list() });

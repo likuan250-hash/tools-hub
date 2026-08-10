@@ -37,6 +37,11 @@ function enabled() {
   return !!(c.enabled && c.repo && loadToken());
 }
 
+let lastSync = null; // { ok, ts, msg }
+function mark(ok, msg) {
+  lastSync = { ok, ts: Date.now(), msg };
+}
+
 function apiUrl() {
   const c = cfg();
   return `${GH_API}/repos/${c.repo}/contents/${encodeURIComponent(c.path || 'pending_videos.json')}`;
@@ -98,9 +103,11 @@ async function pullAndMerge() {
     pendingVideos.save(merged);
     await pushRemote(merged, sha);
     logger.info(`[gh-sync] pull+merge ok, items=${merged.length}`);
+    mark(true, `已同步 ${merged.length} 条`);
     return true;
   } catch (e) {
     logger.warn(`[gh-sync] pull failed: ${e.message}`);
+    mark(false, e.message);
     return false;
   }
 }
@@ -112,11 +119,24 @@ async function pushLocal() {
     const { sha } = await pullRemote();
     await pushRemote(pendingVideos.load(), sha);
     logger.info('[gh-sync] push ok');
+    mark(true, '已同步');
     return true;
   } catch (e) {
     logger.warn(`[gh-sync] push failed: ${e.message}`);
+    mark(false, e.message);
     return false;
   }
 }
 
-module.exports = { pullAndMerge, pushLocal, loadToken, saveToken, enabled, mergeLists, CRED_FILE };
+function getStatus() {
+  const c = cfg();
+  return {
+    enabled: !!c.enabled,
+    repo: c.repo || '',
+    path: c.path || '',
+    hasToken: !!loadToken(),
+    lastSync,
+  };
+}
+
+module.exports = { pullAndMerge, pushLocal, loadToken, saveToken, enabled, mergeLists, getStatus, CRED_FILE };

@@ -11,24 +11,27 @@
   --ok:#34d399;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;touch-action:pan-y}
 body{
   font-family:system-ui,"Microsoft YaHei",sans-serif;color:var(--text);
   background:radial-gradient(700px 400px at 80% -10%,rgba(0,240,255,.16),transparent 60%),
              radial-gradient(700px 500px at 0% 110%,rgba(255,46,196,.14),transparent 55%),var(--bg);
-  min-height:100vh;padding:14px 14px 96px;
+  min-height:100vh;display:flex;flex-direction:column;
+  padding:14px 14px calc(14px + env(safe-area-inset-bottom));
 }
-header{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+header{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex:none}
 h1{flex:1;font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--cyan),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
 .hbtn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:rgba(0,240,255,.08);color:var(--text);font-size:18px;line-height:1}
-#sync{font-size:12px;color:var(--dim);margin-bottom:10px}
+#sync{font-size:12px;color:var(--dim);margin-bottom:10px;flex:none}
 #sync.ok{color:var(--ok)} #sync.err{color:#ff6688}
-.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs{display:flex;gap:8px;margin-bottom:12px;flex:none}
 .tabs button{flex:1;padding:10px;border-radius:11px;border:1px solid var(--line);background:rgba(0,240,255,.08);color:var(--dim);font-size:14px;font-weight:600}
 .tabs button.active{background:linear-gradient(135deg,var(--cyan),var(--pink));color:#06101a;border-color:transparent}
 .item{
   display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;margin-bottom:9px;
   background:linear-gradient(180deg,rgba(0,240,255,.10),rgba(0,240,255,.05));border:1px solid var(--line);
 }
+.items{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:96px}
 .item .main{flex:1;min-width:0}
 .item .nm{font-size:15px;line-height:1.45;word-break:break-all}
 .item .dt{font-size:12px;color:var(--dim);margin-top:3px}
@@ -94,7 +97,7 @@ h1{flex:1;font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--
     <button id="tabTodo" class="active" onclick="tab('todo')">待完成</button>
     <button id="tabDone" onclick="tab('done')">已完成</button>
   </div>
-  <div id="list"></div>
+  <div id="list" class="items"></div>
 
   <button class="fab" onclick="openAdd()">＋</button>
 

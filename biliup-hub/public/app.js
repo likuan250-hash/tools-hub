@@ -1065,10 +1065,10 @@
       " · 已发布 " + pvList.filter((x) => x.published).length +
       " · 完成 " + done.length;
     pvListEl.innerHTML = show.length
-      ? show.map((x) => {
+      ? show.map((x, i) => {
           const d = (x.publishDate || "").trim();
           return (
-            '<div class="pv-item' + (pvDone(x) ? " done" : "") + '">' +
+            '<div class="pv-item' + (pvDone(x) ? " done" : "") + '" style="--i:' + i + '">' +
             '<span class="pv-name">' + escapeHtmlBiliup(x.name) + "</span>" +
             '<span class="pv-date">' + (d ? escapeHtmlBiliup(d.slice(5)) : "未定") + "</span>" +
             '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="hasResource"' + (x.hasResource ? " checked" : "") + "> 有资源</label>" +
@@ -1094,6 +1094,7 @@
   pvListMask.addEventListener("click", (e) => {
     if (e.target === pvListMask) pvListMask.classList.remove("show");
   });
+  $("pvCloseBtn").addEventListener("click", () => pvListMask.classList.remove("show"));
 
   $("pvAddBtn").addEventListener("click", () => {
     pvNameInput.value = "";
@@ -1103,6 +1104,7 @@
     pvAddMask.classList.add("show");
   });
   $("pvAddCancel").addEventListener("click", () => pvAddMask.classList.remove("show"));
+  $("pvAddClose").addEventListener("click", () => pvAddMask.classList.remove("show"));
   pvAddMask.addEventListener("click", (e) => {
     if (e.target === pvAddMask) pvAddMask.classList.remove("show");
   });

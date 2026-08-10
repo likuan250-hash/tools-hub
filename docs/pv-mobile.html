@@ -219,7 +219,8 @@ function esc(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 function render() {
   const done = list.filter(x => x.hasResource && x.published);
   const todo = list.filter(x => !(x.hasResource && x.published));
-  const show = curTab === 'done' ? done : todo;
+  const byDate = (a, b) => ((a.publishDate || '9999-99-99') < (b.publishDate || '9999-99-99') ? -1 : 1);
+  const show = (curTab === 'done' ? done : todo).slice().sort(byDate);
   $('#list').innerHTML = show.length
     ? show.map(x => '<div class="item' + (x.hasResource && x.published ? ' done' : '') + '">' +
         '<div class="main"><div class="nm">' + esc(x.name) + '</div>' +

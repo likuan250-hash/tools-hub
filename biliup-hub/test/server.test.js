@@ -117,6 +117,48 @@ test('GET /api/events：SSE 事件流端点', async () => {
   }
 });
 
+test('/api/pending-videos：增改查删 + 清理已完成', async () => {
+  const srv = await startServer();
+  try {
+    const port = srv.address().port;
+    const base = `http://127.0.0.1:${port}`;
+    const post = (p, body) => fetch(base + p, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    // 空名拒绝
+    let r = await post('/api/pending-videos', { name: '  ' });
+    assert.equal(r.status, 400);
+    // 添加
+    r = await post('/api/pending-videos', { name: '【游戏272】零.红蝶' });
+    const added = await r.json();
+    assert.equal(added.ok, true);
+    const id = added.item.id;
+    // 同名拒绝
+    r = await post('/api/pending-videos', { name: '【游戏272】零.红蝶' });
+    assert.equal(r.status, 400);
+    // 勾选有资源 + 已发布
+    r = await post('/api/pending-videos/' + id, { hasResource: true });
+    assert.equal((await r.json()).ok, true);
+    r = await post('/api/pending-videos/' + id, { published: true });
+    assert.equal((await r.json()).ok, true);
+    // 列表与清理
+    let list = (await (await fetch(base + '/api/pending-videos')).json()).list;
+    assert.equal(list.length, 1);
+    assert.equal(list[0].hasResource && list[0].published, true);
+    r = await post('/api/pending-videos/clear-done');
+    assert.equal((await r.json()).removed, 1);
+    list = (await (await fetch(base + '/api/pending-videos')).json()).list;
+    assert.equal(list.length, 0);
+    // 删除不存在记录幂等
+    r = await fetch(base + '/api/pending-videos/' + id, { method: 'DELETE' });
+    assert.equal(r.status, 200);
+  } finally {
+    srv.close();
+  }
+});
+
 test('GET /api/seasons 未登录（cookies 无效）：降级 {seasons:[]}', async () => {
   writeCookies({}); // 缺少 SESSDATA / bili_jct
   const srv = await startServer();

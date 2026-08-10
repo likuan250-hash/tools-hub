@@ -11,6 +11,7 @@ const task = require('./lib/task');
 const account = require('./lib/account');
 const auth = require('./lib/auth');
 const pendingPin = require('./lib/pendingPin');
+const pendingVideos = require('./lib/pendingVideos');
 const logger = require('./lib/logger');
 const EventEmitter = require('events');
 
@@ -499,8 +500,53 @@ app.post('/api/upload', (req, res) => {
   }
 
   task.run(body, { config, cookiesFile, onEvent: send, deps: {} })
+    .then((result) => {
+      if (result && result.ok) {
+        // 投稿成功：自动把待发布清单中同名记录标记为「已发布」
+        const postedTitle = (body.title || '').trim()
+          || path.basename(videoPath).replace(/\.[^.]+$/, '');
+        try {
+          const marked = pendingVideos.markPublishedByTitle(postedTitle);
+          if (marked) logger.info('[pending-videos] 投稿成功自动标记 ' + marked + ' 条已发布');
+        } catch (e) {
+          logger.warn('[pending-videos] 自动标记已发布失败:', e.message);
+        }
+      }
+    })
     .catch((e) => { send({ type: 'error', stage: 'error', message: e.message }); })
     .finally(finish);
+});
+
+// ── 待发布清单：防忘记记录（名称 + 有资源/已发布勾选）─────────────────
+app.get('/api/pending-videos', (req, res) => {
+  res.json({ ok: true, list: pendingVideos.load() });
+});
+
+app.post('/api/pending-videos', (req, res) => {
+  const body = req.body || {};
+  const item = pendingVideos.add(body.name, {
+    publishDate: body.publishDate,
+    hasResource: body.hasResource,
+    published: body.published,
+  });
+  if (!item) return res.status(400).json({ ok: false, error: '名称不能为空或已存在' });
+  res.json({ ok: true, item });
+});
+
+app.post('/api/pending-videos/clear-done', (req, res) => {
+  const removed = pendingVideos.clearDone();
+  res.json({ ok: true, removed });
+});
+
+app.post('/api/pending-videos/:id', (req, res) => {
+  const item = pendingVideos.update(String(req.params.id), req.body || {});
+  if (!item) return res.status(404).json({ ok: false, error: '记录不存在' });
+  res.json({ ok: true, item });
+});
+
+app.delete('/api/pending-videos/:id', (req, res) => {
+  pendingVideos.remove(String(req.params.id));
+  res.json({ ok: true });
 });
 
 // ── 待置顶队列：查看 + 后台事件推送 ─────────────────────────

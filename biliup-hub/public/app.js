@@ -1025,6 +1025,129 @@
     }
   });
 
+  // ── 待发布清单（弹窗版：名称 + 待发布日期 + 有资源/已发布，双勾=完成）──
+  let pvList = [];
+  let pvTab = "todo";
+  const pvListMask = $("pvListMask");
+  const pvAddMask = $("pvAddMask");
+  const pvListEl = $("pvList");
+  const pvStatsEl = $("pvStats");
+  const pvNameInput = $("pvName");
+  const pvDateInput = $("pvDate");
+
+  const pvDone = (x) => !!(x.hasResource && x.published);
+  const pvDateKey = (x) => (x.publishDate || "").trim() || "9999-99-99";
+
+  async function loadPendingVideos() {
+    try {
+      const r = await fetch("/api/pending-videos");
+      const d = await r.json();
+      pvList = (d && d.list) || [];
+    } catch (e) {
+      pvList = [];
+    }
+    renderPendingVideos();
+  }
+
+  function pvSorted(arr) {
+    return arr.slice().sort((a, b) => pvDateKey(a).localeCompare(pvDateKey(b)));
+  }
+
+  function renderPendingVideos() {
+    const done = pvSorted(pvList.filter(pvDone));
+    const todo = pvSorted(pvList.filter((x) => !pvDone(x)));
+    const show = pvTab === "done" ? done : todo;
+    $("pvTabTodo").classList.toggle("active", pvTab !== "done");
+    $("pvTabDone").classList.toggle("active", pvTab === "done");
+    pvStatsEl.textContent =
+      "待发布 " + pvList.length +
+      " · 有资源 " + pvList.filter((x) => x.hasResource).length +
+      " · 已发布 " + pvList.filter((x) => x.published).length +
+      " · 完成 " + done.length;
+    pvListEl.innerHTML = show.length
+      ? show.map((x) => {
+          const d = (x.publishDate || "").trim();
+          return (
+            '<div class="pv-item' + (pvDone(x) ? " done" : "") + '">' +
+            '<span class="pv-name">' + escapeHtmlBiliup(x.name) + "</span>" +
+            '<span class="pv-date">' + (d ? escapeHtmlBiliup(d.slice(5)) : "未定") + "</span>" +
+            '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="hasResource"' + (x.hasResource ? " checked" : "") + "> 有资源</label>" +
+            '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="published"' + (x.published ? " checked" : "") + "> 已发布</label>" +
+            '<button class="pv-del" data-id="' + x.id + '" type="button">删除</button>' +
+            "</div>"
+          );
+        }).join("")
+      : '<div class="hint">暂无' + (pvTab === "done" ? "已完成" : "待完成") + "记录</div>";
+  }
+
+  async function pvMutate(url, opts) {
+    const r = await fetch(url, Object.assign({ method: "POST", headers: { "Content-Type": "application/json" } }, opts));
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.error || ("请求失败 " + r.status));
+    return d;
+  }
+
+  $("pvOpenBtn").addEventListener("click", () => {
+    pvListMask.classList.add("show");
+    loadPendingVideos();
+  });
+  pvListMask.addEventListener("click", (e) => {
+    if (e.target === pvListMask) pvListMask.classList.remove("show");
+  });
+
+  $("pvAddBtn").addEventListener("click", () => {
+    pvNameInput.value = "";
+    pvDateInput.value = "";
+    $("pvAddHas").checked = false;
+    $("pvAddPub").checked = false;
+    pvAddMask.classList.add("show");
+  });
+  $("pvAddCancel").addEventListener("click", () => pvAddMask.classList.remove("show"));
+  pvAddMask.addEventListener("click", (e) => {
+    if (e.target === pvAddMask) pvAddMask.classList.remove("show");
+  });
+  $("pvAddOk").addEventListener("click", async () => {
+    const name = (pvNameInput.value || "").trim();
+    if (!name) { toast("请输入视频名称", "err"); return; }
+    try {
+      await pvMutate("/api/pending-videos", {
+        body: JSON.stringify({
+          name,
+          publishDate: pvDateInput.value || "",
+          hasResource: $("pvAddHas").checked,
+          published: $("pvAddPub").checked,
+        }),
+      });
+      pvAddMask.classList.remove("show");
+      await loadPendingVideos();
+    } catch (e) { toast(e.message, "err"); }
+  });
+  pvNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); $("pvAddOk").click(); }
+  });
+
+  pvListEl.addEventListener("change", async (e) => {
+    const cb = e.target.closest('input[data-key]');
+    if (!cb) return;
+    try {
+      const patch = {};
+      patch[cb.dataset.key] = cb.checked;
+      await pvMutate("/api/pending-videos/" + cb.dataset.id, { body: JSON.stringify(patch) });
+      await loadPendingVideos();
+    } catch (err) { toast(err.message, "err"); }
+  });
+  pvListEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".pv-del");
+    if (!btn) return;
+    await fetch("/api/pending-videos/" + btn.dataset.id, { method: "DELETE" });
+    await loadPendingVideos();
+  });
+  $("pvTabTodo").addEventListener("click", () => { pvTab = "todo"; renderPendingVideos(); });
+  $("pvTabDone").addEventListener("click", () => { pvTab = "done"; renderPendingVideos(); });
+  $("pvClearDone").addEventListener("click", async () => {
+    try { await pvMutate("/api/pending-videos/clear-done"); await loadPendingVideos(); } catch (e) { toast(e.message, "err"); }
+  });
+
   // ── 初始化 ──
   refreshSeasons().finally(() => loadConfig()); // chain: 先 populate 下拉再 apply cfg 避免 race
   refreshAccount();

@@ -3,86 +3,119 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>待发布清单 · 手机端</title>
+<title>待发布清单</title>
 <style>
 :root{
   --bg:#070b16; --panel:#0d1424; --line:rgba(0,240,255,.30);
   --cyan:#00f0ff; --pink:#ff2ec4; --text:#fff; --dim:#9fb8cc;
-  --ok:#34d399; --warn:#ffd319;
+  --ok:#34d399;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{
   font-family:system-ui,"Microsoft YaHei",sans-serif;color:var(--text);
   background:radial-gradient(700px 400px at 80% -10%,rgba(0,240,255,.16),transparent 60%),
              radial-gradient(700px 500px at 0% 110%,rgba(255,46,196,.14),transparent 55%),var(--bg);
-  min-height:100vh;padding:16px 14px calc(24px + env(safe-area-inset-bottom));
+  min-height:100vh;padding:14px 14px 96px;
 }
-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-h1{font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--cyan),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
-#sync{font-size:12px;color:var(--dim)}
+header{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+h1{flex:1;font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--cyan),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hbtn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:rgba(0,240,255,.08);color:var(--text);font-size:18px;line-height:1}
+#sync{font-size:12px;color:var(--dim);margin-bottom:10px}
 #sync.ok{color:var(--ok)} #sync.err{color:#ff6688}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
-.row{display:flex;gap:8px;align-items:center}
-input[type=text],input[type=date]{
-  flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid var(--line);
-  background:rgba(0,240,255,.07);color:var(--text);font-size:15px;
-}
-input::placeholder{color:#6f8aa0}
-button{
-  border:none;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600;cursor:pointer;color:#06101a;
-  background:linear-gradient(135deg,var(--cyan),var(--pink));white-space:nowrap;
-}
-button:active{transform:scale(.97)}
-button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
-button.danger{background:transparent;border:1px solid rgba(255,102,136,.5);color:#ff6688}
-.tabs{display:flex;gap:8px;margin-bottom:10px}
-.tabs button{flex:1;background:rgba(0,240,255,.08);color:var(--dim);border:1px solid var(--line)}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tabs button{flex:1;padding:10px;border-radius:11px;border:1px solid var(--line);background:rgba(0,240,255,.08);color:var(--dim);font-size:14px;font-weight:600}
 .tabs button.active{background:linear-gradient(135deg,var(--cyan),var(--pink));color:#06101a;border-color:transparent}
 .item{
-  display:flex;align-items:center;gap:8px;padding:11px 10px;border-radius:11px;margin-bottom:8px;
+  display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;margin-bottom:9px;
   background:linear-gradient(180deg,rgba(0,240,255,.10),rgba(0,240,255,.05));border:1px solid var(--line);
 }
 .item .main{flex:1;min-width:0}
-.item .nm{font-size:14px;word-break:break-all;line-height:1.4}
-.item .dt{font-size:12px;color:var(--dim);margin-top:2px}
-.item.done .nm{text-decoration:line-through;opacity:.75}
-.ck{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--dim)}
-.ck input{width:17px;height:17px;accent-color:var(--cyan)}
-.empty{padding:30px 10px;text-align:center;color:var(--dim);font-size:13px}
+.item .nm{font-size:15px;line-height:1.45;word-break:break-all}
+.item .dt{font-size:12px;color:var(--dim);margin-top:3px}
+.item.done .nm{text-decoration:line-through;opacity:.7}
+.item .ops{display:flex;align-items:center;gap:10px}
+.ck{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--dim)}
+.ck input{width:19px;height:19px;accent-color:var(--cyan)}
+.del{width:34px;height:34px;border-radius:10px;border:1px solid rgba(255,102,136,.5);background:transparent;color:#ff6688;font-size:15px}
+.empty{padding:44px 10px;text-align:center;color:var(--dim);font-size:13px}
+.fab{
+  position:fixed;right:18px;bottom:calc(22px + env(safe-area-inset-bottom));width:56px;height:56px;
+  border-radius:50%;border:none;font-size:26px;color:#06101a;cursor:pointer;
+  background:linear-gradient(135deg,var(--cyan),var(--pink));
+  box-shadow:0 8px 24px rgba(0,240,255,.35),0 0 18px rgba(255,46,196,.25);
+  z-index:5;
+}
+.fab:active{transform:scale(.94)}
+.mask{
+  position:fixed;inset:0;background:rgba(3,5,12,.66);backdrop-filter:blur(4px);
+  display:none;align-items:flex-end;z-index:10;
+}
+.mask.show{display:flex}
+.sheet{
+  width:100%;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,#0d1424,#0a101e);border:1px solid var(--line);border-bottom:none;
+  border-radius:18px 18px 0 0;
+  box-shadow:0 -12px 40px rgba(0,0,0,.5);
+  animation:up .28s cubic-bezier(.22,1,.36,1);
+}
+@keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+.sheet h2{font-size:16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.sheet h2 button{border:none;background:none;color:var(--dim);font-size:18px;padding:4px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
+.field input{
+  width:100%;padding:12px;border-radius:11px;border:1px solid var(--line);
+  background:rgba(0,240,255,.07);color:var(--text);font-size:15px;
+}
+.field input::placeholder{color:#6f8aa0}
+.chk-row{display:flex;gap:18px;margin:4px 0 16px;font-size:14px;color:var(--text)}
+.chk-row input{width:18px;height:18px;accent-color:var(--cyan)}
+.btn{
+  width:100%;padding:13px;border:none;border-radius:12px;font-size:15px;font-weight:700;color:#06101a;cursor:pointer;
+  background:linear-gradient(135deg,var(--cyan),var(--pink));
+}
+.btn.ghost{margin-top:8px;background:transparent;border:1px solid var(--line);color:var(--dim)}
 #toast{
-  position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);
-  padding:10px 18px;border-radius:10px;background:var(--panel);border:1px solid var(--line);
-  font-size:13px;display:none;z-index:9;white-space:nowrap;
+  position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  padding:10px 18px;border-radius:11px;background:var(--panel);border:1px solid var(--line);
+  font-size:13px;display:none;z-index:20;white-space:nowrap;
 }
 #toast.show{display:block}
 </style>
 </head>
 <body>
-  <header><h1>待发布清单</h1><span id="sync"></span></header>
-  <div class="card" id="tokenBox">
-    <div class="row" style="margin-bottom:8px">
-      <input type="password" id="token" placeholder="GitHub Token（只授权清单仓库即可）" autocomplete="off">
-      <button onclick="saveToken()">保存</button>
-    </div>
-    <div class="row">
-      <button class="ghost" style="flex:1" onclick="load()">连接并加载</button>
-    </div>
-  </div>
-  <div class="card">
-    <div class="row" style="margin-bottom:8px">
-      <input type="text" id="nm" placeholder="视频名称，如：零.红蝶.重制版">
-    </div>
-    <div class="row" style="margin-bottom:8px">
-      <input type="date" id="dt">
-      <label style="font-size:13px;color:var(--dim);white-space:nowrap"><input type="checkbox" id="hasRes" style="accent-color:var(--cyan);width:16px;height:16px"> 有资源</label>
-    </div>
-    <button style="width:100%" onclick="addItem()">＋ 添加</button>
-  </div>
+  <header>
+    <h1>待发布清单</h1>
+    <button class="hbtn" onclick="load()" title="刷新">↻</button>
+    <button class="hbtn" onclick="openCfg()" title="配置">⚙</button>
+  </header>
+  <div id="sync"></div>
   <div class="tabs">
     <button id="tabTodo" class="active" onclick="tab('todo')">待完成</button>
     <button id="tabDone" onclick="tab('done')">已完成</button>
   </div>
   <div id="list"></div>
+
+  <button class="fab" onclick="openAdd()">＋</button>
+
+  <div class="mask" id="addMask">
+    <div class="sheet">
+      <h2>添加视频<span><button onclick="closeMask('addMask')">×</button></span></h2>
+      <div class="field"><label>视频名称</label><input id="nm" placeholder="如：零.红蝶.重制版"></div>
+      <div class="field"><label>待发布日期（可选）</label><input type="date" id="dt"></div>
+      <div class="chk-row"><label><input type="checkbox" id="hasRes"> 有资源</label></div>
+      <button class="btn" onclick="addItem()">确定添加</button>
+    </div>
+  </div>
+
+  <div class="mask" id="cfgMask">
+    <div class="sheet">
+      <h2>云端配置<span><button onclick="closeMask('cfgMask')">×</button></span></h2>
+      <div class="field"><label>GitHub Token（建议只授权清单仓库）</label><input type="password" id="token" placeholder="ghp_… 或 github_pat_…" autocomplete="off"></div>
+      <button class="btn" onclick="saveToken()">保存并连接</button>
+    </div>
+  </div>
+
   <div id="toast"></div>
 <script>
 const REPO = 'likuan250-hash/pending-videos-data';
@@ -119,16 +152,21 @@ async function api(method, url, body) {
 }
 const url = () => 'https://api.github.com/repos/' + REPO + '/contents/' + PATH;
 
-function saveToken() {
+function openMask(id) { $('#' + id).classList.add('show'); }
+function closeMask(id) { $('#' + id).classList.remove('show'); }
+function openAdd() { openMask('addMask'); }
+function openCfg() { $('#token').value = ''; openMask('cfgMask'); }
+
+async function saveToken() {
   token = $('#token').value.trim();
   if (!token) return toast('请输入 token', true);
   localStorage.setItem(KEY, token);
-  $('#token').value = '';
-  toast('token 已保存');
+  closeMask('cfgMask');
+  await load();
 }
 
 async function load() {
-  if (!token) { toast('请先输入并保存 token', true); return; }
+  if (!token) { $('#sync').textContent = '未配置，点右上 ⚙ 设置'; $('#sync').className = 'err'; return; }
   const s = $('#sync');
   s.textContent = '同步中…'; s.className = '';
   try {
@@ -138,20 +176,18 @@ async function load() {
     s.textContent = '已同步 ' + list.length + ' 条'; s.className = 'ok';
     render();
   } catch (e) {
-    s.textContent = '加载失败'; s.className = 'err';
-    toast('加载失败：' + e.message, true);
+    s.textContent = '加载失败：' + e.message; s.className = 'err';
   }
 }
 
 async function save(next) {
   try {
     const d = await api('GET', url());
-    const body = {
+    await api('PUT', url(), {
       message: 'mobile sync',
       content: b64enc(JSON.stringify(next, null, 2)),
       sha: d.sha,
-    };
-    await api('PUT', url(), body);
+    });
     list = next;
     render();
     $('#sync').textContent = '已保存'; $('#sync').className = 'ok';
@@ -161,6 +197,7 @@ async function save(next) {
   }
 }
 
+function esc(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function render() {
   const done = list.filter(x => x.hasResource && x.published);
   const todo = list.filter(x => !(x.hasResource && x.published));
@@ -169,13 +206,13 @@ function render() {
     ? show.map(x => '<div class="item' + (x.hasResource && x.published ? ' done' : '') + '">' +
         '<div class="main"><div class="nm">' + esc(x.name) + '</div>' +
         '<div class="dt">' + (x.publishDate ? esc(x.publishDate) : '未定') + '</div></div>' +
+        '<div class="ops">' +
         '<label class="ck"><input type="checkbox" data-id="' + x.id + '" data-k="hasResource"' + (x.hasResource ? ' checked' : '') + '>资源</label>' +
         '<label class="ck"><input type="checkbox" data-id="' + x.id + '" data-k="published"' + (x.published ? ' checked' : '') + '>发布</label>' +
-        '<button class="danger" data-del="' + x.id + '" style="padding:8px 10px">删</button>' +
-      '</div>').join('')
+        '<button class="del" data-del="' + x.id + '">×</button>' +
+        '</div></div>').join('')
     : '<div class="empty">暂无' + (curTab === 'done' ? '已完成' : '待完成') + '记录</div>';
 }
-function esc(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function tab(t) { curTab = t; $('#tabTodo').classList.toggle('active', t === 'todo'); $('#tabDone').classList.toggle('active', t === 'done'); render(); }
 
 async function addItem() {
@@ -193,6 +230,7 @@ async function addItem() {
   };
   list.push(item);
   $('#nm').value = ''; $('#dt').value = ''; $('#hasRes').checked = false;
+  closeMask('addMask');
   await save(list);
   toast('已添加');
 }
@@ -215,7 +253,7 @@ $('#list').addEventListener('click', async (e) => {
   toast('已删除');
 });
 
-if (token) load();
+load();
 </script>
 </body>
 </html>

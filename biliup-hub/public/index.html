@@ -460,16 +460,18 @@
     }
     #pvListMask .modal, #pvAddMask .modal {
       opacity: 0; transform: translateY(18px) scale(.95);
-      transition: opacity .25s var(--ease-standard), transform .38s var(--ease-standard);
+      transition: opacity .25s cubic-bezier(.22, 1, .36, 1), transform .38s cubic-bezier(.22, 1, .36, 1);
     }
     #pvListMask.show .modal, #pvAddMask.show .modal { opacity: 1; transform: none; }
     @starting-style {
       #pvListMask.show .modal, #pvAddMask.show .modal { opacity: 0; transform: translateY(18px) scale(.95); }
     }
-    #pvListMask .pv-item { opacity: 0; transform: translateY(10px); }
-    #pvListMask.show .pv-item {
-      animation: pvRise .42s var(--ease-standard) both;
-      animation-delay: calc(var(--i, 0) * 55ms);
+    #pvListMask .pv-item {
+      opacity: 0; transform: translateY(10px);
+      animation-name: pvRise;
+      animation-duration: .42s;
+      animation-timing-function: cubic-bezier(.22, 1, .36, 1);
+      animation-fill-mode: both;
     }
     @keyframes pvRise { to { opacity: 1; transform: none; } }
   </style>

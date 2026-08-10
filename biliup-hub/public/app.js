@@ -1068,7 +1068,7 @@
       ? show.map((x, i) => {
           const d = (x.publishDate || "").trim();
           return (
-            '<div class="pv-item' + (pvDone(x) ? " done" : "") + '" style="--i:' + i + '">' +
+            '<div class="pv-item' + (pvDone(x) ? " done" : "") + '" style="animation-delay:' + (i * 55) + 'ms">' +
             '<span class="pv-name">' + escapeHtmlBiliup(x.name) + "</span>" +
             '<span class="pv-date">' + (d ? escapeHtmlBiliup(d.slice(5)) : "未定") + "</span>" +
             '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="hasResource"' + (x.hasResource ? " checked" : "") + "> 有资源</label>" +

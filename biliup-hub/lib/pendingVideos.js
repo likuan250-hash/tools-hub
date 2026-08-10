@@ -40,6 +40,7 @@ function add(name, opts = {}) {
     hasResource: opts.hasResource === true,
     published: opts.published === true,
     createdAt: Date.now(),
+    updatedAt: Date.now(),
   };
   list.push(item);
   save(list, opts);
@@ -54,6 +55,7 @@ function update(id, patch = {}, opts = {}) {
   if (typeof patch.publishDate === 'string') item.publishDate = patch.publishDate.trim();
   if (typeof patch.hasResource === 'boolean') item.hasResource = patch.hasResource;
   if (typeof patch.published === 'boolean') item.published = patch.published;
+  item.updatedAt = Date.now();
   save(list, opts);
   return item;
 }
@@ -94,6 +96,7 @@ function markPublishedByTitle(title, opts = {}) {
     const hit = n === norm || (n.length >= 4 && norm.includes(n)) || (norm.length >= 4 && n.includes(norm));
     if (hit) {
       x.published = true;
+      x.updatedAt = Date.now();
       changed += 1;
       logger.info('[pending-videos] 投稿成功自动标记已发布:', { name: x.name, title });
     }

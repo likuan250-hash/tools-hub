@@ -49,6 +49,12 @@ function defaultConfig() {
       '资源来自网络收集整理，版权归原作者所有，请在 24 小时内删除。',
       '如有侵权请联系删除，下载后请支持正版。',
     ].join('\n'),
+    // GitHub 云端同步（待发布清单）：repo 形如 owner/repo，token 经 AES-256-GCM 加密存 data/gh_sync_cred.json
+    ghSync: {
+      enabled: false,
+      repo: 'likuan250-hash/pending-videos-data',
+      path: 'pending_videos.json',
+    },
   };
 }
 

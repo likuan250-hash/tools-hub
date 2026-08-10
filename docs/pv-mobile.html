@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>待发布清单 · 手机端</title>
+<style>
+:root{
+  --bg:#070b16; --panel:#0d1424; --line:rgba(0,240,255,.30);
+  --cyan:#00f0ff; --pink:#ff2ec4; --text:#fff; --dim:#9fb8cc;
+  --ok:#34d399; --warn:#ffd319;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{
+  font-family:system-ui,"Microsoft YaHei",sans-serif;color:var(--text);
+  background:radial-gradient(700px 400px at 80% -10%,rgba(0,240,255,.16),transparent 60%),
+             radial-gradient(700px 500px at 0% 110%,rgba(255,46,196,.14),transparent 55%),var(--bg);
+  min-height:100vh;padding:16px 14px calc(24px + env(safe-area-inset-bottom));
+}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+h1{font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--cyan),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
+#sync{font-size:12px;color:var(--dim)}
+#sync.ok{color:var(--ok)} #sync.err{color:#ff6688}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center}
+input[type=text],input[type=date]{
+  flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid var(--line);
+  background:rgba(0,240,255,.07);color:var(--text);font-size:15px;
+}
+input::placeholder{color:#6f8aa0}
+button{
+  border:none;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600;cursor:pointer;color:#06101a;
+  background:linear-gradient(135deg,var(--cyan),var(--pink));white-space:nowrap;
+}
+button:active{transform:scale(.97)}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+button.danger{background:transparent;border:1px solid rgba(255,102,136,.5);color:#ff6688}
+.tabs{display:flex;gap:8px;margin-bottom:10px}
+.tabs button{flex:1;background:rgba(0,240,255,.08);color:var(--dim);border:1px solid var(--line)}
+.tabs button.active{background:linear-gradient(135deg,var(--cyan),var(--pink));color:#06101a;border-color:transparent}
+.item{
+  display:flex;align-items:center;gap:8px;padding:11px 10px;border-radius:11px;margin-bottom:8px;
+  background:linear-gradient(180deg,rgba(0,240,255,.10),rgba(0,240,255,.05));border:1px solid var(--line);
+}
+.item .main{flex:1;min-width:0}
+.item .nm{font-size:14px;word-break:break-all;line-height:1.4}
+.item .dt{font-size:12px;color:var(--dim);margin-top:2px}
+.item.done .nm{text-decoration:line-through;opacity:.75}
+.ck{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--dim)}
+.ck input{width:17px;height:17px;accent-color:var(--cyan)}
+.empty{padding:30px 10px;text-align:center;color:var(--dim);font-size:13px}
+#toast{
+  position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  padding:10px 18px;border-radius:10px;background:var(--panel);border:1px solid var(--line);
+  font-size:13px;display:none;z-index:9;white-space:nowrap;
+}
+#toast.show{display:block}
+</style>
+</head>
+<body>
+  <header><h1>待发布清单</h1><span id="sync"></span></header>
+  <div class="card" id="tokenBox">
+    <div class="row" style="margin-bottom:8px">
+      <input type="password" id="token" placeholder="GitHub Token（只授权清单仓库即可）" autocomplete="off">
+      <button onclick="saveToken()">保存</button>
+    </div>
+    <div class="row">
+      <button class="ghost" style="flex:1" onclick="load()">连接并加载</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="margin-bottom:8px">
+      <input type="text" id="nm" placeholder="视频名称，如：零.红蝶.重制版">
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <input type="date" id="dt">
+      <label style="font-size:13px;color:var(--dim);white-space:nowrap"><input type="checkbox" id="hasRes" style="accent-color:var(--cyan);width:16px;height:16px"> 有资源</label>
+    </div>
+    <button style="width:100%" onclick="addItem()">＋ 添加</button>
+  </div>
+  <div class="tabs">
+    <button id="tabTodo" class="active" onclick="tab('todo')">待完成</button>
+    <button id="tabDone" onclick="tab('done')">已完成</button>
+  </div>
+  <div id="list"></div>
+  <div id="toast"></div>
+<script>
+const REPO = 'likuan250-hash/pending-videos-data';
+const PATH = 'pending_videos.json';
+const KEY = 'pv_token';
+let token = localStorage.getItem(KEY) || '';
+let list = [];
+let curTab = 'todo';
+
+const $ = (s) => document.querySelector(s);
+function toast(msg, err) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.style.borderColor = err ? 'rgba(255,102,136,.6)' : 'var(--line)';
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), 2200);
+}
+function b64enc(s) { return btoa(String.fromCharCode.apply(null, new TextEncoder().encode(s))); }
+function b64dec(b) { return new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0))); }
+
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: 'Bearer ' + token,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.status === 204 ? null : res.json();
+}
+const url = () => 'https://api.github.com/repos/' + REPO + '/contents/' + PATH;
+
+function saveToken() {
+  token = $('#token').value.trim();
+  if (!token) return toast('请输入 token', true);
+  localStorage.setItem(KEY, token);
+  $('#token').value = '';
+  toast('token 已保存');
+}
+
+async function load() {
+  if (!token) { toast('请先输入并保存 token', true); return; }
+  const s = $('#sync');
+  s.textContent = '同步中…'; s.className = '';
+  try {
+    const d = await api('GET', url());
+    list = JSON.parse(b64dec(d.content));
+    if (!Array.isArray(list)) list = [];
+    s.textContent = '已同步 ' + list.length + ' 条'; s.className = 'ok';
+    render();
+  } catch (e) {
+    s.textContent = '加载失败'; s.className = 'err';
+    toast('加载失败：' + e.message, true);
+  }
+}
+
+async function save(next) {
+  try {
+    const d = await api('GET', url());
+    const body = {
+      message: 'mobile sync',
+      content: b64enc(JSON.stringify(next, null, 2)),
+      sha: d.sha,
+    };
+    await api('PUT', url(), body);
+    list = next;
+    render();
+    $('#sync').textContent = '已保存'; $('#sync').className = 'ok';
+  } catch (e) {
+    toast('保存失败：' + e.message, true);
+    throw e;
+  }
+}
+
+function render() {
+  const done = list.filter(x => x.hasResource && x.published);
+  const todo = list.filter(x => !(x.hasResource && x.published));
+  const show = curTab === 'done' ? done : todo;
+  $('#list').innerHTML = show.length
+    ? show.map(x => '<div class="item' + (x.hasResource && x.published ? ' done' : '') + '">' +
+        '<div class="main"><div class="nm">' + esc(x.name) + '</div>' +
+        '<div class="dt">' + (x.publishDate ? esc(x.publishDate) : '未定') + '</div></div>' +
+        '<label class="ck"><input type="checkbox" data-id="' + x.id + '" data-k="hasResource"' + (x.hasResource ? ' checked' : '') + '>资源</label>' +
+        '<label class="ck"><input type="checkbox" data-id="' + x.id + '" data-k="published"' + (x.published ? ' checked' : '') + '>发布</label>' +
+        '<button class="danger" data-del="' + x.id + '" style="padding:8px 10px">删</button>' +
+      '</div>').join('')
+    : '<div class="empty">暂无' + (curTab === 'done' ? '已完成' : '待完成') + '记录</div>';
+}
+function esc(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function tab(t) { curTab = t; $('#tabTodo').classList.toggle('active', t === 'todo'); $('#tabDone').classList.toggle('active', t === 'done'); render(); }
+
+async function addItem() {
+  const nm = $('#nm').value.trim();
+  if (!nm) return toast('请输入名称', true);
+  if (list.some(x => x.name === nm)) return toast('已存在同名记录', true);
+  const item = {
+    id: 'pv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name: nm,
+    publishDate: $('#dt').value || '',
+    hasResource: $('#hasRes').checked,
+    published: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  list.push(item);
+  $('#nm').value = ''; $('#dt').value = ''; $('#hasRes').checked = false;
+  await save(list);
+  toast('已添加');
+}
+
+$('#list').addEventListener('change', async (e) => {
+  const cb = e.target;
+  if (!cb.dataset.id) return;
+  const item = list.find(x => x.id === cb.dataset.id);
+  if (!item) return;
+  item[cb.dataset.k] = cb.checked;
+  item.updatedAt = Date.now();
+  await save(list);
+});
+
+$('#list').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-del]');
+  if (!b) return;
+  list = list.filter(x => x.id !== b.dataset.del);
+  await save(list);
+  toast('已删除');
+});
+
+if (token) load();
+</script>
+</body>
+</html>

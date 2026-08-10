@@ -12,6 +12,7 @@ const account = require('./lib/account');
 const auth = require('./lib/auth');
 const pendingPin = require('./lib/pendingPin');
 const pendingVideos = require('./lib/pendingVideos');
+const pendingSync = require('./lib/pendingSync');
 const logger = require('./lib/logger');
 const EventEmitter = require('events');
 
@@ -531,22 +532,26 @@ app.post('/api/pending-videos', (req, res) => {
   });
   if (!item) return res.status(400).json({ ok: false, error: '名称不能为空或已存在' });
   res.json({ ok: true, item });
+  pendingSync.pushLocal();
 });
 
 app.post('/api/pending-videos/clear-done', (req, res) => {
   const removed = pendingVideos.clearDone();
   res.json({ ok: true, removed });
+  pendingSync.pushLocal();
 });
 
 app.post('/api/pending-videos/:id', (req, res) => {
   const item = pendingVideos.update(String(req.params.id), req.body || {});
   if (!item) return res.status(404).json({ ok: false, error: '记录不存在' });
   res.json({ ok: true, item });
+  pendingSync.pushLocal();
 });
 
 app.delete('/api/pending-videos/:id', (req, res) => {
   pendingVideos.remove(String(req.params.id));
   res.json({ ok: true });
+  pendingSync.pushLocal();
 });
 
 // ── 待置顶队列：查看 + 后台事件推送 ─────────────────────────
@@ -786,6 +791,7 @@ function startServer(attempt = 0) {
 // 仅作为入口（node server.js）启动时监听；被 require 时（如单测）不占用端口，避免测试进程空转。
 if (require.main === module) {
   server = startServer();
+  setTimeout(() => pendingSync.pullAndMerge(), 3000);
 }
 
 // ── 优雅关闭 ──

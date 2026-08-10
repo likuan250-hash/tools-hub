@@ -579,6 +579,18 @@ app.post('/api/gh-sync', (req, res) => {
   }
 });
 
+// 手动同步：push = 本端上传到云端；pull = 拉取云端合并到本端
+app.post('/api/gh-sync/action', (req, res) => {
+  const action = (req.body || {}).action;
+  if (action === 'push') {
+    pendingSync.pushLocal().then((ok) => res.json({ ok: true, action, synced: ok, status: pendingSync.getStatus() }));
+  } else if (action === 'pull') {
+    pendingSync.pullAndMerge().then((ok) => res.json({ ok: true, action, synced: ok, status: pendingSync.getStatus() }));
+  } else {
+    res.status(400).json({ ok: false, error: 'unknown action' });
+  }
+});
+
 // ── 待置顶队列：查看 + 后台事件推送 ─────────────────────────
 app.get('/api/pending-pins', (req, res) => {
   res.json({ ok: true, list: pendingPin.list() });

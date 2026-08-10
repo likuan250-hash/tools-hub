@@ -1122,6 +1122,23 @@
   });
   $("pvCloseBtn").addEventListener("click", () => pvListMask.classList.remove("show"));
 
+  async function ghAction(action) {
+    try {
+      pvSyncText.textContent = action === "push" ? "云端：上传中…" : "云端：同步中…";
+      pvSyncBtn.classList.remove("on", "err");
+      pvSyncBtn.classList.add("syncing");
+      await pvMutate("/api/gh-sync/action", { body: JSON.stringify({ action }) });
+      await loadGhSync();
+      if (action === "pull") await loadPendingVideos();
+      toast(action === "push" ? "已上传到云端" : "已同步到本端");
+    } catch (e) {
+      toast(e.message, "err");
+      loadGhSync();
+    }
+  }
+  $("pvPushBtn").addEventListener("click", () => ghAction("push"));
+  $("pvPullBtn").addEventListener("click", () => ghAction("pull"));
+
   $("pvSyncBtn").addEventListener("click", async () => {
     try {
       const r = await fetch("/api/gh-sync");

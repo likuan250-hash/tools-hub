@@ -33,4 +33,15 @@ function isBadIntro(s) {
   return !s || INTRO_BLACKLIST.test(s) || s.length < 10;
 }
 
-module.exports = { INTRO_BLACKLIST, SIZE_UNIT_RE, normalizeSize, isBadIntro };
+// ── 中文文本检测 ──
+// 用户只收中文介绍：Steam 未翻译的游戏即使请求 l=schinese 仍返回英文描述，
+// 此函数用于识别非中文描述并改走维基百科中文词条兜底。纯函数，可单测。
+const CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff]/;
+function isChineseText(s) {
+  if (!s) return false;
+  const visible = Array.from(String(s)).filter((c) => !/\s/.test(c));
+  if (!visible.length) return false;
+  return visible.filter((c) => CJK_RE.test(c)).length / visible.length >= 0.3;
+}
+
+module.exports = { INTRO_BLACKLIST, SIZE_UNIT_RE, normalizeSize, isBadIntro, isChineseText };

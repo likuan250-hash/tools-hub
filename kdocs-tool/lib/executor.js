@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const steam = require("./steam");
 const kdocs = require("./kdocs");
-const { isBadIntro, normalizeSize } = require("./constants");
+const { isBadIntro, normalizeSize, isChineseText } = require("./constants");
 
 // ── 分类标签默认值（写入记录「游戏信息」字段，与 parser 关键词检测的 tags 并存且去重）──
 // 背景：金山文档「游戏信息」列是 multi-select，用户每次新建记录都要手动勾选默认的几个标签（见 issue/用户反馈）。
@@ -208,17 +208,19 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       steamSize = (det && det.size) || "";
     } catch (_) { /* Steam 详情失败不致命 */ }
   }
-  // 3.2 选择介绍主源 + 溯源（provenance）
+  // 3.2 选择介绍主源 + 溯源（provenance）——中文优先：Steam 描述须为中文才采用；
+  //     否则走维基百科中文词条首段；均无中文才占位待人工（用户只收中文介绍）。
   let desc = "";
   let introProvenance = "";
-  if (steamDesc && !isBadIntro(steamDesc)) {
+  const steamOk = !!(steamDesc && !isBadIntro(steamDesc));
+  if (steamOk && isChineseText(steamDesc)) {
     desc = steamDesc;
     introProvenance = "Steam官方";
     ok({ name: "游戏介绍生成（Steam 官方）", desc });
   } else {
-    // 兜底1：维基百科词条首段（Steam 官方描述不可达时；zh 优先，en 兜底）
+    // 兜底：维基百科中文词条首段（Steam 描述不可达或非中文时）
     const wiki = await deps.fetchWikiIntro(en, parsed.gameName);
-    if (wiki && wiki.text) {
+    if (wiki && wiki.text && wiki.source === "zh" && isChineseText(wiki.text)) {
       desc = wiki.text;
       introProvenance = "维基百科";
       ok({ name: "游戏介绍生成（维基百科）", desc });
@@ -226,7 +228,10 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
       // 兜底占位（非标题、非免责声明），显式标注待人工校对，而非静默空
       desc = "介绍待补充";
       introProvenance = "占位";
-      skip({ name: "游戏介绍生成", reason: "Steam 无官方描述，已占位待人工补充" });
+      skip({
+        name: "游戏介绍生成",
+        reason: steamOk ? "Steam 仅英文描述且维基无中文词条，已占位待人工补充" : "Steam 无官方描述，已占位待人工补充",
+      });
     }
   }
 

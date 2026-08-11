@@ -27,6 +27,7 @@ body {
 
 .topbar {
   position: relative;
+  z-index: 10; /* 层叠修复：backdrop-filter 创建层叠上下文，必须高于 .landing(z:0)/.stage，否则皮肤下拉展开后被入口页盖住点不到 */
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 18px; border-bottom: 1px solid var(--glass-border);
   background: color-mix(in srgb, var(--bg-2) 78%, transparent);

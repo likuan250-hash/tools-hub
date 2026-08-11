@@ -292,7 +292,9 @@
       flipRaf = requestAnimationFrame(() => {
         newOrder.forEach((c) => {
           if (c === card) return;
-          c.style.transition = "transform .3s var(--ease-spring)";
+          // 拖拽中兄弟卡片不播过渡：插入判定基于终态 rect，视觉在动画中间会错位，
+          // 指针一抖就反复重排横跳（"乱跑"）。释放后 renderCards(false) 统一规范化。
+          c.style.transition = "none";
           c.style.transform = "";
         });
       });

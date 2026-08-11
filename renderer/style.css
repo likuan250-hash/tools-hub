@@ -64,6 +64,20 @@ body {
 }
 .update-btn:disabled { opacity: .6; cursor: not-allowed; }
 .agg, .update-status { color: var(--text-dim); font-size: 13px; }
+
+/* 皮肤下拉（暗色 / 亮色 / 宇宙） */
+.skin-menu{position:relative;display:inline-block}
+.skin-drop{
+  position:absolute;right:0;top:calc(100% + 8px);min-width:148px;padding:5px;border-radius:10px;
+  background:var(--glass-bg,#222);border:1px solid var(--glass-border,#3a3a3c);
+  box-shadow:0 14px 34px rgba(0,0,0,.45);display:none;z-index:99;
+}
+.skin-menu.open .skin-drop{display:block}
+.skin-drop button{
+  display:block;width:100%;text-align:left;padding:8px 10px;border:none;border-radius:7px;
+  background:transparent;color:var(--text,#eee);font-size:13px;cursor:pointer;
+}
+.skin-drop button:hover{background:rgba(94,242,255,.12)}
 .update-status.ok { color: var(--ok); }
 .update-status.bad { color: var(--err); }
 

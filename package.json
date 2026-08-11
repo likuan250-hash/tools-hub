@@ -13,6 +13,8 @@
     "prepare:biliup-bin": "node scripts/prepare-biliup-bin.js",
     "verify:status-luxe": "node scripts/verify-status-luxe-sync.js",
     "sync-status-luxe": "node scripts/sync-status-luxe.js",
+    "verify:cosmic-skin": "node scripts/verify-cosmic-skin-sync.js",
+    "sync-cosmic-skin": "node scripts/sync-cosmic-skin.js",
     "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && npm --prefix material-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js test/verify-build-assets.test.js test/prepare-biliup-bin.test.js test/extra-resources-filter.test.js",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.js\"",

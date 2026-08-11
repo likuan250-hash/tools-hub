@@ -8,7 +8,8 @@
        再加载 shared/tokens.css —— 后加载者胜出，token 单一真源仍是 shared/tokens.css；
        打包场景 shared/ 不可达时 404，由 fallback 层兜底，明暗双主题永不塌陷。 -->
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="/shared/tokens.css" />
+<link rel="stylesheet" href="/shared/tokens.css" />
+<link rel="stylesheet" href="cosmic-skin.css" />
 </head>
 <body>
   <section class="card">
@@ -117,6 +118,7 @@ window.hydrateIcons = function (root) {
 };
 hydrateIcons(document);
   </script>
-  <script src="app.js"></script>
+<script src="app.js"></script>
+<script src="cosmic-skin.js"></script>
 </body>
 </html>

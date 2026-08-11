@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>工具箱 ToolsHub</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="status-luxe.css" />
+<link rel="stylesheet" href="status-luxe.css" />
+<link rel="stylesheet" href="cosmic-skin.css" />
 </head>
 <body>
   <div class="app">
@@ -18,7 +19,14 @@
         <span id="aggStatus" class="agg">初始化中…</span>
         <span id="updateStatus" class="update-status"></span>
         <button id="updateBtn" class="update-btn" title="点击检测更新">v—</button>
-        <button id="themeBtn" class="icon-btn" title="切换主题">🌗</button>
+        <div class="skin-menu" id="skinMenu">
+          <button id="themeBtn" class="icon-btn" title="切换皮肤"><span id="skinIcon">🌙</span></button>
+          <div class="skin-drop" id="skinDrop">
+            <button type="button" data-skin="dark">🌙 暗色</button>
+            <button type="button" data-skin="light">☀️ 亮色</button>
+            <button type="button" data-skin="cosmic">✦ 宇宙</button>
+          </div>
+        </div>
         <span class="win-ctl">
           <button id="winMin" class="win-dot win-min" title="最小化" aria-label="最小化"></button>
           <button id="winMax" class="win-dot win-max" title="最大化/还原" aria-label="最大化/还原"></button>
@@ -60,7 +68,8 @@
   </div>
 
   <script src="drag-geometry.js"></script>
-  <script src="status-luxe.js"></script>
+<script src="status-luxe.js"></script>
+<script src="cosmic-skin.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

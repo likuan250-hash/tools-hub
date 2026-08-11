@@ -1,0 +1,95 @@
+/* shared/cosmic-skin/cosmic-skin.css —— 深空科幻 HUD 皮肤（第三主题，叠加于暗色 data-theme=dark）
+ * 设计规格：近黑深空径向渐变 + 扫描线 + 暗角；霓虹青 #5ef2ff 主强调（辉光）；
+ * 暗青 #2a8a99 次级；琥珀 #ffb347 点缀；绿/红/紫状态语义；半透明毛玻璃面板；
+ * Share Tech Mono 等宽终端字体；冷调高对比、控制台/飞船仪表盘质感。
+ * 仅 html[data-skin="cosmic"] 生效；动效全开（不随 prefers-reduced-motion 降级）。
+ */
+html[data-skin="cosmic"]{
+  --bg:#02040a; --bg-1:#050b18; --bg-2:#0a1426; --bg-3:#12081f;
+  --fg:#dffaff; --fg-2:#9ad8e6; --muted:#5f8a9e;
+  --text:var(--fg); --text-dim:var(--fg-2);
+  --surface:rgba(8,18,32,.55); --surface-2:rgba(8,18,32,.35);
+  --field-bg:var(--surface-2); --solid-bg:#050b18; --glass-bg:var(--surface);
+  --border:#1c3a4a; --border-soft:rgba(94,242,255,.16);
+  --glass-border:rgba(94,242,255,.18); --field-border:var(--border);
+  --accent:#5ef2ff; --accent-2:#b78dff; --accent-3:#ffb347;
+  --apple-accent:#5ef2ff;
+  --accent-hover:#8ff7ff; --accent-active:#2a8a99;
+  --accent-rgb:94,242,255; --accent2-rgb:183,141,255;
+  --ok:#8dffb0; --warn:#ffb347; --err:#ff5f6d;
+  --ok-rgb:141,255,176; --err-rgb:255,95,109;
+  --success:var(--ok); --danger:var(--err);
+  --hist-meta:#9ad8e6;
+  --switch-off:#1c3a4a; --switch-thumb:#5ef2ff;
+  --modal-mask:rgba(0,2,8,.72);
+  --shadow-card:0 10px 34px rgba(0,0,0,.55);
+  --shadow-modal:0 30px 80px rgba(0,0,0,.75);
+}
+
+/* 深空底色 + 等宽终端字体 */
+html[data-skin="cosmic"] body{
+  background:
+    radial-gradient(circle at 50% -10%,#0a1426 0%,#02040a 55%,#000 100%) fixed,
+    #000;
+  color:var(--fg);
+  font-family:'Share Tech Mono','Cascadia Mono','Consolas','Courier New',ui-monospace,monospace;
+  letter-spacing:.03em;
+}
+
+/* 扫描线 */
+html[data-skin="cosmic"] body::after{
+  content:"";position:fixed;inset:0;z-index:9999;pointer-events:none;
+  background:repeating-linear-gradient(to bottom,rgba(94,242,255,.03) 0 1px,transparent 1px 3px);
+  mix-blend-mode:screen;opacity:.45;
+}
+
+/* 星空 canvas（cosmic-skin.js 注入） */
+#cosmicStars{position:fixed;inset:0;z-index:0;pointer-events:none;display:none}
+html[data-skin="cosmic"] #cosmicStars{display:block}
+
+/* 面板呼吸辉光（冷青） */
+html[data-skin="cosmic"] .panel,
+html[data-skin="cosmic"] .card,
+html[data-skin="cosmic"] .modal,
+html[data-skin="cosmic"] .chip,
+html[data-skin="cosmic"] .toast,
+html[data-skin="cosmic"] .log-card{
+  animation:cosmicBreathe 5.5s ease-in-out infinite;
+}
+@keyframes cosmicBreathe{
+  0%,100%{box-shadow:0 0 0 rgba(94,242,255,0)}
+  50%{box-shadow:0 0 18px rgba(94,242,255,.22)}
+}
+
+/* 按钮霓虹辉光 */
+html[data-skin="cosmic"] .btn,
+html[data-skin="cosmic"] .auth-btn,
+html[data-skin="cosmic"] .icon-btn{
+  box-shadow:0 0 12px rgba(94,242,255,.18);
+}
+html[data-skin="cosmic"] .btn:hover,
+html[data-skin="cosmic"] .auth-btn:hover{
+  box-shadow:0 0 18px rgba(94,242,255,.38);
+}
+
+/* 输入聚焦青色光环 */
+html[data-skin="cosmic"] input:focus,
+html[data-skin="cosmic"] textarea:focus,
+html[data-skin="cosmic"] select:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(94,242,255,.16),0 0 12px rgba(94,242,255,.22);
+}
+
+/* 标题辉光（HUD 质感） */
+html[data-skin="cosmic"] h1,
+html[data-skin="cosmic"] h2,
+html[data-skin="cosmic"] .brand{
+  text-shadow:0 0 10px rgba(94,242,255,.45);
+}
+
+/* 状态徽标辉光（成功/错误/等待） */
+html[data-skin="cosmic"] .badge,
+html[data-skin="cosmic"] .pill,
+html[data-skin="cosmic"] .tag{
+  box-shadow:0 0 8px rgba(94,242,255,.14);
+}

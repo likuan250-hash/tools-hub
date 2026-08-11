@@ -6,7 +6,13 @@ const { contextBridge, ipcRenderer } = require("electron");
 // 内嵌项目页面不再持有任何独立主题逻辑，全部由这里注入 data-theme。
 function applyTheme(t) {
   try {
-    document.documentElement.setAttribute("data-theme", t);
+    if (t === "cosmic") {
+      document.documentElement.setAttribute("data-theme", "dark");
+      document.documentElement.setAttribute("data-skin", "cosmic");
+    } else {
+      document.documentElement.setAttribute("data-theme", t);
+      document.documentElement.removeAttribute("data-skin");
+    }
     localStorage.setItem("theme", t);
   } catch (e) {}
 }

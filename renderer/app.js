@@ -10,6 +10,9 @@
   const cardsEl = document.getElementById("toolCards");
   const aggEl = document.getElementById("aggStatus");
   const themeBtn = document.getElementById("themeBtn");
+  const skinMenu = document.getElementById("skinMenu");
+  const skinDrop = document.getElementById("skinDrop");
+  const skinIcon = document.getElementById("skinIcon");
   const sortBtn = document.getElementById("sortBtn");
   const sortHintEl = document.getElementById("sortHint");
   const updateBtn = document.getElementById("updateBtn");
@@ -49,21 +52,37 @@
         };
   const quitConfirm = document.getElementById("quitConfirm");
 
-  // ── 主题 ──
+  // ── 皮肤（暗色 / 亮色 / 宇宙 三态；主进程单一真源）──
+  const SKIN_ICONS = { dark: "🌙", light: "☀️", cosmic: "✦" };
   function applyTheme(t) {
-    document.documentElement.setAttribute("data-theme", t);
+    if (t === "cosmic") {
+      document.documentElement.setAttribute("data-theme", "dark");
+      document.documentElement.setAttribute("data-skin", "cosmic");
+    } else {
+      document.documentElement.setAttribute("data-theme", t);
+      document.documentElement.removeAttribute("data-skin");
+    }
     try { localStorage.setItem("th-theme", t); } catch (e) {}
+    if (skinIcon) skinIcon.textContent = SKIN_ICONS[t] || "🌙";
   }
   let theme = "dark";
   try { theme = localStorage.getItem("th-theme") || "dark"; } catch (e) {}
   applyTheme(theme);
   if (api && api.setTheme) { try { api.setTheme(theme); } catch (e) {} } // 上报主进程，供 webview 拉取
-  themeBtn.onclick = () => {
-    theme = theme === "dark" ? "light" : "dark";
+  themeBtn.onclick = (e) => {
+    e.stopPropagation();
+    skinMenu.classList.toggle("open");
+  };
+  skinDrop.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-skin]");
+    if (!b) return;
+    theme = b.dataset.skin;
     applyTheme(theme);
     if (api && api.setTheme) { try { api.setTheme(theme); } catch (e) {} }
     syncThemeToWebviews(theme); // 工具箱切换 → 内嵌项目同步切换
-  };
+    skinMenu.classList.remove("open");
+  });
+  document.addEventListener("click", () => skinMenu.classList.remove("open"));
 
   // 把当前工具箱主题同步到所有已打开的内嵌 webview（kdocs/netdisk）
   function syncThemeToWebviews(t) {

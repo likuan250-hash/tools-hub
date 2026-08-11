@@ -125,6 +125,10 @@ jobs:
         working-directory: netdisk-hub
         run: node ../scripts/verify-status-luxe-sync.js
 
+      - name: Verify cosmic-skin sync (五处副本逐字节一致)
+        working-directory: netdisk-hub
+        run: node ../scripts/verify-cosmic-skin-sync.js
+
       - name: Install Playwright Chromium (bundled into node_modules)
         working-directory: netdisk-hub
         env:

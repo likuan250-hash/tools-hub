@@ -619,7 +619,7 @@ ipcMain.handle("open-external", (_e, url) => {
 // ── 主题单一真源：webview 内嵌页主动拉取 / 渲染进程通知当前主题 ──
 ipcMain.handle("get-theme", () => currentTheme);
 ipcMain.handle("set-theme", (_e, t) => {
-  if (t === "light" || t === "dark") currentTheme = t;
+  if (t === "light" || t === "dark" || t === "cosmic") currentTheme = t;
 });
 
 app.whenReady().then(() => {

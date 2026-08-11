@@ -23,6 +23,7 @@
       .catch(() => { updateBtn.textContent = "v?"; });
   }
   const updateStatusEl = document.getElementById("updateStatus");
+  const stageLoadingEl = document.getElementById("stageLoading");
   const winMin = document.getElementById("winMin");
   const winMax = document.getElementById("winMax");
   const winClose = document.getElementById("winClose");
@@ -412,6 +413,7 @@
       // 仍是当前要展示的标签才淡入；否则仅标记就绪，等切回时直接激活（避免黑闪）
       if (wv.dataset.key === activeKey) {
         wv.dataset.pending = "";
+        stageLoadingEl.hidden = true;
         const ft = pendingFallbacks.get(wv.dataset.key);
         if (ft) { clearTimeout(ft); pendingFallbacks.delete(wv.dataset.key); }
         activateWebview(wv);
@@ -451,6 +453,7 @@
   // 激活一个 webview：隐藏 landing + 挂 .active（CSS 淡入微缩放），并触发内部 resize
   function activateWebview(wv) {
     landingEl.classList.add("hidden");
+    stageLoadingEl.hidden = true; // 就绪/兜底激活时隐藏加载动画
     wv.classList.add("active");
     requestAnimationFrame(() => {
       resizeWebview(wv);
@@ -481,6 +484,7 @@
     if (key === HOME_KEY) {
       // 入口页：显示 landing，隐藏所有工具 webview（不销毁，保留后台状态）
       landingEl.classList.remove("hidden");
+      stageLoadingEl.hidden = true;
       openTabs.forEach((x) => {
         if (x.key === HOME_KEY) return;
         const wv = document.getElementById("wv-" + x.key);
@@ -499,6 +503,7 @@
           // 内容未就绪：保持 webview hidden，landing 仍可见（环境光渐变，非黑）；
           // 等 dom-ready 再 activateWebview（内部隐藏 landing + 挂 .active 淡入）
           wv.dataset.pending = "1";
+          stageLoadingEl.hidden = false; // 未就绪：覆盖显示加载动画
           scheduleFallbackActivation(wv);
         } else {
           activateWebview(wv);

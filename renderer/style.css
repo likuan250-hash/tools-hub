@@ -193,6 +193,31 @@ body {
   opacity: 0; transform: scale(0.98) translateY(6px); visibility: hidden;
   transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-spring), visibility 0s linear var(--dur);
 }
+
+/* 子页面加载动画：webview 未就绪期间覆盖 stage */
+.stage-loading{
+  position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  background:color-mix(in srgb, var(--bg-1) 55%, transparent);
+  backdrop-filter:blur(3px);
+}
+.stage-loading[hidden]{display:none}
+.stage-loading .sl-ring{
+  width:44px;height:44px;border-radius:50%;
+  border:3px solid var(--glass-border);
+  border-top-color:var(--accent);
+  box-shadow:0 0 14px rgba(var(--accent-rgb), .35);
+  animation:slSpin .9s linear infinite;
+}
+@keyframes slSpin{to{transform:rotate(360deg)}}
+.stage-loading .sl-text{font-size:13px;color:var(--text-dim);letter-spacing:.5px}
+html[data-skin="cosmic"] .stage-loading .sl-text{
+  font-family:'Share Tech Mono','Consolas',ui-monospace,monospace;
+  color:var(--accent);text-shadow:0 0 8px rgba(94,242,255,.6);letter-spacing:.12em;
+}
+html[data-skin="cosmic"] .stage-loading .sl-ring{
+  border-color:rgba(94,242,255,.22);border-top-color:#5ef2ff;
+  box-shadow:0 0 18px rgba(94,242,255,.45),0 0 40px rgba(94,242,255,.15);
+}
 .landing-title {
   font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: 1px;
   color: var(--text);

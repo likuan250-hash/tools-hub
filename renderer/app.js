@@ -241,6 +241,7 @@
     let rafScheduled = false;
     let rafId = 0;
     let flipRaf = 0;
+    let reorderLockUntil = 0; // FLIP 过渡期间锁住插入判定，防动画中横跳
     let lastX = e.clientX, lastY = e.clientY;
 
     card.setPointerCapture(e.pointerId);
@@ -294,7 +295,7 @@
           if (c === card) return;
           // 拖拽中兄弟卡片不播过渡：插入判定基于终态 rect，视觉在动画中间会错位，
           // 指针一抖就反复重排横跳（"乱跑"）。释放后 renderCards(false) 统一规范化。
-          c.style.transition = "none";
+          c.style.transition = "transform .3s var(--ease-spring)";
           c.style.transform = "";
         });
       });
@@ -302,11 +303,15 @@
       // 避免被刚写入的反向位移 transform 污染（getBoundingClientRect 含 transform）
       siblingRects = newOrder.filter((c) => c !== card).map((c) => last.get(c));
       applyFollow(lastX, lastY);
+      // 锁定约一个 FLIP 过渡周期：期间兄弟卡片视觉在动画中间，与判定用终态 rect
+      // 不同步，立即响应指针会反复重排横跳
+      reorderLockUntil = performance.now() + 320;
     }
 
     function frame() {
       rafScheduled = false;
       applyFollow(lastX, lastY);
+      if (performance.now() < reorderLockUntil) return;
       const idx = computeInsert(lastX, lastY);
       if (idx !== insertIndex) {
         insertIndex = idx;

@@ -70,7 +70,7 @@ body {
 .skin-drop{
   position:absolute;right:0;top:calc(100% + 8px);min-width:148px;padding:5px;border-radius:10px;
   background:var(--glass-bg,#222);border:1px solid var(--glass-border,#3a3a3c);
-  box-shadow:0 14px 34px rgba(0,0,0,.45);display:none;z-index:99;
+  box-shadow:0 14px 34px rgba(0,0,0,.45);display:none;z-index:99;-webkit-app-region:no-drag;
 }
 .skin-menu.open .skin-drop{display:block}
 .skin-drop button{

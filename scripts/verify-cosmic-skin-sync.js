@@ -5,7 +5,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const SHARED = 'shared/cosmic-skin';
 const COPIES = ['renderer', 'netdisk-hub/public', 'kdocs-tool/public', 'biliup-hub/public', 'material-hub/public'];
-const FILES = ['cosmic-skin.css', 'cosmic-skin.js'];
+const FILES = ['cosmic-skin.css', 'cosmic-skin.js', 'ark-pixel-16px-latin.woff2', 'ark-pixel-16px-zh_cn.woff2', 'OFL-ark-pixel.txt'];
 
 let fail = false;
 for (const f of FILES) {

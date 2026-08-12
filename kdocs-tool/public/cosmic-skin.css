@@ -4,14 +4,26 @@
  * Share Tech Mono 等宽终端字体；冷调高对比、控制台/飞船仪表盘质感。
  * 仅 html[data-skin="cosmic"] 生效；动效全开（不随 prefers-reduced-motion 降级）。
  */
+/* 方舟像素字体（Ark Pixel Font, OFL-1.1）—— 中英文像素风 */
+@font-face{
+  font-family:'ArkPixel';
+  src:url('ark-pixel-16px-latin.woff2') format('woff2');
+  font-display:swap;
+}
+@font-face{
+  font-family:'ArkPixel';
+  src:url('ark-pixel-16px-zh_cn.woff2') format('woff2');
+  unicode-range:U+2E80-9FFF,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF,U+3000-303F,U+FF00-FFEF;
+  font-display:swap;
+}
 html[data-skin="cosmic"]{
-  --bg:#05081a; --bg-1:#0a1230; --bg-2:#0e2148; --bg-3:#1a2a5e;
+  --bg:#070722; --bg-1:#0e1035; --bg-2:#0e2148; --bg-3:#2a1f6e;
   --fg:#efeaff; --fg-2:#c9bce8; --muted:#8e84b8;
   --text:var(--fg); --text-dim:var(--fg-2);
-  --surface:rgba(20,32,76,.55); --surface-2:rgba(20,32,76,.35);
-  --field-bg:var(--surface-2); --solid-bg:#0a1230; --glass-bg:var(--surface);
-  --border:#3a4a8e; --border-soft:rgba(121,101,193,.28);
-  --glass-border:rgba(121,101,193,.35); --field-border:var(--border);
+  --surface:rgba(48,35,110,.5); --surface-2:rgba(48,35,110,.32);
+  --field-bg:var(--surface-2); --solid-bg:#191238; --glass-bg:var(--surface);
+  --border:#4b3f9e; --border-soft:rgba(167,139,250,.38);
+  --glass-border:rgba(167,139,250,.5); --field-border:var(--border);
   --accent:#7965c1; --accent-2:#e3d095; --accent-3:#483aa0;
   --apple-accent:#7965c1;
   --accent-hover:#9b8be0; --accent-active:#5b4a9e;
@@ -29,13 +41,13 @@ html[data-skin="cosmic"]{
 /* 深空底色 + 等宽终端字体 */
 html[data-skin="cosmic"] body{
   background:
-    radial-gradient(1100px 760px at 22% 12%, rgba(72,58,160,.20), transparent 62%),
-    radial-gradient(900px 640px at 80% 24%, rgba(121,101,193,.16), transparent 60%),
-    radial-gradient(720px 520px at 60% 88%, rgba(227,208,149,.08), transparent 55%),
-    radial-gradient(circle at 50% -10%,#0e2148 0%,#070c1f 58%,#04060f 100%) fixed,
-    #05081a;
+    radial-gradient(1100px 760px at 22% 12%, rgba(72,58,160,.30), transparent 62%),
+    radial-gradient(900px 640px at 80% 24%, rgba(121,101,193,.24), transparent 60%),
+    radial-gradient(720px 520px at 60% 88%, rgba(227,208,149,.14), transparent 55%),
+    radial-gradient(circle at 50% -10%,#122a5c 0%,#0a0c33 58%,#050516 100%) fixed,
+    #070722;
   color:var(--fg);
-  font-family:'Share Tech Mono','Cascadia Mono','Consolas','Courier New',ui-monospace,monospace;
+  font-family:'ArkPixel','Share Tech Mono','Cascadia Mono','Consolas','Courier New',ui-monospace,monospace;
   letter-spacing:.03em;
 }
 
@@ -89,8 +101,41 @@ html[data-skin="cosmic"] select:focus{
 /* 标题辉光（HUD 质感） */
 html[data-skin="cosmic"] h1,
 html[data-skin="cosmic"] h2,
-html[data-skin="cosmic"] .brand{
+html[data-skin="cosmic"] .brand,
+html[data-skin="cosmic"] .title{
   text-shadow:0 0 4px rgba(227,208,149,.55),0 0 16px rgba(121,101,193,.75);
+}
+/* 标题故障风：RGB 分离 + 瞬时位移抖动（周期 4s，一闪而过） */
+html[data-skin="cosmic"] h1,
+html[data-skin="cosmic"] .title,
+html[data-skin="cosmic"] .brand{
+  animation:cosmicGlitch 4s linear infinite;
+}
+@keyframes cosmicGlitch{
+  0%,90.5%,94.5%,100%{
+    text-shadow:0 0 4px rgba(227,208,149,.55),0 0 16px rgba(121,101,193,.75);
+    transform:none;
+  }
+  91%{
+    text-shadow:-2px 0 rgba(255,64,129,.75),2px 0 rgba(0,229,255,.75);
+    transform:translate(-1.5px,.8px) skewX(-1.2deg);
+  }
+  92%{
+    text-shadow:2px 0 rgba(255,64,129,.65),-2px 0 rgba(0,229,255,.65);
+    transform:translate(1.5px,-.8px);
+  }
+  93%{
+    text-shadow:-1px 0 rgba(255,64,129,.7),1px 0 rgba(0,229,255,.7);
+    transform:translate(0,1.2px);
+  }
+}
+html[data-skin="cosmic"] .title{
+  font-family:'ArkPixel','Share Tech Mono','Cascadia Mono','Consolas','Courier New',ui-monospace,monospace;
+  letter-spacing:.5px;
+}
+/* 全页面字体统一：宇宙皮肤下所有元素强制像素字体（代码/预格式文本除外） */
+html[data-skin="cosmic"] :not(code):not(pre){
+  font-family:'ArkPixel','Share Tech Mono','Cascadia Mono','Consolas','Courier New',ui-monospace,monospace !important;
 }
 
 /* 状态徽标辉光（成功/错误/等待） */

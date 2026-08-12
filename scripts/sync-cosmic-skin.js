@@ -23,7 +23,7 @@ const COPIES = [
   { name: 'biliup-hub', dir: 'biliup-hub/public' },
   { name: 'material-hub', dir: 'material-hub/public' },
 ];
-const FILES = ['cosmic-skin.css', 'cosmic-skin.js'];
+const FILES = ['cosmic-skin.css', 'cosmic-skin.js', 'ark-pixel-16px-latin.woff2', 'ark-pixel-16px-zh_cn.woff2', 'OFL-ark-pixel.txt'];
 
 function readFileOrNull(p) {
   try { return fs.readFileSync(p); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }

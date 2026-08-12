@@ -27,6 +27,16 @@ ipcRenderer.on("sync-theme", (_e, t) => applyTheme(t));
 try {
   ipcRenderer.invoke("get-theme").then((t) => { if (t) applyTheme(t); }).catch(() => {});
 } catch (e) {}
+// 兜底：直接从本页 localStorage 同步应用主题（避免 get-theme 竞态/失败导致子页面皮肤不生效），
+// DOMContentLoaded 后再补一次，确保 webview 内容渲染前 data-skin 已就位。
+function applyStoredTheme() {
+  try {
+    const t = localStorage.getItem("theme");
+    if (t) applyTheme(t);
+  } catch (e) {}
+}
+applyStoredTheme();
+document.addEventListener("DOMContentLoaded", applyStoredTheme);
 
 contextBridge.exposeInMainWorld("electronAPI", {
   // 原生文件夹选择（kdocs 封面目录按钮调用）

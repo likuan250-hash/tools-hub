@@ -1,27 +1,27 @@
 /* shared/cosmic-skin/cosmic-skin.css —— 深空科幻 HUD 皮肤（第三主题，叠加于暗色 data-theme=dark）
- * 设计规格：近黑深空径向渐变 + 扫描线 + 暗角；霓虹青 #5ef2ff 主强调（辉光）；
- * 暗青 #2a8a99 次级；琥珀 #ffb347 点缀；绿/红/紫状态语义；半透明毛玻璃面板；
+ * 设计规格：星尘紫金（深空蓝紫 #0e2148 + 星尘紫 #7965c1 主强调 + 香槟金 #e3d095 点缀），
+ * 近黑深空径向渐变 + 星云光斑 + 扫描线；半透明毛玻璃面板；
  * Share Tech Mono 等宽终端字体；冷调高对比、控制台/飞船仪表盘质感。
  * 仅 html[data-skin="cosmic"] 生效；动效全开（不随 prefers-reduced-motion 降级）。
  */
 html[data-skin="cosmic"]{
-  --bg:#02040a; --bg-1:#050b18; --bg-2:#0a1426; --bg-3:#12081f;
-  --fg:#dffaff; --fg-2:#9ad8e6; --muted:#5f8a9e;
+  --bg:#05081a; --bg-1:#0a1230; --bg-2:#0e2148; --bg-3:#1a2a5e;
+  --fg:#efeaff; --fg-2:#c9bce8; --muted:#8e84b8;
   --text:var(--fg); --text-dim:var(--fg-2);
-  --surface:rgba(8,18,32,.55); --surface-2:rgba(8,18,32,.35);
-  --field-bg:var(--surface-2); --solid-bg:#050b18; --glass-bg:var(--surface);
-  --border:#1c3a4a; --border-soft:rgba(94,242,255,.16);
-  --glass-border:rgba(94,242,255,.18); --field-border:var(--border);
-  --accent:#5ef2ff; --accent-2:#b78dff; --accent-3:#ffb347;
-  --apple-accent:#5ef2ff;
-  --accent-hover:#8ff7ff; --accent-active:#2a8a99;
-  --accent-rgb:94,242,255; --accent2-rgb:183,141,255;
+  --surface:rgba(20,32,76,.55); --surface-2:rgba(20,32,76,.35);
+  --field-bg:var(--surface-2); --solid-bg:#0a1230; --glass-bg:var(--surface);
+  --border:#3a4a8e; --border-soft:rgba(121,101,193,.28);
+  --glass-border:rgba(121,101,193,.35); --field-border:var(--border);
+  --accent:#7965c1; --accent-2:#e3d095; --accent-3:#483aa0;
+  --apple-accent:#7965c1;
+  --accent-hover:#9b8be0; --accent-active:#5b4a9e;
+  --accent-rgb:121,101,193; --accent2-rgb:227,208,149;
   --ok:#8dffb0; --warn:#ffb347; --err:#ff5f6d;
   --ok-rgb:141,255,176; --err-rgb:255,95,109;
   --success:var(--ok); --danger:var(--err);
-  --hist-meta:#9ad8e6;
-  --switch-off:#1c3a4a; --switch-thumb:#5ef2ff;
-  --modal-mask:rgba(0,2,8,.72);
+  --hist-meta:#c9bce8;
+  --switch-off:#3a4a8e; --switch-thumb:#7965c1;
+  --modal-mask:rgba(4,6,18,.72);
   --shadow-card:0 10px 34px rgba(0,0,0,.55);
   --shadow-modal:0 30px 80px rgba(0,0,0,.75);
 }
@@ -29,8 +29,11 @@ html[data-skin="cosmic"]{
 /* 深空底色 + 等宽终端字体 */
 html[data-skin="cosmic"] body{
   background:
-    radial-gradient(circle at 50% -10%,#0a1426 0%,#02040a 55%,#000 100%) fixed,
-    #000;
+    radial-gradient(1100px 760px at 22% 12%, rgba(72,58,160,.20), transparent 62%),
+    radial-gradient(900px 640px at 80% 24%, rgba(121,101,193,.16), transparent 60%),
+    radial-gradient(720px 520px at 60% 88%, rgba(227,208,149,.08), transparent 55%),
+    radial-gradient(circle at 50% -10%,#0e2148 0%,#070c1f 58%,#04060f 100%) fixed,
+    #05081a;
   color:var(--fg);
   font-family:'Share Tech Mono','Cascadia Mono','Consolas','Courier New',ui-monospace,monospace;
   letter-spacing:.03em;
@@ -39,8 +42,11 @@ html[data-skin="cosmic"] body{
 /* 扫描线 */
 html[data-skin="cosmic"] body::after{
   content:"";position:fixed;inset:0;z-index:9999;pointer-events:none;
-  background:repeating-linear-gradient(to bottom,rgba(94,242,255,.03) 0 1px,transparent 1px 3px);
-  mix-blend-mode:screen;opacity:.45;
+  background:repeating-linear-gradient(to bottom,
+    rgba(121,101,193,.16) 0 1px,
+    rgba(0,0,0,.18) 1px 2px,
+    transparent 2px 4px);
+  opacity:.75;
 }
 
 /* 星空 canvas（cosmic-skin.js 注入） */
@@ -57,19 +63,19 @@ html[data-skin="cosmic"] .log-card{
   animation:cosmicBreathe 5.5s ease-in-out infinite;
 }
 @keyframes cosmicBreathe{
-  0%,100%{box-shadow:0 0 0 rgba(94,242,255,0)}
-  50%{box-shadow:0 0 18px rgba(94,242,255,.22)}
+  0%,100%{box-shadow:0 0 0 rgba(121,101,193,0)}
+  50%{box-shadow:0 0 30px rgba(121,101,193,.42)}
 }
 
 /* 按钮霓虹辉光 */
 html[data-skin="cosmic"] .btn,
 html[data-skin="cosmic"] .auth-btn,
 html[data-skin="cosmic"] .icon-btn{
-  box-shadow:0 0 12px rgba(94,242,255,.18);
+  box-shadow:0 0 16px rgba(121,101,193,.32);
 }
 html[data-skin="cosmic"] .btn:hover,
 html[data-skin="cosmic"] .auth-btn:hover{
-  box-shadow:0 0 18px rgba(94,242,255,.38);
+  box-shadow:0 0 28px rgba(121,101,193,.62);
 }
 
 /* 输入聚焦青色光环 */
@@ -77,19 +83,24 @@ html[data-skin="cosmic"] input:focus,
 html[data-skin="cosmic"] textarea:focus,
 html[data-skin="cosmic"] select:focus{
   border-color:var(--accent);
-  box-shadow:0 0 0 3px rgba(94,242,255,.16),0 0 12px rgba(94,242,255,.22);
+  box-shadow:0 0 0 3px rgba(121,101,193,.18),0 0 12px rgba(121,101,193,.28);
 }
 
 /* 标题辉光（HUD 质感） */
 html[data-skin="cosmic"] h1,
 html[data-skin="cosmic"] h2,
 html[data-skin="cosmic"] .brand{
-  text-shadow:0 0 10px rgba(94,242,255,.45);
+  text-shadow:0 0 4px rgba(227,208,149,.55),0 0 16px rgba(121,101,193,.75);
 }
 
 /* 状态徽标辉光（成功/错误/等待） */
 html[data-skin="cosmic"] .badge,
 html[data-skin="cosmic"] .pill,
 html[data-skin="cosmic"] .tag{
-  box-shadow:0 0 8px rgba(94,242,255,.14);
+  box-shadow:0 0 12px rgba(121,101,193,.3);
+}
+
+/* 主壳皮肤下拉 hover 跟随宇宙主题色（覆盖 renderer/style.css 的青色 hover） */
+html[data-skin="cosmic"] .skin-drop button:hover{
+  background:rgba(121,101,193,.22);
 }

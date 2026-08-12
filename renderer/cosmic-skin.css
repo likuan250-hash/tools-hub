@@ -51,14 +51,20 @@ html[data-skin="cosmic"] body{
   letter-spacing:.03em;
 }
 
-/* 扫描线 */
+/* 扫描线：一条光带自上而下循环扫描（替换原整屏静态纹理） */
 html[data-skin="cosmic"] body::after{
-  content:"";position:fixed;inset:0;z-index:9999;pointer-events:none;
-  background:repeating-linear-gradient(to bottom,
-    rgba(121,101,193,.16) 0 1px,
-    rgba(0,0,0,.18) 1px 2px,
-    transparent 2px 4px);
-  opacity:.75;
+  content:"";position:fixed;left:0;right:0;top:0;height:2px;z-index:9999;pointer-events:none;
+  background:linear-gradient(to right,
+    rgba(0,229,255,0) 0%,
+    rgba(0,229,255,.9) 15%,
+    rgba(255,64,129,.9) 85%,
+    rgba(255,64,129,0));
+  box-shadow:0 0 8px rgba(0,229,255,.4),0 0 14px rgba(255,64,129,.3);
+  animation:cosmicScan 6.5s linear infinite;
+}
+@keyframes cosmicScan{
+  0%{transform:translateY(-6vh)}
+  100%{transform:translateY(100vh)}
 }
 
 /* 星空 canvas（cosmic-skin.js 注入） */
@@ -105,29 +111,49 @@ html[data-skin="cosmic"] .brand,
 html[data-skin="cosmic"] .title{
   text-shadow:0 0 4px rgba(227,208,149,.55),0 0 16px rgba(121,101,193,.75);
 }
-/* 标题故障风：RGB 分离 + 瞬时位移抖动（周期 4s，一闪而过） */
+/* 标题故障风：伪元素切片错位（红/青撕裂 + clip-path），周期性爆发 */
 html[data-skin="cosmic"] h1,
 html[data-skin="cosmic"] .title,
 html[data-skin="cosmic"] .brand{
-  animation:cosmicGlitch 4s linear infinite;
+  position:relative;
 }
-@keyframes cosmicGlitch{
-  0%,90.5%,94.5%,100%{
-    text-shadow:0 0 4px rgba(227,208,149,.55),0 0 16px rgba(121,101,193,.75);
-    transform:none;
-  }
-  91%{
-    text-shadow:-2px 0 rgba(255,64,129,.75),2px 0 rgba(0,229,255,.75);
-    transform:translate(-1.5px,.8px) skewX(-1.2deg);
-  }
-  92%{
-    text-shadow:2px 0 rgba(255,64,129,.65),-2px 0 rgba(0,229,255,.65);
-    transform:translate(1.5px,-.8px);
-  }
-  93%{
-    text-shadow:-1px 0 rgba(255,64,129,.7),1px 0 rgba(0,229,255,.7);
-    transform:translate(0,1.2px);
-  }
+html[data-skin="cosmic"] h1::before,
+html[data-skin="cosmic"] h1::after,
+html[data-skin="cosmic"] .title::before,
+html[data-skin="cosmic"] .title::after,
+html[data-skin="cosmic"] .brand::before,
+html[data-skin="cosmic"] .brand::after{
+  content:attr(data-text);
+  position:absolute;left:0;top:0;width:100%;
+  pointer-events:none;
+  opacity:0;
+}
+html[data-skin="cosmic"] h1::before,
+html[data-skin="cosmic"] .title::before,
+html[data-skin="cosmic"] .brand::before{
+  color:rgba(255,64,129,.9);
+  animation:glitchSliceA 3.4s steps(1) infinite;
+}
+html[data-skin="cosmic"] h1::after,
+html[data-skin="cosmic"] .title::after,
+html[data-skin="cosmic"] .brand::after{
+  color:rgba(0,229,255,.9);
+  animation:glitchSliceB 3.4s steps(1) infinite;
+}
+@keyframes glitchSliceA{
+  0%,84%,94%,100%{opacity:0;transform:none;clip-path:inset(0 0 100% 0)}
+  85%{opacity:.85;clip-path:inset(8% 0 58% 0);transform:translate(-3px,-1px)}
+  87%{opacity:.85;clip-path:inset(52% 0 18% 0);transform:translate(3px,1px)}
+  89%{opacity:.8;clip-path:inset(24% 0 44% 0);transform:translate(-2px,2px)}
+  91%{opacity:.7;clip-path:inset(70% 0 4% 0);transform:translate(2px,-2px)}
+  93%{opacity:0;transform:none;clip-path:inset(0 0 100% 0)}
+}
+@keyframes glitchSliceB{
+  0%,80%,90%,100%{opacity:0;transform:none;clip-path:inset(0 0 100% 0)}
+  81%{opacity:.85;clip-path:inset(40% 0 30% 0);transform:translate(3px,1px)}
+  84%{opacity:.8;clip-path:inset(12% 0 62% 0);transform:translate(-3px,-1px)}
+  87%{opacity:.75;clip-path:inset(66% 0 8% 0);transform:translate(2px,2px)}
+  89%{opacity:0;transform:none;clip-path:inset(0 0 100% 0)}
 }
 html[data-skin="cosmic"] .title{
   font-family:'ArkPixel','Share Tech Mono','Cascadia Mono','Consolas','Courier New',ui-monospace,monospace;

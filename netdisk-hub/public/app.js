@@ -516,16 +516,23 @@ function resetTransferProgress() {
 }
 
 function openTransferSSE(clientId) {
-  const es = new EventSource('/api/transfer/events?client=' + clientId);
-  transferES = es;
-  es.onmessage = (ev) => {
-    let d; try { d = JSON.parse(ev.data); } catch (_) { return; }
-    if (d.type === 'step' && d.step) renderTransferStep(d.step);
-    else if (d.type === 'log') transferAddLog(d.level, d.message);
-    else if (d.type === 'done') { transferAddLog('ok', '转存完成：成功 ' + d.okCount + '/' + d.total); es.close(); transferES = null; }
-  };
-  es.onerror = () => { es.close(); transferES = null; };
-  return es;
+  // 返回 Promise：等 SSE 连接建立（onopen）后再放行提交任务，否则转存快/缓存命中时
+  // 后端事件在连接注册前发出会全部丢失 → 进度区空白、只有结果区在完成后才出现。
+  return new Promise((resolve) => {
+    const es = new EventSource('/api/transfer/events?client=' + clientId);
+    transferES = es;
+    let settled = false;
+    const settle = () => { if (!settled) { settled = true; resolve(es); } };
+    const timer = setTimeout(settle, 2500); // 兜底：连接异常也放行，避免卡死
+    es.onopen = () => { clearTimeout(timer); settle(); };
+    es.onmessage = (ev) => {
+      let d; try { d = JSON.parse(ev.data); } catch (_) { return; }
+      if (d.type === 'step' && d.step) renderTransferStep(d.step);
+      else if (d.type === 'log') transferAddLog(d.level, d.message);
+      else if (d.type === 'done') { transferAddLog('ok', '转存完成：成功 ' + d.okCount + '/' + d.total); es.close(); transferES = null; }
+    };
+    es.onerror = () => { clearTimeout(timer); settle(); es.close(); transferES = null; };
+  });
 }
 
 // 清空输入:一键清空分享文本框,并同步重置网盘勾选区与结果区
@@ -550,7 +557,7 @@ batchBtn.onclick = async () => {
   setExec(batchBtn, true);
   const clientId = 't' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   resetTransferProgress();
-  const es = openTransferSSE(clientId);
+  const es = await openTransferSSE(clientId);
   try {
     const r = await fetch('/api/transfer/batch', {
       method: 'POST',
@@ -641,7 +648,7 @@ document.addEventListener('click', async (e) => {
   btn.disabled = true; btn.textContent = '重试中…';
   const clientId = 't' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   resetTransferProgress();
-  const es = openTransferSSE(clientId);
+  const es = await openTransferSSE(clientId);
   try {
     const r = await fetch('/api/transfer', {
       method: 'POST',

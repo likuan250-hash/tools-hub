@@ -5,6 +5,9 @@ const clearBtn = $("clearBtn");
 const preview = $("preview"), previewContent = $("previewContent");
 const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $("autoSummary"), autoLog = $("autoLog"), kdocsViewBtn = $("kdocsViewBtn");
 const retryCoverBtn = $("retryCoverBtn");
+const retryCoverUrlBtn = $("retryCoverUrlBtn");
+const coverLinkRow = $("coverLinkRow");
+const coverLinkInput = $("coverLinkInput");
 const chipKdocs = $("chipKdocs"), kdocsBtn = $("kdocsBtn"), toastHost = $("toastHost");
 
 // ── 分类标签选择（P0 用户偏好：免安装硬盘版/PC游戏/全DLC 三个默认勾上）──
@@ -82,6 +85,42 @@ retryCoverBtn.onclick = async () => {
       addLog("err", "重传请求失败：" + e.message);
     retryCoverBtn.disabled = false;
     retryCoverBtn.innerHTML = ico("refresh") + " 仅重传封面";
+  }
+};
+
+// ── 「用链接补传封面」：记录已建但封面缺失时，用户提供图片 URL → 下载 → 上传 → 写回记录 ──
+retryCoverUrlBtn.onclick = async () => {
+  const url = coverLinkInput.value.trim();
+  if (!currentRecordId) return;
+  if (!url) { toastMsg("请先粘贴封面图片 URL", "err"); return; }
+  retryCoverUrlBtn.disabled = true;
+  retryCoverUrlBtn.innerHTML = ico("hourglass") + " 下载上传中…";
+  try {
+    const r = await fetch("/api/retry-cover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordId: currentRecordId, coverUrl: url, coverDir: coverDir.value.trim() || undefined }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      autoSummary.className = "result-summary ok";
+      autoSummary.textContent = "封面已用链接补传，记录完整";
+      addLog("ok", "封面已通过链接下载并写入记录");
+      coverLinkRow.style.display = "none";
+      retryCoverBtn.style.display = "none";
+    } else {
+      autoSummary.className = "result-summary fail";
+      autoSummary.textContent = "封面补传失败：" + (d.error || "未知");
+      addLog("err", "封面链接补传失败：" + (d.error || ""));
+      retryCoverUrlBtn.disabled = false;
+      retryCoverUrlBtn.innerHTML = ico("link") + " 用链接补传封面";
+    }
+  } catch (e) {
+    autoSummary.className = "result-summary fail";
+    autoSummary.textContent = "补传请求失败：" + e.message;
+    addLog("err", "补传请求失败：" + e.message);
+    retryCoverUrlBtn.disabled = false;
+    retryCoverUrlBtn.innerHTML = ico("link") + " 用链接补传封面";
   }
 };
 
@@ -421,6 +460,7 @@ async function runAuto(text, opts = {}) {
           currentRecordId = d.recordId || null;
           currentCoverPath = d.coverPath || null;
           retryCoverBtn.style.display = "none"; // 默认隐藏，封面缺失且可补传时才显示
+          coverLinkRow.style.display = d.coverStatus === "failed" ? "flex" : "none";
           if (d.gameName) { currentParsed = { ...currentParsed, gameName: d.gameName }; preview.style.display = "block"; }
           if (!d.success) {
             autoSummary.className = "result-summary fail";

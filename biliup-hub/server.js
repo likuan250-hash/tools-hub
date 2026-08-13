@@ -463,6 +463,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 // ── 上传（SSE 全流程投稿，核心）──
+let uploadBusy = false;
 app.post('/api/upload', (req, res) => {
   const body = req.body || {};
   const videoPath = body.videoPath;
@@ -490,6 +491,12 @@ app.post('/api/upload', (req, res) => {
     clearInterval(heartbeat);
     try { res.end(); } catch { /* 已结束 */ }
   };
+  if (uploadBusy) {
+    send({ type: 'error', stage: 'pending', message: '已有投稿任务进行中，请等待完成后再试' });
+    finish();
+    return;
+  }
+  uploadBusy = true;
 
   const config = store.getConfig();
   let cookiesFile = null;
@@ -515,7 +522,7 @@ app.post('/api/upload', (req, res) => {
       }
     })
     .catch((e) => { send({ type: 'error', stage: 'error', message: e.message }); })
-    .finally(finish);
+    .finally(() => { uploadBusy = false; finish(); });
 });
 
 // ── 待发布清单：防忘记记录（名称 + 有资源/已发布勾选）─────────────────
@@ -551,7 +558,7 @@ app.post('/api/pending-videos/replace', (req, res) => {
 
 app.post('/api/pending-videos/:id', (req, res) => {
   const item = pendingVideos.update(String(req.params.id), req.body || {});
-  if (!item) return res.status(404).json({ ok: false, error: '记录不存在' });
+  if (!item) return res.status(404).json({ ok: false, error: '记录不存在或名称重复/为空' });
   res.json({ ok: true, item });
   pendingSync.pushLocal();
 });

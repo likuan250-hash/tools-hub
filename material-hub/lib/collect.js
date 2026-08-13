@@ -176,37 +176,60 @@ class CollectService {
       steamAppId: opts.steamAppId,
       userUrlFirst: !!opts.coverUrl,
       resolveEnglish: false,
+      skipSource: opts.skipSource,
+      skipUrl: opts.skipUrl,
     });
-    if (!c.candidates || !c.candidates.length) {
+    // 候选预检：下载到本地（绕防盗链）→ 过滤 <720P/不可访问 → 前端预览本地文件
+    const prechecked = await this.cover.precheckCandidates(c.candidates || [], {
+      emit,
+      skipSource: opts.skipSource,
+      skipUrl: opts.skipUrl,
+    });
+    if (!prechecked.length) {
       emit('log', STEP_COVER, '[cover] 未找到可预览的候选封面，走原有降级流程', null, { level: 'warn' });
       return { ok: false, reason: 'cover-no-candidates', error: c.error || '无候选封面' };
     }
 
     const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    emit('cover_candidates', STEP_COVER, '找到 ' + c.candidates.length + ' 张候选封面，请选择', null, {
+    emit('cover_candidates', STEP_COVER, '找到 ' + prechecked.length + ' 张候选封面（已过滤低清/不可访问），请选择', null, {
       requestId,
-      candidates: c.candidates,
+      candidates: prechecked,
       meta: {
         queryUsed: (c.queryPlan && c.queryPlan[0]) || searchName,
         englishTitle: c.englishTitle || '',
         steamAppId: c.steamAppId || '',
+        filtered: (c.candidates || []).length - prechecked.length,
       },
     });
 
     const choice = await this.waitCoverChoice(requestId, opts.choiceTimeoutMs || COVER_CHOICE_TIMEOUT_MS);
     if (choice.auto) {
       emit('log', STEP_COVER, '[cover] 选择超时，自动采用第一个候选', null, { level: 'warn' });
-      choice.url = c.candidates[0].url;
+      choice.url = prechecked[0].url;
     }
     if (!choice.url) {
       emit('log', STEP_COVER, '[cover] 已跳过封面选择，走抽帧兜底', null, { level: 'info' });
       return { ok: false, reason: 'cover-skipped-by-user', error: '未选择封面' };
     }
-    const picked = c.candidates.find((it) => it.url === choice.url) || {};
+    const picked = prechecked.find((it) => it.url === choice.url) || {};
     emit('cover_download', STEP_COVER, '应用所选封面（' + (picked.label || picked.source || 'user') + '）…', null, {
-      url: choice.url, source: picked.source || 'user', interactive: true,
+      url: picked.originalUrl || choice.url, source: picked.source || 'user', interactive: true,
     });
-    const applied = await this.cover.applyCandidate(choice.url, outDir, { emit, source: picked.source || 'user' });
+    const applied = await this.cover.applyCandidate(choice.url, outDir, {
+      emit,
+      source: picked.source || 'user',
+      localPath: picked.localPath,
+    });
+    if (applied.ok && applied.source && applied.source !== 'user' && applied.source !== 'reused') {
+      this.cover.saveCoverMeta(outDir, {
+        source: applied.source,
+        url: picked.originalUrl || '',
+        width: applied.width,
+        height: applied.height,
+        file: applied.file,
+        savedAt: new Date().toISOString(),
+      });
+    }
     // 用户主动勾选（非超时自动）视为「确认保留」：即便降级也不再被抽帧覆盖
     applied.userConfirmed = choice.auto !== true;
     return applied;
@@ -460,6 +483,14 @@ class CollectService {
     } else {
       try {
         // 英文名已在 1.5 步定稿，直接传入，不再让 cover.js 自己反查
+        // 重找封面：读取上次采纳来源/URL，候选收集时跳过，确保换来源重找
+        let skipSource = '';
+        let skipUrl = '';
+        if (opts.forceCover) {
+          const prev = this.cover.readCoverMeta(reserved.folder);
+          if (prev && prev.source) skipSource = prev.source;
+          if (prev && prev.url) skipUrl = prev.url;
+        }
         const coverOpts = {
           emit,
           coverUrl: opts.coverUrl,
@@ -469,6 +500,8 @@ class CollectService {
           steamAppId,
           videoId: trailerInfo && trailerInfo.id ? trailerInfo.id : '',
           resolveEnglish: false,
+          skipSource,
+          skipUrl,
         };
         if (opts.coverInteractive === true) {
           coverRes = await this.runInteractiveCover(searchName, reserved.folder, coverOpts);
@@ -543,6 +576,20 @@ class CollectService {
         emit('log', STEP_COVER, '[cover] 抽帧兜底失败：' + (frame.error || '未知原因'), null, { level: 'err' });
       }
     }
+
+    // 网络来源封面采纳后记录来源 sidecar（供下次「重找封面」跳过）；抽帧/reused 不记录
+    if (coverRes.ok && coverRes.source && coverRes.source !== 'ffmpeg-frame' && coverRes.source !== 'reused') {
+      this.cover.saveCoverMeta(reserved.folder, {
+        source: coverRes.source,
+        url: coverRes.url || '',
+        width: coverRes.width,
+        height: coverRes.height,
+        file: coverRes.file,
+        savedAt: new Date().toISOString(),
+      });
+    }
+    // 清理候选预检临时文件（交互预览模式使用）
+    this.cover.clearPreviewTmp();
 
     if (coverRes.ok) {
       result.coverOk = true;

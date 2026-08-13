@@ -238,7 +238,7 @@ function renderTasks() {
       if (t.status === 'success' && t.shareLink) {
         actions = `<div class="row-actions"><button class="copy" data-copy-text="${escapeHtml(t.shareLink)}">复制分享</button></div>`;
       } else if (t.status === 'failed') {
-        actions = `<div class="row-actions"><button class="retry" data-retry="${t.provider}" data-link="${escapeHtml(t.sourceLink || '')}" data-pwd="${escapeHtml(t.sourcePwd || '')}">重试</button></div>`;
+        actions = `<div class="row-actions"><button class="retry" data-retry="${t.id}">重试</button></div>`;
       }
       const share = t.shareLink
         ? `<div class="meta">我的分享: <a href="${escapeHtml(t.shareLink)}" target="_blank" style="color:var(--accent-2)">${escapeHtml(t.shareLink)}</a>${t.sharePwd ? ' / 提取码:' + escapeHtml(t.sharePwd) : ''}</div>`
@@ -640,23 +640,18 @@ document.getElementById('copyGroupModal').addEventListener('click', (e) => {
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-retry]');
   if (!btn) return;
-  const provider = btn.getAttribute('data-retry');
-  const link = btn.getAttribute('data-link');
-  const pwd = btn.getAttribute('data-pwd') || '';
-  if (!link) return;
+  const id = btn.getAttribute('data-retry');
+  if (!id) return;
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = '重试中…';
-  const clientId = 't' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-  resetTransferProgress();
-  const es = await openTransferSSE(clientId);
   try {
-    const r = await fetch('/api/transfer', {
+    const r = await fetch('/api/tasks/' + id + '/retry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, link, pwd, makeShare: true, force: true, title: parsedState.title || '', client: clientId }),
+      body: '{}',
     });
     const d = await r.json();
-    if (d.ok) { loadTasks(); }
+    if (d.ok) { await loadTasks(); toast('重试成功', 'ok'); }
     else { toast('重试失败: ' + (d.error || ''), 'err'); btn.disabled = false; btn.textContent = old; }
   } catch (err) { btn.disabled = false; btn.textContent = old; }
   finally { if (transferES) { transferES.close(); transferES = null; } }

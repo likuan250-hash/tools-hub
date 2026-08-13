@@ -526,3 +526,27 @@ test('task.run: 定时发布双失败（archive/view 失败 + 62003）→ 不判
   assert.ok(doneEvent, '应仍发出 done 事件');
   assert.equal(doneEvent.data.season, false, '延后补加时 season 应为 false');
 });
+
+test('task.run: 上传成功但索引 -404 重试耗尽（indexTimeout）→ 降级成功，跳过合集/评论', async () => {
+  const video = makeVideoFile();
+  const deps = baseMocks();
+  let doneEvent = null;
+  let seasonCalled = false;
+  deps.biliup.getCreativeArchive = async () => { throw new Error('archive/view 请求失败: ENOTFOUND'); };
+  deps.biliup.getVideoInfo = async () => {
+    const err = new Error('getVideoInfo 重试耗尽(120/指数退避 5s→30s)：稿件尚未索引 (code=-404)');
+    err.indexTimeout = true;
+    throw err;
+  };
+  deps.season.add = async () => { seasonCalled = true; };
+  const ctx = makeCtx(deps, '7630305');
+  ctx.onEvent = (ev) => { if (ev.type === 'done') doneEvent = ev; };
+
+  const result = await task.run({ videoPath: video }, ctx);
+  fs.unlinkSync(video);
+
+  assert.equal(result.ok, true, '稿件已上传（有 bvid），索引超时不应判失败');
+  assert.equal(seasonCalled, false, '无 cid 时不应强加合集');
+  assert.ok(doneEvent, '应仍发出 done 事件');
+  assert.equal(doneEvent.data.season, false);
+});

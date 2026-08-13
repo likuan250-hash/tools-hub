@@ -141,6 +141,9 @@ function fakeCover(over = {}) {
         url: 'https://w.wallhaven.cc/full/xx/wallhaven-abc.jpg',
       };
     },
+    readCoverMeta() { return over.coverMeta || null; },
+    saveCoverMeta() { (calls.meta = calls.meta || []).push(true); },
+    clearPreviewTmp() {},
   };
 }
 
@@ -719,6 +722,18 @@ function fakeInteractiveCover(over = {}) {
           }
         : over.candidates;
     },
+    async precheckCandidates(candidates, opts) {
+      calls.precheck = (candidates || []).map((c, i) => ({
+        url: '/cover-tmp/cand-' + i + '.jpg',
+        originalUrl: c.url,
+        localPath: '/tmp/cand-' + i + '.jpg',
+        width: 1920,
+        height: 1080,
+        source: c.source,
+        label: c.label || c.source,
+      }));
+      return calls.precheck;
+    },
     async applyCandidate(url, outDir, opts) {
       calls.applyCandidate.push({ url, outDir, opts });
       if (over.applyThrows) throw over.applyThrows;
@@ -732,6 +747,9 @@ function fakeInteractiveCover(over = {}) {
         url,
       }, over.applyResult || {});
     },
+    readCoverMeta() { return null; },
+    saveCoverMeta() {},
+    clearPreviewTmp() {},
   };
 }
 

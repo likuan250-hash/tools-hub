@@ -212,6 +212,10 @@ async function getVideoInfo(ref, opts = {}) {
   // 保留业务错误特征（如 62003 定时发布待发布），供调用方区分「定时」与「真失败」。
   if (lastErr && lastErr.code) finalErr.code = lastErr.code;
   if (lastErr && lastErr.scheduled) finalErr.scheduled = true;
+  // 上传已成功（拿到 bvid/aid）但稿件索引长时间未就绪：不算真失败，由 task 降级为成功并提示人工确认
+  if (ref && (ref.bvid || ref.aid) && lastErr && /-404/.test(String(lastErr.message))) {
+    finalErr.indexTimeout = true;
+  }
   throw finalErr;
 }
 

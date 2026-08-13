@@ -73,7 +73,19 @@ test('backupAndRemoveFailed 移除 failed 任务并落盘 trash', () => {
   // failed 任务已备份到 store-trash-*.json
   const trashFiles = fs.readdirSync(process.env.NETDISK_DATA_DIR).filter((n) => /^store-trash-/.test(n));
   assert.ok(trashFiles.length >= 1);
-  const trash = JSON.parse(fs.readFileSync(path.join(process.env.NETDISK_DATA_DIR, trashFiles[0]), 'utf8'));
-  assert.strictEqual(trash.length, 2);
-  assert.ok(trash.every((t) => t.status === 'failed'));
+  const blob = JSON.parse(fs.readFileSync(path.join(process.env.NETDISK_DATA_DIR, trashFiles[0]), 'utf8'));
+  const trash = store.decryptObj(blob);
+  assert.ok(trash.failed && trash.failed.length === 2, 'encrypted trash holds failed records');
+  assert.ok(trash.failed.every((t) => t.status === 'failed'));
+});
+
+test('updateTask updates record in place', () => {
+  store.write({ accounts: {}, tasks: [] });
+  const t = store.addTask({ name: 'x', status: 'failed', error: 'boom' });
+  const up = store.updateTask(t.id, { status: 'success', error: null, shareLink: 'http://x' });
+  assert.ok(up);
+  assert.strictEqual(up.status, 'success');
+  assert.strictEqual(up.error, null);
+  assert.strictEqual(up.shareLink, 'http://x');
+  assert.strictEqual(store.updateTask('nope', { status: 'success' }), null);
 });

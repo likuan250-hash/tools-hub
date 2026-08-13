@@ -919,6 +919,10 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <div class="result-summary" id="autoSummary"></div>
     <button class="btn ghost" id="kdocsViewBtn" style="display:none;"><i class="app-ico" data-ico="link"></i> 在金山文档查看</button>
     <button class="btn ghost" id="retryCoverBtn" style="display:none;"><i class="app-ico" data-ico="refresh"></i> 仅重传封面</button>
+    <div id="coverLinkRow" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+      <input id="coverLinkInput" class="field" style="flex:1;min-width:220px" placeholder="粘贴封面图片 URL（.jpg/.png）补传…">
+      <button class="btn ghost" id="retryCoverUrlBtn" type="button"><i class="app-ico" data-ico="link"></i> 用链接补传封面</button>
+    </div>
     <details class="log-card" open>
       <summary><span>执行日志</span><span class="chev">⌄</span></summary>
       <div class="log-area" id="autoLog"></div>

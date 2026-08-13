@@ -225,13 +225,23 @@ async function run(req, ctx) {
         });
         log('uploading', '稿件信息 aid=' + videoInfo.aid + ' cid=' + videoInfo.cid);
       } catch (infoErr) {
-        // 定时发布待发布：上传已成功，仅因公开接口 62003 取不到 cid —— 不算失败。
-        // 跳过合集后置（发布后可点「检测补加」），继续评论与 done。
-        if (!(infoErr && infoErr.scheduled)) throw infoErr;
-        logger.warn('[task] 定时发布待发布（archive/view 亦失败），暂取不到 cid，合集后置延后: ' + infoErr.message);
-        log('uploading', '定时发布待发布：暂取不到 cid，合集后置延后（发布后可点「检测补加」）');
-        videoInfo = { aid: ref.aid || 0, cid: 0, title: req.title || '' };
-        videoInfo.scheduledFallback = true;
+        // 上传已成功但索引超时（-404 重试耗尽且有 bvid/aid）：降级为成功，跳过合集/评论，提示人工确认
+        if (infoErr && infoErr.indexTimeout && ref && (ref.bvid || ref.aid)) {
+          logger.warn('[task] 稿件已上传但索引长时间未就绪，降级为成功:', ref);
+          log('uploading', '稿件已上传，但索引长时间未就绪（-404 重试耗尽）；已跳过合集/评论，请稍后人工确认稿件状态');
+          videoInfo = { aid: ref.aid || 0, cid: 0, title: req.title || '' };
+          videoInfo.scheduledFallback = true;
+        } else {
+          if (!(infoErr && infoErr.scheduled)) {
+          // 定时发布待发布：上传已成功，仅因公开接口 62003 取不到 cid —— 不算失败。
+          // 跳过合集后置（发布后可点「检测补加」），继续评论与 done。
+            throw infoErr;
+          }
+          logger.warn('[task] 定时发布待发布（archive/view 亦失败），暂取不到 cid，合集后置延后: ' + infoErr.message);
+          log('uploading', '定时发布待发布：暂取不到 cid，合集后置延后（发布后可点「检测补加」）');
+          videoInfo = { aid: ref.aid || 0, cid: 0, title: req.title || '' };
+          videoInfo.scheduledFallback = true;
+        }
       }
     }
 

@@ -206,6 +206,29 @@ registerApiRoutes(app, {
 // 但去重可省去重复的网络请求与潜在的双重落盘)。
 const inflight = new Map();
 
+// 轻量探测我的分享链接是否仍可访问（仅百度；超时/网络异常视为有效，避免误杀与风控误判）
+async function checkShareAlive(link, p) {
+  if (p !== 'baidu' || !link) return true;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(link, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
+        Referer: 'https://pan.baidu.com/',
+      },
+      redirect: 'follow',
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (res.status === 404) return false;
+    const text = await res.text().catch(() => '');
+    return !/分享的文件已经被取消|分享已过期|分享的文件已取消|页面不存在/.test(text);
+  } catch (_) {
+    return true;
+  }
+}
+
 async function doTransfer(body) {
   const { link, pwd, makeShare, sharePassword, provider } = body;
   const p = provider || 'baidu';
@@ -220,10 +243,14 @@ async function doTransfer(body) {
         (t.sourceSurl === sourceSurl || extractSurl(t.sourceLink) === sourceSurl) &&
         t.status === 'success'
     );
-    if (hit) {
+    // 目标目录变更后历史缓存失效（否则会误报成功，实际没转到新目录）
+    const dirNow = store.getDir(p);
+    const dirChanged = !!(hit && hit.destDirId && dirNow && hit.destDirId !== dirNow.id);
+    if (hit && !dirChanged) {
       const files = (hit.files || []).map((f) => ({ server_filename: f.name, size: f.size, path: f.name }));
       // 要分享时,历史 shareLink 必须有效;若无效则按「无分享链接」处理,不返回脏数据。
-      const hasValidShare = wantShare && isValidShareLink(hit.shareLink, p);
+      const shareAlive = hit.shareLink ? await checkShareAlive(hit.shareLink, p) : false;
+      const hasValidShare = wantShare && shareAlive && isValidShareLink(hit.shareLink, p);
       // 不要分享,或要分享且历史已生成有效分享链接 → 直接返回旧链接(跳过转存)
       if (!wantShare || hasValidShare) {
         logger.info('命中历史缓存,跳过转存:', { provider: p, surl: sourceSurl, makeShare: wantShare });
@@ -282,6 +309,8 @@ async function runTransfer(body, p) {
       const qDir = store.getDir('quark');
       const r = await quark.transfer({ cookie, pwdId, passcode, makeShare: !!makeShare, sharePeriod: 0, sharePassword: (sharePassword || '').trim(), toPdirFid: qDir && qDir.id, folderName: qDir && qDir.name });
       const record = mkTask({
+        destDirId: qDir && qDir.id,
+        destDirName: qDir && qDir.name,
         destPath: r.destPath,
         fileCount: (r.file_list || []).length,
         files: (r.file_list || []).map((f) => ({ name: f.server_filename || f.path, size: f.size })),
@@ -304,6 +333,8 @@ async function runTransfer(body, p) {
       const xDir = store.getDir('xunlei');
       const r = await xunlei.transfer({ link, pwd, makeShare, sharePeriod: 0, sharePassword, destFolderId: xDir && xDir.id, destFolderName: xDir && xDir.name });
       const record = mkTask({
+        destDirId: xDir && xDir.id,
+        destDirName: xDir && xDir.name,
         destPath: r.destPath,
         fileCount: (r.file_list || []).length,
         files: (r.file_list || []).map((f) => ({ name: f.server_filename || f.path, size: f.size })),
@@ -351,6 +382,8 @@ async function runTransfer(body, p) {
     const record = mkTask({
       provider: 'baidu',
       destPath,
+      destDirId: bDir && bDir.id,
+      destDirName: bDir && bDir.name,
       fileCount: fsidList.length,
       files: (transferData.file_list || []).map((f) => ({ name: f.server_filename || f.path, size: f.size })),
       shareLink: share ? share.link : null,

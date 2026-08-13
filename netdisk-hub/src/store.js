@@ -110,6 +110,13 @@ function writeEncrypted(obj) {
   fs.renameSync(tmp, STORE_FILE);
 }
 
+// 加密写任意 JSON 文件（用于 store-trash 备份，避免明文落盘分享链接/提取码）
+function writeEncryptedFile(file, obj) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(encryptObj(obj)));
+  fs.renameSync(tmp, file);
+}
+
 function ensure() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(STORE_FILE)) {
@@ -191,13 +198,22 @@ function addTask(task) {
   return record;
 }
 
+function updateTask(id, patch) {
+  const d = read();
+  const t = d.tasks.find((x) => x.id === id);
+  if (!t) return null;
+  Object.assign(t, patch, { updatedAt: new Date().toISOString() });
+  scheduleWrite();
+  return t;
+}
+
 function backupAndRemoveFailed() {
   const d = read();
   const failed = d.tasks.filter((t) => t.status === 'failed');
   if (failed.length) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const trashFile = path.join(DATA_DIR, 'store-trash-' + stamp + '.json');
-    try { fs.writeFileSync(trashFile, JSON.stringify(failed, null, 2)); } catch (e) {}
+    try { writeEncryptedFile(trashFile, { failed }); } catch (e) {}
   }
   const before = d.tasks.length;
   d.tasks = d.tasks.filter((t) => t.status !== 'failed');
@@ -211,6 +227,6 @@ function getTasks() {
 }
 
 module.exports = {
-  getAccount, saveAccount, addTask, getTasks, getDir, setDir, read, write, flushWrite, backupAndRemoveFailed,
+  getAccount, saveAccount, addTask, updateTask, getTasks, getDir, setDir, read, write, flushWrite, backupAndRemoveFailed,
   encryptObj, decryptObj, // 导出供加解密往返/篡改检测测试
 };

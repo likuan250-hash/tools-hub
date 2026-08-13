@@ -52,6 +52,12 @@ function update(id, patch = {}, opts = {}) {
   const list = load(opts);
   const item = list.find((x) => x.id === id);
   if (!item) return null;
+  if (typeof patch.name === 'string') {
+    const trimmed = patch.name.trim();
+    if (!trimmed) return null;
+    if (list.some((x) => x.id !== id && x.name === trimmed)) return null;
+    item.name = trimmed;
+  }
   if (typeof patch.publishDate === 'string') item.publishDate = patch.publishDate.trim();
   if (typeof patch.hasResource === 'boolean') item.hasResource = patch.hasResource;
   if (typeof patch.published === 'boolean') item.published = patch.published;
@@ -79,7 +85,7 @@ function clearDone(opts = {}) {
  * 规则（闭环）：
  *  - mover/target 必须存在且不是同一条；
  *  - target 必须有发布日期；
- *  - newDate 必须非空，且除 mover/target 外不得与其他条目日期冲突；
+ *  - newDate 必须非空；允许与已有条目同日（同天可多部），由前端提示确认；
  *  - 一次 save 原子落盘。
  * @returns {{ok:true, items:[mover,target]} | {ok:false, error:string}}
  */
@@ -92,8 +98,6 @@ function replace(moverId, targetId, newDate, opts = {}) {
   const nd = String(newDate || '').trim();
   if (!target.publishDate) return { ok: false, error: '被顶替者没有发布日期' };
   if (!nd) return { ok: false, error: '请为被顶替者指定新日期' };
-  const clash = list.find((x) => x.id !== mover.id && x.id !== target.id && x.publishDate === nd);
-  if (clash) return { ok: false, error: '该日期已有「' + clash.name + '」' };
   mover.publishDate = target.publishDate;
   target.publishDate = nd;
   mover.updatedAt = Date.now();

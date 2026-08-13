@@ -6,6 +6,7 @@ const express = require('express');
 const path = require('path');
 const logger = require('./lib/logger');
 const { CollectService, DEFAULT_OUTPUT_DIR } = require('./lib/collect');
+const { PREVIEW_TMP_DIR } = require('./lib/cover');
 
 const app = express();
 const PORT = process.env.MATERIAL_PORT || 3700;
@@ -57,6 +58,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
     }
   },
 }));
+// 候选封面预检临时目录：后端下载后由前端同源预览（避免外网防盗链/失效导致加载失败）
+try { require('fs').mkdirSync(PREVIEW_TMP_DIR, { recursive: true }); } catch (_) {}
+app.use('/cover-tmp', express.static(PREVIEW_TMP_DIR, { fallthrough: false }));
 
 // 主页
 app.get('/', (req, res) => {

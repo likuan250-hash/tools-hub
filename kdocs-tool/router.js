@@ -11,7 +11,7 @@ const fs = require("fs");
 const os = require("os");
 
 const { parseInput } = require("./lib/parser");
-const { searchSteamAppId } = require("./lib/steam");
+const { searchSteamAppId, downloadCoverFromUrl } = require("./lib/steam");
 const { checkKdocsReady } = require("./lib/kdocs");
 const { autoExecute, findExistingRecord, retryCoverUpload } = require("./lib/executor");
 
@@ -164,13 +164,24 @@ router.post("/api/auto", async (req, res) => {
   }
 });
 
-// ── 仅重传封面（P0-3 补救）：对已存在记录补传封面附件并写入 作品展示 字段 ──
+// ── 仅重传封面（P0-3 补救）：对已存在记录补传封面附件并写入 作品展示 字段
+//    两种来源：coverPath（本地已下载文件）或 coverUrl（用户提供链接，先下载到本地）
+// ──
 router.post("/api/retry-cover", async (req, res) => {
-  const { recordId, coverPath } = req.body || {};
-  if (!recordId || !coverPath) return res.status(400).json({ error: "缺少 recordId 或 coverPath" });
-  if (!fs.existsSync(coverPath)) return res.status(400).json({ error: "封面文件不存在：" + coverPath });
+  const { recordId, coverPath, coverUrl, coverDir } = req.body || {};
+  if (!recordId) return res.status(400).json({ error: "缺少 recordId" });
   try {
-    const r = await retryCoverUpload(recordId, coverPath, {});
+    let localPath = coverPath;
+    if (!localPath && coverUrl) {
+      const url = String(coverUrl).trim();
+      if (!/^https?:\/\/.+/i.test(url)) return res.status(400).json({ success: false, error: "封面链接格式不正确" });
+      const dir = String(coverDir || "").trim() || path.join(os.homedir(), "Desktop");
+      localPath = await downloadCoverFromUrl("cover", url, dir);
+    }
+    if (!localPath || !fs.existsSync(localPath)) {
+      return res.status(400).json({ success: false, error: "缺少可用的封面文件（需 coverPath 或 coverUrl 至少其一）" });
+    }
+    const r = await retryCoverUpload(recordId, localPath, {});
     res.json(r);
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });

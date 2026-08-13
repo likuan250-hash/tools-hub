@@ -1078,7 +1078,10 @@
   }
 
   function pvSorted(arr) {
-    return arr.slice().sort((a, b) => pvDateKey(a).localeCompare(pvDateKey(b)));
+    return arr.slice().sort((a, b) => {
+      const d = pvDateKey(a).localeCompare(pvDateKey(b));
+      return d !== 0 ? d : (a.createdAt || 0) - (b.createdAt || 0);
+    });
   }
 
   function renderPendingVideos() {
@@ -1101,6 +1104,7 @@
             '<span class="pv-date">' + (d ? escapeHtmlBiliup(d.slice(5)) : "未定") + "</span>" +
             '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="hasResource"' + (x.hasResource ? " checked" : "") + "> 有资源</label>" +
             '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="published"' + (x.published ? " checked" : "") + "> 已发布</label>" +
+            '<button class="pv-edit" data-edit="' + x.id + '" type="button">编辑</button>' +
             (pvTab === "todo" ? '<button class="pv-replace" data-id="' + x.id + '" type="button">顶替</button>' : "") +
             '<button class="pv-del" data-id="' + x.id + '" type="button">删除</button>' +
             "</div>"
@@ -1166,28 +1170,57 @@
     } catch (e) { toast(e.message, "err"); }
   });
 
-  $("pvAddBtn").addEventListener("click", () => {
+  const pvAddTitleEl = $("pvAddTitle");
+  const pvAddOkLabelEl = $("pvAddOkLabel");
+  let pvEditId = null;
+  function pvResetAddForm() {
+    pvEditId = null;
+    pvAddTitleEl.textContent = "添加待发布视频";
+    pvAddOkLabelEl.textContent = "确定添加";
+  }
+  function openPvAdd() {
+    pvResetAddForm();
     pvNameInput.value = "";
     pvDateInput.value = "";
     $("pvAddHas").checked = false;
     $("pvAddPub").checked = false;
     pvAddMask.classList.add("show");
-  });
-  $("pvAddCancel").addEventListener("click", () => pvAddMask.classList.remove("show"));
-  $("pvAddClose").addEventListener("click", () => pvAddMask.classList.remove("show"));
+  }
+  function openPvEdit(id) {
+    const item = pvList.find((x) => x.id === id);
+    if (!item) return;
+    pvEditId = id;
+    pvAddTitleEl.textContent = "编辑待发布";
+    pvAddOkLabelEl.textContent = "保存修改";
+    pvNameInput.value = item.name || "";
+    pvDateInput.value = item.publishDate || "";
+    $("pvAddHas").checked = !!item.hasResource;
+    $("pvAddPub").checked = !!item.published;
+    pvAddMask.classList.add("show");
+  }
+  $("pvAddBtn").addEventListener("click", openPvAdd);
+  function pvCloseAdd() {
+    pvAddMask.classList.remove("show");
+    pvResetAddForm();
+  }
+  $("pvAddCancel").addEventListener("click", pvCloseAdd);
+  $("pvAddClose").addEventListener("click", pvCloseAdd);
   $("pvAddOk").addEventListener("click", async () => {
     const name = (pvNameInput.value || "").trim();
     if (!name) { toast("请输入视频名称", "err"); return; }
     try {
-      await pvMutate("/api/pending-videos", {
-        body: JSON.stringify({
-          name,
-          publishDate: pvDateInput.value || "",
-          hasResource: $("pvAddHas").checked,
-          published: $("pvAddPub").checked,
-        }),
-      });
-      pvAddMask.classList.remove("show");
+      const payload = {
+        name,
+        publishDate: pvDateInput.value || "",
+        hasResource: $("pvAddHas").checked,
+        published: $("pvAddPub").checked,
+      };
+      if (pvEditId) {
+        await pvMutate("/api/pending-videos/" + pvEditId, { body: JSON.stringify(payload) });
+      } else {
+        await pvMutate("/api/pending-videos", { body: JSON.stringify(payload) });
+      }
+      pvCloseAdd();
       await loadPendingVideos();
     } catch (e) { toast(e.message, "err"); }
   });
@@ -1206,6 +1239,8 @@
     } catch (err) { toast(err.message, "err"); }
   });
   pvListEl.addEventListener("click", async (e) => {
+    const ed = e.target.closest(".pv-edit");
+    if (ed) { openPvEdit(ed.dataset.edit); return; }
     const rp = e.target.closest(".pv-replace");
     if (rp) { openReplace(rp.dataset.id); return; }
     const btn = e.target.closest(".pv-del");
@@ -1240,7 +1275,7 @@
     const targetId = pvReplaceTargetEl.value;
     const clash = pvList.find((x) => x.id !== pvReplaceMoverId && x.id !== targetId && x.publishDate === nd);
     if (clash) {
-      pvReplaceClashEl.textContent = "该日期已有「" + clash.name + "」，请换日期";
+      pvReplaceClashEl.textContent = "该日期已有「" + clash.name + "」，确认后将同日发布";
       pvReplaceClashEl.style.display = "block";
     } else {
       pvReplaceClashEl.style.display = "none";
@@ -1253,6 +1288,8 @@
     const nd = pvReplaceDateEl.value;
     if (!targetId) return toast("请选择被顶替的日期", "err");
     if (!nd) return toast("请为被顶替者指定新日期", "err");
+    const clash = pvList.find((x) => x.id !== pvReplaceMoverId && x.id !== targetId && x.publishDate === nd);
+    if (clash && !confirm("该日期已有「" + clash.name + "」，确认同日发布？")) return;
     try {
       await pvMutate("/api/pending-videos/replace", { body: JSON.stringify({ moverId: pvReplaceMoverId, targetId, newDate: nd }) });
       pvReplaceMask.classList.remove("show");

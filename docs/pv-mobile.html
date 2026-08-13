@@ -112,11 +112,11 @@ h1{flex:1;font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--
 
   <div class="mask" id="addMask">
     <div class="sheet">
-      <h2>添加视频<span><button onclick="closeMask('addMask')">×</button></span></h2>
+      <h2><span id="addTitle">添加视频</span><span><button onclick="closeMask('addMask')">×</button></span></h2>
       <div class="field"><label>视频名称</label><input id="nm" placeholder="如：零.红蝶.重制版"></div>
       <div class="field"><label>待发布日期（可选）</label><input type="date" id="dt"></div>
       <div class="chk-row"><label><input type="checkbox" id="hasRes"> 有资源</label></div>
-      <button class="btn" onclick="addItem()">确定添加</button>
+      <button class="btn" onclick="addItem()"><span id="addBtnLabel">确定添加</span></button>
     </div>
   </div>
 
@@ -178,7 +178,28 @@ const url = () => 'https://api.github.com/repos/' + REPO + '/contents/' + PATH;
 
 function openMask(id) { $('#' + id).classList.add('show'); }
 function closeMask(id) { $('#' + id).classList.remove('show'); }
-function openAdd() { openMask('addMask'); }
+let editId = null;
+function resetAddForm() {
+  editId = null;
+  $('#addTitle').textContent = '添加视频';
+  $('#addBtnLabel').textContent = '确定添加';
+}
+function openAdd() {
+  resetAddForm();
+  $('#nm').value = ''; $('#dt').value = ''; $('#hasRes').checked = false;
+  openMask('addMask');
+}
+function openEdit(id) {
+  const it = list.find(x => x.id === id);
+  if (!it) return;
+  editId = id;
+  $('#addTitle').textContent = '编辑视频';
+  $('#addBtnLabel').textContent = '保存修改';
+  $('#nm').value = it.name || '';
+  $('#dt').value = it.publishDate || '';
+  $('#hasRes').checked = !!it.hasResource;
+  openMask('addMask');
+}
 function openCfg() { $('#token').value = ''; openMask('cfgMask'); }
 
 async function saveToken() {
@@ -229,16 +250,48 @@ async function save(next) {
     render();
     $('#sync').textContent = '已保存'; $('#sync').className = 'ok';
   } catch (e) {
-    toast('保存失败：' + e.message, true);
-    throw e;
+    // 云端已被其他端更新（sha 过期）→ 重新拉取合并后重试一次
+    try {
+      const d2 = await api('GET', url());
+      const remote = JSON.parse(atob(d2.content));
+      const merged = mergeLists(next, remote);
+      await api('PUT', url(), {
+        message: 'mobile sync (merged)',
+        content: b64enc(JSON.stringify(merged, null, 2)),
+        sha: d2.sha,
+      });
+      list = merged;
+      render();
+      $('#sync').textContent = '已保存（合并云端）'; $('#sync').className = 'ok';
+      toast('已保存并合并另一端的改动');
+    } catch (e2) {
+      toast('保存失败：' + e2.message, true);
+      throw e2;
+    }
   }
+}
+
+// 按 id 对齐、updatedAt 较新者胜（与电脑端 mergeLists 同规则）
+function mergeLists(local, remote) {
+  const map = {};
+  for (const x of remote) map[x.id] = x;
+  for (const x of local) {
+    const r = map[x.id];
+    const t = (x.updatedAt || x.createdAt || 0);
+    if (!r || t >= (r.updatedAt || r.createdAt || 0)) map[x.id] = x;
+  }
+  return Object.values(map);
 }
 
 function esc(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function render() {
   const done = list.filter(x => x.hasResource && x.published);
   const todo = list.filter(x => !(x.hasResource && x.published));
-  const byDate = (a, b) => ((a.publishDate || '9999-99-99') < (b.publishDate || '9999-99-99') ? -1 : 1);
+  const byDate = (a, b) => {
+    const x = (a.publishDate || '9999-99-99'), y = (b.publishDate || '9999-99-99');
+    if (x !== y) return x < y ? -1 : 1;
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  };
   const show = (curTab === 'done' ? done : todo).slice().sort(byDate);
   $('#list').innerHTML = show.length
     ? show.map(x => '<div class="item' + (x.hasResource && x.published ? ' done' : '') + '">' +
@@ -247,6 +300,7 @@ function render() {
         '<div class="ops">' +
         '<label class="ck"><input type="checkbox" data-id="' + x.id + '" data-k="hasResource"' + (x.hasResource ? ' checked' : '') + '>资源</label>' +
         '<label class="ck"><input type="checkbox" data-id="' + x.id + '" data-k="published"' + (x.published ? ' checked' : '') + '>发布</label>' +
+        '<button class="rep" data-edit="' + x.id + '">编辑</button>' +
         (curTab === 'todo' ? '<button class="rep" data-rep="' + x.id + '">顶替</button>' : '') +
         '<button class="del" data-del="' + x.id + '">×</button>' +
         '</div></div>').join('')
@@ -257,8 +311,17 @@ function tab(t) { curTab = t; $('#tabTodo').classList.toggle('active', t === 'to
 async function addItem() {
   const nm = $('#nm').value.trim();
   if (!nm) return toast('请输入名称', true);
-  if (list.some(x => x.name === nm)) return toast('已存在同名记录', true);
-  const item = {
+  if (list.some(x => x.id !== editId && x.name === nm)) return toast('已存在同名记录', true);
+  const wasEdit = editId;
+  if (editId) {
+    const it = list.find(x => x.id === editId);
+    if (!it) return toast('记录不存在', true);
+    it.name = nm;
+    it.publishDate = $('#dt').value || '';
+    it.hasResource = $('#hasRes').checked;
+    it.updatedAt = Date.now();
+  } else {
+    const item = {
     id: 'pv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     name: nm,
     publishDate: $('#dt').value || '',
@@ -266,12 +329,14 @@ async function addItem() {
     published: false,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  };
-  list.push(item);
+    };
+    list.push(item);
+  }
   $('#nm').value = ''; $('#dt').value = ''; $('#hasRes').checked = false;
   closeMask('addMask');
+  resetAddForm();
   await save(list);
-  toast('已添加');
+  toast(wasEdit ? '已保存' : '已添加');
 }
 
 $('#list').addEventListener('change', async (e) => {
@@ -285,6 +350,8 @@ $('#list').addEventListener('change', async (e) => {
 });
 
 $('#list').addEventListener('click', async (e) => {
+  const ed = e.target.closest('[data-edit]');
+  if (ed) { openEdit(ed.dataset.edit); return; }
   const r = e.target.closest('[data-rep]');
   if (r) { openRep(r.dataset.rep); return; }
   const b = e.target.closest('[data-del]');
@@ -313,13 +380,15 @@ function checkRepClash() {
   const nd = $('#repDate').value, tid = $('#repTarget').value;
   const clash = list.find(x => x.id !== repMoverId && x.id !== tid && x.publishDate === nd);
   const el = $('#repClash');
-  if (clash) { el.textContent = '该日期已有「' + clash.name + '」，请换日期'; el.style.display = 'block'; }
+  if (clash) { el.textContent = '该日期已有「' + clash.name + '」，确认后将同日发布'; el.style.display = 'block'; }
   else el.style.display = 'none';
 }
 async function doRep() {
   const tid = $('#repTarget').value, nd = $('#repDate').value;
   if (!tid) return toast('请选择被顶替的日期', true);
   if (!nd) return toast('请为被顶替者指定新日期', true);
+  const clash = list.find(x => x.id !== repMoverId && x.id !== tid && x.publishDate === nd);
+  if (clash && !confirm('该日期已有「' + clash.name + '」，确认同日发布？')) return;
   const mover = list.find(x => x.id === repMoverId);
   const target = list.find(x => x.id === tid);
   if (!mover || !target) return toast('记录不存在', true);

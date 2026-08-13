@@ -85,6 +85,13 @@ const USER_AGENT =
 /** 规范要求的封面固定文件名。 */
 const COVER_BASE = '封面';
 const COVER_FILE = COVER_BASE + '.jpg';
+// 封面来源 sidecar：记录本次采纳的来源/URL，供「重找封面」跳过已用来源
+const COVER_META_FILE = '.cover.json';
+// 候选预检临时目录（后端下载到本地供前端预览，彻底绕开外网防盗链/失效）
+const PREVIEW_TMP_DIR = path.join(require('os').tmpdir(), 'material-cover-preview');
+// 预检候选上限（并行下载 + 过滤后保留的预览数量）
+const PREVIEW_MAX = 12;
+const PREVIEW_CONCURRENCY = 4;
 /** 每级来源最多实际下载校验多少个候选（防止一个来源把时间耗光）。 */
 const MAX_CANDIDATES_PER_SOURCE = 4;
 /** 步骤名（SSE 事件 step 字段）。 */
@@ -1875,6 +1882,10 @@ class CoverFetcher {
     if (Array.isArray(opts.sources) && opts.sources.length) {
       order = order.filter((s) => opts.sources.indexOf(s) >= 0);
     }
+    // 重找封面：跳过上次已采纳的来源，确保换来源重找
+    const skipSource = String(opts.skipSource || '').trim();
+    if (skipSource) order = order.filter((s) => s !== skipSource);
+    const skipUrl = String(opts.skipUrl || '').trim();
 
     for (const source of order) {
       // 缺少必需入参的来源直接跳过，不计入失败
@@ -1915,6 +1926,10 @@ class CoverFetcher {
         if (r && r.ok) break;
       }
 
+      if (r && r.ok && skipUrl && r.url === skipUrl) {
+        emit('log', STEP_SEARCH, '[cover] ' + (SOURCE_LABEL[source] || source) + ' 命中上次已用封面 URL，跳过', null, { level: 'info' });
+        r = { ok: false, error: '命中上次已用 URL' };
+      }
       if (r && r.ok) {
         const label = SOURCE_LABEL[source] || source;
         const dim = (r.width || '?') + '×' + (r.height || '?');
@@ -1985,9 +2000,13 @@ class CoverFetcher {
 
     const seen = new Set();
     const candidates = [];
+    const skipSource = String(opts.skipSource || '').trim();
+    const skipUrl = String(opts.skipUrl || '').trim();
     const push = (url, source, extra) => {
       const clean = normalizeUrl(url);
       if (!clean || seen.has(clean)) return;
+      if (skipSource && source === skipSource) return;
+      if (skipUrl && clean === skipUrl) return;
       seen.add(clean);
       candidates.push(Object.assign({ url: clean, source, label: SOURCE_LABEL[source] || source }, extra));
     };
@@ -2088,11 +2107,24 @@ class CoverFetcher {
   async applyCandidate(url, outDir, opts = {}) {
     const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
     const source = opts.source || 'user';
-    const clean = normalizeUrl(url);
-    if (!clean) return { ok: false, error: '无效封面 URL', source };
-    emit('cover_download', STEP_DOWNLOAD, 'GET ' + (SOURCE_LABEL[source] || source) + ' 候选图…', null, { url: clean, source });
-    const got = await this.fetchImage(clean, opts.fetchOpts || {});
-    if (!got.ok) return { ok: false, error: got.error, source };
+    let got = null;
+    if (opts.localPath) {
+      // 候选预检模式：本地文件已下载并校验过，直接读入转正
+      try {
+        const buf = this.fs.readFileSync(opts.localPath);
+        const size = readImageSize(buf);
+        if (!size) return { ok: false, error: '本地候选文件无法识别为图片', source };
+        got = { ok: true, buf, size };
+      } catch (e) {
+        return { ok: false, error: '读取本地候选失败：' + (e && e.message ? e.message : String(e)), source };
+      }
+    } else {
+      const clean = normalizeUrl(url);
+      if (!clean) return { ok: false, error: '无效封面 URL', source };
+      emit('cover_download', STEP_DOWNLOAD, 'GET ' + (SOURCE_LABEL[source] || source) + ' 候选图…', null, { url: clean, source });
+      got = await this.fetchImage(clean, opts.fetchOpts || {});
+      if (!got.ok) return { ok: false, error: got.error, source };
+    }
     const meets = meetsMinSize(got.size, { width: MIN_WIDTH, height: MIN_HEIGHT });
     const saved = await this.saveCover(got.buf, got.size, outDir);
     if (!saved.ok) return { ok: false, error: saved.error, source };
@@ -2106,9 +2138,101 @@ class CoverFetcher {
       format: got.size.format,
       converted: saved.converted === true,
       bytes: got.buf.length,
-      url: clean,
+      url: normalizeUrl(url),
       source,
     };
+  }
+
+  /**
+   * 读取封面来源 sidecar（.cover.json）。
+   * @returns {{source?: string, url?: string, width?: number, height?: number, file?: string, savedAt?: string}|null}
+   */
+  readCoverMeta(folder) {
+    try {
+      const p = path.join(folder, COVER_META_FILE);
+      if (!this.fs.existsSync(p)) return null;
+      return JSON.parse(this.fs.readFileSync(p, 'utf8'));
+    } catch (_) { return null; }
+  }
+
+  /** 写封面来源 sidecar（仅网络来源；reused / ffmpeg-frame 无意义不写）。 */
+  saveCoverMeta(folder, meta) {
+    try {
+      this.fs.writeFileSync(path.join(folder, COVER_META_FILE), JSON.stringify(meta, null, 2), 'utf8');
+    } catch (_) { /* sidecar 静默失败 */ }
+  }
+
+  /** 清空候选预检临时目录（收集结束后调用，避免残留）。 */
+  clearPreviewTmp() {
+    try {
+      if (this.fs.existsSync(PREVIEW_TMP_DIR)) {
+        for (const f of this.fs.readdirSync(PREVIEW_TMP_DIR)) {
+          try { this.fs.unlinkSync(path.join(PREVIEW_TMP_DIR, f)); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  /**
+   * 候选预检：并行下载每个候选到本地临时目录（模拟浏览器 UA，绕防盗链）→
+   * 下载失败/无法识别/低于 720P 的剔除 → 返回可直接被前端预览的本地 URL。
+   * @param {Array<{url:string,source:string,label?:string}>} candidates
+   * @param {{emit?:Function, skipSource?:string, skipUrl?:string}} [opts]
+   * @returns {Promise<Array<{url:string,localPath:string,width:number,height:number,source:string,label:string}>>}
+   */
+  async precheckCandidates(candidates, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const skipSource = String(opts.skipSource || '').trim();
+    const skipUrl = String(opts.skipUrl || '').trim();
+    const list = candidates.filter((c) => {
+      if (skipSource && c.source === skipSource) return false;
+      if (skipUrl && c.url === skipUrl) return false;
+      return true;
+    });
+    if (!list.length) return [];
+    try { this.fs.mkdirSync(PREVIEW_TMP_DIR, { recursive: true }); } catch (_) {}
+    const results = new Array(list.length);
+    let idx = 0;
+    const worker = async () => {
+      while (idx < list.length) {
+        const i = idx++;
+        const c = list[i];
+        try {
+          const got = await this.fetchImage(c.url, { timeout: DIRECT_PROBE_TIMEOUT });
+          if (!got.ok || !got.size) {
+            emit('log', STEP_SEARCH, '[cover] 候选预检剔除（不可访问）：' + (c.source || '') + ' ' + (got.error || ''), null, { level: 'info' });
+            results[i] = null;
+            continue;
+          }
+          if (got.size.width < MIN_WIDTH || got.size.height < MIN_HEIGHT) {
+            emit('log', STEP_SEARCH, '[cover] 候选预检剔除（低于 720P）：' + got.size.width + '×' + got.size.height + ' ' + (c.source || ''), null, { level: 'info' });
+            results[i] = null;
+            continue;
+          }
+          const ext = extForImageFormat(got.size.format) || '.jpg';
+          const name = 'cand-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6) + ext;
+          const localPath = path.join(PREVIEW_TMP_DIR, name);
+          this.fs.writeFileSync(localPath, got.buf);
+          results[i] = {
+            url: '/cover-tmp/' + name,
+            originalUrl: c.url,
+            localPath,
+            width: got.size.width,
+            height: got.size.height,
+            source: c.source,
+            label: c.label || c.source,
+          };
+        } catch (e) {
+          results[i] = null;
+        }
+      }
+    };
+    const workers = [];
+    for (let k = 0; k < PREVIEW_CONCURRENCY && k < list.length; k++) workers.push(worker());
+    await Promise.all(workers);
+    const ok = results.filter(Boolean);
+    emit('log', STEP_SEARCH, '[cover] 候选预检完成：' + ok.length + '/' + list.length + ' 张可通过（≥720P 且可访问）', null, { level: 'info' });
+    return ok.slice(0, PREVIEW_MAX);
   }
 }
 
@@ -2147,6 +2271,8 @@ module.exports = {
   USER_AGENT,
   COVER_BASE,
   COVER_FILE,
+  COVER_META_FILE,
+  PREVIEW_TMP_DIR,
   FETCH_TIMEOUT,
   MAX_CANDIDATES_PER_SOURCE,
   STEP_SEARCH,

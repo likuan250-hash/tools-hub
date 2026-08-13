@@ -57,6 +57,10 @@ test('add/update：支持待发布日期与预勾状态', () => {
   const u = pendingVideos.update(a.id, { publishDate: '2026-08-18', published: true }, { file: FILE });
   assert.strictEqual(u.publishDate, '2026-08-18');
   assert.strictEqual(u.published, true);
+  assert.strictEqual(pendingVideos.update(a.id, { name: 'GameA2' }, { file: FILE }).name, 'GameA2');
+  pendingVideos.add('GameX', { file: FILE });
+  assert.strictEqual(pendingVideos.update(a.id, { name: 'GameX' }, { file: FILE }), null, '重名拒绝');
+  assert.strictEqual(pendingVideos.update(a.id, { name: '  ' }, { file: FILE }), null, '空名拒绝');
   pendingVideos.remove(a.id, { file: FILE });
 });
 
@@ -69,9 +73,10 @@ test('replace: normal flow and boundary rejections', () => {
   assert.strictEqual(ok.ok, true);
   assert.strictEqual(ok.items[0].publishDate, '2026-08-15');
   assert.strictEqual(ok.items[1].publishDate, '2026-08-18');
-  const clash = pendingVideos.replace(c.id, a.id, '2026-08-25', { file: FILE });
-  assert.strictEqual(clash.ok, false);
-  assert.match(clash.error, /已有/);
+  // 同日允许：c 顶 a，a 重排到 e 已占用的 08-25 → 允许同日
+  const same = pendingVideos.replace(c.id, a.id, '2026-08-25', { file: FILE });
+  assert.strictEqual(same.ok, true);
+  assert.strictEqual(same.items[1].publishDate, '2026-08-25');
   assert.strictEqual(pendingVideos.replace('nope', a.id, '2026-08-30', { file: FILE }).ok, false);
   assert.strictEqual(pendingVideos.replace(b.id, b.id, '2026-08-30', { file: FILE }).ok, false);
   const noDate = pendingVideos.add('GameD', { file: FILE });

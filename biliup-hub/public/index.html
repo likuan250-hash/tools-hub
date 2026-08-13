@@ -417,6 +417,8 @@
     .pv-del { border: none; background: transparent; color: var(--err); cursor: pointer; font-size: 12px; padding: 2px 4px; }
     .pv-replace { border: 1px solid rgba(255,255,255,.22); background: transparent; color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 8px; }
     .pv-replace:hover { border-color: rgba(255,46,196,.65); color: #fff; }
+    .pv-edit { border: 1px solid rgba(255,255,255,.22); background: transparent; color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 8px; }
+    .pv-edit:hover { border-color: rgba(0,240,255,.6); color: #fff; }
     .pv-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
     #pvAddMask .modal { max-width: 440px; }
     .pv-field { margin-bottom: 12px; }
@@ -1111,7 +1113,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <div class="modal-mask" id="pvAddMask">
     <div class="modal">
       <div class="pv-modal-head">
-        <h3>添加待发布视频</h3>
+        <h3 id="pvAddTitle">添加待发布视频</h3>
         <button class="icon-btn" id="pvAddClose" title="关闭" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="pv-field"><label>视频名称</label><input type="text" id="pvName" placeholder="如：零.红蝶.重制版" /></div>
@@ -1122,7 +1124,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       </div>
       <div class="pv-modal-acts">
         <button class="btn ghost" id="pvAddCancel" type="button">取消</button>
-        <button class="auth-btn" id="pvAddOk" type="button">确定</button>
+        <button class="auth-btn" id="pvAddOk" type="button"><span id="pvAddOkLabel">确定添加</span></button>
       </div>
     </div>
   </div>
@@ -1156,7 +1158,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="pv-field"><label>顶替者</label><input type="text" id="pvReplaceMover" readonly /></div>
       <div class="pv-field"><label>顶替哪一天（被顶替者）</label><select id="pvReplaceTarget"></select></div>
       <div class="pv-field"><label>被顶替者重排到（新日期）</label><input type="date" id="pvReplaceDate" /></div>
-      <div class="pv-field" id="pvReplaceClash" style="display:none;color:var(--err);font-size:12px"></div>
+      <div class="pv-field" id="pvReplaceClash" style="display:none;color:var(--warn);font-size:12px"></div>
       <div class="pv-modal-acts">
         <button class="btn ghost" id="pvReplaceCancel" type="button">取消</button>
         <button class="auth-btn" id="pvReplaceOk" type="button">确认顶替</button>

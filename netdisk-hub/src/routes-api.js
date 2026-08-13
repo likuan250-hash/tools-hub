@@ -326,4 +326,37 @@ module.exports = function registerApiRoutes(app, ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+
+  // failed retry: reuse record's own link/pwd/title, force transfer + share,
+  // then update the SAME record to success (no success/failed duplicates, no title mismatch).
+  app.post("/api/tasks/:id/retry", async (req, res) => {
+    const t = store.getTasks().find((x) => x.id === req.params.id);
+    if (!t) return res.status(404).json({ ok: false, error: "record not found" });
+    if (t.status !== "failed") return res.status(400).json({ ok: false, error: "only failed records can retry" });
+    if (!t.sourceLink) return res.status(400).json({ ok: false, error: "record has no source link" });
+    try {
+      const r = await doTransfer({
+        provider: t.provider,
+        link: t.sourceLink,
+        pwd: t.sourcePwd || "",
+        title: t.title || "",
+        force: true,
+        makeShare: true,
+      });
+      if (!r.ok) return res.status(400).json({ ok: false, error: r.error || "retry failed" });
+      store.updateTask(t.id, {
+        status: "success",
+        error: null,
+        files: (r.files || []).map((f) => ({ name: f.server_filename || f.path || f.name, size: f.size })),
+        fileCount: (r.files || []).length,
+        destPath: r.destPath || t.destPath,
+        shareLink: r.share && r.share.link ? r.share.link : null,
+        sharePwd: r.share && r.share.password ? r.share.password : null,
+      });
+      res.json({ ok: true, task: store.getTasks().find((x) => x.id === t.id) });
+    } catch (e) {
+      logger.error("retry error:", e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
 };

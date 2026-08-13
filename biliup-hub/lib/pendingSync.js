@@ -112,13 +112,15 @@ async function pullAndMerge() {
   }
 }
 
-/** 本地变更后推送：先取最新 sha 再覆盖（避免 stale sha 报 409）。 */
+/** 本地变更后推送：拉云端 → 按 updatedAt 合并 → 本地落盘 → 推送合并结果（避免全量覆盖丢数据）。 */
 async function pushLocal() {
   if (!enabled()) return false;
   try {
-    const { sha } = await pullRemote();
-    await pushRemote(pendingVideos.load(), sha);
-    logger.info('[gh-sync] push ok');
+    const { list: remote, sha } = await pullRemote();
+    const merged = mergeLists(pendingVideos.load(), remote);
+    pendingVideos.save(merged);
+    await pushRemote(merged, sha);
+    logger.info('[gh-sync] push+merge ok');
     mark(true, '已同步');
     return true;
   } catch (e) {

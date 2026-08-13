@@ -1101,6 +1101,7 @@
             '<span class="pv-date">' + (d ? escapeHtmlBiliup(d.slice(5)) : "未定") + "</span>" +
             '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="hasResource"' + (x.hasResource ? " checked" : "") + "> 有资源</label>" +
             '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="published"' + (x.published ? " checked" : "") + "> 已发布</label>" +
+            (pvTab === "todo" ? '<button class="pv-replace" data-id="' + x.id + '" type="button">顶替</button>' : "") +
             '<button class="pv-del" data-id="' + x.id + '" type="button">删除</button>' +
             "</div>"
           );
@@ -1205,11 +1206,62 @@
     } catch (err) { toast(err.message, "err"); }
   });
   pvListEl.addEventListener("click", async (e) => {
+    const rp = e.target.closest(".pv-replace");
+    if (rp) { openReplace(rp.dataset.id); return; }
     const btn = e.target.closest(".pv-del");
     if (!btn) return;
     await fetch("/api/pending-videos/" + btn.dataset.id, { method: "DELETE" });
     await loadPendingVideos();
   });
+  // ── 顶替发布：mover 占 target 的日期，target 重排新日期（冲突即时拦截）──
+  const pvReplaceMask = $("pvReplaceMask");
+  const pvReplaceMoverEl = $("pvReplaceMover");
+  const pvReplaceTargetEl = $("pvReplaceTarget");
+  const pvReplaceDateEl = $("pvReplaceDate");
+  const pvReplaceClashEl = $("pvReplaceClash");
+  let pvReplaceMoverId = null;
+  function openReplace(moverId) {
+    pvReplaceMoverId = moverId;
+    const mover = pvList.find((x) => x.id === moverId);
+    pvReplaceMoverEl.value = mover ? mover.name : "";
+    const candidates = pvList
+      .filter((x) => x.id !== moverId && !pvDone(x) && x.publishDate)
+      .slice()
+      .sort((a, b) => a.publishDate.localeCompare(b.publishDate));
+    pvReplaceTargetEl.innerHTML = candidates.length
+      ? candidates.map((x) => '<option value="' + x.id + '">' + escapeHtmlBiliup(x.publishDate) + " " + escapeHtmlBiliup(x.name) + "</option>").join("")
+      : '<option value="">暂无可顶替的排期</option>';
+    pvReplaceDateEl.value = "";
+    pvReplaceClashEl.style.display = "none";
+    pvReplaceMask.classList.add("show");
+  }
+  function pvReplaceCheckClash() {
+    const nd = pvReplaceDateEl.value;
+    const targetId = pvReplaceTargetEl.value;
+    const clash = pvList.find((x) => x.id !== pvReplaceMoverId && x.id !== targetId && x.publishDate === nd);
+    if (clash) {
+      pvReplaceClashEl.textContent = "该日期已有「" + clash.name + "」，请换日期";
+      pvReplaceClashEl.style.display = "block";
+    } else {
+      pvReplaceClashEl.style.display = "none";
+    }
+  }
+  pvReplaceDateEl.addEventListener("input", pvReplaceCheckClash);
+  pvReplaceTargetEl.addEventListener("change", pvReplaceCheckClash);
+  $("pvReplaceOk").addEventListener("click", async () => {
+    const targetId = pvReplaceTargetEl.value;
+    const nd = pvReplaceDateEl.value;
+    if (!targetId) return toast("请选择被顶替的日期", "err");
+    if (!nd) return toast("请为被顶替者指定新日期", "err");
+    try {
+      await pvMutate("/api/pending-videos/replace", { body: JSON.stringify({ moverId: pvReplaceMoverId, targetId, newDate: nd }) });
+      pvReplaceMask.classList.remove("show");
+      await loadPendingVideos();
+      toast("顶替成功", "ok");
+    } catch (err) { toast(err.message, "err"); }
+  });
+  $("pvReplaceClose").addEventListener("click", () => pvReplaceMask.classList.remove("show"));
+  $("pvReplaceCancel").addEventListener("click", () => pvReplaceMask.classList.remove("show"));
   $("pvTabTodo").addEventListener("click", () => { pvTab = "todo"; renderPendingVideos(); });
   $("pvTabDone").addEventListener("click", () => { pvTab = "done"; renderPendingVideos(); });
   $("pvClearDone").addEventListener("click", async () => {

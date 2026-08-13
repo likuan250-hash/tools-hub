@@ -41,6 +41,8 @@ h1{flex:1;font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--
 .ck{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--dim)}
 .ck input{width:19px;height:19px;accent-color:var(--cyan)}
 .del{width:34px;height:34px;border-radius:10px;border:1px solid rgba(255,102,136,.5);background:transparent;color:#ff6688;font-size:15px}
+.rep{border:1px solid var(--line);background:transparent;color:var(--dim);font-size:12px;padding:8px 10px;border-radius:10px}
+.rep:active{color:#fff;border-color:var(--pink)}
 .empty{padding:44px 10px;text-align:center;color:var(--dim);font-size:13px}
 .fab{
   position:fixed;right:18px;bottom:calc(22px + env(safe-area-inset-bottom));width:56px;height:56px;
@@ -72,6 +74,11 @@ h1{flex:1;font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--
   background:rgba(0,240,255,.07);color:var(--text);font-size:15px;
 }
 .field input::placeholder{color:#6f8aa0}
+.field select{
+  width:100%;padding:12px;border-radius:11px;border:1px solid var(--line);
+  background:rgba(0,240,255,.07);color:var(--text);font-size:15px;-webkit-appearance:none;appearance:none;
+}
+.clash{display:none;color:#ff6688;font-size:12px;margin:-4px 0 10px}
 .chk-row{display:flex;gap:18px;margin:4px 0 16px;font-size:14px;color:var(--text)}
 .chk-row input{width:18px;height:18px;accent-color:var(--cyan)}
 .btn{
@@ -118,6 +125,18 @@ h1{flex:1;font-size:19px;font-weight:700;background:linear-gradient(90deg,var(--
       <h2>云端配置<span><button onclick="closeMask('cfgMask')">×</button></span></h2>
       <div class="field"><label>GitHub Token（建议只授权清单仓库）</label><input type="password" id="token" placeholder="ghp_… 或 github_pat_…" autocomplete="off"></div>
       <button class="btn" onclick="saveToken()">保存并连接</button>
+    </div>
+  </div>
+
+  <div class="mask" id="repMask">
+    <div class="sheet">
+      <h2>顶替发布<span><button onclick="closeMask('repMask')">✕</button></span></h2>
+      <div class="field"><label>顶替者</label><input id="repMover" readonly></div>
+      <div class="field"><label>顶替哪一天（被顶替者）</label><select id="repTarget"></select></div>
+      <div class="field"><label>被顶替者重排到（新日期）</label><input type="date" id="repDate"></div>
+      <div class="clash" id="repClash"></div>
+      <button class="btn" onclick="doRep()">确认顶替</button>
+      <button class="btn ghost" onclick="closeMask('repMask')">取消</button>
     </div>
   </div>
 
@@ -228,6 +247,7 @@ function render() {
         '<div class="ops">' +
         '<label class="ck"><input type="checkbox" data-id="' + x.id + '" data-k="hasResource"' + (x.hasResource ? ' checked' : '') + '>资源</label>' +
         '<label class="ck"><input type="checkbox" data-id="' + x.id + '" data-k="published"' + (x.published ? ' checked' : '') + '>发布</label>' +
+        (curTab === 'todo' ? '<button class="rep" data-rep="' + x.id + '">顶替</button>' : '') +
         '<button class="del" data-del="' + x.id + '">×</button>' +
         '</div></div>').join('')
     : '<div class="empty">暂无' + (curTab === 'done' ? '已完成' : '待完成') + '记录</div>';
@@ -265,12 +285,54 @@ $('#list').addEventListener('change', async (e) => {
 });
 
 $('#list').addEventListener('click', async (e) => {
+  const r = e.target.closest('[data-rep]');
+  if (r) { openRep(r.dataset.rep); return; }
   const b = e.target.closest('[data-del]');
   if (!b) return;
   list = list.filter(x => x.id !== b.dataset.del);
   await save(list);
   toast('已删除');
 });
+
+// ── 顶替发布：mover 占 target 的日期，target 重排新日期（冲突即时拦截）──
+let repMoverId = null;
+function openRep(id) {
+  repMoverId = id;
+  const mover = list.find(x => x.id === id);
+  $('#repMover').value = mover ? mover.name : '';
+  const cands = list.filter(x => x.id !== id && !(x.hasResource && x.published) && x.publishDate)
+    .slice().sort((a, b) => (a.publishDate < b.publishDate ? -1 : 1));
+  $('#repTarget').innerHTML = cands.length
+    ? cands.map(x => '<option value="' + x.id + '">' + esc(x.publishDate) + ' ' + esc(x.name) + '</option>').join('')
+    : '<option value="">暂无可顶替的排期</option>';
+  $('#repDate').value = '';
+  $('#repClash').style.display = 'none';
+  $('#repMask').classList.add('show');
+}
+function checkRepClash() {
+  const nd = $('#repDate').value, tid = $('#repTarget').value;
+  const clash = list.find(x => x.id !== repMoverId && x.id !== tid && x.publishDate === nd);
+  const el = $('#repClash');
+  if (clash) { el.textContent = '该日期已有「' + clash.name + '」，请换日期'; el.style.display = 'block'; }
+  else el.style.display = 'none';
+}
+async function doRep() {
+  const tid = $('#repTarget').value, nd = $('#repDate').value;
+  if (!tid) return toast('请选择被顶替的日期', true);
+  if (!nd) return toast('请为被顶替者指定新日期', true);
+  const mover = list.find(x => x.id === repMoverId);
+  const target = list.find(x => x.id === tid);
+  if (!mover || !target) return toast('记录不存在', true);
+  mover.publishDate = target.publishDate;
+  target.publishDate = nd;
+  mover.updatedAt = Date.now();
+  target.updatedAt = Date.now();
+  closeMask('repMask');
+  await save(list);
+  toast('顶替成功');
+}
+$('#repDate').addEventListener('input', checkRepClash);
+$('#repTarget').addEventListener('change', checkRepClash);
 
 load();
 </script>

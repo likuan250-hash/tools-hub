@@ -74,6 +74,34 @@ function clearDone(opts = {}) {
   return list.length - next.length;
 }
 
+/**
+ * 顶替发布：mover 占 target 的发布日期，target 重新指定 newDate。
+ * 规则（闭环）：
+ *  - mover/target 必须存在且不是同一条；
+ *  - target 必须有发布日期；
+ *  - newDate 必须非空，且除 mover/target 外不得与其他条目日期冲突；
+ *  - 一次 save 原子落盘。
+ * @returns {{ok:true, items:[mover,target]} | {ok:false, error:string}}
+ */
+function replace(moverId, targetId, newDate, opts = {}) {
+  const list = load(opts);
+  const mover = list.find((x) => x.id === moverId);
+  const target = list.find((x) => x.id === targetId);
+  if (!mover || !target) return { ok: false, error: '记录不存在' };
+  if (mover.id === target.id) return { ok: false, error: '不能顶替自己' };
+  const nd = String(newDate || '').trim();
+  if (!target.publishDate) return { ok: false, error: '被顶替者没有发布日期' };
+  if (!nd) return { ok: false, error: '请为被顶替者指定新日期' };
+  const clash = list.find((x) => x.id !== mover.id && x.id !== target.id && x.publishDate === nd);
+  if (clash) return { ok: false, error: '该日期已有「' + clash.name + '」' };
+  mover.publishDate = target.publishDate;
+  target.publishDate = nd;
+  mover.updatedAt = Date.now();
+  target.updatedAt = Date.now();
+  save(list, opts);
+  return { ok: true, items: [mover, target] };
+}
+
 /** 标题归一化：去掉「【游戏NNN】」前缀 + 首尾空白。 */
 function normalizeTitle(t) {
   return String(t || '').replace(/^【[^】]*】/, '').trim();
@@ -105,4 +133,4 @@ function markPublishedByTitle(title, opts = {}) {
   return changed;
 }
 
-module.exports = { load, save, add, update, remove, clearDone, markPublishedByTitle, normalizeTitle, FILE };
+module.exports = { load, save, add, update, remove, clearDone, replace, markPublishedByTitle, normalizeTitle, FILE };

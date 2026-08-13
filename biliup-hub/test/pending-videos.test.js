@@ -59,3 +59,22 @@ test('add/update：支持待发布日期与预勾状态', () => {
   assert.strictEqual(u.published, true);
   pendingVideos.remove(a.id, { file: FILE });
 });
+
+test('replace: normal flow and boundary rejections', () => {
+  const a = pendingVideos.add('GameA', { file: FILE, publishDate: '2026-08-15' });
+  const b = pendingVideos.add('GameB', { file: FILE, publishDate: '2026-08-20' });
+  const c = pendingVideos.add('GameC', { file: FILE, publishDate: '2026-08-22' });
+  const e = pendingVideos.add('GameE', { file: FILE, publishDate: '2026-08-25' });
+  const ok = pendingVideos.replace(b.id, a.id, '2026-08-18', { file: FILE });
+  assert.strictEqual(ok.ok, true);
+  assert.strictEqual(ok.items[0].publishDate, '2026-08-15');
+  assert.strictEqual(ok.items[1].publishDate, '2026-08-18');
+  const clash = pendingVideos.replace(c.id, a.id, '2026-08-25', { file: FILE });
+  assert.strictEqual(clash.ok, false);
+  assert.match(clash.error, /已有/);
+  assert.strictEqual(pendingVideos.replace('nope', a.id, '2026-08-30', { file: FILE }).ok, false);
+  assert.strictEqual(pendingVideos.replace(b.id, b.id, '2026-08-30', { file: FILE }).ok, false);
+  const noDate = pendingVideos.add('GameD', { file: FILE });
+  assert.strictEqual(pendingVideos.replace(b.id, noDate.id, '2026-08-30', { file: FILE }).ok, false);
+  assert.strictEqual(pendingVideos.replace(b.id, a.id, '  ', { file: FILE }).ok, false);
+});

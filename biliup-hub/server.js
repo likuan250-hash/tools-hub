@@ -541,6 +541,14 @@ app.post('/api/pending-videos/clear-done', (req, res) => {
   pendingSync.pushLocal();
 });
 
+app.post('/api/pending-videos/replace', (req, res) => {
+  const body = req.body || {};
+  const r = pendingVideos.replace(body.moverId, body.targetId, body.newDate);
+  if (!r.ok) return res.status(400).json(r);
+  res.json(r);
+  pendingSync.pushLocal();
+});
+
 app.post('/api/pending-videos/:id', (req, res) => {
   const item = pendingVideos.update(String(req.params.id), req.body || {});
   if (!item) return res.status(404).json({ ok: false, error: '记录不存在' });

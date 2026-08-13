@@ -473,7 +473,7 @@ class TrailerDownloader {
     try { entries = this.fs.readdirSync(dir); } catch (e) { return null; }
     const prefix = base + '.';
     const hit = (Array.isArray(entries) ? entries : [])
-      .filter((n) => n.startsWith(prefix) && !/\.(part|ytdl|temp)$/i.test(n));
+      .filter((n) => n.startsWith(prefix) && !/\.(part|ytdl|temp)$/i.test(n) && !/\.f\d+(\.\w+)?$/i.test(n));
     if (!hit.length) return null;
     hit.sort((a, b) => (/\.mp4$/i.test(b) ? 1 : 0) - (/\.mp4$/i.test(a) ? 1 : 0));
     return hit[0];
@@ -650,7 +650,11 @@ class TrailerDownloader {
       }
 
       const produced = this.findDownloaded(dir, base);
-      if (!produced) {
+      if (r.code !== 0 || !produced) {
+        // 失败时清掉残留中间产物（如 .f137.mp4 半成品），避免被误当成品
+        if (produced) {
+          try { this.fs.unlinkSync(path.join(dir, produced)); } catch (e) { /* 删不掉不影响结果 */ }
+        }
         last = {
           ok: false,
           reason: r.code !== 0 ? 'yt-dlp-failed' : 'trailer-file-missing',

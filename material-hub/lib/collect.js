@@ -101,6 +101,7 @@ class CollectService {
   findExistingVideo(folder) {
     for (const entry of this.listDir(folder)) {
       if (entry === UPLOADED_MARK) continue;
+      if (/\.f\d+(\.\w+)?$/i.test(entry)) continue; // yt-dlp 中间产物（如 .f137.mp4）不算成品
       const lower = entry.toLowerCase();
       if (VIDEO_EXTS.some((e) => lower.endsWith(e))) {
         return { file: entry, path: path.join(folder, entry) };

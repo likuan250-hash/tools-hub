@@ -1,6 +1,6 @@
 {
   "name": "netdisk-hub",
-  "version": "2.7.83",
+  "version": "2.7.84",
   "description": "",
   "main": "server.js",
   "scripts": {

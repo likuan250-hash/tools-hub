@@ -127,7 +127,7 @@ function normalizeText(raw) {
 function nameTokens(gameName) {
   const norm = normalizeText(gameName);
   if (!norm) return [];
-  return norm.split(' ').filter((t) => t.length >= 2 || /[\u4e00-\u9fa5\u3040-\u30ff]/.test(t));
+  return norm.split(' ').filter((t) => t.length >= 2 || /^\d+$/.test(t) || /[\u4e00-\u9fa5\u3040-\u30ff]/.test(t));
 }
 
 /** 官方宣传片下载器。 */
@@ -365,6 +365,13 @@ class TrailerDownloader {
       if (hit === tokens.length) { score += 25; reasons.push('标题全词匹配 +25'); }
       else if (hit > 0) { score += 10; reasons.push('标题部分匹配 +10'); }
       else { score -= 20; reasons.push('标题不含游戏名 -20'); }
+      // 数字序号缺失（如 "PC Building Simulator 2" 漏掉 "2"）→ 强惩罚，避免命中前作/他作预告
+      const numMiss = tokens.filter((t) => /^\d+$/.test(t) && !normTitle.includes(t)).length;
+      if (numMiss > 0) {
+        const p = 25 * numMiss;
+        score -= p;
+        reasons.push('标题缺游戏序号 -' + p);
+      }
     }
 
     if (BAD_TITLE_RE.test(title)) { score -= 50; reasons.push('非正片特征 -50'); }

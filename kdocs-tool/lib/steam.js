@@ -50,12 +50,17 @@ async function searchSteamAppId(gameName, fetchImpl) {
       if (nm && q) {
         if (nm === q) score = 3;
         else if (nm.includes(q) || q.includes(nm)) score = 2;
+        // 续作编号必须对上：查询带数字而候选缺号（如 PC Building Simulator 2 → PC Building Simulator）不算命中
+        if (score >= 2 && !iterationMatches(term, it && it.name)) score = 0;
       }
       if (score > bestScore) { bestScore = score; best = it; }
     }
-    // 强匹配（score>=2）直接采纳；否则退化为首条（与历史行为一致，保命中率）
-    const pick = bestScore >= 2 ? best : items[0];
-    if (pick && pick.id) return String(pick.id);
+    // 强匹配（score>=2）直接采纳；查询带序号且无强匹配 → 不退化首条（避免前作顶包，交由上层兜底）
+    if (bestScore >= 2) {
+      if (best && best.id) return String(best.id);
+    } else if (!iterationMarkers(term).size && items.length) {
+      if (items[0].id) return String(items[0].id);
+    }
   }
   return null;
 }
@@ -449,6 +454,28 @@ function cnNameSimilarity(a, b) {
   return union ? inter / union : 0;
 }
 
+/** 提取名称里的续作编号标记（阿拉伯数字 / 中文数字 / 常见罗马数字）。 */
+function iterationMarkers(s) {
+  const t = String(s == null ? '' : s).toLowerCase();
+  const set = new Set();
+  const digits = t.match(/\d+/g) || [];
+  digits.forEach((d) => set.add(d));
+  const CN = { 一: '1', 二: '2', 三: '3', 四: '4', 五: '5', 六: '6', 七: '7', 八: '8', 九: '9', 十: '10' };
+  Object.keys(CN).forEach((ch) => { if (t.includes(ch)) set.add(CN[ch]); });
+  const ROMAN = { i: '1', ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9', x: '10' };
+  Object.keys(ROMAN).forEach((r) => { if (new RegExp('\\b' + r + '\\b').test(t)) set.add(ROMAN[r]); });
+  return set;
+}
+
+/** 续作编号门禁：term 带序号时，orig 必须含对应序号（防前作顶包）。 */
+function iterationMatches(term, orig) {
+  const t = iterationMarkers(term);
+  if (!t.size) return true;
+  const o = iterationMarkers(orig);
+  for (const n of t) if (o.has(n)) return true;
+  return false;
+}
+
 /**
  * 从 Bangumi（api.bgm.tv，国内必达）反查英文名。
  * 对候选名逐级查询：取 name_cn 与输入中文名相似度最高、且 name 为拉丁字母（非日文原名）的条目。
@@ -471,6 +498,8 @@ async function fetchEnglishNameFromBangumi(name, httpGetJson) {
         const sim = cnNameSimilarity(term, cn);
         if (sim < 0.5) continue;          // 中文名对不上的候选跳过，避免错配
         if (!isLatinName(orig)) continue; // 日文原名不可作英文名（如 ペルソナ5 ザ・ロイヤル）
+        // 续作编号门禁：仅子串相似（非精确）时校验序号，防止前作顶包（如 装机模拟器2 → PC Building Simulator）
+        if (sim < 1 && !iterationMatches(term, orig)) continue;
         if (sim > bestScore) { bestScore = sim; best = orig; }
       }
       if (best) return best;

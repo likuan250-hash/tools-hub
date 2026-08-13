@@ -828,8 +828,12 @@
       const m = STAGE_LABEL[ev.stage] || ["info", ev.stage];
       setCapsule(m[0], m[1]);
       if (ev.message) logLine(ev.message, ev.stage === "error" ? "err" : "stage");
+      const bp = $("biliExecProgress");
+      if (bp) bp.classList.add("show");
   } else if (ev.type === "done") {
     setCapsule("ok", "成功");
+    const bp = $("biliExecProgress");
+    if (bp) bp.classList.remove("show");
     const d = ev.data || {};
     const ok = d.success !== false;
     logLine("投稿完成！aid=" + (d.aid || "?") + " bvid=" + (d.bvid || "?") + " cid=" + (d.cid || "?") + " 合集=" + (d.season ? "已加" : "否"), "ok");
@@ -837,6 +841,8 @@
     pushHistory(HISTORY_KEY_BILIUP, ok, $("titleInput").value || "（未命名）", ok ? ("投稿成功" + (d.bvid ? " · " + d.bvid : "")) : (d.error || "投稿未完成"), d.bvid);
   } else if (ev.type === "error") {
     setCapsule("err", "失败");
+    const bp = $("biliExecProgress");
+    if (bp) bp.classList.remove("show");
     logLine("失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
     // P08：写一条投稿历史（失败）
     pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", ev.message || "投稿失败");

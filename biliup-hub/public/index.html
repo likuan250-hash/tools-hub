@@ -261,6 +261,26 @@
       border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden;
       background: var(--field-bg);
     }
+    .bili-exec-progress { display: none; padding: 2px 12px 0; }
+    .bili-exec-progress.show { display: block; }
+    .bili-exec-bar {
+      height: 6px; border-radius: 999px; overflow: hidden; position: relative;
+      background: rgba(255,255,255,.06);
+    }
+    .bili-exec-bar::after {
+      content: ""; position: absolute; top: 0; left: 0; bottom: 0;
+      width: 45%; border-radius: 999px;
+      background: linear-gradient(90deg,
+        transparent,
+        #ff5f6d 8%, #ffa94d 22%, #ffd43b 36%, #51cf66 50%, #40e0ff 64%, #4d9fff 78%, #8b5cf6 92%,
+        transparent);
+      box-shadow: 0 0 10px rgba(255,255,255,.35), 0 0 24px rgba(255,255,255,.18), 0 0 40px rgba(160,120,255,.2);
+      animation: bili-indeterminate 1.6s ease-in-out infinite alternate;
+    }
+    @keyframes bili-indeterminate {
+      from { transform: translateX(-110%); }
+      to   { transform: translateX(122%); }
+    }
     .log-card > summary {
       list-style: none; cursor: pointer; user-select: none;
       display: flex; align-items: center; justify-content: space-between;
@@ -1074,6 +1094,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
         <h3 class="exec-title"><i class="app-ico" data-ico="history"></i> 投稿日志</h3>
         <details class="log-card" open>
           <summary><span>投稿进度与结果</span><span class="chev">⌄</span></summary>
+          <div class="bili-exec-progress" id="biliExecProgress"><div class="bili-exec-bar"></div></div>
           <div class="log-area" id="logBox"></div>
           <p class="hint" id="logEmpty">投稿进度与结果会显示在这里</p>
         </details>

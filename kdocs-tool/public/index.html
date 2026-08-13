@@ -342,7 +342,8 @@
     .modal-mask.show { display: flex; animation: pop 0.25s ease; }
     .modal { width: min(480px, 92vw); border: 1px solid var(--glass-border); border-radius: var(--r-lg); background: var(--surface); -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); padding: 26px; box-shadow: var(--shadow-modal), inset 0 1px 0 rgba(255, 255, 255, 0.10); max-height: 80vh; display: flex; flex-direction: column; }
     .modal-head { display: flex; align-items: center; justify-content: space-between; font-size: 17px; font-weight: 700; margin-bottom: 14px; }
-    .modal-head .modal-close { border: none; background: transparent; color: var(--text-dim); font-size: 20px; cursor: pointer; line-height: 1; padding: 0; }
+.modal-head .modal-close { border: none; background: transparent; color: var(--text-dim); font-size: 20px; cursor: pointer; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.modal-head .modal-close svg { width: 20px; height: 20px; display: block; }
     .modal-head .modal-close:hover { color: var(--text); }
     .modal-title { font-size: 17px; margin-bottom: 14px; font-weight: 600; }
     .modal-body { font-size: 13px; color: var(--text-dim); line-height: 1.7; margin-bottom: 6px; word-break: break-all; }
@@ -949,7 +950,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <div class="modal glass">
     <div class="modal-head">
       <span><i class="app-ico" data-ico="history"></i> 录入历史</span>
-      <button class="modal-close" id="historyClose" type="button" title="关闭">✕</button>
+      <button class="modal-close" id="historyClose" type="button" title="关闭"><svg viewBox="0 0 1024 1024" width="20" height="20" class="close-ico" aria-hidden="true"><path d="M512 0C229.668571 0 0 229.668571 0 512s229.668571 512 512 512 512-229.668571 512-512-229.668571-512-512-512z" fill="#4D84FF"/><path d="M219.428571 438.857143m73.142858 0l438.857142 0q73.142857 0 73.142858 73.142857l0 0q0 73.142857-73.142858 73.142857l-438.857142 0q-73.142857 0-73.142858-73.142857l0 0q0-73.142857 73.142858-73.142857Z" fill="#D8D8D8"/></svg></button>
     </div>
     <div class="history-list" id="historyList"></div>
     <div class="modal-actions">

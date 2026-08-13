@@ -347,7 +347,8 @@
     }
     .empty-state .es-ico { font-size: 28px; line-height: 1; opacity: 0.7; }
     .modal-head { display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 600; }
-    .modal-close { border: none; background: transparent; color: var(--text-dim); font-size: 18px; cursor: pointer; line-height: 1; }
+.modal-close { border: none; background: transparent; color: var(--text-dim); font-size: 18px; cursor: pointer; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.modal-close svg { width: 20px; height: 20px; display: block; }
     .modal-close:hover { color: var(--text); }
     .modal h3 { margin: 0 0 14px; font-size: 16px; }
     .modal .modal-actions { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 18px; }
@@ -940,7 +941,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       border-color: var(--accent); background: rgba(var(--accent-rgb), .10);
       box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .18);
     }
-    .icon-btn .ib-ico { width: 17px; height: 17px; flex-shrink: 0; display: block; }
+.icon-btn .ib-ico { width: 17px; height: 17px; flex-shrink: 0; display: block; }
     .icon-btn .ib-label { line-height: 1; }
     .app-ico { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; flex-shrink: 0; }
     .app-ico-lg { width: 1.6em; height: 1.6em; }
@@ -1204,7 +1205,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <div class="modal">
       <div class="modal-head">
         <span><i class="app-ico" data-ico="inbox"></i> 检测补合集</span>
-        <button class="icon-btn" id="seasonDetectClose" type="button" style="border:none;background:transparent;color:var(--text-dim)">✕</button>
+        <button class="icon-btn" id="seasonDetectClose" type="button" style="border:none;background:transparent;color:var(--text-dim)"><svg viewBox="0 0 1024 1024" width="20" height="20" class="close-ico" aria-hidden="true"><path d="M512 0C229.668571 0 0 229.668571 0 512s229.668571 512 512 512 512-229.668571 512-512-229.668571-512-512-512z" fill="#4D84FF"/><path d="M219.428571 438.857143m73.142858 0l438.857142 0q73.142857 0 73.142858 73.142857l0 0q0 73.142857-73.142858 73.142857l-438.857142 0q-73.142857 0-73.142858-73.142857l0 0q0-73.142857 73.142858-73.142857Z" fill="#D8D8D8"/></svg></button>
       </div>
       <p id="seasonDetectHint" style="font-size:12px;color:var(--text-dim);line-height:1.6;margin-bottom:10px;"></p>
       <div id="seasonDetectList" style="max-height:320px;overflow:auto;font-size:13px;line-height:1.8;"></div>
@@ -1220,7 +1221,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <div class="modal">
       <div class="modal-head">
         <span><i class="app-ico" data-ico="key"></i> 扫码登录 B站</span>
-        <button class="modal-close" id="loginClose" type="button">×</button>
+        <button class="modal-close" id="loginClose" type="button"><svg viewBox="0 0 1024 1024" width="20" height="20" class="close-ico" aria-hidden="true"><path d="M512 0C229.668571 0 0 229.668571 0 512s229.668571 512 512 512 512-229.668571 512-512-229.668571-512-512-512z" fill="#4D84FF"/><path d="M219.428571 438.857143m73.142858 0l438.857142 0q73.142857 0 73.142858 73.142857l0 0q0 73.142857-73.142858 73.142857l-438.857142 0q-73.142857 0-73.142858-73.142857l0 0q0-73.142857 73.142858-73.142857Z" fill="#D8D8D8"/></svg></button>
       </div>
       <p class="hint">用 B站手机客户端扫码登录；cookie 仅存于本机数据目录，与投稿上传共用同一份。</p>
       <div class="qr-box">
@@ -1238,7 +1239,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <div class="modal glass">
       <div class="modal-head">
         <span><i class="app-ico" data-ico="settings"></i> 高级参数</span>
-        <button class="modal-close" id="advClose" type="button">×</button>
+        <button class="modal-close" id="advClose" type="button"><svg viewBox="0 0 1024 1024" width="20" height="20" class="close-ico" aria-hidden="true"><path d="M512 0C229.668571 0 0 229.668571 0 512s229.668571 512 512 512 512-229.668571 512-512-229.668571-512-512-512z" fill="#4D84FF"/><path d="M219.428571 438.857143m73.142858 0l438.857142 0q73.142857 0 73.142858 73.142857l0 0q0 73.142857-73.142858 73.142857l-438.857142 0q-73.142857 0-73.142858-73.142857l0 0q0-73.142857 73.142858-73.142857Z" fill="#D8D8D8"/></svg></button>
       </div>
       <div class="modal-body">
         <div class="grid-2">
@@ -1301,7 +1302,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     <div class="modal glass">
       <div class="modal-head">
         <span><i class="app-ico" data-ico="history"></i> 投稿历史</span>
-        <button class="modal-close" id="historyClose" type="button" title="关闭">✕</button>
+        <button class="modal-close" id="historyClose" type="button" title="关闭"><svg viewBox="0 0 1024 1024" width="20" height="20" class="close-ico" aria-hidden="true"><path d="M512 0C229.668571 0 0 229.668571 0 512s229.668571 512 512 512 512-229.668571 512-512-229.668571-512-512-512z" fill="#4D84FF"/><path d="M219.428571 438.857143m73.142858 0l438.857142 0q73.142857 0 73.142858 73.142857l0 0q0 73.142857-73.142858 73.142857l-438.857142 0q-73.142857 0-73.142858-73.142857l0 0q0-73.142857 73.142858-73.142857Z" fill="#D8D8D8"/></svg></button>
       </div>
       <div class="modal-body">
         <div class="history-tabs" id="historyTabs">

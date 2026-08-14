@@ -77,6 +77,15 @@ html[data-skin="comic"] .landing-title::before {
                      50% 98%, 34% 90%, 18% 100%, 6% 88%, 0 70%, 6% 52%, 0 32%, 5% 16%);
   filter: drop-shadow(3.5px 3.5px 0 #000);
 }
+html[data-skin="comic"] h1,
+html[data-skin="comic"] .title,
+html[data-skin="comic"] .landing-title {
+  animation: comicTitleWiggle 4s ease-in-out infinite;
+}
+@keyframes comicTitleWiggle {
+  0%, 100% { transform: rotate(-1.2deg); }
+  50% { transform: rotate(0.8deg) translateY(-1px); }
+}
 html[data-skin="comic"] h1 .en,
 html[data-skin="comic"] .title .en {
   color: #6b4db8 !important;
@@ -132,6 +141,19 @@ html[data-skin="comic"] .panel-head h2 .h2-ico {
   color: #6b4db8;
 }
 html[data-skin="comic"] .app-ico { stroke-width: 2.2; }
+/* 全站 SVG 图标漫画化：加粗描边 + 硬阴影 */
+html[data-skin="comic"] .app-ico,
+html[data-skin="comic"] .ib-ico,
+html[data-skin="comic"] .bx-ico,
+html[data-skin="comic"] svg.ib-ico {
+  stroke-width: 2.4;
+  filter: drop-shadow(1.5px 1.5px 0 rgba(0, 0, 0, .45));
+}
+html[data-skin="comic"] .card-icon svg,
+html[data-skin="comic"] .h2-ico svg,
+html[data-skin="comic"] .step-icon .app-ico {
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, .5));
+}
 
 /* ===== 面板 / 卡片 / 弹窗 / 日志：白底黑边硬阴影 ===== */
 html[data-skin="comic"] .panel,
@@ -298,9 +320,15 @@ html[data-skin="comic"] .seg-item {
 }
 html[data-skin="comic"] .seg-input:checked + .seg-item,
 html[data-skin="comic"] .tab.on,
+html[data-skin="comic"] .tab.active,
 html[data-skin="comic"] .history-tab.active {
   background: linear-gradient(135deg, #ffe9a8, #fbbf24) !important;
   color: #111 !important;
+  -webkit-text-stroke: 1px #fff;
+  text-shadow: 1.5px 1.5px 0 rgba(0, 0, 0, .35);
+  transform: rotate(-1deg) scale(1.05);
+  font-weight: 900 !important;
+  box-shadow: 3px 3px 0 #000 !important;
 }
 
 /* ===== 开关：外描边方案（box-shadow 不占盒模型，滑块不变形） ===== */
@@ -342,6 +370,24 @@ html[data-skin="comic"] .st-luxe--warn { color: #8a5a00 !important; background: 
 html[data-skin="comic"] .st-luxe--info { color: #6b4db8 !important; background: #f3ecff !important; }
 html[data-skin="comic"] .st-luxe--off { color: #8a8a8a !important; background: #f0f0f0 !important; }
 html[data-skin="comic"] .dot { box-shadow: 0 0 0 1.5px #000; }
+/* 主页顶栏聚合状态 / 更新状态：漫画胶囊 */
+html[data-skin="comic"] .agg,
+html[data-skin="comic"] .update-status {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  background: #fff !important;
+  border: 2px solid #000 !important;
+  border-radius: 999px !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  color: #4a3a66 !important;
+  font-weight: 800 !important;
+  font-size: 12px !important;
+  padding: 4px 12px !important;
+  line-height: 1.4;
+}
+html[data-skin="comic"] .update-status.ok { color: #0b8a4d !important; background: #eafff1 !important; }
+html[data-skin="comic"] .update-status.bad { color: #b3122c !important; background: #ffe9ec !important; }
 html[data-skin="comic"] .chip {
   border: 2px solid #000 !important;
   box-shadow: 2.5px 2.5px 0 #000 !important;

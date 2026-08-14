@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   pickFile: () => ipcRenderer.invoke("pick-file"),
   // 系统默认浏览器打开外部链接（金山文档入口等）
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  // 在文件管理器中显示并选中文件（素材搜集产物卡片点击）
+  revealInFolder: (p) => ipcRenderer.invoke("reveal-in-folder", p),
   // 状态（预留）
   getStatus: () => ipcRenderer.invoke("get-status"),
   onStatus: (cb) => ipcRenderer.on("status", (_e, p) => cb(p)),

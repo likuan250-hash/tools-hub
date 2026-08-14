@@ -12,18 +12,38 @@
 <link rel="stylesheet" href="cosmic-skin.css" />
 </head>
 <body>
-  <section class="card">
-    <h2>游戏素材自动搜集</h2>
-    <p class="sub">输入游戏名，自动按规则下载封面与官方宣传片，落盘到素材库</p>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo"><i class="app-ico" data-ico="download"></i></div>
+        <div>
+          <h1 data-text="素材自动搜集 MATERIAL">素材自动搜集 <span class="en">MATERIAL</span></h1>
+          <div class="sub">输入游戏名 → 自动下载官方封面与宣传片 → 落盘素材库</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2><i class="app-ico" data-ico="search"></i> 游戏素材自动搜集</h2>
+      </div>
 
     <div class="input-row">
       <input id="gameName" placeholder="例如：战神4 / Elden Ring / 黑神话：悟空" autocomplete="off" spellcheck="false" />
-      <button class="btn-primary" id="collectBtn" type="button">开始搜集</button>
+      <button class="btn" id="collectBtn" type="button">开始搜集</button>
     </div>
     <div class="force-options" id="forceOptions">
-      <label class="force-label"><input type="checkbox" id="forceTrailer" /> 重找视频</label>
-      <label class="force-label"><input type="checkbox" id="forceCover" /> 重找封面</label>
-      <input id="coverUrl" class="cover-url-input" placeholder="或指定封面图片 URL..." autocomplete="off" spellcheck="false" />
+      <label class="force-switch" for="forceTrailer">
+        <input type="checkbox" id="forceTrailer" />
+        <span class="sw" aria-hidden="true"></span>
+        <span class="sw-label">重找视频</span>
+      </label>
+      <label class="force-switch" for="forceCover">
+        <input type="checkbox" id="forceCover" />
+        <span class="sw" aria-hidden="true"></span>
+        <span class="sw-label">重找封面</span>
+      </label>
+      <input id="coverUrl" class="cover-url-input" placeholder="或指定封面图片 URL…" autocomplete="off" spellcheck="false" />
     </div>
     <div class="rule-hint">
       规则 · 文件夹 <code>【游戏NNN】游戏名</code> · 封面 ≥1920×1080（壁纸站 → 官网 → YouTube → 主视频抽帧兜底）·
@@ -31,19 +51,8 @@
     </div>
     <div class="form-error" id="formError" role="alert"></div>
 
-    <div class="state-tabs" id="stateTabs">
-      <button type="button" data-state="empty" class="active">① 待输入</button>
-      <button type="button" data-state="running" disabled>② 执行中</button>
-      <button type="button" data-state="done" disabled>③ 完成</button>
-    </div>
-
-    <!-- ① 待输入 -->
-    <div class="panel show" id="panel-empty">
-      <div class="empty-note">在上方输入游戏名，点「开始搜集」即可自动执行</div>
-    </div>
-
     <!-- ② 执行中：复用 kdocs 玻璃执行面板（.auto-result / .step-item / .log-card / .log-area） -->
-    <div class="panel" id="panel-running">
+    <div class="state-panel" id="panel-running" hidden>
       <div class="auto-result">
         <div id="autoSteps"></div>
         <details class="log-card" open>
@@ -54,7 +63,7 @@
     </div>
 
     <!-- ③ 完成：结果摘要 + 封面预览 + 产物卡片 + 落盘路径 -->
-    <div class="panel" id="panel-done">
+    <div class="state-panel" id="panel-done" hidden>
       <div class="result-summary" id="doneSummary">尚未执行</div>
       <div class="done-grid">
         <div class="cover-preview" id="coverPreview">
@@ -67,6 +76,7 @@
       <div class="path-line" id="pathLine"></div>
     </div>
   </section>
+  </div>
 
   <!-- 交互式封面选择弹窗（cover_candidates 事件触发） -->
   <div class="cover-modal" id="coverModal" hidden>

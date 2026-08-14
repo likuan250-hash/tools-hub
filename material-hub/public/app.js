@@ -16,7 +16,6 @@ const formError = $("formError");
 const forceTrailerCb = $("forceTrailer");
 const forceCoverCb = $("forceCover");
 const coverUrlInput = $("coverUrl");
-const stateTabs = $("stateTabs");
 const autoSteps = $("autoSteps");
 const autoLog = $("autoLog");
 const doneSummary = $("doneSummary");
@@ -25,9 +24,6 @@ const coverName = $("coverName");
 const coverDim = $("coverDim");
 const doneFiles = $("doneFiles");
 const pathLine = $("pathLine");
-/** 三态面板 id 映射（与 index.html 一致）。 */
-const PANELS = { empty: "panel-empty", running: "panel-running", done: "panel-done" };
-
 /** 步骤时间线固定三段（与设计 §3.2 的事件分组一一对应）。 */
 const STEP_ORDER = ["scan", "cover", "trailer"];
 const STEP_NAMES = {
@@ -131,29 +127,6 @@ function statusTag(level, text) {
 }
 
 /**
- * 切换三态面板。
- * @param {string} state empty|running|done
- */
-function setState(state) {
-  const tabs = stateTabs.querySelectorAll("button");
-  tabs.forEach((t) => {
-    t.classList.toggle("active", t.dataset.state === state);
-  });
-  Object.keys(PANELS).forEach((k) => {
-    $(PANELS[k]).classList.toggle("show", k === state);
-  });
-}
-
-/**
- * 解锁某个状态 tab（内容就绪后才允许点击查看）。
- * @param {string} state empty|running|done
- */
-function enableTab(state) {
-  const btn = stateTabs.querySelector('button[data-state="' + state + '"]');
-  if (btn) btn.disabled = false;
-}
-
-/**
  * 追加一行运行日志。
  * @param {string} type info|ok|err
  * @param {string} msg 日志文本
@@ -239,6 +212,7 @@ function resetPanels() {
     renderStep(g);
   });
   formError.textContent = "";
+  $("panel-done").classList.remove("show");
 }
 
 /**
@@ -249,6 +223,7 @@ function renderDone(ev) {
   const d = ev.detail || {};
   const cover = d.cover || null;
   const trailer = d.trailer || null;
+  const folderPath = d.folder || "";
 
   // 摘要：封面是硬指标（缺封面 = 整体失败）；封面在但宣传片缺 = 黄警，不假装全绿
   if (ev.ok === true && d.trailerOk) {
@@ -265,6 +240,8 @@ function renderDone(ev) {
   // 封面预览（本地磁盘文件不能经 http origin 直读，按原型以占位卡呈现元数据）
   if (cover && cover.file) {
     coverPreview.classList.remove("missing");
+    coverPreview.classList.add("clickable");
+    coverPreview.dataset.path = folderPath + "\\" + cover.file;
     coverName.textContent = cover.file;
     coverDim.textContent = (cover.width || "?") + " × " + (cover.height || "?") +
       " · " + coverSourceLabel(cover.source) +
@@ -272,6 +249,8 @@ function renderDone(ev) {
       (cover.reused ? "（复用）" : "");
   } else {
     coverPreview.classList.add("missing");
+    coverPreview.classList.remove("clickable");
+    delete coverPreview.dataset.path;
     coverName.textContent = "封面缺失";
     coverDim.textContent = "所有封面来源均未取到";
   }
@@ -280,7 +259,8 @@ function renderDone(ev) {
   const cards = [];
   if (trailer && trailer.file) {
     cards.push(
-      '<div class="file-card"><div class="play"><i class="app-ico" data-ico="play"></i></div><div class="meta">' +
+      '<div class="file-card clickable" data-path="' + esc(folderPath + "\\" + trailer.file) + '">' +
+      '<div class="play"><i class="app-ico" data-ico="play"></i></div><div class="meta">' +
       '<div class="fname">' + esc(trailer.file) + "</div>" +
       '<div class="fsub">' + esc(trailer.title || "官方宣传片") + (trailer.converted ? " · 已转码 .webm → .mp4" : "") + "</div>" +
       "</div></div>"
@@ -294,7 +274,8 @@ function renderDone(ev) {
   }
   if (cover && cover.file) {
     cards.push(
-      '<div class="file-card"><div class="play cover"><i class="app-ico" data-ico="image"></i></div><div class="meta">' +
+      '<div class="file-card clickable" data-path="' + esc(folderPath + "\\" + cover.file) + '">' +
+      '<div class="play cover"><i class="app-ico" data-ico="image"></i></div><div class="meta">' +
       '<div class="fname">' + esc(cover.file) + "</div>" +
       '<div class="fsub">' + esc(coverSourceLabel(cover.source)) +
       (cover.degraded ? " · 降级图" : "") +
@@ -328,6 +309,7 @@ function renderDone(ev) {
       renderStep(g);
     }
   });
+  $("panel-done").classList.add("show");
 }
 
 /**
@@ -340,8 +322,8 @@ async function runCollect(name) {
   collectBtn.disabled = true;
   collectBtn.textContent = "搜集中…";
   resetPanels();
-  enableTab("running");
-  setState("running");
+  $("panel-running").classList.add("show");
+  $("panel-done").classList.remove("show");
   addLog("info", "开始搜集：" + name);
 
   try {
@@ -362,7 +344,7 @@ async function runCollect(name) {
       formError.textContent = d.error || ("请求失败：HTTP " + r.status);
       doneSummary.className = "result-summary fail";
       doneSummary.innerHTML = summaryIcon("fail") + " " + esc("执行失败：" + (d.error || r.status));
-      enableTab("done");
+      $("panel-done").classList.add("show");
       return;
     }
     if (!r.body) {
@@ -394,7 +376,7 @@ async function runCollect(name) {
     formError.textContent = "请求失败：" + e.message;
     doneSummary.className = "result-summary fail";
     doneSummary.innerHTML = summaryIcon("fail") + " " + esc("执行异常：" + e.message);
-    enableTab("done");
+    $("panel-done").classList.add("show");
   } finally {
     running = false;
     collectBtn.disabled = false;
@@ -422,8 +404,6 @@ function handleEvent(ev) {
   if (type === "done") {
     addLog(ev.ok === true ? "ok" : "err", (ev.step || "完成") + " — " + (ev.msg || ""));
     renderDone(ev);
-    enableTab("done");
-    setState("done");
     return;
   }
 
@@ -559,11 +539,17 @@ $("coverOkBtn").onclick = () => sendCoverChoice(coverPickUrl);
 $("coverAutoBtn").onclick = () => sendCoverChoice(coverCands.length ? coverCands[0].url : "");
 $("coverSkipBtn").onclick = () => sendCoverChoice("");
 
-// 状态 tab 仅做「查看」切换，不影响执行（未就绪的 tab 处于 disabled）
-stateTabs.querySelectorAll("button").forEach((btn) => {
-  btn.onclick = () => {
-    if (btn.disabled) return;
-    setState(btn.dataset.state);
-  };
+// 产物卡片 / 封面预览点击 → 打开文件管理器并选中文件
+function revealInFolder(p) {
+  if (!p) return;
+  if (window.electronAPI && typeof window.electronAPI.revealInFolder === "function") {
+    window.electronAPI.revealInFolder(p).catch(() => {});
+  }
+}
+doneFiles.addEventListener("click", (e) => {
+  const card = e.target.closest(".file-card[data-path]");
+  if (card) revealInFolder(card.dataset.path);
 });
-
+coverPreview.addEventListener("click", () => {
+  if (coverPreview.dataset.path) revealInFolder(coverPreview.dataset.path);
+});

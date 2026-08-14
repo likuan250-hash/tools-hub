@@ -642,6 +642,12 @@ ipcMain.handle("open-external", (_e, url) => {
     shell.openExternal(url);
   }
 });
+// ── 在文件管理器中显示并选中文件（素材搜集产物卡片点击）──
+ipcMain.handle("reveal-in-folder", (_e, p) => {
+  if (typeof p !== "string" || !p) return false;
+  shell.showItemInFolder(p);
+  return true;
+});
 // ── 主题单一真源：webview 内嵌页主动拉取 / 渲染进程通知当前主题 ──
 ipcMain.handle("get-theme", () => currentTheme);
 ipcMain.handle("set-theme", (_e, t) => {

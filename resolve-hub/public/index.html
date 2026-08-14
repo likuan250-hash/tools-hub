@@ -34,6 +34,35 @@ button.primary { background: var(--accent); color: #fff; border-color: transpare
 ol { margin: 6px 0 12px; padding-left: 20px; font-size: 13px; line-height: 1.9; color: var(--dim); }
 pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; height: 300px; overflow: auto; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; margin: 0; }
 #done { color: var(--ok); font-size: 13px; margin-top: 8px; }
+/* ── 执行进度：步骤 + 彩虹滑块 + 日志（默认隐藏，执行时展示，与其余模块同款语言）── */
+.exec-card { display: none; }
+.exec-card.show { display: block; animation: pop 0.35s ease; }
+@keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.step-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: rgba(128,128,128,.07); }
+.step-icon { flex: none; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(128,128,128,.14); font-size: 12px; }
+.step-item.info .step-icon { background: var(--accent); color: #fff; animation: step-pulse 1.6s ease-in-out infinite; }
+.step-item.ok .step-icon { background: var(--ok); color: #1b1f3b; }
+.step-item.err .step-icon { background: var(--err); color: #fff; }
+@keyframes step-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(77,132,255,.45); } 50% { box-shadow: 0 0 0 7px rgba(77,132,255,0); } }
+.step-body { flex: 1; min-width: 0; }
+.step-name { font-size: 13px; line-height: 1.5; }
+.step-detail { margin-top: 2px; font-size: 12px; opacity: .75; word-break: break-all; }
+.exec-bar { height: 6px; border-radius: 999px; overflow: hidden; position: relative; background: rgba(255,255,255,.07); margin-top: 10px; }
+.step-item:not(.info) .exec-bar { display: none; }
+.exec-bar::after {
+  content: ""; position: absolute; top: 0; left: 0; bottom: 0; width: 45%; border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #ff5f6d 8%, #ffa94d 22%, #ffd43b 36%, #51cf66 50%, #40e0ff 64%, #4d9fff 78%, #8b5cf6 92%, transparent);
+  box-shadow: 0 0 10px rgba(255,255,255,.35), 0 0 24px rgba(255,255,255,.18), 0 0 40px rgba(160,120,255,.2);
+  animation: step-indeterminate 1.6s ease-in-out infinite alternate;
+}
+@keyframes step-indeterminate { from { transform: translateX(-110%); } to { transform: translateX(122%); } }
+.log-card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--log-bg); margin-top: 12px; }
+.log-card > summary { list-style: none; cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; font-size: 13px; }
+.log-card > summary::-webkit-details-marker { display: none; }
+.log-area { padding: 10px 12px 12px; font-family: Consolas, "Microsoft YaHei", monospace; font-size: 12px; line-height: 1.6; max-height: 280px; overflow-y: auto; color: var(--dim); border-top: 1px solid var(--line); }
+.log-area .line { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+.log-area .line.ok { color: var(--ok); }
+.log-area .line.err { color: var(--err); }
 </style>
 </head>
 <body>
@@ -45,7 +74,7 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
     <div class="row">
       <button id="browseBtn" class="primary" type="button">选择素材</button>
       <input id="dirInput" type="text" readonly placeholder="点击「选择素材」选择任意目录">
-      <button id="clearBtn" type="button" disabled>清空</button>
+      <button id="clearBtn" type="button">清空</button>
     </div>
     <div class="info" id="folderInfo"></div>
     <div class="row" style="margin-top:10px">
@@ -65,9 +94,20 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
     <button id="finishBtn" class="primary" type="button" disabled>确认好了，继续导出（8-9）</button>
   </section>
 
-  <section class="card">
-    <h3>执行日志</h3>
-    <pre id="log"></pre>
+  <section class="card exec-card" id="execCard">
+    <h3>执行进度</h3>
+    <div class="step-item info" id="execStep">
+      <span class="step-icon" id="execIcon">›</span>
+      <div class="step-body">
+        <div class="step-name" id="execStepName">准备中…</div>
+        <div class="step-detail" id="execStepDetail"></div>
+        <div class="exec-bar" id="execBar"></div>
+      </div>
+    </div>
+    <details class="log-card" open>
+      <summary><span>执行日志</span><span class="chev">⌄</span></summary>
+      <div class="log-area" id="execLog"></div>
+    </details>
     <div id="done"></div>
   </section>
 </div>

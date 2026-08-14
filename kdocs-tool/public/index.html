@@ -253,7 +253,7 @@
     .step-item:has(.st-luxe--off)  .step-icon { border-color: var(--text-dim); color: var(--text-dim); }
 
     /* 进行中步骤内嵌细进度条：轨道 + 独立滑块（彩虹七彩 + 左右往返 + 辉光） */
-    .step-item:has(.st-luxe--info) .step-body { position: relative; }
+    .step-item:has(.st-luxe--info) .step-body { position: relative; padding-bottom: 12px; overflow: hidden; }
     .step-item:has(.st-luxe--info) .step-body::before {
       content: ""; position: absolute; left: 0; bottom: 0;
       width: 100%; max-width: 220px; height: 6px; border-radius: 999px;

@@ -180,6 +180,15 @@ html[data-skin="comic"] .log-card > summary {
   border-bottom: 2px solid #000 !important;
   color: #111 !important;
 }
+/* 网盘任务卡：并入白底黑边硬阴影 */
+html[data-skin="comic"] .task,
+html[data-skin="comic"] .task-card,
+html[data-skin="comic"] .task-row {
+  background: #fff !important;
+  border: 2px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .85) !important;
+}
 
 /* ===== 输入控件：白底黑边硬阴影 ===== */
 html[data-skin="comic"] input[type="text"],
@@ -294,23 +303,45 @@ html[data-skin="comic"] .history-tab.active {
   color: #111 !important;
 }
 
-/* ===== 开关 / 状态胶囊 ===== */
+/* ===== 开关：外描边方案（box-shadow 不占盒模型，滑块不变形） ===== */
 html[data-skin="comic"] .switch input,
 html[data-skin="comic"] .sw input,
 html[data-skin="comic"] .force-switch .sw {
   background: #eee !important;
-  border: 3px solid #000 !important;
-  box-shadow: 2px 2px 0 #000 !important;
+  border-color: #000 !important;
+  box-shadow: 0 0 0 2px #000, 2px 2px 0 #000 !important;
 }
 html[data-skin="comic"] .switch input:checked,
 html[data-skin="comic"] .force-switch input:checked + .sw {
   background: #fbbf24 !important;
-  box-shadow: 2px 2px 0 #000, 0 0 0 3px rgba(251, 191, 36, .3) !important;
+  box-shadow: 0 0 0 2px #000, 2px 2px 0 #000, 0 0 0 5px rgba(251, 191, 36, .28) !important;
 }
 html[data-skin="comic"] .force-switch .sw::after {
   background: #fff !important;
   border: 2px solid #000;
 }
+
+/* ===== 状态胶囊 / 徽章通用漫画化 ===== */
+html[data-skin="comic"] .st-luxe,
+html[data-skin="comic"] .status-capsule,
+html[data-skin="comic"] .capsule,
+html[data-skin="comic"] .status-badge,
+html[data-skin="comic"] .state-badge,
+html[data-skin="comic"] .task-status,
+html[data-skin="comic"] #statusCapsule {
+  background: #fff !important;
+  border: 2px solid #000 !important;
+  border-radius: 999px !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  color: #4a3a66 !important;
+  font-weight: 900 !important;
+}
+html[data-skin="comic"] .st-luxe--ok { color: #0b8a4d !important; background: #eafff1 !important; }
+html[data-skin="comic"] .st-luxe--err { color: #b3122c !important; background: #ffe9ec !important; }
+html[data-skin="comic"] .st-luxe--warn { color: #8a5a00 !important; background: #fff7e0 !important; }
+html[data-skin="comic"] .st-luxe--info { color: #6b4db8 !important; background: #f3ecff !important; }
+html[data-skin="comic"] .st-luxe--off { color: #8a8a8a !important; background: #f0f0f0 !important; }
+html[data-skin="comic"] .dot { box-shadow: 0 0 0 1.5px #000; }
 html[data-skin="comic"] .chip {
   border: 2px solid #000 !important;
   box-shadow: 2.5px 2.5px 0 #000 !important;

@@ -4,7 +4,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const SHARED = 'shared/cosmic-skin';
-const COPIES = ['renderer', 'netdisk-hub/public', 'kdocs-tool/public', 'biliup-hub/public', 'material-hub/public'];
+const COPIES = ['renderer', 'netdisk-hub/public', 'kdocs-tool/public', 'biliup-hub/public', 'material-hub/public', 'resolve-hub/public'];
 const FILES = ['cosmic-skin.css', 'cosmic-skin.js', 'ark-pixel-16px-latin.woff2', 'ark-pixel-16px-zh_cn.woff2', 'OFL-ark-pixel.txt'];
 
 let fail = false;
@@ -19,4 +19,4 @@ for (const f of FILES) {
   }
 }
 if (fail) process.exit(1);
-console.log('cosmic-skin 五处副本与真源逐字节一致。');
+console.log('cosmic-skin 六处副本与真源逐字节一致。');

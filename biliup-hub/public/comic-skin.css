@@ -29,6 +29,10 @@ html[data-skin="comic"] {
   --shadow-card: 6px 6px 0 rgba(0, 0, 0, .9);
   --shadow-modal: 8px 8px 0 rgba(0, 0, 0, .85);
   --field-inset: none;
+  /* 达芬奇剪辑页兼容变量 */
+  --panel: #ffffff;
+  --line: #000000;
+  --log-bg: #ffffff;
 }
 
 /* ===== 背景：米白 + 网点 + 速度线 ===== */
@@ -309,6 +313,70 @@ html[data-skin="comic"] .sort-toggle,
 html[data-skin="comic"] .tab,
 html[data-skin="comic"] .history-tab,
 html[data-skin="comic"] .clear-input { background: #fff !important; color: #111 !important; }
+/* 达芬奇剪辑页：.primary 按钮 / 无 class 的清空按钮 / 卡片小标题 */
+html[data-skin="comic"] button.primary,
+html[data-skin="comic"] #browseBtn,
+html[data-skin="comic"] #startBtn,
+html[data-skin="comic"] #finishBtn {
+  border: 3px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0 #000 !important;
+  background: linear-gradient(135deg, #a78bfa, #f472b6) !important;
+  color: #fff !important;
+  box-shadow: 5px 5px 0 #000 !important;
+  font-weight: 900;
+}
+html[data-skin="comic"] #clearBtn {
+  border: 3px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0 #000 !important;
+  background: #fff !important;
+  color: #111 !important;
+  font-weight: 900;
+}
+html[data-skin="comic"] button.primary:active,
+html[data-skin="comic"] #browseBtn:active,
+html[data-skin="comic"] #startBtn:active,
+html[data-skin="comic"] #finishBtn:active,
+html[data-skin="comic"] #clearBtn:active { transform: translate(4px, 4px); box-shadow: 1px 1px 0 #000 !important; }
+html[data-skin="comic"] button.primary:disabled,
+html[data-skin="comic"] #browseBtn:disabled,
+html[data-skin="comic"] #startBtn:disabled,
+html[data-skin="comic"] #finishBtn:disabled,
+html[data-skin="comic"] #clearBtn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+html[data-skin="comic"] .card h3 {
+  color: #111;
+  font-weight: 900;
+  text-shadow: 2px 2px 0 #ffe9a8;
+}
+/* 待发布清单：tab 选中金黄黑字；编辑/顶替黑字小按钮；删除保持红字 */
+html[data-skin="comic"] .pv-tabs button.active {
+  background: linear-gradient(135deg, #ffe9a8, #fbbf24) !important;
+  color: #111 !important;
+  border-color: #000 !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  font-weight: 900;
+}
+html[data-skin="comic"] .pv-edit,
+html[data-skin="comic"] .pv-replace {
+  background: #fff !important;
+  color: #111 !important;
+  border: 2px solid #000 !important;
+  border-radius: 8px !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  font-weight: 800;
+}
+html[data-skin="comic"] .pv-edit:hover,
+html[data-skin="comic"] .pv-replace:hover { color: #111 !important; }
+html[data-skin="comic"] .pv-sync:hover,
+html[data-skin="comic"] .pv-act:hover { color: #111 !important; }
+html[data-skin="comic"] .pv-del {
+  background: transparent !important;
+  color: #b3122c !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-weight: 800;
+}
 /* 分段控件 / 标签页选中态：金黄 */
 html[data-skin="comic"] .seg-item {
   background: #fff !important;
@@ -325,7 +393,7 @@ html[data-skin="comic"] .history-tab.active {
   background: linear-gradient(135deg, #ffe9a8, #fbbf24) !important;
   color: #111 !important;
   -webkit-text-stroke: 0 !important;
-  text-shadow: 1.5px 1.5px 0 rgba(120, 70, 0, .35);
+  text-shadow: none;
   transform: rotate(-1deg) scale(1.05);
   font-weight: 900 !important;
   box-shadow: 3px 3px 0 #000 !important;

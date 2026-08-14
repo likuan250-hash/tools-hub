@@ -36,6 +36,10 @@ html[data-skin="cosmic"]{
   --modal-mask:rgba(4,6,18,.72);
   --shadow-card:0 10px 34px rgba(0,0,0,.55);
   --shadow-modal:0 30px 80px rgba(0,0,0,.75);
+  /* 达芬奇剪辑页兼容变量 */
+  --panel:rgba(48,35,110,.5);
+  --line:rgba(167,139,250,.5);
+  --log-bg:#191238;
 }
 
 /* 深空底色 + 等宽终端字体 */

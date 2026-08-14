@@ -64,6 +64,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && p === "/") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(fs.readFileSync(path.join(PUBLIC, "index.html")));
+    } else if (req.method === "GET" && p === "/api/version") {
+      // 主进程统一探活基线：所有子服务都必须实现 /api/version（200 + bootToken 回显）
+      sendJson(res, 200, {
+        version: require("./package.json").version,
+        source: "resolve-hub",
+        updatable: false,
+        bootToken: process.env.BOOT_TOKEN || null,
+      });
     } else if (req.method === "GET" && p === "/app.js") {
       res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8" });
       res.end(fs.readFileSync(path.join(PUBLIC, "app.js")));

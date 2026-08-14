@@ -7,6 +7,7 @@
   const infoEl = $("folderInfo");
   const startBtn = $("startBtn");
   const finishBtn = $("finishBtn");
+  const clearBtn = $("clearBtn");
   const manualCard = $("manualCard");
   const doneEl = $("done");
 
@@ -21,6 +22,7 @@
   async function refreshInfo() {
     const dir = dirInput.value.trim();
     if (!dir) { infoEl.textContent = ""; startBtn.disabled = true; return; }
+    clearBtn.disabled = false;
     try {
       const r = await fetch("/api/folder-info?dir=" + encodeURIComponent(dir));
       const j = await r.json();
@@ -93,5 +95,16 @@
     }
     const dir = await window.electronAPI.pickFolder();
     if (dir) { dirInput.value = dir; refreshInfo(); }
+  };
+  clearBtn.onclick = () => {
+    dirInput.value = "";
+    infoEl.textContent = "";
+    logEl.textContent = "";
+    doneEl.textContent = "";
+    startBtn.disabled = true;
+    finishBtn.disabled = true;
+    manualCard.hidden = true;
+    clearBtn.disabled = true;
+    current = null;
   };
 })();

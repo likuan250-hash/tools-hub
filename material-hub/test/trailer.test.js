@@ -544,6 +544,23 @@ test('download 首候选失败自动换下一个候选（年龄限制/下载错�
   assert.equal(calls[1].args[calls[1].args.length - 1], 'https://youtu.be/v2');
 });
 
+test('download 失败时清理 yt-dlp 残留半成品（.fNNN），避免多视频落盘', async () => {
+  const entries = ['A - Launch Trailer.f299.mp4']; // 候选下载失败（403 中断）残留的半成品
+  const t = new TrailerDownloader({
+    spawn: fakeSpawn({ code: 1 }, []),
+    fs: fakeFs(entries),
+    probe: fakeProbe({ ok: true, width: 1920, height: 1080 }),
+    ytDlpPath: 'E:\\bin\\yt-dlp.exe',
+  });
+  const r = await t.download('x', 'dir', { ytDlp: true, ffmpeg: true }, {
+    candidates: [{ id: 'v1', title: 'A - Launch Trailer', url: 'https://youtu.be/v1', channel: 'XBOX', score: 100 }],
+    index: 1,
+  });
+  assert.equal(r.ok, false);
+  assert.equal(t.fs.unlinked.length, 1);
+  assert.ok(t.fs.unlinked[0].includes('A - Launch Trailer.f299.mp4'), '半成品必须被清理');
+});
+
 test('download 全部候选失败返回最后错误，且尝试次数封顶', async () => {
   const calls = [];
   const t = new TrailerDownloader({

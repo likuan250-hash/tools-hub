@@ -64,7 +64,7 @@ const server = http.createServer(async (req, res) => {
   const p = u.pathname;
   try {
     if (req.method === "GET" && p === "/") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
       res.end(fs.readFileSync(path.join(PUBLIC, "index.html")));
     } else if (req.method === "GET" && p === "/api/version") {
       // 主进程统一探活基线：所有子服务都必须实现 /api/version（200 + bootToken 回显）
@@ -75,8 +75,28 @@ const server = http.createServer(async (req, res) => {
         bootToken: process.env.BOOT_TOKEN || null,
       });
     } else if (req.method === "GET" && p === "/app.js") {
-      res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8" });
+      res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-cache" });
       res.end(fs.readFileSync(path.join(PUBLIC, "app.js")));
+    } else if (req.method === "GET" && /^\/[A-Za-z0-9._-]+$/.test(p)) {
+      // 通用静态资源（皮肤 css/js、像素字体等）：防缓存，杜绝 webview 加载旧页面导致皮肤不生效
+      const file = path.join(PUBLIC, p.replace(/^\/+/, ""));
+      if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+        const ext = path.extname(file).toLowerCase();
+        const mime = {
+          ".css": "text/css; charset=utf-8",
+          ".js": "application/javascript; charset=utf-8",
+          ".json": "application/json; charset=utf-8",
+          ".woff2": "font/woff2",
+          ".txt": "text/plain; charset=utf-8",
+          ".png": "image/png",
+          ".jpg": "image/jpeg",
+          ".svg": "image/svg+xml",
+        }[ext] || "application/octet-stream";
+        res.writeHead(200, { "Content-Type": mime, "Cache-Control": "no-cache" });
+        res.end(fs.readFileSync(file));
+      } else {
+        sendJson(res, 404, { error: "not found" });
+      }
     } else if (req.method === "GET" && p === "/api/folders") {
       let dirs = [];
       try { dirs = fs.readdirSync(MATERIAL_ROOT, { withFileTypes: true }); } catch (e) { /* ignore */ }

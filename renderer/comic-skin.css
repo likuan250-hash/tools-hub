@@ -438,6 +438,17 @@ html[data-skin="comic"] .st-luxe--warn { color: #8a5a00 !important; background: 
 html[data-skin="comic"] .st-luxe--info { color: #6b4db8 !important; background: #f3ecff !important; }
 html[data-skin="comic"] .st-luxe--off { color: #8a8a8a !important; background: #f0f0f0 !important; }
 html[data-skin="comic"] .dot { box-shadow: 0 0 0 1.5px #000; }
+/* 投稿状态胶囊：紧凑自适应宽度（原 flex:1 撑出长白框） */
+html[data-skin="comic"] #statusCapsule {
+  display: inline-flex !important;
+  width: auto !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  white-space: nowrap;
+  justify-content: flex-start;
+}
+/* 投稿日志内进度条：去掉，不协调 */
+html[data-skin="comic"] .bili-exec-progress { display: none !important; }
 /* 主页顶栏聚合状态 / 更新状态：漫画胶囊 */
 html[data-skin="comic"] .agg {
   display: inline-flex !important;
@@ -509,6 +520,13 @@ html[data-skin="comic"] .step-item {
   border: 3px solid #000 !important;
   border-radius: 12px !important;
   box-shadow: 4px 4px 0 rgba(0, 0, 0, .9) !important;
+  margin-bottom: 14px;
+}
+html[data-skin="comic"] .step-item:last-child { margin-bottom: 0; }
+html[data-skin="comic"] #autoSteps,
+html[data-skin="comic"] .auto-result,
+html[data-skin="comic"] .steps {
+  gap: 14px;
 }
 html[data-skin="comic"] .step-item .step-icon,
 html[data-skin="comic"] .step-item .st-icon {

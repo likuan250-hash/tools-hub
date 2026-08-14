@@ -233,6 +233,17 @@ class CollectService {
     }
     // 用户主动勾选（非超时自动）视为「确认保留」：即便降级也不再被抽帧覆盖
     applied.userConfirmed = choice.auto !== true;
+    // 封面已落盘：补发 ok 终态，前端执行进度才能显示成功（否则流程结束被收敛为失败）
+    if (applied.ok) {
+      emit('cover_download', STEP_COVER, '封面已落盘：' + (applied.file || ''), true, {
+        file: applied.file || '',
+        source: applied.source || picked.source || 'user',
+        width: applied.width,
+        height: applied.height,
+        degraded: applied.degraded === true,
+        interactive: true,
+      });
+    }
     return applied;
   }
 

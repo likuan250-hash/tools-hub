@@ -491,6 +491,24 @@ class TrailerDownloader {
   }
 
   /**
+   * 清理指定基名的 yt-dlp 中间产物（.fNNN / .part / .ytdl / .temp）。
+   * 下载失败（如 HTTP 403 中断）会残留半成品 .f299.mp4，必须清掉避免误当成品/多视频落盘。
+   * @param {string} dir 目录
+   * @param {string} base 不含扩展名的基名
+   */
+  cleanupTrailerArtifacts(dir, base) {
+    let entries = [];
+    try { entries = this.fs.readdirSync(dir); } catch (e) { return; }
+    const prefix = base + '.';
+    for (const n of (Array.isArray(entries) ? entries : [])) {
+      if (!n.startsWith(prefix)) continue;
+      if (/\.f\d+(\.\w+)?$|\.(part|ytdl|temp)$/i.test(n)) {
+        try { this.fs.unlinkSync(path.join(dir, n)); } catch (e) { /* 删不掉不影响结果 */ }
+      }
+    }
+  }
+
+  /**
    * 按规范《视频命名规范》生成目标文件名。
    * @param {string} gameName 游戏名
    * @param {{index?: number, kind?: string, englishName?: string, versionDesc?: string}} [opts]
@@ -662,7 +680,8 @@ class TrailerDownloader {
 
       const produced = this.findDownloaded(dir, base);
       if (r.code !== 0 || !produced) {
-        // 失败时清掉残留中间产物（如 .f137.mp4 半成品），避免被误当成品
+        // 失败时清掉该候选的残留：成品 + .fNNN/.part/.ytdl 等中间产物（403 中断会留半成品）
+        this.cleanupTrailerArtifacts(dir, base);
         if (produced) {
           try { this.fs.unlinkSync(path.join(dir, produced)); } catch (e) { /* 删不掉不影响结果 */ }
         }

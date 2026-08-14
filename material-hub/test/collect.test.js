@@ -791,6 +791,8 @@ test('交互式封面：发出 cover_candidates → chooseCover 选中 → 应�
   assert.equal(cover.calls.applyCandidate.length, 1);
   assert.equal(cover.calls.applyCandidate[0].url, pickedUrl);
   assert.equal(cover.calls.applyCandidate[0].opts.source, 'wallhaven');
+  const dlOk = ofType(events, 'cover_download').some((e) => e.ok === true && e.detail && e.detail.interactive === true);
+  assert.equal(dlOk, true, '交互式封面应用成功后必须补发 ok 终态，避免执行进度误判失败');
 });
 
 test('交互式封面：跳过选择 → 走主视频抽帧兜底', async () => {

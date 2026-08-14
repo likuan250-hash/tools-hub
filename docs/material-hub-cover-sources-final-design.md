@@ -1,5 +1,10 @@
 # material-hub 封面来源改造 —— 最终设计 + 任务分解
 
+> **2026-08-14 变更**：Bing 图片搜索不再严格按 `site:` 过滤（实测返回全为无关站点图），
+> `4kwallpapers` / `game-sites` / `chinese-sites` 三个 Bing 源已从 `fetchCover` / `collectCandidates`
+> 的 order 移除；`alphacoders` 改为站内搜索直抓原图（`discoverAlphacodersDirect`）。
+> 本文其余内容为当时定稿记录，实现以 `lib/cover.js` 为准。
+
 > 架构师：高见远（Gao） · 日期：2026-08-04 · 状态：**定稿，可直接交付工程师**
 > 上游：`docs/material-hub-cover-sources-redesign.md`（调研草案）
 > 基线代码：`material-hub@2.6.7`

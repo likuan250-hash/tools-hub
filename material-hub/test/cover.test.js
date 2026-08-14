@@ -33,12 +33,11 @@ const {
   isBingItemRelevant,
   isYouTubeTitleRelevant,
   looksLikeBingBlockPage,
+  parseAlphacodersDirect,
   pickRelevantSteamAppId,
   STEAM_CDN_BASE,
   STEAM_CDN_STRICT,
   STEAM_CDN_LOWRES,
-  GAME_MEDIA_SITES,
-  CHINESE_WALLPAPER_SITES,
   BING_IMAGE_SEARCH,
   BING_SIZE_FILTER,
 } = require('../lib/cover');
@@ -296,9 +295,10 @@ test('buildBingImageUrl 单站 / 多站 OR / 尺寸过滤（qft 绝不 encodeURI
   assert.ok(single.includes(encodeURIComponent('key art')));
   assert.ok(single.endsWith('qft=' + BING_SIZE_FILTER), 'qft 以字面量拼接（含 +filterui）');
 
-  const multi = c.buildBingImageUrl(GAME_MEDIA_SITES, 'X', 'wallpaper');
+  const sites = ['nintendo.com', 'playstation.com', 'xbox.com'];
+  const multi = c.buildBingImageUrl(sites, 'X', 'wallpaper');
   assert.ok(multi.includes('(site%3Anintendo.com%20OR%20site%3Aplaystation.com'), '多站 OR 拼法');
-  assert.ok(GAME_MEDIA_SITES.every((s) => multi.includes(encodeURIComponent('site:' + s))), '每个站点都在');
+  assert.ok(sites.every((s) => multi.includes(encodeURIComponent('site:' + s))), '每个站点都在');
 });
 
 // ─────────────────────── Steam 官方 CDN ───────────────────────
@@ -597,7 +597,7 @@ test('fetchCover 缺少入参的来源被跳过（不计入 tried）', async () 
   const r = await c.fetchCover('X', 'D:\\out');
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'cover-all-sources-failed');
-  assert.deepEqual(r.tried, ['wallhaven', 'reddit', '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites']);
+  assert.deepEqual(r.tried, ['wallhaven', 'reddit', 'alphacoders']);
 });
 
 test('第 4 级用户指定 URL：默认排在第 4 位，userUrlFirst 可提前', async () => {
@@ -654,7 +654,7 @@ test('全部来源失败时返回 cover-all-sources-failed 并列出尝试过的
   const r = await c.fetchCover('X', 'D:\\out', { coverUrl: 'https://a.com/x.jpg', videoId: 'v1' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'cover-all-sources-failed');
-  assert.deepEqual(r.tried, ['youtube', 'wallhaven', 'reddit', 'user', '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites']);
+  assert.deepEqual(r.tried, ['youtube', 'wallhaven', 'reddit', 'user', 'alphacoders']);
   assert.ok(r.error.includes('wallhaven'));
 });
 
@@ -1013,74 +1013,69 @@ test('isRelevantCandidate 中文查询词走整段子串匹配；无实义词一
 
 // ═══════════════════ 缺陷 4 端到端：Bing 图片搜索路径（替代旧 DDG 路径）═══════════════════
 
-test('from4kWallpapers 经 Bing：只采纳 4kwallpapers 域名且相关的原图，混入无关图被剔除', async () => {
-  const fs = fakeFs();
-  const right = 'https://cdn.4kwallpapers.com/just-cause-4-3840x2160-1.jpg';
-  const wrong = 'https://cdn.4kwallpapers.com/persona-4-revival-3840x2160-2.jpg';
-  const other = 'https://cdn.alphacoders.com/x.jpg'; // 非 4kwallpapers 域名
-  const bingHtml = [
-    bingItemHtml({ murl: right, purl: 'https://4kwallpapers.com/just-cause-4', t: 'Just Cause 4 Wallpaper' }),
-    bingItemHtml({ murl: wrong, purl: 'https://4kwallpapers.com/persona', t: 'Persona 4' }),
-    bingItemHtml({ murl: other, purl: 'https://alphacoders.com/x', t: 'Just Cause 4' }),
+test('parseAlphacodersDirect 只取原图直链：排除 thumb- 缩略图并去重', () => {
+  const html = [
+    '<img src="https://images.alphacoders.com/117/thumb-1920-1179971.jpg">',
+    '<a href="https://images.alphacoders.com/117/1179971.jpg">full</a>',
+    '<a href="https://images.alphacoders.com/117/1179970.jpg">full2</a>',
+    '<a href="https://images.alphacoders.com/117/thumb-350-1179971.webp">thumb</a>',
+    '<a href="https://images.alphacoders.com/117/1179971.jpg">dup</a>',
   ].join('\n');
+  assert.deepEqual(parseAlphacodersDirect(html), [
+    'https://images.alphacoders.com/117/1179971.jpg',
+    'https://images.alphacoders.com/117/1179970.jpg',
+  ]);
+  assert.deepEqual(parseAlphacodersDirect(''), []);
+});
+
+test('fromAlphacoders 站内直抓：search.php 专题页原图直链命中（替代 Bing site:）', async () => {
+  const fs = fakeFs();
+  const full = 'https://images.alphacoders.com/117/1179971.jpg';
+  const html = '<a href="' + full + '">x</a><img src="https://images.alphacoders.com/117/thumb-1920-1179971.jpg">';
   const downloaded = [];
   const c = makeCover((url) => {
-    if (url.startsWith(BING_IMAGE_SEARCH)) return { text: bingHtml };
+    if (url.startsWith('https://wall.alphacoders.com/search.php')) return { text: html };
     downloaded.push(url);
-    return { buf: jpegBuf(3840, 2160) };
-  }, fs);
-
-  const r = await c.from4kWallpapers('Just Cause 4', 'D:\\out', { query: 'Just Cause 4' });
-  assert.equal(r.ok, true);
-  assert.equal(r.url, right, '只采纳 4kwallpapers 域名且相关的那张');
-  assert.deepEqual(downloaded, [right], '无关图（persona / 其它域名）连下载都不该发生');
-  assert.equal(fs.written.length, 1);
-  assert.equal(r.queryUsed, 'Just Cause 4');
-});
-
-test('from4kWallpapers 经 Bing：整页都不相关时干净失败而不是给错图', async () => {
-  const fs = fakeFs();
-  const bingHtml = bingItemHtml({ murl: 'https://cdn.4kwallpapers.com/persona-4-revival.jpg', purl: 'https://4kwallpapers.com/persona', t: 'Persona 4 Revival' });
-  const c = makeCover((url) => {
-    if (url.startsWith(BING_IMAGE_SEARCH)) return { text: bingHtml };
-    return { buf: jpegBuf(3840, 2160) };
-  }, fs);
-
-  const r = await c.from4kWallpapers('Just Cause 4', 'D:\\out', { query: 'Just Cause 4' });
-  assert.equal(r.ok, false, '整页都不相关必须干净失败');
-  assert.equal(r.error, '无候选直链');
-  assert.equal(fs.written.length, 0, '绝不允许把 persona 落盘成封面');
-  assert.equal(r.queryUsed, 'Just Cause 4');
-});
-
-test('fromGameSites 一次 Bing 多站 OR 即可命中（不再逐站抓详情页）', async () => {
-  const fs = fakeFs();
-  const right = 'https://media.nintendo.com/jc4.jpg';
-  const bingHtml = bingItemHtml({ murl: right, purl: 'https://nintendo.com/jc4', t: 'Just Cause 4' });
-  const c = makeCover((url) => {
-    if (url.startsWith(BING_IMAGE_SEARCH)) return { text: bingHtml };
     return { buf: jpegBuf(1920, 1080) };
   }, fs);
 
-  const r = await c.fromGameSites('Just Cause 4', 'D:\\out', { query: 'Just Cause 4' });
+  const r = await c.fromAlphacoders('Alan Wake Remastered', 'D:\\out', { query: 'Alan Wake Remastered' });
   assert.equal(r.ok, true);
-  assert.equal(r.url, right);
-  assert.equal(r.source, 'game-sites');
+  assert.equal(r.url, full);
+  assert.deepEqual(downloaded, [full], '只下载原图，不下载 thumb 缩略图');
+  assert.equal(r.queryUsed, 'Alan Wake Remastered');
 });
 
-test('fromChineseSites 用中文名搜中文站，命中游民星空等域名', async () => {
+test('fromAlphacoders 站内搜索失败 / 无直链时干净失败', async () => {
   const fs = fakeFs();
-  const right = 'https://img.gamersky.com/jc4.jpg';
-  const bingHtml = bingItemHtml({ murl: right, purl: 'https://www.gamersky.com/jc4', t: '正当防卫4 壁纸' });
-  const c = makeCover((url) => {
-    if (url.startsWith(BING_IMAGE_SEARCH)) return { text: bingHtml };
-    return { buf: jpegBuf(1920, 1080) };
-  }, fs);
+  const c1 = makeCover(() => ({ status: 500 }), fs);
+  const r1 = await c1.fromAlphacoders('Alan Wake Remastered', 'D:\\out', { query: 'Alan Wake Remastered' });
+  assert.equal(r1.ok, false);
+  assert.equal(fs.written.length, 0);
 
-  const r = await c.fromChineseSites('正当防卫4', 'D:\\out', { originalName: '正当防卫4' });
-  assert.equal(r.ok, true);
-  assert.equal(r.url, right);
-  assert.equal(r.watermarkRisk, true);
+  const c2 = makeCover(() => ({ text: '<html>no images</html>' }), fakeFs());
+  const r2 = await c2.fromAlphacoders('Alan Wake Remastered', 'D:\\out', { query: 'Alan Wake Remastered' });
+  assert.equal(r2.ok, false);
+  assert.equal(r2.error, '无候选直链');
+});
+
+test('resolveSteamAppId 版本词剥离降级：完整词 0 结果时用基础名再查（对齐 kdocs）', async () => {
+  const fullUrl = 'https://store.steampowered.com/api/storesearch/?term=' + encodeURIComponent('Alan Wake Remastered') + '&l=english&cc=US';
+  const baseUrl = 'https://store.steampowered.com/api/storesearch/?term=' + encodeURIComponent('Alan Wake') + '&l=english&cc=US';
+  const calls = [];
+  const c = makeCover((url) => {
+    if (url === fullUrl) return { json: { total: 0, items: [] } };
+    if (url === baseUrl) {
+      return { json: { total: 7, items: [
+        { id: 108710, name: 'Alan Wake' },
+        { id: 2661250, name: 'Dead by Daylight - Alan Wake Chapter' },
+      ] } };
+    }
+    return { status: 404 };
+  }, null, calls);
+
+  assert.equal(await c.resolveSteamAppId('Alan Wake Remastered'), '108710');
+  assert.deepEqual(calls.map((x) => x.url), [fullUrl, baseUrl], '先查完整词，0 结果后降级基础名');
 });
 
 test('fromReddit 相关性闸门：只采纳标题相关的贴，无关热门贴被剔除', async () => {

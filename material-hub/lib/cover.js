@@ -1,17 +1,14 @@
 // lib/cover.js —— 封面获取：严格按《素材搜集规则》「封面来源优先级」实现多级降级。
 //
-// 封面来源优先级链（11 级，见 fetchCover 的 order 数组；第 12 级 ffmpeg 抽帧由 collect.js 编排）：
+// 封面来源优先级链（见 fetchCover 的 order 数组；末级 ffmpeg 抽帧由 collect.js 编排）：
 //   1  steam-cdn         Steam 官方宣传主视觉（capsule_616x353 / header）                    需 steamAppId
 //   2  youtube           官方宣传片缩略图（maxresdefault，发行商官方 key art）                需 videoId
 //   3  steam-cdn-hero    Steam 官方宽幅横幅（library_hero_2x / page_bg，非宣传主视觉）       需 steamAppId
 //   4  wallhaven         公开 JSON API（免 key）                                              英文查询词
 //   5  reddit            公开 JSON API（免 key，★带相关性闸门）                                英文查询词
 //   6  user              用户指定 URL（直链）                                                 位置不变
-//   7  4kwallpapers      Bing 图片搜索（cn.bing.com，国内可直连）                             英文查询词
-//   8  alphacoders       Bing 图片搜索                                                       英文查询词
-//   9  game-sites        Bing 图片搜索（6 站 OR 合并，1 次请求）                              英文查询词
-//  10  chinese-sites     Bing 图片搜索（5 站 OR 合并，中文原名）                              ⚠可能带水印
-//  11  steam-cdn-lowres  Steam 官方图 · 降级档（library_hero，仅 1920×620）                  需 steamAppId，degraded=true
+//   7  alphacoders       站内搜索直抓原图（Bing site: 失效后替代）                           英文查询词
+//   8  steam-cdn-lowres  Steam 官方图 · 降级档（library_hero，仅 1920×620）                  需 steamAppId，degraded=true
 //
 // 设计要点（v2.7.0 重构：DuckDuckGo 站内搜 → Bing 图片搜索 + Steam CDN 官方图）：
 //   · Bing 图片搜索的 `m.murl` 直接给原图直链，替代旧的「DDG 搜 → 抓详情页 → 抽直链」三段式；
@@ -115,11 +112,7 @@ const STEAM_SEARCH_API = 'https://store.steampowered.com/api/storesearch/';
 /** Steam 应用详情 API（appid → 英文名；filters=basic 只取基础字段，响应体小很多）。 */
 const STEAM_DETAILS_API = 'https://store.steampowered.com/api/appdetails';
 /** 依赖英文查询词的来源：这几个站没有中文索引，喂中文名必然 0 结果。 */
-const ENGLISH_QUERY_SOURCES = ['wallhaven', 'reddit', '4kwallpapers', 'alphacoders', 'game-sites'];
-/** 第 5 级「游戏媒体站」：覆盖主要平台与游戏新闻站，不限任天堂一家。 */
-const GAME_MEDIA_SITES = ['nintendo.com', 'playstation.com', 'xbox.com', 'ign.com', 'gamespot.com', 'pcgamer.com'];
-/** 第 5.5 级「中文游戏站」：游民星空/3DM/游侠/网易/腾讯（⚠ 可能带水印，谨慎采纳）。 */
-const CHINESE_WALLPAPER_SITES = ['gamersky.com', '3dmgame.com', 'ali213.net', '163.com', 'qq.com'];
+const ENGLISH_QUERY_SOURCES = ['wallhaven', 'reddit', 'alphacoders'];
 
 // ─────────────────────── 缺陷 4：相关性校验 ───────────────────────
 
@@ -510,13 +503,10 @@ const SOURCE_LABEL = {
   'steam-cdn': 'Steam 官方图',
   'steam-cdn-hero': 'Steam 官方横幅',
   'steam-cdn-lowres': 'Steam 官方图（低分辨率）',
-  '4kwallpapers': '4kwallpapers.com',
   alphacoders: 'alphacoders.com',
   wallhaven: 'wallhaven.cc',
   user: '用户指定 URL',
   nintendo: 'Nintendo 官网',
-  'game-sites': '游戏媒体站（英文）',
-  'chinese-sites': '中文游戏站（可能带水印）',
   reddit: 'Reddit 壁纸社区',
   youtube: 'YouTube 缩略图',
   'ffmpeg-frame': '主视频抽帧',
@@ -644,6 +634,26 @@ function looksLikeBingBlockPage(html) {
   const lower = text.toLowerCase();
   return ['captcha', 'unusual traffic', 'challenge-form', 'verify you are human', 'automated access']
     .some((w) => lower.includes(w));
+}
+
+/**
+ * 从 alphacoders 游戏专题页提取原图直链（站内直抓，替代已失效的 Bing site: 检索）。
+ * 页面里的图有 thumb-1920 / thumb-350 缩略与 images.alphacoders.com/N/xxxx.jpg 原图两种形态；
+ * 只取原图（排除 thumb- 前缀），保持页面出现顺序并去重。
+ * @param {string} html alphacoders 页面 HTML
+ * @returns {string[]} 原图直链列表
+ */
+function parseAlphacodersDirect(html) {
+  const re = /https?:\/\/images\.alphacoders\.com\/\d+\/(?!thumb-)[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)/gi;
+  const seen = new Set();
+  const out = [];
+  for (const m of String(html == null ? '' : html).matchAll(re)) {
+    const u = m[0];
+    if (seen.has(u)) continue;
+    seen.add(u);
+    out.push(u);
+  }
+  return out;
 }
 
 /**
@@ -1530,30 +1540,50 @@ class CoverFetcher {
     if (this.steamAppIdCache.has(query)) return this.steamAppIdCache.get(query);
     if (opts.lookup === false) return '';
 
+    // 查询变体：完整词 → 剥版本词后的基础名（对齐 kdocs searchSteamAppId）。
+    // storesearch 对「Alan Wake Remastered」这类带版本词的名称实测返回 0 条，
+    // 必须降级到「Alan Wake」再查一轮，否则 Steam 官方封面源永远跳过。
+    const variants = [];
+    const pushV = (t) => {
+      const v = String(t == null ? '' : t).trim();
+      if (v && variants.indexOf(v) < 0) variants.push(v);
+    };
+    pushV(query);
+    pushV(cleanEnglishTitle(query));
+
     // 离线 AppID 优先（kdocs data-pack 精选映射），命中即用，免打 Steam
-    const offId = lookupOfflineAppId(query);
-    if (offId) {
-      this.steamAppIdCache.set(query, offId);
-      emit('cover_search', STEP_SEARCH, '离线映射命中 Steam AppID：' + offId, null, { source: 'offline', appId: offId });
-      return offId;
+    for (const term of variants) {
+      const offId = lookupOfflineAppId(term);
+      if (offId) {
+        this.steamAppIdCache.set(query, offId);
+        emit('cover_search', STEP_SEARCH, '离线映射命中 Steam AppID：' + offId, null, { source: 'offline', appId: offId });
+        return offId;
+      }
     }
 
-    const url = this.buildSteamSearchUrl(query);
-    emit('cover_search', STEP_SEARCH, 'Steam storesearch 反查 appid（' + query + '）…', null, { source: 'steam-cdn', url });
-    try {
-      const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
-      if (!res.ok) {
-        emit('log', STEP_SEARCH, '[cover] Steam storesearch 失败：' + res.error, null, { level: 'info' });
-        return '';
+    for (let i = 0; i < variants.length; i += 1) {
+      const term = variants[i];
+      const url = this.buildSteamSearchUrl(term);
+      emit('cover_search', STEP_SEARCH, 'Steam storesearch 反查 appid（' + term + '）…', null, { source: 'steam-cdn', url });
+      try {
+        const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
+        if (!res.ok) {
+          emit('log', STEP_SEARCH, '[cover] Steam storesearch 失败：' + res.error, null, { level: 'info' });
+          continue;
+        }
+        const tokens = normalizeTokens(term);
+        const appId = pickRelevantSteamAppId(res.json, tokens);
+        if (appId) {
+          this.steamAppIdCache.set(query, appId);
+          return appId;
+        }
+        emit('log', STEP_SEARCH, '[cover] Steam storesearch 无相关结果（' + term + '）', null, { level: 'info' });
+      } catch (e) {
+        emit('log', STEP_SEARCH, '[cover] Steam storesearch 异常：' + (e && e.message ? e.message : String(e)), null, { level: 'info' });
       }
-      const tokens = normalizeTokens(query);
-      const appId = pickRelevantSteamAppId(res.json, tokens);
-      if (appId) this.steamAppIdCache.set(query, appId);
-      return appId;
-    } catch (e) {
-      emit('log', STEP_SEARCH, '[cover] Steam storesearch 异常：' + (e && e.message ? e.message : String(e)), null, { level: 'info' });
-      return '';
     }
+    emit('log', STEP_SEARCH, '[cover] Steam 未收录或无法匹配，跳过 Steam 官方封面源', null, { level: 'info' });
+    return '';
   }
 
   /**
@@ -1601,23 +1631,44 @@ class CoverFetcher {
   }
 
   /**
-   * 第 5 级：4kwallpapers.com，改经 Bing 图片搜索取原图直链（不再抓站内详情页）。
-   * @param {string} gameName 游戏名
-   * @param {string} outDir 目标目录
-   * @param {{emit?: Function, query?: string}} [opts] query 为本轮实际查询词（英文名优先）
-   * @returns {Promise<object>} tryCandidates 结果（附 queryUsed）
+   * alphacoders.com 站内搜索取原图直链（替代已失效的 Bing site: 检索——
+   * Bing 图片搜索 2026-08 起不再严格按 site: 过滤，实测返回全为无关站点图）。
+   * search.php?search=... 会 302 到 /<游戏-slug> 专题页，页面含 images.alphacoders.com 原图直链。
+   * @param {string} query 查询词（英文名）
+   * @param {{emit?: Function}} [opts]
+   * @returns {Promise<string[]>} 原图直链；任何失败一律返回 []（绝不抛）
    */
-  async from4kWallpapers(gameName, outDir, opts = {}) {
-    const query = this.pickQuery(gameName, opts);
-    const urls = await this.discoverViaBing('4kwallpapers.com', query, {
-      emit: opts.emit, extra: 'key art', source: '4kwallpapers', query,
+  async discoverAlphacodersDirect(query, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const q = String(query == null ? '' : query).trim();
+    if (!q) return [];
+    const url = 'https://wall.alphacoders.com/search.php?search=' + encodeURIComponent(q);
+    emit('cover_search', STEP_SEARCH, 'alphacoders 站内搜索 ' + q + '…', null, { source: 'alphacoders', url, query: q });
+    let html = '';
+    try {
+      const resp = await this.netFetch(url, { timeout: this.timeout, headers: { Accept: 'text/html' } });
+      if (!resp.ok) {
+        emit('log', STEP_SEARCH, '[cover] alphacoders 检索失败：' + (resp.error || ('HTTP ' + resp.status)), null, { level: 'info' });
+        return [];
+      }
+      html = await resp.text();
+    } catch (e) {
+      emit('log', STEP_SEARCH, '[cover] alphacoders 检索异常：' + (e && e.message ? e.message : String(e)), null, { level: 'info' });
+      return [];
+    }
+    const urls = parseAlphacodersDirect(html);
+    if (!urls.length) {
+      emit('log', STEP_SEARCH, '[cover] alphacoders 未检索到直链', null, { level: 'info' });
+      return [];
+    }
+    emit('cover_search', STEP_SEARCH, 'alphacoders 命中 ' + urls.length + ' 张候选', null, {
+      source: 'alphacoders', count: urls.length, query: q,
     });
-    const r = await this.tryCandidates(urls, outDir, { emit: opts.emit, source: '4kwallpapers' });
-    return Object.assign({}, r, { queryUsed: query });
+    return urls;
   }
 
   /**
-   * 第 6 级：alphacoders.com，改经 Bing 图片搜索取原图直链。
+   * 第 7 级：alphacoders.com，站内直抓原图直链（不再经 Bing）。
    * @param {string} gameName 游戏名
    * @param {string} outDir 目标目录
    * @param {{emit?: Function, query?: string}} [opts]
@@ -1625,10 +1676,8 @@ class CoverFetcher {
    */
   async fromAlphacoders(gameName, outDir, opts = {}) {
     const query = this.pickQuery(gameName, opts);
-    const urls = await this.discoverViaBing('alphacoders.com', query, {
-      emit: opts.emit, extra: 'wallpaper', source: 'alphacoders', query,
-    });
-    const r = await this.tryCandidates(urls, outDir, { emit: opts.emit, source: 'alphacoders' });
+    const urls = await this.discoverAlphacodersDirect(query, opts);
+    const r = await this.tryCandidates(urls.slice(0, MAX_CANDIDATES_PER_SOURCE), outDir, { emit: opts.emit, source: 'alphacoders' });
     return Object.assign({}, r, { queryUsed: query });
   }
 
@@ -1685,43 +1734,6 @@ class CoverFetcher {
   }
 
   /**
-   * 第 7 级：游戏媒体站（Bing site: 跨多站 OR 搜索 OG 图）。
-   * 覆盖 Nintendo/PlayStation/Xbox/IGN/GameSpot/PCGamer 等，一次 Bing 请求出直链，
-   * 不再逐站抓详情页。host 校验只认 purl 域名（图挂 CDN 上，校验 murl 会误杀）。
-   */
-  async fromGameSites(gameName, outDir, opts = {}) {
-    const query = this.pickQuery(gameName, opts);
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const urls = await this.discoverViaBing(GAME_MEDIA_SITES, query, {
-      emit, extra: 'wallpaper', source: 'game-sites', query,
-    });
-    if (!urls.length) {
-      return { ok: false, error: '游戏媒体站未找到封面', source: 'game-sites', queryUsed: query };
-    }
-    const r = await this.tryCandidates(urls, outDir, { emit, source: 'game-sites' });
-    return Object.assign({}, r, { queryUsed: query });
-  }
-
-  /**
-   * 第 8 级：中文游戏站（游民星空 / 3DM / 游侠 / 网易 / 腾讯），用原名（中文）搜索。
-   * ⚠ 水印风险：这些站经常在图上打 logo，结果仅作保底。
-   */
-  async fromChineseSites(gameName, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    // 优先用原始中文名（collect.js 传来的 originalName），回退到 gameName
-    const cname = String(opts.originalName || gameName || '').trim();
-    if (!cname) return { ok: false, error: '无可用中文名', source: 'chinese-sites' };
-    const urls = await this.discoverViaBing(CHINESE_WALLPAPER_SITES, cname, {
-      emit, extra: '壁纸', source: 'chinese-sites', query: cname,
-    });
-    if (!urls.length) {
-      return { ok: false, error: '中文游戏站未找到封面', source: 'chinese-sites', queryUsed: cname };
-    }
-    const r = await this.tryCandidates(urls, outDir, { emit, source: 'chinese-sites' });
-    return Object.assign({}, r, { queryUsed: cname, watermarkRisk: true });
-  }
-
-  /**
    * 第 3 级：Reddit 壁纸社区（r/gamewallpaper + r/wallpapers）。
    * Reddit 公开 JSON API 无需认证，只需带 User-Agent；按相关性搜索取直链图片。
    * 新增相关性闸门：贴标题须与查询词相关，挡掉「热门但与本游戏无关」的图。
@@ -1738,7 +1750,10 @@ class CoverFetcher {
           + encodeURIComponent(query) + '&sort=relevance&limit=10&restrict_sr=on';
         emit('cover_search', STEP_SEARCH, '检索 Reddit r/' + sub + '…', null, { source: 'reddit', url });
         const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
-        if (!res.ok) continue;
+        if (!res.ok) {
+          emit('log', STEP_SEARCH, '[cover] Reddit r/' + sub + ' 检索失败：' + res.error, null, { level: 'info' });
+          continue;
+        }
         const data = res.json;
         const posts = (data.data && data.data.children) || [];
         const urls = [];
@@ -1877,7 +1892,7 @@ class CoverFetcher {
 
     // 规范《封面来源优先级》表格顺序；userUrlFirst 仅在调用方显式要求时改变位次
   // youtube（官方宣传片缩略图）提级到壁纸站之前：无 Steam 页的游戏（PS5 独占等）也优先用发行商官方图
-  let order = ['steam-cdn', 'youtube', 'steam-cdn-hero', 'wallhaven', 'reddit', 'user', '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites', 'steam-cdn-lowres'];
+  let order = ['steam-cdn', 'youtube', 'steam-cdn-hero', 'wallhaven', 'reddit', 'user', 'alphacoders', 'steam-cdn-lowres'];
     if (opts.userUrlFirst === true) order = ['user'].concat(order.filter((s) => s !== 'user'));
     if (Array.isArray(opts.sources) && opts.sources.length) {
       order = order.filter((s) => opts.sources.indexOf(s) >= 0);
@@ -1915,10 +1930,7 @@ class CoverFetcher {
           else if (source === 'wallhaven') r = await this.fromWallhaven(name, outDir, { emit, query });
           else if (source === 'reddit') r = await this.fromReddit(name, outDir, { emit, query: name });
           else if (source === 'user') r = await this.fromUserUrl(opts.coverUrl, outDir, { emit });
-          else if (source === '4kwallpapers') r = await this.from4kWallpapers(name, outDir, { emit, query });
           else if (source === 'alphacoders') r = await this.fromAlphacoders(name, outDir, { emit, query });
-          else if (source === 'game-sites') r = await this.fromGameSites(name, outDir, { emit, query });
-          else if (source === 'chinese-sites') r = await this.fromChineseSites(name, outDir, { emit, originalName: opts.originalName });
           else if (source === 'youtube') r = await this.fromYouTube(opts.videoId, outDir, { emit });
         } catch (e) {
           r = { ok: false, error: '来源异常：' + (e && e.message ? e.message : String(e)) };
@@ -1995,7 +2007,7 @@ class CoverFetcher {
     };
 
     let order = ['steam-cdn', 'youtube', 'steam-cdn-hero', 'wallhaven', 'reddit', 'user',
-      '4kwallpapers', 'alphacoders', 'game-sites', 'chinese-sites', 'steam-cdn-lowres'];
+      'alphacoders', 'steam-cdn-lowres'];
     if (opts.userUrlFirst === true) order = ['user'].concat(order.filter((s) => s !== 'user'));
 
     const seen = new Set();
@@ -2043,7 +2055,10 @@ class CoverFetcher {
             const url = 'https://www.reddit.com/r/' + sub + '/search.json?q='
               + encodeURIComponent(query) + '&sort=relevance&limit=10&restrict_sr=on';
             const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
-            if (!res.ok) continue;
+            if (!res.ok) {
+              emit('log', STEP_SEARCH, '[cover] Reddit r/' + sub + ' 检索失败：' + res.error, null, { level: 'info' });
+              continue;
+            }
             const posts = (res.json && res.json.data && res.json.data.children) || [];
             for (const p of posts) {
               const postUrl = (p.data && p.data.url) || '';
@@ -2057,24 +2072,12 @@ class CoverFetcher {
             }
             if (candidates.length >= MAX_PICK_CANDIDATES) break;
           }
-        } else if (source === 'chinese-sites') {
-          const cname = String(opts.originalName || name || '').trim();
-          if (cname) {
-            const urls = await this.discoverViaBing(CHINESE_WALLPAPER_SITES, cname, {
-              emit, extra: '壁纸', source: 'chinese-sites', query: cname,
-            });
-            urls.slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, source));
-          }
         } else {
           const plan = ENGLISH_QUERY_SOURCES.indexOf(source) >= 0 ? queryPlan : [name];
           for (const query of plan) {
             let urls = [];
-            if (source === '4kwallpapers') {
-              urls = await this.discoverViaBing('4kwallpapers.com', query, { emit, extra: 'key art', source: '4kwallpapers', query });
-            } else if (source === 'alphacoders') {
-              urls = await this.discoverViaBing('alphacoders.com', query, { emit, extra: 'wallpaper', source: 'alphacoders', query });
-            } else if (source === 'game-sites') {
-              urls = await this.discoverViaBing(GAME_MEDIA_SITES, query, { emit, extra: 'wallpaper', source: 'game-sites', query });
+            if (source === 'alphacoders') {
+              urls = await this.discoverAlphacodersDirect(query, { emit, query });
             }
             urls.slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, source));
             if (candidates.length >= MAX_PICK_CANDIDATES) break;
@@ -2290,8 +2293,7 @@ module.exports = {
   STEAM_CDN_STRICT,
   STEAM_CDN_HERO,
   STEAM_CDN_LOWRES,
-  GAME_MEDIA_SITES,
-  CHINESE_WALLPAPER_SITES,
+  parseAlphacodersDirect,
   BING_IMAGE_SEARCH,
   BING_SIZE_FILTER,
 };

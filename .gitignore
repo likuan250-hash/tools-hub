@@ -23,3 +23,6 @@ proxy-default
 **/proxy-default
 # 测试临时目录（kdocs-tool/test/.tmp-*，约定不写 %TEMP%/C 盘，测试结束自动清理；残留兜底忽略）
 kdocs-tool/test/.tmp-*/
+# Python 缓存（resolve-auto 等脚本目录）
+__pycache__/
+*.pyc

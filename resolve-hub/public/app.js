@@ -3,7 +3,7 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const logEl = $("log");
-  const folderSel = $("folder");
+  const dirInput = $("dirInput");
   const infoEl = $("folderInfo");
   const startBtn = $("startBtn");
   const finishBtn = $("finishBtn");
@@ -18,29 +18,8 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  async function loadFolders() {
-    try {
-      const r = await fetch("/api/folders");
-      const j = await r.json();
-      folderSel.innerHTML = "";
-      if (!j.folders || !j.folders.length) {
-        folderSel.innerHTML = '<option value="">未找到 【游戏NNN】 素材目录</option>';
-        return;
-      }
-      for (const f of j.folders) {
-        const o = document.createElement("option");
-        o.value = f.path;
-        o.textContent = f.name;
-        folderSel.appendChild(o);
-      }
-      refreshInfo();
-    } catch (e) {
-      folderSel.innerHTML = '<option value="">目录加载失败</option>';
-    }
-  }
-
   async function refreshInfo() {
-    const dir = folderSel.value;
+    const dir = dirInput.value.trim();
     if (!dir) { infoEl.textContent = ""; startBtn.disabled = true; return; }
     try {
       const r = await fetch("/api/folder-info?dir=" + encodeURIComponent(dir));
@@ -107,7 +86,12 @@
     doneEl.textContent = "渲染结束，请检查日志确认输出文件。";
   };
 
-  folderSel.onchange = refreshInfo;
-  $("refresh").onclick = loadFolders;
-  loadFolders();
+  $("browseBtn").onclick = async () => {
+    if (!window.electronAPI || !window.electronAPI.pickFolder) {
+      infoEl.textContent = "当前环境不支持原生目录选择。";
+      return;
+    }
+    const dir = await window.electronAPI.pickFolder();
+    if (dir) { dirInput.value = dir; refreshInfo(); }
+  };
 })();

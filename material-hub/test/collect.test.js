@@ -264,6 +264,7 @@ test('环境三件套一次性解析并注入 probe / trailer（Bug B 根因之�
   assert.deepEqual(trailer.calls.setBinaries[0], {
     ytDlpPath: 'E:\\bin\\yt-dlp.exe',
     ffmpegPath: 'E:\\bin\\ffmpeg.exe',
+    ffprobePath: 'E:\\bin\\ffprobe.exe',
   });
 });
 

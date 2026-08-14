@@ -115,29 +115,6 @@ def find_trailer(folder):
     return None
 
 
-def make_cover_video(cover_path, work_dir, ffmpeg, tag):
-    """把封面.jpg 生成 3 秒 60fps 的小视频。
-
-    原因：Resolve 的静帧时长由项目「默认静帧时长」决定且不可脚本化（dict 的
-    startFrame/endFrame 对静帧无效），而真实视频的时长/位置都能精确控制。
-    """
-    os.makedirs(work_dir, exist_ok=True)
-    safe = re.sub(r'[^\w\u4e00-\u9fff-]+', '_', str(tag or ''))[:40] or 'cover'
-    out = os.path.join(work_dir, 'cover_3s_' + safe + '.mp4')
-    if os.path.exists(out) and os.path.getsize(out) > 0:
-        print('[cover] 复用 3s 封面视频：' + out)
-        return out
-    print('[cover] 生成 3s 封面视频（ffmpeg）…')
-    r = subprocess.run(
-        [ffmpeg, '-y', '-loop', '1', '-i', cover_path, '-t', '3', '-r', '60',
-         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', out],
-        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
-    if r.returncode != 0 or not os.path.exists(out):
-        raise RuntimeError('ffmpeg 生成封面视频失败：' + str((r.stderr or '')[-300:]))
-    print('[cover] 已生成：' + out)
-    return out
-
-
 def probe_video_codec(path, ffprobe):
     r = subprocess.run(
         [ffprobe, '-v', 'error', '-select_streams', 'v:0',
@@ -146,27 +123,26 @@ def probe_video_codec(path, ffprobe):
     return (r.stdout or '').strip().lower()
 
 
-def ensure_trailer_h264(src, work_dir, ffmpeg, ffprobe):
-    """VP9/AV1 等编码的预告片在 Resolve 的 H.264 渲染管线会失败，统一转成 H.264/AAC。"""
+def check_trailer_codec(src, ffprobe):
+    """仅检查并提示编码（不再转码；素材格式由收集环节把关）。"""
     codec = probe_video_codec(src, ffprobe)
-    print('[trailer] 视频编码：' + (codec or '未知'))
     if codec == 'h264':
-        return src
-    os.makedirs(work_dir, exist_ok=True)
-    base = os.path.splitext(os.path.basename(src))[0]
-    out = os.path.join(work_dir, base + '_h264.mp4')
-    if os.path.exists(out) and os.path.getsize(out) > 0:
-        print('[trailer] 复用转码文件：' + out)
-        return out
-    print('[trailer] 转码为 H.264（VP9/AV1 源在 Resolve 渲染会失败）…')
+        print('[trailer] 视频编码：h264（符合规范）')
+    else:
+        print('[trailer] 警告：视频编码为 ' + (codec or '未知')
+              + '，Resolve 渲染会失败；请按素材规范收集 H.264/AAC mp4（工具不再自动转码）')
+    return codec
+
+
+def probe_frame_count(path, ffprobe):
     r = subprocess.run(
-        [ffmpeg, '-y', '-i', src, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
-         '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out],
-        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=600)
-    if r.returncode != 0 or not os.path.exists(out):
-        raise RuntimeError('预告片转码失败：' + str((r.stderr or '')[-300:]))
-    print('[trailer] 已转码：' + out)
-    return out
+        [ffprobe, '-v', 'error', '-count_frames', '-select_streams', 'v:0',
+         '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', path],
+        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
+    try:
+        return int((r.stdout or '').strip())
+    except ValueError:
+        raise RuntimeError('无法探测预告片帧数')
 
 
 def clean_work_dir(work_dir, keep_days=30):
@@ -303,19 +279,17 @@ def cmd_setup(args):
     except Exception as e:
         print('[project] 设置帧率失败（可忽略）：' + str(e))
 
-    # 封面转 3s 视频（静帧时长不可控，见 make_cover_video 注释）
-    cover_video = make_cover_video(os.path.join(folder, cover), args.work_dir, args.ffmpeg, project_name)
-    # 预告片编码兼容：非 H.264 先转码，避免 Resolve 渲染失败
-    trailer_video = ensure_trailer_h264(os.path.join(folder, trailer), args.work_dir, args.ffmpeg, args.ffprobe)
+    # 仅检查编码（不转码），素材格式由收集环节按规范产出
+    check_trailer_codec(os.path.join(folder, trailer), args.ffprobe)
 
     # 步骤 2：导入素材到媒体池
     ms = resolve.GetMediaStorage()
-    added = ms.AddItemListToMediaPool([cover_video, trailer_video])
-    cover_item = pick_media_item(added, os.path.basename(cover_video))
-    trailer_item = pick_media_item(added, os.path.basename(trailer_video))
+    added = ms.AddItemListToMediaPool([os.path.join(folder, cover), os.path.join(folder, trailer)])
+    cover_item = pick_media_item(added, cover)
+    trailer_item = pick_media_item(added, trailer)
     if not cover_item or not trailer_item:
         raise RuntimeError('素材导入媒体池失败')
-    print('[素材] 已导入媒体池（封面 3s 视频 + 预告片）')
+    print('[素材] 已导入媒体池（封面原图 + 预告片）')
 
     mp = proj.GetMediaPool()
     tl = find_timeline(proj, 'Timeline 1')
@@ -332,19 +306,40 @@ def cmd_setup(args):
     if timeline_has_trailer(tl, trailer):
         print('[timeline] 预告片已在 V1，跳过追加（幂等）')
     else:
-        # 步骤 4：封面 3s（180 帧 @60fps）→ 预告片（视频 V1 / 音频 A1）
-        # recordFrame 用时间线起始帧（如 216000=01:00:00:00），否则会落到播放头/错误位置
+        # 步骤 4：封面（原图静帧，时长由项目默认静帧时长决定，用户手动调整）→ 预告片
+        # 封面是静帧天然带无限右手柄；预告片从源第 30 帧起放留左手柄，平滑剪接转场才拖得上去。
+        # recordFrame 用时间线起始帧（如 216000=01:00:00:00），否则会落到播放头/错误位置。
         cover_ok = mp.AppendToTimeline([{
             'mediaPoolItem': cover_item,
-            'startFrame': 0,
-            'endFrame': 180,
+            'startFrame': 1,
+            'endFrame': 300,
             'trackIndex': 1,
             'recordFrame': tl.GetStartFrame(),
         }])
-        trailer_ok = mp.AppendToTimeline([trailer_item])
-        if not cover_ok or not trailer_ok:
+        cover_end = tl.GetStartFrame() + 300
+        for c in tl.GetItemListInTrack('video', 1):
+            if str(c.GetName() or '').startswith('封面'):
+                cover_end = c.GetEnd()
+                break
+        trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
+        trailer_ok = mp.AppendToTimeline([{
+            'mediaPoolItem': trailer_item,
+            'startFrame': 30,
+            'endFrame': trailer_frames,
+            'trackIndex': 1,
+            'recordFrame': cover_end,
+        }])
+        trailer_audio_ok = mp.AppendToTimeline([{
+            'mediaPoolItem': trailer_item,
+            'mediaType': 2,
+            'startFrame': 30,
+            'endFrame': trailer_frames,
+            'trackIndex': 1,
+            'recordFrame': cover_end,
+        }])
+        if not cover_ok or not trailer_ok or not trailer_audio_ok:
             raise RuntimeError('素材追加到时间线失败')
-        print('[timeline] 已追加 封面(3s@0) → 预告片 到 V1/A1')
+        print('[timeline] 已追加 封面(原图) → 预告片(留左手柄) 到 V1/A1')
     dump_timeline(tl)
     print('完成：请按标准流程手动完成 5-7（拉伸 V2[3]/V3[3] 文本、V1 平滑剪接、改开场文本），'
           '然后执行 render 子命令导出。')

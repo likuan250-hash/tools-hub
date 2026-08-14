@@ -24,6 +24,7 @@ h1 { font-size: 20px; margin: 0 0 4px; }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 label { font-size: 13px; color: var(--dim); }
 select { flex: 1; min-width: 260px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); font-size: 14px; }
+input[type="text"] { flex: 1; min-width: 240px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); font-size: 14px; }
 button { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); cursor: pointer; font-size: 14px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 button.primary { background: var(--accent); color: #fff; border-color: transparent; }
@@ -42,22 +43,22 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
   <section class="card">
     <h3>① 选择素材目录</h3>
     <div class="row">
-      <label>目录</label>
-      <select id="folder"><option value="">加载中…</option></select>
-      <button id="refresh" type="button">刷新</button>
+      <button id="browseBtn" class="primary" type="button">选择素材</button>
+      <input id="dirInput" type="text" readonly placeholder="点击「选择素材」选择任意目录">
     </div>
     <div class="info" id="folderInfo"></div>
     <div class="row" style="margin-top:10px">
       <button id="startBtn" class="primary" type="button" disabled>开始做视频（0-4）</button>
       <span class="info" id="startState"></span>
     </div>
+    <div class="info" style="margin-top:8px">说明：素材直接用原文件，不做转码/时长控制。推荐格式：封面 ≥1920×1080（JPG/PNG），预告片 H.264+AAC mp4（1080p60）；非 H.264 预告片会在日志中警告，Resolve 渲染会失败。</div>
   </section>
 
   <section class="card" id="manualCard" hidden>
     <h3>② 手动步骤 5-7（请到达芬奇里完成）</h3>
     <ol>
       <li>拉伸 V2[3] / V3[3] 尾部文本，对齐视频素材时长</li>
-      <li>V1 封面与视频之间添加「平滑剪接」转场（60f / 1秒）</li>
+      <li>V1 封面与视频之间添加「平滑剪接」转场（60f / 1秒）——拖到两个片段的接缝处，不是拖到片段上</li>
       <li>修改 V2[1] 开场文本为当前游戏名，V3/V4 文本自行调整内容和位置</li>
     </ol>
     <button id="finishBtn" class="primary" type="button" disabled>确认好了，继续导出（8-9）</button>

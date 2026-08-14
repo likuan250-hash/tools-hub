@@ -299,9 +299,13 @@ class CollectService {
     // ── 0. 环境：一次性解析三件套并注入各组件（工具已内置，正常情况全部命中）──
     const envInfo = this.env.detect();
     this.probe.setBinaries({ ffmpegPath: envInfo.ffmpegPath, ffprobePath: envInfo.ffprobePath });
-    if (typeof this.trailer.setBinaries === 'function') {
-      this.trailer.setBinaries({ ytDlpPath: envInfo.ytDlpPath, ffmpegPath: envInfo.ffmpegPath });
-    }
+if (typeof this.trailer.setBinaries === 'function') {
+    this.trailer.setBinaries({
+      ytDlpPath: envInfo.ytDlpPath,
+      ffmpegPath: envInfo.ffmpegPath,
+      ffprobePath: envInfo.ffprobePath,
+    });
+  }
     if (envInfo.missing.length) {
       emit('log', STEP_SCAN, '[env] 缺少依赖：' + envInfo.missing.join(', '), null, { level: 'warn' });
     } else {

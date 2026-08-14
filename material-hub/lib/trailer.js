@@ -147,6 +147,7 @@ class TrailerDownloader {
     this.probe = deps.probe || null;
     this.ytDlpPath = deps.ytDlpPath || null;
     this.ffmpegPath = deps.ffmpegPath || null;
+    this.ffprobePath = deps.ffprobePath || null;
     this.env = deps.env || process.env;
     this.proxyUrl = typeof deps.proxyUrl === 'string' ? deps.proxyUrl : undefined;
   }
@@ -158,6 +159,7 @@ class TrailerDownloader {
   setBinaries(paths = {}) {
     if (paths.ytDlpPath !== undefined) this.ytDlpPath = paths.ytDlpPath;
     if (paths.ffmpegPath !== undefined) this.ffmpegPath = paths.ffmpegPath;
+    if (paths.ffprobePath !== undefined) this.ffprobePath = paths.ffprobePath;
   }
 
   /**
@@ -442,7 +444,9 @@ class TrailerDownloader {
   buildDownloadArgs(url, outPath, env = {}) {
     const hasFfmpeg = env.ffmpeg !== false;
     const format = hasFfmpeg
-      ? 'bestvideo[height<=' + TARGET_HEIGHT + ']+bestaudio/best[height<=' + TARGET_HEIGHT + ']'
+      ? 'bestvideo[height<=' + TARGET_HEIGHT + '][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]'
+        + '/bestvideo[height<=' + TARGET_HEIGHT + '][ext=mp4]+bestaudio[ext=m4a]'
+        + '/best[height<=' + TARGET_HEIGHT + ']'
       : 'best[height<=' + TARGET_HEIGHT + ']';
     const args = ['-f', format];
     if (hasFfmpeg) args.push('--merge-output-format', 'mp4');
@@ -684,6 +688,20 @@ class TrailerDownloader {
         attempts: i + 1,
       };
 
+      // 素材规范：统一归一化为 H.264+AAC mp4（yt-dlp 已优先 H.264 直下，来源不合规时保底转码）
+      const norm = await this.normalizeToH264(result.path, env, { emit });
+      if (norm.error) {
+        last = { ok: false, reason: 'normalize-failed', error: norm.error };
+        if (i < list.length - 1) {
+          emit('log', STEP_DOWNLOAD, '[trailer] 候选 ' + (i + 1) + ' 转码失败（' + norm.error + '），尝试下一个候选…', null, { level: 'warn' });
+        }
+        continue;
+      }
+      if (norm.converted) {
+        emit('trailer_download', STEP_DOWNLOAD,
+          '已转码为 H.264/AAC（' + (norm.from || '未知') + ' → h264）', true, { converted: true, from: norm.from });
+      }
+
       // 规范《最终验证》：确认分辨率
       const probed = await this.probeResolution(result.path, { emit });
       if (probed.ok) {
@@ -719,6 +737,59 @@ class TrailerDownloader {
       width: r.width, height: r.height, hd,
     });
     return { ok: true, width: r.width, height: r.height };
+  }
+
+  /**
+   * 归一化预告片为 H.264+AAC mp4（素材规范）。已合规（h264+aac）则原样返回。
+   * 转换写临时文件，成功后才替换，避免破坏半成品。
+   */
+  async normalizeToH264(file, env = {}, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const ffprobe = this.ffprobePath || env.ffprobePath || 'ffprobe';
+    const ffmpeg = this.ffmpegPath || env.ffmpegPath || 'ffmpeg';
+    let r = null;
+    try {
+      r = await runCommand(ffprobe, [
+        '-v', 'error', '-show_entries', 'stream=codec_type,codec_name', '-of', 'json', file,
+      ], { spawn: this.spawn, timeout: 60000 });
+    } catch (e) {
+      return { converted: false, error: 'ffprobe 异常：' + e.message };
+    }
+    let vcodec = '';
+    let acodec = '';
+    try {
+      const j = JSON.parse(r.stdout || '{}');
+      for (const s of (j.streams || [])) {
+        if (s.codec_type === 'video' && !vcodec) vcodec = String(s.codec_name || '');
+        if (s.codec_type === 'audio' && !acodec) acodec = String(s.codec_name || '');
+      }
+    } catch (e) { /* JSON 解析失败按不合规处理 */ }
+    if (!vcodec) return { converted: false, vcodec, acodec, skipped: true }; // 探测不出编码 → 不干预
+    if (vcodec === 'h264' && (!acodec || acodec === 'aac')) {
+      return { converted: false, vcodec, acodec };
+    }
+    const fsm = (this.fs && typeof this.fs.existsSync === 'function') ? this.fs : fsDefault;
+    const tmp = file + '.norm.mp4';
+    emit('log', STEP_DOWNLOAD,
+      '[trailer] 转码为 H.264/AAC（' + (vcodec || '未知') + ' → h264）…', null, { level: 'info' });
+    try {
+      r = await runCommand(ffmpeg, [
+        '-y', '-i', file, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19',
+        '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', tmp,
+      ], { spawn: this.spawn, timeout: 20 * 60 * 1000 });
+    } catch (e) {
+      return { converted: false, error: 'ffmpeg 异常：' + e.message };
+    }
+    if (r.code !== 0 || !fsm.existsSync(tmp)) {
+      return { converted: false, error: 'ffmpeg 转码失败（退出码 ' + r.code + '）' };
+    }
+    try { fsm.unlinkSync(file); } catch (e) { /* ignore */ }
+    try {
+      fsm.renameSync(tmp, file);
+    } catch (e) {
+      try { fsm.copyFileSync(tmp, file); fsm.unlinkSync(tmp); } catch (e2) { /* ignore */ }
+    }
+    return { converted: true, vcodec, acodec };
   }
 
   /**

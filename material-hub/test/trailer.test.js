@@ -126,11 +126,16 @@ test('buildSearchArgs 支持自定义条数与后缀，并 trim 游戏名', () =
   assert.equal(t.buildSearchArgs(null)[0], 'ytsearch10: ' + SEARCH_SUFFIX);
 });
 
-test('buildDownloadArgs 逐字对齐规范命令：bestvideo[height<=1080]+bestaudio', () => {
+test('buildDownloadArgs 逐字对齐规范命令：优先 H.264/AAC（avc1+m4a），退化为任意 mp4/任意格式', () => {
   const t = make();
   const withFf = t.buildDownloadArgs('https://youtu.be/v1', 'dir/out.mp4', { ffmpeg: true });
   assert.equal(withFf[0], '-f');
-  assert.equal(withFf[1], 'bestvideo[height<=1080]+bestaudio/best[height<=1080]');
+  assert.equal(
+    withFf[1],
+    'bestvideo[height<=1080][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]'
+    + '/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]'
+    + '/best[height<=1080]',
+  );
   assert.equal(withFf[withFf.indexOf('--merge-output-format') + 1], 'mp4');
   assert.equal(withFf[withFf.indexOf('-o') + 1], 'dir/out.mp4');
   assert.equal(withFf[withFf.length - 1], 'https://youtu.be/v1');
@@ -534,7 +539,7 @@ test('download 首候选失败自动换下一个候选（年龄限制/下载错�
   assert.equal(r.ok, true);
   assert.equal(r.url, 'https://youtu.be/v2');
   assert.equal(r.attempts, 2);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3); // 2 次下载尝试 + 1 次 normalizeToH264 的 ffprobe 探测
   assert.equal(calls[0].args[calls[0].args.length - 1], 'https://youtu.be/v1');
   assert.equal(calls[1].args[calls[1].args.length - 1], 'https://youtu.be/v2');
 });
@@ -734,7 +739,7 @@ test('searchTrailer 集成：检测到代理时把 --proxy 前置传给 yt-dlp �
   const stdout = JSON.stringify({ id: 'v1', title: 'ELDEN RING - Official Launch Trailer', channel: 'Bandai Namco', duration: 180 });
   const t = make({ plan: { stdout }, calls, env: PROXY_ENV, ytDlpPath: 'E:\\bin\\yt-dlp.exe' });
   await t.searchTrailer('Elden Ring');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 1); // searchTrailer 只发 1 次检索，无 normalize
   const args = calls[0].args;
   assert.equal(args[0], '--proxy');
   assert.equal(args[1], 'http://127.0.0.1:7990');
@@ -753,7 +758,7 @@ test('download 集成：下载参数也前置 --proxy，且 -o / -f / URL 顺序
   await t.download('x', 'dir', { ytDlp: true, ffmpeg: true }, {
     info: { id: 'v', title: 'T', url: 'https://youtu.be/v', channel: 'Koei Tecmo' },
   });
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2); // 1 次下载 + 1 次 normalizeToH264 的 ffprobe 探测
   const args = calls[0].args;
   assert.equal(args[0], '--proxy');
   assert.equal(args[1], 'http://127.0.0.1:7990');

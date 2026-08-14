@@ -153,6 +153,21 @@ app.post('/api/cover/choose', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── 交互式宣传片选择：前端弹窗勾选后提交，resolve collect.js 中挂起的 waitVideoChoice ──
+app.post('/api/video/choose', (req, res) => {
+  const body = req.body || {};
+  const requestId = typeof body.requestId === 'string' ? body.requestId.trim() : '';
+  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!requestId) {
+    return res.status(400).json({ error: '缺少 requestId' });
+  }
+  const service = getCollectService();
+  if (!service.chooseVideo(requestId, url)) {
+    return res.status(409).json({ error: '无待处理的宣传片选择（可能已超时或已处理）' });
+  }
+  res.json({ ok: true });
+});
+
 // ── 兜底错误中间件（避免未捕获异常冒泡导致进程退出被看门狗误判）──
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {

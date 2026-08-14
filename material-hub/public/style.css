@@ -492,6 +492,7 @@ body {
   line-height: 1.45;
   word-break: break-all;
 }
+.cover-cand .cand-title { font-weight: 700; color: var(--text); }
 .cover-modal-tip {
   margin-top: 10px;
   font-size: 11.5px;

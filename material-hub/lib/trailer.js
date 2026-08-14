@@ -275,6 +275,9 @@ class TrailerDownloader {
       duration,
       channel: String(item.channel || item.uploader || item.playlist_uploader || ''),
       verified: item.channel_is_verified === true,
+      thumb: String(item.thumbnail
+        || (Array.isArray(item.thumbnails) && item.thumbnails[0] && item.thumbnails[0].url)
+        || ''),
     };
   }
 

@@ -104,6 +104,10 @@ let running = false;
 let coverRequestId = "";
 let coverPickUrl = "";
 let coverCands = [];
+/** 交互式宣传片选择状态。 */
+let videoRequestId = "";
+let videoPickUrl = "";
+let videoCands = [];
 
 /**
  * HTML 转义（所有服务端文本进 innerHTML 前必须过一遍）。
@@ -419,9 +423,17 @@ function handleEvent(ev) {
     openCoverPicker(ev);
     return;
   }
+  if (type === "video_candidates") {
+    closeCoverPicker();
+    openVideoPicker(ev);
+    return;
+  }
   if (type === "cover_download" || type === "cover_extract" || type === "done" || type === "error") {
     // 流程已继续（应用所选/抽帧/结束），收起弹窗
     closeCoverPicker();
+  }
+  if (type === "trailer_download" || type === "done" || type === "error") {
+    closeVideoPicker();
   }
 
   const group = GROUP_OF_TYPE[type];
@@ -496,6 +508,91 @@ function closeCoverPicker() {
 }
 
 /**
+ * 打开宣传片候选弹窗（video_candidates 事件）。
+ * @param {object} ev SSE 事件 {type, step, msg, detail:{requestId, candidates}}
+ */
+function openVideoPicker(ev) {
+  const detail = ev.detail || {};
+  const cands = Array.isArray(detail.candidates) ? detail.candidates : [];
+  videoRequestId = String(detail.requestId || "");
+  videoCands = cands;
+  videoPickUrl = "";
+
+  const modal = $("videoModal");
+  const grid = $("videoModalGrid");
+  if (!modal || !grid) return;
+  $("videoModalTitle").textContent = "选择宣传片";
+  $("videoModalSub").textContent = "共 " + cands.length + " 条候选 · 点击卡片预览";
+  grid.innerHTML = "";
+
+  cands.forEach((c, i) => {
+    const card = document.createElement("label");
+    card.className = "cover-cand";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "videoPick";
+    radio.value = c.url;
+    radio.addEventListener("change", () => {
+      videoPickUrl = c.url;
+      const ok = $("videoOkBtn");
+      if (ok) ok.disabled = false;
+    });
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.alt = "";
+    img.addEventListener("error", () => card.classList.add("broken"));
+    img.src = c.thumb || "";
+    const dur = Number(c.duration) > 0
+      ? Math.floor(Number(c.duration) / 60) + ":" + String(Math.floor(Number(c.duration) % 60)).padStart(2, "0")
+      : "";
+    const metaEl = document.createElement("span");
+    metaEl.className = "cover-cand-meta";
+    metaEl.innerHTML =
+      '<div class="cand-title">' + esc((i + 1) + ". " + (c.title || "候选")) + "</div>" +
+      (c.channel ? "<div>" + esc(c.channel) + "</div>" : "") +
+      ((dur || c.score) ? "<div>" + (dur ? "时长 " + dur : "") + (dur && c.score ? " · " : "") + (c.score ? "评分 " + c.score : "") + "</div>" : "");
+    card.appendChild(radio);
+    card.appendChild(img);
+    card.appendChild(metaEl);
+    grid.appendChild(card);
+  });
+
+  const ok = $("videoOkBtn");
+  if (ok) ok.disabled = true;
+  modal.hidden = false;
+}
+
+/** 收起宣传片候选弹窗。 */
+function closeVideoPicker() {
+  const modal = $("videoModal");
+  if (modal) modal.hidden = true;
+  videoRequestId = "";
+}
+
+/**
+ * 提交宣传片选择（确定/自动/跳过统一走这里）。
+ * @param {string} url 选中的候选直链；空串 = 跳过（自动推荐第一个）
+ */
+async function sendVideoChoice(url) {
+  const id = videoRequestId;
+  closeVideoPicker();
+  if (!id) return;
+  try {
+    const r = await fetch("/api/video/choose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: id, url: url || "" }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      addLog("warn", "宣传片选择提交失败（" + (d.error || r.status) + "）");
+    }
+  } catch (e) {
+    addLog("warn", "宣传片选择提交失败：" + e.message);
+  }
+}
+
+/**
  * 提交封面选择（确定/自动选/跳过统一走这里）。
  * @param {string} url 选中的直链；空串 = 跳过（走抽帧兜底）
  */
@@ -538,6 +635,9 @@ gameName.addEventListener("keydown", (e) => {
 $("coverOkBtn").onclick = () => sendCoverChoice(coverPickUrl);
 $("coverAutoBtn").onclick = () => sendCoverChoice(coverCands.length ? coverCands[0].url : "");
 $("coverSkipBtn").onclick = () => sendCoverChoice("");
+$("videoOkBtn").onclick = () => sendVideoChoice(videoPickUrl);
+$("videoAutoBtn").onclick = () => sendVideoChoice(videoCands.length ? videoCands[0].url : "");
+$("videoSkipBtn").onclick = () => sendVideoChoice("");
 
 // 产物卡片 / 封面预览点击 → 打开文件管理器并选中文件
 function revealInFolder(p) {

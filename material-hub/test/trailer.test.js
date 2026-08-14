@@ -184,6 +184,7 @@ test('parseSearchResults 解析 --flat-playlist --dump-json 的 NDJSON 多行输
     duration: 120,
     channel: 'PlayStation',
     verified: false,
+    thumb: '',
   });
   assert.equal(items[1].url, 'https://youtu.be/v2');
   // 无 title 时以 id 兜底，duration 缺省 0

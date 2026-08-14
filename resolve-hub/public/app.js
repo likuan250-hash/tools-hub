@@ -6,6 +6,7 @@
   const execStep = $("execStep");
   const execStepName = $("execStepName");
   const execStepDetail = $("execStepDetail");
+  const execSteps = $("execSteps");
   const execLog = $("execLog");
   const dirInput = $("dirInput");
   const infoEl = $("folderInfo");
@@ -18,6 +19,35 @@
 
   let current = null; // { name, path }
   let logBuf = "";
+  /** 日志 [标签] → 分步骤展示（0-4 / 8-9 每步一条）。 */
+  const STEP_TAGS = [
+    { tag: "resolve", name: "0 · 连接 / 启动 Resolve" },
+    { tag: "work", name: "0 · 清理临时目录" },
+    { tag: "project", name: "1 · 新建 / 加载项目（60fps）" },
+    { tag: "trailer", name: "2 · 预告片编码检查" },
+    { tag: "素材", name: "2 · 导入封面 + 预告片" },
+    { tag: "timeline", name: "3-4 · 导入模板并追加到时间线" },
+    { tag: "自检", name: "8 · 渲染前自检" },
+    { tag: "render", name: "9 · 渲染导出并校验" },
+  ];
+  const stepEls = {};
+
+  function stepForTag(tag) {
+    const def = STEP_TAGS.find((d) => d.tag === tag);
+    if (!def) return null;
+    if (stepEls[tag]) return stepEls[tag];
+    const item = document.createElement("div");
+    item.className = "step-item info";
+    item.innerHTML =
+      '<span class="step-icon">›</span>' +
+      '<div class="step-body">' +
+        '<div class="step-name">' + esc(def.name) + "</div>" +
+        '<div class="step-detail"></div>' +
+      "</div>";
+    execSteps.appendChild(item);
+    stepEls[tag] = item;
+    return item;
+  }
 
   function flushLines() {
     const lines = logBuf.split(/\r?\n/);
@@ -29,9 +59,21 @@
       div.className = "line" + (cls ? " " + cls : "");
       div.textContent = raw;
       execLog.appendChild(div);
-      // 用最新带 [标记 的行刷新步骤详情
-      if (/^\[/.test(raw.trim())) {
-        execStepDetail.textContent = raw.trim().slice(0, 80);
+      // [标签] 行同步刷新对应分步骤的名称/详情/状态
+      const m = raw.trim().match(/^\[([^\]]+)\]/);
+      if (m) {
+        const item = stepForTag(m[1]);
+        if (item) {
+          const detail = item.querySelector(".step-detail");
+          detail.textContent = raw.trim().slice(0, 90);
+          if (/\[错误\]|Traceback|失败/.test(raw)) {
+            item.classList.remove("info");
+            item.classList.add("err");
+          } else if (/完成|成功|✓/.test(raw)) {
+            item.classList.remove("info");
+            item.classList.add("ok");
+          }
+        }
       }
     }
     execLog.scrollTop = execLog.scrollHeight;
@@ -49,12 +91,20 @@
     execStep.classList.add(ok ? "ok" : "err");
     execStepName.textContent = ok ? "完成" : "失败";
     execStepDetail.textContent = ok ? "" : "请查看下方日志定位问题。";
+    // 未收尾的分步骤收敛为与总结果一致，避免悬挂在「进行中」
+    const cls = ok ? "ok" : "err";
+    execSteps.querySelectorAll(".step-item.info").forEach((el) => {
+      el.classList.remove("info");
+      el.classList.add(cls);
+    });
   }
 
   function beginRun(title, detail) {
     execCard.hidden = false;
     execCard.classList.add("show");
     execLog.innerHTML = "";
+    execSteps.innerHTML = "";
+    Object.keys(stepEls).forEach((k) => { delete stepEls[k]; });
     logBuf = "";
     execStep.className = "step-item info";
     execStepName.textContent = title;

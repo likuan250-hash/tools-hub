@@ -63,6 +63,12 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
 .log-area .line { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
 .log-area .line.ok { color: var(--ok); }
 .log-area .line.err { color: var(--err); }
+/* 输出文件名：小标题占一行 + 输入框左对齐占一行 */
+.out-field { margin: 16px 0 6px; }
+.out-title { font-size: 13px; font-weight: 700; color: var(--dim); margin-bottom: 8px; }
+#outInput { width: 100%; }
+/* 分步骤执行进度列表（0-4 / 8-9 每步一条） */
+.exec-steps { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 </style>
 <link rel="stylesheet" href="cosmic-skin.css" />
 <link rel="stylesheet" href="comic-skin.css" />
@@ -93,11 +99,11 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
       <li>V1 封面与视频之间添加「平滑剪接」转场（60f / 1秒）——拖到两个片段的接缝处，不是拖到片段上</li>
       <li>修改 V2[1] 开场文本为当前游戏名，V3/V4 文本自行调整内容和位置</li>
     </ol>
-    <div class="row" style="margin-top:10px">
-      <label for="outInput">输出文件名</label>
+    <div class="out-field">
+      <div class="out-title">输出文件名</div>
       <input id="outInput" type="text" placeholder="默认按标准规则命名，可修改，以输入为准">
     </div>
-    <button id="finishBtn" class="primary" type="button" disabled>确认好了，继续导出（8-9）</button>
+    <button id="finishBtn" class="primary" type="button" disabled style="margin-top:16px">确认好了，继续导出（8-9）</button>
   </section>
 
   <section class="card exec-card" id="execCard">
@@ -110,6 +116,7 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
         <div class="exec-bar" id="execBar"></div>
       </div>
     </div>
+    <div class="exec-steps" id="execSteps"></div>
     <details class="log-card" open>
       <summary><span>执行日志</span><span class="chev">⌄</span></summary>
       <div class="log-area" id="execLog"></div>

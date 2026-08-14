@@ -163,7 +163,47 @@
 
   // ── 日志（#4：默认隐藏，点击投稿才展示）──
   function logLine(msg, cls) {
-    const box = $("logBox");
+const box = $("logBox");
+const execStepsEl = $("execSteps");
+/** 投稿阶段 → 分步骤展示（对齐达芬奇/素材收集）。 */
+const STAGE_NAMES = {
+  pending: "准备投稿（验证登录态）",
+  extracting_cover: "抽封面帧",
+  uploading: "上传视频",
+  adding_season: "合集后置",
+  commenting: "评论置顶",
+};
+const stepEls = {};
+function stepForStage(stage) {
+  if (!stage) return null;
+  if (stepEls[stage]) return stepEls[stage];
+  const item = document.createElement("div");
+  item.className = "step-item info";
+  item.innerHTML =
+    '<span class="step-icon">›</span>' +
+    '<div class="step-body"><div class="step-name">' + (STAGE_NAMES[stage] || stage) +
+    '</div><div class="step-detail"></div></div>';
+  execStepsEl.appendChild(item);
+  stepEls[stage] = item;
+  // 之前的阶段自动标记为完成
+  Object.keys(stepEls).forEach((k) => {
+    if (k !== stage && stepEls[k].classList.contains("info")) {
+      stepEls[k].classList.remove("info");
+      stepEls[k].classList.add("ok");
+    }
+  });
+  return item;
+}
+function setStepDetail(stage, msg) {
+  const el = stepEls[stage];
+  if (el) el.querySelector(".step-detail").textContent = String(msg || "").slice(0, 90);
+}
+function markAllSteps(cls) {
+  Object.keys(stepEls).forEach((k) => {
+    stepEls[k].classList.remove("info");
+    stepEls[k].classList.add(cls);
+  });
+}
     const empty = $("logEmpty");
     if (empty) empty.style.display = "none"; // 首行日志后隐藏空状态提示
     const div = document.createElement("div");
@@ -770,6 +810,8 @@
     $("logWrap").style.display = "";
     $("logBox").innerHTML = "";
     $("logEmpty").style.display = "";
+    execStepsEl.innerHTML = "";
+    Object.keys(stepEls).forEach((k) => { delete stepEls[k]; });
     logLine("开始投稿流程…");
     setCapsule("info", "准备中");
 
@@ -830,6 +872,9 @@
       if (ev.message) logLine(ev.message, ev.stage === "error" ? "err" : "stage");
       const bp = $("biliExecProgress");
       if (bp) bp.classList.add("show");
+      // 分步骤：status 阶段 → 激活对应步骤
+      const step = stepForStage(ev.stage);
+      if (step && ev.message) setStepDetail(ev.stage, ev.message);
   } else if (ev.type === "done") {
     setCapsule("ok", "成功");
     const bp = $("biliExecProgress");
@@ -837,6 +882,7 @@
     const d = ev.data || {};
     const ok = d.success !== false;
     logLine("投稿完成！aid=" + (d.aid || "?") + " bvid=" + (d.bvid || "?") + " cid=" + (d.cid || "?") + " 合集=" + (d.season ? "已加" : "否"), "ok");
+    markAllSteps("ok");
     // P08：写一条投稿历史（成功/失败 + 稿件标题 + 时间 + 简要状态）
     pushHistory(HISTORY_KEY_BILIUP, ok, $("titleInput").value || "（未命名）", ok ? ("投稿成功" + (d.bvid ? " · " + d.bvid : "")) : (d.error || "投稿未完成"), d.bvid);
   } else if (ev.type === "error") {
@@ -844,6 +890,11 @@
     const bp = $("biliExecProgress");
     if (bp) bp.classList.remove("show");
     logLine("失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
+    markAllSteps("err");
+    if (ev.stage && stepEls[ev.stage]) {
+      stepEls[ev.stage].classList.remove("ok");
+      stepEls[ev.stage].classList.add("err");
+    }
     // P08：写一条投稿历史（失败）
     pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", ev.message || "投稿失败");
   }

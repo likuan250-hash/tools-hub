@@ -255,6 +255,29 @@
     /* 执行面板容器：对齐 kdocs .auto-result（JS 仍用内联 display:none / display:"" 切换显隐，DOM 契约不变） */
     #logWrap { display: flex; flex-direction: column; gap: 18px; }
     .exec-title { font-size: 15px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
+    /* 分步骤执行进度（对齐达芬奇/素材收集：每阶段一条卡片） */
+    .exec-steps { display: flex; flex-direction: column; gap: 10px; }
+    .step-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 12px; border-radius: 12px;
+      background: rgba(128, 128, 128, .07); border: 1px solid var(--glass-border);
+    }
+    .step-item .step-icon {
+      flex: none; width: 20px; height: 20px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%; background: rgba(128, 128, 128, .14); font-size: 12px;
+      color: var(--text-dim);
+    }
+    .step-item.info .step-icon { background: var(--accent); color: #fff; animation: step-pulse 1.6s ease-in-out infinite; }
+    .step-item.ok .step-icon { background: var(--ok); color: #fff; }
+    .step-item.err .step-icon { background: var(--err); color: #fff; }
+    .step-item .step-body { flex: 1; min-width: 0; }
+    .step-item .step-name { font-size: 13px; line-height: 1.5; color: var(--text); font-weight: 600; }
+    .step-item .step-detail { margin-top: 2px; font-size: 12px; opacity: .75; color: var(--text-dim); word-break: break-all; }
+    @keyframes step-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), .45); }
+      50% { box-shadow: 0 0 0 7px rgba(var(--accent-rgb), 0); }
+    }
 
     /* 日志区：可折叠玻璃卡片（<details> 包裹 #logBox，JS 照常追加 .line，DOM 契约不变；复刻 kdocs .log-card/.log-area 视觉语言） */
     .log-card {
@@ -1094,6 +1117,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <!-- #4 日志面板默认隐藏，仅在点击投稿时展示（玻璃执行面板：对齐 kdocs .auto-result / .log-card 视觉语言，DOM 契约不变） -->
       <div id="logWrap" style="display:none">
         <h3 class="exec-title"><i class="app-ico" data-ico="history"></i> 投稿日志</h3>
+        <div class="exec-steps" id="execSteps"></div>
         <details class="log-card" open>
           <summary><span>投稿进度与结果</span><span class="chev">⌄</span></summary>
           <div class="bili-exec-progress" id="biliExecProgress"><div class="bili-exec-bar"></div></div>

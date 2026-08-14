@@ -16,6 +16,21 @@
 //     ③ success 改为「封面 + 视频都拿到」，抽帧兜底生效后整体必然判成功。
 const path = require('path');
 const fsDefault = require('fs');
+
+/** 宣传片标题归一化（排除已落盘候选用）：去标点/空白/大小写。 */
+function normTrailerTitle(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+}
+
+/** 判断候选是否与上次已落盘宣传片是同一个（id / url / 归一化标题任一命中）。 */
+function sameTrailer(prev, c) {
+  if (!prev || !c) return false;
+  if (prev.id && c.id && String(prev.id) === String(c.id)) return true;
+  if (prev.url && c.url && String(prev.url).trim() === String(c.url).trim()) return true;
+  if (prev.title && c.title && normTrailerTitle(prev.title) === normTrailerTitle(c.title)) return true;
+  return false;
+}
+
 const { NameResolver } = require('./name');
 const { CoverFetcher, COVER_FILE } = require('./cover');
 const { TrailerDownloader, extractEnglishName: trailerExtractEnglishName } = require('./trailer');
@@ -61,6 +76,8 @@ class CollectService {
     this.logger = deps.logger || loggerDefault;
     /** 待处理的封面选择：requestId → {resolve}（由 /api/cover/choose 触发 resolve）。 */
     this._coverChoices = new Map();
+    /** 待处理的宣传片选择：requestId → {resolve}（由 /api/video/choose 触发 resolve）。 */
+    this._videoChoices = new Map();
   }
 
   /**
@@ -139,6 +156,20 @@ class CollectService {
   }
 
   /**
+   * 提交一次宣传片候选选择（由 server 层 /api/video/choose 转发）。
+   * @param {string} requestId 候选事件携带的请求 id
+   * @param {string} url 选中的候选直链；空串表示跳过（走自动第一个）
+   * @returns {boolean} 是否存在待处理的对应请求
+   */
+  chooseVideo(requestId, url) {
+    const entry = this._videoChoices.get(requestId);
+    if (!entry) return false;
+    this._videoChoices.delete(requestId);
+    entry.resolve({ url: String(url || '').trim() });
+    return true;
+  }
+
+  /**
    * 等待用户在前端弹窗中做封面选择；超时自动采用第一个候选（保持原自动行为）。
    * @param {string} requestId 请求 id
    * @param {number} timeoutMs 等待上限
@@ -150,6 +181,23 @@ class CollectService {
         if (this._coverChoices.delete(requestId)) resolve({ url: '', auto: true });
       }, timeoutMs);
       this._coverChoices.set(requestId, {
+        resolve: (v) => { clearTimeout(timer); resolve(v); },
+      });
+    });
+  }
+
+  /**
+   * 等待用户在前端弹窗中做宣传片候选选择；超时/跳过自动采用原排序第一个。
+   * @param {string} requestId 请求 id
+   * @param {number} timeoutMs 等待上限
+   * @returns {Promise<{url: string, auto?: boolean}>}
+   */
+  waitVideoChoice(requestId, timeoutMs) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (this._videoChoices.delete(requestId)) resolve({ url: '', auto: true });
+      }, timeoutMs);
+      this._videoChoices.set(requestId, {
         resolve: (v) => { clearTimeout(timer); resolve(v); },
       });
     });
@@ -245,6 +293,35 @@ class CollectService {
       });
     }
     return applied;
+  }
+
+  /**
+   * 宣传片候选交互选择：发 video_candidates 事件 → 前端弹窗预览选择（缩略图/标题/频道/时长）。
+   * 重找视频时候选已剔除上次落盘项；跳过/超时返回 null（沿用自动第一个）。
+   * @param {Array<object>} cands 排序后的候选列表（trailer.searchTrailerCandidates 输出）
+   * @param {{emit?: Function, choiceTimeoutMs?: number}} [opts]
+   * @returns {Promise<object|null>} 选中的候选；跳过/超时返回 null
+   */
+  async runInteractiveTrailer(cands, opts = {}) {
+    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    emit('video_candidates', STEP_TRAILER, '找到 ' + cands.length + ' 条宣传片候选，请选择', null, {
+      requestId,
+      candidates: cands.map((c) => ({
+        id: c.id || '', title: c.title || '', url: c.url || '',
+        channel: c.channel || '', duration: c.duration || 0, score: c.score || 0, thumb: c.thumb || '',
+      })),
+    });
+    const choice = await this.waitVideoChoice(requestId, opts.choiceTimeoutMs || COVER_CHOICE_TIMEOUT_MS);
+    if (choice.auto) {
+      emit('log', STEP_TRAILER, '[trailer] 候选选择超时，自动采用第一个', null, { level: 'warn' });
+      return null;
+    }
+    if (!choice.url) {
+      emit('log', STEP_TRAILER, '[trailer] 已跳过候选选择，自动采用第一个', null, { level: 'info' });
+      return null;
+    }
+    return cands.find((c) => c.url === choice.url) || null;
   }
 
   /**
@@ -410,9 +487,26 @@ if (typeof this.trailer.setBinaries === 'function') {
     } else {
       let dl = { ok: false, error: '未执行' };
       try {
-        const trailerCands = await this.trailer.searchTrailerCandidates(searchName, {
+        let trailerCands = await this.trailer.searchTrailerCandidates(searchName, {
           emit, developer: opts.developer,
-        });
+        }) || [];
+        // 重找视频：排除上次已落盘的候选（重找即对旧视频不满意）
+        if (forceTrailer && trailerCands.length) {
+          const prev = this.readTrailerMeta(reserved.folder);
+          if (prev && (prev.id || prev.url || prev.title)) {
+            const before = trailerCands.length;
+            trailerCands = trailerCands.filter((c) => !sameTrailer(prev, c));
+            if (trailerCands.length !== before) {
+              emit('log', STEP_TRAILER, '[trailer] 已排除上次落盘候选（' + (before - trailerCands.length) + ' 条）', null, { level: 'info' });
+            }
+          }
+        }
+        // 交互式候选预览选择（缩略图弹窗）：重找视频时默认开启，可显式开关；跳过/超时沿用自动第一个
+        const wantInteractive = opts.videoInteractive === true || (forceTrailer && opts.videoInteractive !== false);
+        if (wantInteractive && trailerCands.length > 1) {
+          const picked = await this.runInteractiveTrailer(trailerCands, { emit });
+          if (picked) trailerCands = [picked];
+        }
         trailerInfo = trailerCands && trailerCands.length ? trailerCands[0] : null;
         if (!trailerInfo) {
           dl = { ok: false, reason: 'trailer-not-found', error: '未搜索到符合规范的官方宣传片' };

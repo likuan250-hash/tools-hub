@@ -516,6 +516,80 @@ html[data-skin="comic"] .bili-exec-bar::after {
   background: repeating-linear-gradient(90deg, #a78bfa 0 10px, #fbbf24 10px 20px, #22d3ee 20px 30px) !important;
   box-shadow: none !important;
 }
+
+/* ===== 漫画进度条三变体（comic-skin.js 随机分配 cp-a / cp-b / cp-c） ===== */
+/* A · 锯齿能量条：紫粉金渐变 + 黑白斜纹 + 上下锯齿 + 硬阴影 */
+html[data-skin="comic"] .cp-a::after {
+  background:
+    repeating-linear-gradient(105deg, rgba(255, 255, 255, .6) 0 8px, transparent 8px 16px),
+    linear-gradient(90deg, #a78bfa, #f472b6, #fbbf24, #a78bfa) !important;
+  background-size: auto, 300% 100%;
+  box-shadow: none !important;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, .55));
+  clip-path: polygon(0 22%, 6% 8%, 12% 26%, 20% 4%, 30% 24%, 40% 6%, 52% 28%, 64% 8%,
+                     76% 26%, 88% 6%, 100% 22%, 100% 78%, 88% 94%, 76% 74%, 64% 92%,
+                     52% 72%, 40% 94%, 30% 76%, 20% 96%, 12% 74%, 6% 92%, 0 78%);
+}
+/* B · 分格能量槽 + 星星滑块 */
+html[data-skin="comic"] .cp-b {
+  overflow: visible !important;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 15px, rgba(0, 0, 0, .14) 15px 17px),
+    #fff !important;
+}
+html[data-skin="comic"] .cp-b::after {
+  content: "★";
+  width: auto !important;
+  height: auto !important;
+  top: 50% !important;
+  left: 2%;
+  transform: translateY(-50%);
+  background: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  clip-path: none !important;
+  border-radius: 0 !important;
+  font-size: 19px;
+  line-height: 1;
+  color: #fbbf24;
+  -webkit-text-stroke: 1.5px #000;
+  text-shadow: 2px 2px 0 #000;
+  animation: cpStar 1.4s ease-in-out infinite;
+}
+@keyframes cpStar {
+  0% { left: 2%; transform: translateY(-50%) rotate(-10deg) scale(1); }
+  50% { transform: translateY(-50%) rotate(14deg) scale(1.35); }
+  100% { left: calc(100% - 22px); transform: translateY(-50%) rotate(-10deg) scale(1); }
+}
+/* C · 气泡进度：三色条纹条 + 前端「加载中…」气泡 */
+html[data-skin="comic"] .cp-c { overflow: visible !important; }
+html[data-skin="comic"] .cp-c::after {
+  background: repeating-linear-gradient(90deg, #a78bfa 0 12px, #f472b6 12px 24px, #fbbf24 24px 36px) !important;
+  box-shadow: none !important;
+  filter: none !important;
+  clip-path: none !important;
+  animation: cpWidth 1.3s ease-in-out infinite alternate;
+}
+@keyframes cpWidth { from { width: 14%; } to { width: 86%; } }
+html[data-skin="comic"] .cp-c::before {
+  content: "加载中…";
+  position: absolute;
+  top: 50%;
+  left: 4%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+  background: #7c5cff;
+  border: 2px solid #000;
+  border-radius: 999px;
+  padding: 2px 9px;
+  box-shadow: 2px 2px 0 #000;
+  white-space: nowrap;
+  z-index: 2;
+  animation: cpTip 1.3s ease-in-out infinite alternate;
+}
+@keyframes cpTip { from { left: 4%; } to { left: 82%; } }
 html[data-skin="comic"] .step-item {
   border: 3px solid #000 !important;
   border-radius: 12px !important;

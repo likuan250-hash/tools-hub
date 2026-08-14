@@ -50,7 +50,7 @@ function runPython(cmd, args, res) {
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Transfer-Encoding": "chunked" });
   const child = spawn(PYTHON, [PY, cmd, ...args], {
     shell: false, // 铁律：数组传参，绝不用 shell 字符串拼接
-    env: Object.assign({}, process.env, { PYTHONUTF8: "1" }),
+    env: Object.assign({}, process.env, { PYTHONUTF8: "1", PYTHONUNBUFFERED: "1" }), // 不缓冲：日志实时流到前端，避免执行完才一下显示
   });
   const push = (b) => { try { res.write(b.toString("utf8")); } catch (e) {} };
   child.stdout.on("data", push);

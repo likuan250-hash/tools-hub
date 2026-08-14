@@ -107,6 +107,25 @@
     </div>
   </div>
 
+  <!-- 交互式宣传片选择弹窗（video_candidates 事件触发） -->
+  <div class="cover-modal" id="videoModal" hidden>
+    <div class="cover-modal-panel">
+      <div class="cover-modal-head">
+        <div>
+          <div class="cover-modal-title" id="videoModalTitle">选择宣传片</div>
+          <div class="cover-modal-sub" id="videoModalSub"></div>
+        </div>
+      </div>
+      <div class="cover-modal-grid" id="videoModalGrid"></div>
+      <div class="cover-modal-tip">点击候选卡片预览并选定一个作为本次下载目标；「跳过」则按自动推荐下载</div>
+      <div class="cover-modal-actions">
+        <button class="btn-ghost" id="videoAutoBtn" type="button">自动选第一个</button>
+        <button class="btn-ghost" id="videoSkipBtn" type="button">跳过（自动推荐）</button>
+        <button class="btn-primary" id="videoOkBtn" type="button" disabled>确定下载</button>
+      </div>
+    </div>
+  </div>
+
   <script>
 // 统一图标系统（单一来源；1.75 描边线性风格，跟随 currentColor）
 // 铁律：全站零 emoji —— 任何状态/装饰符号一律走本系统的 SVG，不使用 🎮🖼✓✕● 之类字符。

@@ -795,6 +795,72 @@ test('交互式封面：发出 cover_candidates → chooseCover 选中 → 应�
   assert.equal(dlOk, true, '交互式封面应用成功后必须补发 ok 终态，避免执行进度误判失败');
 });
 
+test('交互式宣传片：video_candidates 弹出 → chooseVideo 选中 → 只下载选中的候选', async () => {
+  const cands = [
+    { id: 'v1', title: 'A - Launch Trailer', url: 'https://youtu.be/v1', channel: 'XBOX', score: 125, duration: 100, thumb: '' },
+    { id: 'v2', title: 'B - Official Trailer', url: 'https://youtu.be/v2', channel: 'Publisher', score: 100, duration: 90, thumb: '' },
+  ];
+  const cover = fakeCover();
+  const trailer = fakeTrailer({ candidates: cands });
+  const svc = new CollectService({
+    name: fakeName(),
+    cover,
+    trailer,
+    probe: fakeProbe(),
+    env: fakeEnv(),
+    logger: fakeLogger(),
+    fs: fakeFs([]),
+  });
+  const events = [];
+  const p = svc.run(
+    { name: '正当防卫4', outDir: OUT_DIR, videoInteractive: true },
+    { onEvent: (ev) => events.push(ev) },
+  );
+  const ev = await waitEvent(events, 'video_candidates');
+  assert.equal(ev.detail.candidates.length, 2);
+  const pickedUrl = ev.detail.candidates[1].url;
+  assert.equal(svc.chooseVideo(ev.detail.requestId, pickedUrl), true);
+  const result = await p;
+  assert.equal(result.trailerOk, true);
+  assert.equal(trailer.calls.download.length, 1);
+  assert.equal(trailer.calls.download[0].opts.candidates.length, 1);
+  assert.equal(trailer.calls.download[0].opts.candidates[0].url, pickedUrl);
+});
+
+test('重找视频：forceTrailer 时排除上次已落盘候选（读 .trailer.json）', async () => {
+  const prev = { id: 'v1', title: 'A - Launch Trailer', url: 'https://youtu.be/v1' };
+  const cands = [
+    { id: 'v1', title: 'A - Launch Trailer', url: 'https://youtu.be/v1', channel: 'XBOX', score: 125, duration: 100, thumb: '' },
+    { id: 'v2', title: 'B - Official Trailer', url: 'https://youtu.be/v2', channel: 'Publisher', score: 100, duration: 90, thumb: '' },
+  ];
+  const cover = fakeCover();
+  const trailer = fakeTrailer({ candidates: cands });
+  const fs = fakeFs([]);
+  fs.existsSync = () => true;
+  fs.readFileSync = () => JSON.stringify(prev);
+  const svc = new CollectService({
+    name: fakeName(),
+    cover,
+    trailer,
+    probe: fakeProbe(),
+    env: fakeEnv(),
+    logger: fakeLogger(),
+    fs,
+  });
+  const events = [];
+  const p = svc.run(
+    { name: '正当防卫4', outDir: OUT_DIR, forceTrailer: true, videoInteractive: false },
+    { onEvent: (ev) => events.push(ev) },
+  );
+  const result = await p;
+  assert.equal(trailer.calls.download.length, 1);
+  const got = trailer.calls.download[0].opts.candidates;
+  assert.equal(got.length, 1);
+  assert.equal(got[0].id, 'v2', '上次落盘候选 v1 必须被排除');
+  assert.ok(events.some((e) => e.type === 'log' && (e.msg || '').includes('已排除上次落盘候选')));
+  assert.equal(result.trailerOk, true);
+});
+
 test('交互式封面：跳过选择 → 走主视频抽帧兜底', async () => {
   const cover = fakeInteractiveCover();
   const probe = fakeProbe();

@@ -126,6 +126,13 @@
     url: "http://localhost:3700",
     icon: "🎮",
   },
+  resolve: {
+    key: "resolve",
+    name: "达芬奇剪辑",
+    desc: "选素材目录 → 自动建项目/导模板 → 手动 5-7 → 一键渲染导出",
+    url: "http://localhost:3800",
+    icon: "🎬",
+  },
 };
 
   let serviceStatus = {};
@@ -548,8 +555,9 @@
       const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
       const biliupLevel = (serviceStatus.biliup && serviceStatus.biliup.running) ? 'ok' : 'off';
       const materialLevel = (serviceStatus.material && serviceStatus.material.running) ? 'ok' : 'off';
+      const resolveLevel = (serviceStatus.resolve && serviceStatus.resolve.running) ? 'ok' : 'off';
       const agg = (typeof aggregateStatus === "function")
-        ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel, materialLevel])
+        ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel, materialLevel, resolveLevel])
         : 'off';
       const colorLevel = (typeof aggColorLevel === "function") ? aggColorLevel(agg) : agg;
       aggEl.innerHTML = (typeof statusHTML === "function")

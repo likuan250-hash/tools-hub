@@ -26,6 +26,7 @@ const KDOCS_DIR = path.join(RES, "kdocs-tool");
 const NETDISK_DIR = path.join(RES, "netdisk-hub");
 const BILIUP_DIR = path.join(RES, "biliup-hub");
 const MATERIAL_DIR = path.join(RES, "material-hub");
+const RESOLVE_DIR = path.join(RES, "resolve-hub");
 
 // Node 运行时：打包后自带 resources/node/node.exe；开发时回退系统 PATH 的 node
 const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
@@ -98,6 +99,24 @@ const CHILDREN = {
       // 素材落盘根目录（不存在时由子进程自动 mkdir -p，见 lib/name.js）。
       // 默认 E:\素材\ 与历史一致；可用环境变量 TOOLSHUB_MATERIAL_DIR 覆盖（换盘符/换机器时无需改代码）。
       MATERIAL_OUTPUT_DIR: process.env.TOOLSHUB_MATERIAL_DIR || "E:\\素材\\",
+    }),
+    proc: null,
+    running: false,
+    attempts: 0,
+    startedAt: 0,
+    lastError: null,
+  },
+  resolve: {
+    key: "resolve",
+    name: "达芬奇剪辑",
+    script: path.join(RESOLVE_DIR, "server.js"),
+    cwd: RESOLVE_DIR,
+    url: "http://localhost:3800",
+    env: Object.assign({}, process.env, {
+      TOOLSHUB_VERSION: app.getVersion(),
+      PORT: "3800",
+      // 达芬奇自动化配置（与 scripts/resolve-auto/config.js 默认值同源，可用环境变量覆盖）
+      RESOLVE_MATERIAL_ROOT: process.env.RESOLVE_MATERIAL_ROOT || "E:\\素材",
     }),
     proc: null,
     running: false,
@@ -632,6 +651,7 @@ app.whenReady().then(() => {
   startChild(CHILDREN.netdisk);
   startChild(CHILDREN.biliup);
   startChild(CHILDREN.material);
+  startChild(CHILDREN.resolve);
   setupAutoUpdater();
   // 数据包静默增量更新（后台 fire-and-forget，失败静默回退内置，不阻塞启动）
   refreshDataPack().catch(() => {});

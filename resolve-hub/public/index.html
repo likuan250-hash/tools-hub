@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>达芬奇剪辑</title>
+<style>
+:root {
+  --bg: #0b1020; --panel: rgba(20, 28, 52, .88); --line: rgba(120, 160, 255, .18);
+  --text: #e8eefc; --dim: #93a1c4; --accent: #4d84ff; --ok: #8dffb0; --err: #ff5f6d;
+  --log-bg: #070b16;
+}
+html[data-theme="light"] {
+  --bg: #f4f6fb; --panel: #ffffff; --line: rgba(30, 60, 140, .16);
+  --text: #1c2440; --dim: #5d6a8c; --accent: #3b6fe0; --log-bg: #f0f2f8;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: "Microsoft YaHei", system-ui, sans-serif; }
+.wrap { max-width: 920px; margin: 0 auto; padding: 22px 18px 60px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.sub { font-size: 12px; color: var(--dim); font-weight: normal; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 14px; }
+.card h3 { margin: 0 0 10px; font-size: 14px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+label { font-size: 13px; color: var(--dim); }
+select { flex: 1; min-width: 260px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); font-size: 14px; }
+button { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); cursor: pointer; font-size: 14px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+.info { margin-top: 10px; font-size: 13px; color: var(--dim); min-height: 18px; }
+.info b { color: var(--text); font-weight: 600; }
+.ok { color: var(--ok); } .bad { color: var(--err); }
+ol { margin: 6px 0 12px; padding-left: 20px; font-size: 13px; line-height: 1.9; color: var(--dim); }
+pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; height: 300px; overflow: auto; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; margin: 0; }
+#done { color: var(--ok); font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>达芬奇剪辑 <span class="sub">选素材目录 → 自动建项目/导模板(0-4) → 手动 5-7 → 一键渲染导出(8-9)</span></h1>
+
+  <section class="card">
+    <h3>① 选择素材目录</h3>
+    <div class="row">
+      <label>目录</label>
+      <select id="folder"><option value="">加载中…</option></select>
+      <button id="refresh" type="button">刷新</button>
+    </div>
+    <div class="info" id="folderInfo"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="startBtn" class="primary" type="button" disabled>开始做视频（0-4）</button>
+      <span class="info" id="startState"></span>
+    </div>
+  </section>
+
+  <section class="card" id="manualCard" hidden>
+    <h3>② 手动步骤 5-7（请到达芬奇里完成）</h3>
+    <ol>
+      <li>拉伸 V2[3] / V3[3] 尾部文本，对齐视频素材时长</li>
+      <li>V1 封面与视频之间添加「平滑剪接」转场（60f / 1秒）</li>
+      <li>修改 V2[1] 开场文本为当前游戏名，V3/V4 文本自行调整内容和位置</li>
+    </ol>
+    <button id="finishBtn" class="primary" type="button" disabled>确认好了，继续导出（8-9）</button>
+  </section>
+
+  <section class="card">
+    <h3>执行日志</h3>
+    <pre id="log"></pre>
+    <div id="done"></div>
+  </section>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

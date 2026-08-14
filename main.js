@@ -117,6 +117,13 @@ const CHILDREN = {
       PORT: "3800",
       // 达芬奇自动化配置（与 scripts/resolve-auto/config.js 默认值同源，可用环境变量覆盖）
       RESOLVE_MATERIAL_ROOT: process.env.RESOLVE_MATERIAL_ROOT || "E:\\素材",
+      // ffmpeg/ffprobe 复用 material-hub 内置二进制（开发/打包路径均可用）
+      RESOLVE_FFMPEG: fs.existsSync(path.join(RES, "material-hub", "node_modules", "@ffmpeg-installer", "win32-x64", "ffmpeg.exe"))
+        ? path.join(RES, "material-hub", "node_modules", "@ffmpeg-installer", "win32-x64", "ffmpeg.exe")
+        : "ffmpeg",
+      RESOLVE_FFPROBE: fs.existsSync(path.join(RES, "material-hub", "node_modules", "@ffprobe-installer", "win32-x64", "ffprobe.exe"))
+        ? path.join(RES, "material-hub", "node_modules", "@ffprobe-installer", "win32-x64", "ffprobe.exe")
+        : "ffprobe",
     }),
     proc: null,
     running: false,

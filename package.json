@@ -1,6 +1,6 @@
 {
   "name": "tools-hub",
-  "version": "2.7.85",
+  "version": "2.7.86",
   "description": "工具统一桌面应用：集成 kdocs-tool 与 netdisk-hub，单启动器、单安装包",
   "main": "main.js",
   "private": true,
@@ -116,6 +116,26 @@
           "!.tmp/**",
           "!node_modules/**/.*-????????",
           "!node_modules/**/.*-*/**"
+        ]
+      },
+      {
+        "from": "resolve-hub",
+        "to": "resolve-hub",
+        "filter": [
+          "**/*",
+          "!**/*.log",
+          "!node_modules/**/.*-????????",
+          "!node_modules/**/.*-*/**"
+        ]
+      },
+      {
+        "from": "scripts/resolve-auto",
+        "to": "scripts/resolve-auto",
+        "filter": [
+          "**/*",
+          "!**/*.log",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
         ]
       },
       {

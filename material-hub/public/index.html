@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="style.css" />
 <link rel="stylesheet" href="/shared/tokens.css" />
 <link rel="stylesheet" href="cosmic-skin.css" />
+<link rel="stylesheet" href="comic-skin.css" />
 </head>
 <body>
   <div class="wrap">
@@ -28,10 +29,19 @@
         <h2><i class="app-ico" data-ico="search"></i> 游戏素材自动搜集</h2>
       </div>
 
-    <div class="input-row">
-      <input id="gameName" placeholder="例如：战神4 / Elden Ring / 黑神话：悟空" autocomplete="off" spellcheck="false" />
-      <button class="btn" id="collectBtn" type="button">开始搜集</button>
+    <div class="field">
+      <div class="field-head">
+        <label for="gameName">游戏名称</label>
+      </div>
+      <div class="fx-comic">
+        <div class="box">
+          <input id="gameName" type="text" placeholder="例如：战神4 / Elden Ring / 黑神话：悟空" autocomplete="off" spellcheck="false" />
+          <div class="lines"></div>
+        </div>
+        <div class="sfx">ドン!!</div>
+      </div>
     </div>
+    <button class="btn" id="collectBtn" type="button">开始搜集</button>
     <div class="force-options" id="forceOptions">
       <label class="force-switch" for="forceTrailer">
         <input type="checkbox" id="forceTrailer" />
@@ -130,5 +140,6 @@ hydrateIcons(document);
   </script>
 <script src="app.js"></script>
 <script src="cosmic-skin.js"></script>
+<script src="comic-skin.js"></script>
 </body>
 </html>

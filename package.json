@@ -1,6 +1,6 @@
 {
   "name": "tools-hub",
-  "version": "2.7.92",
+  "version": "2.7.93",
   "description": "工具统一桌面应用：集成 kdocs-tool 与 netdisk-hub，单启动器、单安装包",
   "main": "main.js",
   "private": true,
@@ -15,7 +15,9 @@
     "sync-status-luxe": "node scripts/sync-status-luxe.js",
     "verify:cosmic-skin": "node scripts/verify-cosmic-skin-sync.js",
     "sync-cosmic-skin": "node scripts/sync-cosmic-skin.js",
-    "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && npm --prefix material-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js test/verify-build-assets.test.js test/prepare-biliup-bin.test.js test/extra-resources-filter.test.js",
+    "verify:comic-skin": "node scripts/verify-comic-skin-sync.js",
+    "sync-comic-skin": "node scripts/sync-comic-skin.js",
+    "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && npm --prefix material-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js test/verify-build-assets.test.js test/prepare-biliup-bin.test.js test/extra-resources-filter.test.js && node scripts/verify-comic-skin-sync.js",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.js\"",
     "prepare": "simple-git-hooks"

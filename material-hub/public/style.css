@@ -519,6 +519,77 @@ body {
 .btn-ghost:hover { background: var(--glass-bg); border-color: var(--text-dim); }
 .cover-modal-actions .btn-primary { height: 36px; }
 
+/* 漫画对话框输入框（动漫风）：白底粗黑边 + 聚焦拟声词 + 速度线 */
+.fx-comic { position: relative; }
+.fx-comic .box {
+  position: relative;
+  padding: 13px 16px;
+  border-radius: 8px;
+  background: #fff;
+  border: 4px solid #000;
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.85);
+}
+.fx-comic .box::after {
+  content: "";
+  position: absolute;
+  left: 26px;
+  bottom: -14px;
+  border: 8px solid transparent;
+  border-top: 10px solid #000;
+}
+.fx-comic input[type="text"] {
+  width: 100%;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #111;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.fx-comic input[type="text"]:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+/* 宇宙皮肤全局输入聚焦光环会覆盖漫画框，必须压掉（特异性更高） */
+html[data-skin="cosmic"] .fx-comic input:focus,
+html[data-skin="cosmic"] .fx-comic input[type="text"]:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+.fx-comic input[type="text"]::placeholder { color: #8d8d96; opacity: 1; }
+.fx-comic .lines {
+  position: absolute;
+  inset: -8px -14px;
+  pointer-events: none;
+  opacity: 0;
+  background: repeating-radial-gradient(circle at 30% 50%, transparent 0 4px, rgba(255, 255, 255, 0.5) 4px 5px);
+  transition: opacity .25s;
+}
+.fx-comic:focus-within .lines { opacity: .5; }
+.fx-comic .sfx {
+  position: absolute;
+  right: -6px;
+  top: -32px;
+  font-size: 32px;
+  font-weight: 900;
+  color: #fbbf24;
+  -webkit-text-stroke: 2px #000;
+  text-shadow: 4px 4px 0 #000;
+  transform: rotate(-8deg) scale(0);
+  opacity: 0;
+  transition: transform .3s cubic-bezier(.2, 1.6, .4, 1), opacity .2s;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 2;
+}
+.fx-comic:focus-within .sfx { transform: rotate(-8deg) scale(1); opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .fx-comic .sfx { transition: none; }
+  .fx-comic .lines { transition: none; }
+}
+
 /* 产物卡片 / 封面预览可点击：打开文件管理器选中文件 */
 .file-card.clickable, .cover-preview.clickable { cursor: pointer; }
 .file-card.clickable {

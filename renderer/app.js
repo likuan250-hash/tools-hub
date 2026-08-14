@@ -53,12 +53,15 @@
         };
   const quitConfirm = document.getElementById("quitConfirm");
 
-  // ── 皮肤（暗色 / 亮色 / 宇宙 三态；主进程单一真源）──
-  const SKIN_ICONS = { dark: "🌙", light: "☀️", cosmic: "✦" };
+  // ── 皮肤（暗色 / 亮色 / 宇宙 / 漫画；主进程单一真源）──
+  const SKIN_ICONS = { dark: "🌙", light: "☀️", cosmic: "✦", comic: "★" };
   function applyTheme(t) {
     if (t === "cosmic") {
       document.documentElement.setAttribute("data-theme", "dark");
       document.documentElement.setAttribute("data-skin", "cosmic");
+    } else if (t === "comic") {
+      document.documentElement.setAttribute("data-theme", "light");
+      document.documentElement.setAttribute("data-skin", "comic");
     } else {
       document.documentElement.setAttribute("data-theme", t);
       document.documentElement.removeAttribute("data-skin");

@@ -38,7 +38,9 @@ function folderInfo(dir) {
     const lower = n.toLowerCase();
     if (!VIDEO_EXTS.some((e) => lower.endsWith(e))) return false;
     if (n.startsWith(".")) return false;
+    if (/\.(part|ytdl|temp)$/.test(lower)) return false;
     if (/\.f\d+(\.\w+)?$/i.test(n)) return false;
+    if (n.includes("免费学习版下载") || n.startsWith("【游戏")) return false;
     return true;
   }) || null;
   return { ok: true, cover, trailer, coverOk: !!cover, trailerOk: !!trailer };

@@ -16,11 +16,11 @@ module.exports = {
   renderPreset: process.env.RESOLVE_RENDER_PRESET || '导出预设',
   // 素材根目录（render 未指定 --target 时默认输出到 E:\素材\<项目名>\）
   materialRoot: process.env.RESOLVE_MATERIAL_ROOT || 'E:\\素材',
-  // ffmpeg（用于把封面生成 3s 视频：静帧时长无法脚本化，这是精确 3s 封面的唯一办法）
+  // ffmpeg：当前流程已改为 AppendToTimeline 静帧直接入轨，不再使用（保留仅为 CLI/环境变量兼容）
   ffmpeg: process.env.RESOLVE_FFMPEG
     || 'E:\\Codex\\tools-hub\\material-hub\\node_modules\\@ffmpeg-installer\\win32-x64\\ffmpeg.exe',
   ffprobe: process.env.RESOLVE_FFPROBE
     || 'E:\\Codex\\tools-hub\\material-hub\\node_modules\\@ffprobe-installer\\win32-x64\\ffprobe.exe',
-  // 临时工作目录（封面 3s 视频等中间产物，不入库不污染素材目录）
+  // 临时工作目录（当前流程不再写入，仅保留历史清理）
   workDir: process.env.RESOLVE_WORK_DIR || 'E:\\素材\\_resolve-work',
 };

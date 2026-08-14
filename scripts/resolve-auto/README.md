@@ -33,7 +33,7 @@ node scripts/resolve-auto/index.js render --project "【游戏282】装机模拟
 | `RESOLVE_MATERIAL_ROOT` | `E:\素材` |
 | `RESOLVE_FFMPEG` | tools-hub 内置 ffmpeg |
 | `RESOLVE_FFPROBE` | tools-hub 内置 ffprobe |
-| `RESOLVE_WORK_DIR` | `E:\素材\_resolve-work`（封面 3s 视频等中间产物） |
+| `RESOLVE_WORK_DIR` | `E:\素材\_resolve-work`（历史中间产物清理，当前流程不写入） |
 | `RESOLVE_WORK_KEEP_DAYS` | `30`（中间文件保留天数，超出自动清理） |
 
 ## 说明
@@ -41,7 +41,7 @@ node scripts/resolve-auto/index.js render --project "【游戏282】装机模拟
 - 幂等：`setup` 重复执行时，若时间线已有该预告片则跳过导入/追加；`render` 在项目不存在时报错而非新建。
 - 素材目录约定与 tools-hub 素材收集一致：`封面.*` + 预告片视频（自动排除 `.fXXX` 半成品）。
 - 输出文件名请按实际版本信息给 `--out`，不要照搬文档里的「全DLC」固定后缀。
-- setup 只做「把素材放到轨道」：封面原图静帧直接进 V1（时长由 Resolve 默认静帧时长决定，
+- setup 只做「把素材放到轨道」：封面原图静帧直接进 V1（先按 300 帧≈5s 入轨，
   手动步骤里自己调整），预告片直接进 V1/A1。**不做时长控制、不做转码**。
 - 预告片从源第 30 帧起放置，左侧留 30 帧手柄——**无手柄的片段接缝无法放置转场**（这就是
   「平滑剪接拖不上去」的根因）。封面是静帧天然带无限手柄，转场要拖到两个片段之间的接缝。

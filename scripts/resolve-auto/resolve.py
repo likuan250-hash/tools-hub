@@ -146,7 +146,7 @@ def probe_frame_count(path, ffprobe):
 
 
 def clean_work_dir(work_dir, keep_days=30):
-    """清理 _resolve-work 里超过 N 天的中间文件（封面视频/转码预告片均可再生）。"""
+    """清理 _resolve-work 里超过 N 天的残留中间文件（当前流程不再写入，仅做历史清理）。"""
     if not os.path.isdir(work_dir):
         return 0
     cutoff = time.time() - keep_days * 86400
@@ -227,6 +227,19 @@ def pick_media_item(items, name):
     return None
 
 
+def find_pool_item(folder, name):
+    """在媒体池（含子文件夹）中按源文件名精确查找条目，用于幂等跳过重复导入。"""
+    base = os.path.splitext(name)[0].lower()
+    for it in folder.GetClipList() or []:
+        if it and str(it.GetName() or '').lower() == base:
+            return it
+    for sub in folder.GetSubFolderList() or []:
+        hit = find_pool_item(sub, name)
+        if hit:
+            return hit
+    return None
+
+
 def find_timeline(proj, name):
     for i in range(1, proj.GetTimelineCount() + 1):
         tl = proj.GetTimelineByIndex(i)
@@ -282,16 +295,19 @@ def cmd_setup(args):
     # 仅检查编码（不转码），素材格式由收集环节按规范产出
     check_trailer_codec(os.path.join(folder, trailer), args.ffprobe)
 
-    # 步骤 2：导入素材到媒体池
-    ms = resolve.GetMediaStorage()
-    added = ms.AddItemListToMediaPool([os.path.join(folder, cover), os.path.join(folder, trailer)])
-    cover_item = pick_media_item(added, cover)
-    trailer_item = pick_media_item(added, trailer)
+    # 步骤 2：导入素材到媒体池（幂等：已有同名条目则复用，不重复导入）
+    mp = proj.GetMediaPool()
+    cover_item = find_pool_item(mp.GetRootFolder(), cover)
+    trailer_item = find_pool_item(mp.GetRootFolder(), trailer)
+    if not cover_item or not trailer_item:
+        ms = resolve.GetMediaStorage()
+        added = ms.AddItemListToMediaPool([os.path.join(folder, cover), os.path.join(folder, trailer)])
+        cover_item = cover_item or pick_media_item(added, cover)
+        trailer_item = trailer_item or pick_media_item(added, trailer)
     if not cover_item or not trailer_item:
         raise RuntimeError('素材导入媒体池失败')
-    print('[素材] 已导入媒体池（封面原图 + 预告片）')
+    print('[素材] 已就绪（封面原图 + 预告片）')
 
-    mp = proj.GetMediaPool()
     tl = find_timeline(proj, 'Timeline 1')
     if tl is None:
         # 步骤 3：从 DRT 导入时间线模板（保留文本位置/样式）
@@ -306,7 +322,7 @@ def cmd_setup(args):
     if timeline_has_trailer(tl, trailer):
         print('[timeline] 预告片已在 V1，跳过追加（幂等）')
     else:
-        # 步骤 4：封面（原图静帧，时长由项目默认静帧时长决定，用户手动调整）→ 预告片
+        # 步骤 4：封面（原图静帧，先按 300 帧≈5s 入轨，用户手动调整）→ 预告片
         # 封面是静帧天然带无限右手柄；预告片从源第 30 帧起放留左手柄，平滑剪接转场才拖得上去。
         # recordFrame 用时间线起始帧（如 216000=01:00:00:00），否则会落到播放头/错误位置。
         cover_ok = mp.AppendToTimeline([{
@@ -349,9 +365,9 @@ def cmd_render(args):
     resolve = connect(args.exe)
     pm = resolve.GetProjectManager()
     proj = ensure_project(pm, args.project, create=False)
-    tl = proj.GetCurrentTimeline()
+    tl = find_timeline(proj, 'Timeline 1')
     if tl is None:
-        tl = find_timeline(proj, 'Timeline 1')
+        tl = proj.GetCurrentTimeline()
     if tl is None:
         raise RuntimeError('项目里没有时间线')
     proj.SetCurrentTimeline(tl)

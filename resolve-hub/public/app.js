@@ -11,6 +11,7 @@
   const infoEl = $("folderInfo");
   const startBtn = $("startBtn");
   const finishBtn = $("finishBtn");
+  const outInput = $("outInput");
   const clearBtn = $("clearBtn");
   const manualCard = $("manualCard");
   const doneEl = $("done");
@@ -66,7 +67,15 @@
     try {
       const r = await fetch("/api/folder-info?dir=" + encodeURIComponent(dir));
       const j = await r.json();
+      if (j && j.ok === false) {
+        current = null;
+        outInput.value = "";
+        infoEl.textContent = j.error || "目录不可读";
+        startBtn.disabled = true;
+        return;
+      }
       current = { name: dir.split(/[\\/]/).pop(), path: dir };
+      outInput.value = current.name + " 官方中文+全DLC+免安装硬盘版 免费学习版下载";
       infoEl.innerHTML = "";
       const cover = j.coverOk
         ? '<span class="ok">封面 ✓</span> ' + esc(j.cover)
@@ -93,13 +102,29 @@
     finishBtn.disabled = true;
     doneEl.textContent = "";
     let output = "";
+    let ok = true;
     try {
       const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!resp.body) { addLog("请求失败\n"); return; }
+      if (!resp.ok) {
+        let msg = "请求失败（HTTP " + resp.status + "）";
+        try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch (e) { /* ignore */ }
+        output += "[错误] " + msg + "\n";
+        addLog("[错误] " + msg + "\n");
+        ok = false;
+        finishLog(false);
+        return;
+      }
+      if (!resp.body) {
+        output += "[错误] 请求失败：无响应内容\n";
+        addLog("[错误] 请求失败：无响应内容\n");
+        ok = false;
+        finishLog(false);
+        return;
+      }
       const reader = resp.body.getReader();
       const dec = new TextDecoder("utf-8");
       while (true) {
@@ -112,16 +137,21 @@
     } catch (e) {
       addLog("[错误] " + e.message + "\n");
       output += "[错误] " + e.message + "\n";
+      ok = false;
     }
-    finishLog(!/\[错误\]|Traceback|失败/.test(output));
+    ok = ok && !/\[错误\]|Traceback|失败/.test(output);
+    finishLog(ok);
+    return ok;
   }
 
   startBtn.onclick = async () => {
     if (!current) return;
     beginRun("开始做视频（0-4）", "正在连接 Resolve、建项目、导素材、导模板并追加到时间线…");
-    await streamRun("/api/start", { dir: current.path });
-    manualCard.hidden = false;
-    finishBtn.disabled = false;
+    const ok = await streamRun("/api/start", { dir: current.path });
+    if (ok) {
+      manualCard.hidden = false;
+      finishBtn.disabled = false;
+    }
     startBtn.disabled = false;
     $("startState").textContent = "";
   };
@@ -129,9 +159,15 @@
   finishBtn.onclick = async () => {
     if (!current) return;
     beginRun("渲染导出（8-9）", "正在加载导出预设并渲染…");
-    await streamRun("/api/render", { project: current.name });
-    finishBtn.disabled = false;
-    doneEl.textContent = "渲染结束，请检查日志确认输出文件。";
+    const out = outInput.value.trim();
+    const ok = await streamRun("/api/render", out ? { project: current.name, out } : { project: current.name });
+    if (ok) {
+      finishBtn.disabled = true;
+      finishBtn.textContent = "已导出完成";
+      doneEl.textContent = "渲染完成，输出已写入素材目录。";
+    } else {
+      doneEl.textContent = "渲染失败，请修正后重试。";
+    }
   };
 
   $("browseBtn").onclick = async () => {
@@ -154,7 +190,9 @@
     doneEl.textContent = "";
     startBtn.disabled = true;
     finishBtn.disabled = true;
+    finishBtn.textContent = "确认好了，继续导出（8-9）";
     manualCard.hidden = true;
+    outInput.value = "";
     current = null;
   };
 })();

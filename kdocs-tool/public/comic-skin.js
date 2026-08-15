@@ -33,6 +33,7 @@
     var cls = CLASSES[(Math.random() * CLASSES.length) | 0];
     el.classList.add(cls);
     if (cls === 'cp-b') { addSeg(el); driveB(el); }
+    if (cls === 'cp-c' && el.classList.contains('step-item')) addBubble(el);
   }
   // B 变体：注入分格能量槽（32 格），格子随星星扫过逐个点亮/熄灭
   function addSeg(el) {
@@ -82,6 +83,15 @@
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
+  }
+  // C 变体：步骤内进度条补注入「加载中…」气泡（与独立进度条一致；step-body 伪元素已占满）
+  function addBubble(el) {
+    var host = el.querySelector('.step-body');
+    if (!host || host.querySelector('.cp-bubble')) return;
+    var bub = document.createElement('span');
+    bub.className = 'cp-bubble';
+    bub.textContent = '加载中…';
+    host.appendChild(bub);
   }
   function scan(root) {
     var els = (root || document).querySelectorAll(PROG);

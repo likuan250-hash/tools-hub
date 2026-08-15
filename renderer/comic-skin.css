@@ -48,12 +48,6 @@ html[data-skin="comic"] body::before {
   background-size: 14px 14px;
   pointer-events: none; z-index: 0;
 }
-html[data-skin="comic"] body::after {
-  content: "";
-  position: fixed; left: 0; bottom: 0; width: 100%; height: 150px;
-  background: repeating-linear-gradient(105deg, transparent 0 26px, rgba(0, 0, 0, .05) 26px 30px);
-  pointer-events: none; z-index: 0;
-}
 
 /* ===== 大标题：爆炸贴纸 ===== */
 html[data-skin="comic"] h1,
@@ -520,7 +514,7 @@ html[data-skin="comic"] .bili-exec-bar::after {
 
 /* ===== 漫画进度条三变体（comic-skin.js 随机分配 cp-a / cp-b / cp-c） ===== */
 /* A · 锯齿能量条：紫粉金渐变 + 黑白斜纹 + 上下锯齿 + 硬阴影 */
-html[data-skin="comic"] .cp-a::after {
+html[data-skin="comic"] .cp-a:not(.step-item)::after {
   background:
     repeating-linear-gradient(105deg, rgba(255, 255, 255, .6) 0 8px, transparent 8px 16px),
     linear-gradient(90deg, #a78bfa, #f472b6, #fbbf24, #a78bfa) !important;
@@ -532,11 +526,11 @@ html[data-skin="comic"] .cp-a::after {
                      52% 72%, 40% 94%, 30% 76%, 20% 96%, 12% 74%, 6% 92%, 0 78%);
 }
 /* B · 分格能量槽 + 星星滑块 */
-html[data-skin="comic"] .cp-b {
+html[data-skin="comic"] .cp-b:not(.step-item) {
   overflow: visible !important;
   background: #fff !important;
 }
-html[data-skin="comic"] .cp-b::after {
+html[data-skin="comic"] .cp-b:not(.step-item)::after {
   content: "★";
   width: auto !important;
   height: auto !important;
@@ -558,7 +552,7 @@ html[data-skin="comic"] .cp-b::after {
   z-index: 2;
 }
 /* JS 驱动模式：禁用伪元素星星（改由 comic-skin.js 注入 .cp-star span 精确同步） */
-html[data-skin="comic"] .cp-js::after,
+html[data-skin="comic"] .cp-js:not(.step-item)::after,
 html[data-skin="comic"] .cp-js .step-body::after { content: none !important; }
 html[data-skin="comic"] .cp-star {
   position: absolute;
@@ -602,13 +596,20 @@ html[data-skin="comic"] .step-item .cp-seg {
   display: flex; gap: 1px; padding: 0;
   pointer-events: none;
 }
+/* 步骤内进度条的星星：定位到底部轨道（不遮步骤文字） */
+html[data-skin="comic"] .step-item .cp-star {
+  top: auto;
+  bottom: -4px;
+  transform: none;
+  z-index: 2;
+}
 @keyframes cellLit {
   0%, 60%, 100% { background-color: rgba(0, 0, 0, .08); }
   10%, 50% { background-color: #fbbf24; }
 }
 /* C · 气泡进度：三色条纹条 + 前端「加载中…」气泡 */
-html[data-skin="comic"] .cp-c { overflow: visible !important; }
-html[data-skin="comic"] .cp-c::after {
+html[data-skin="comic"] .cp-c:not(.step-item) { overflow: visible !important; }
+html[data-skin="comic"] .cp-c:not(.step-item)::after {
   background: repeating-linear-gradient(90deg, #a78bfa 0 12px, #f472b6 12px 24px, #fbbf24 24px 36px) !important;
   box-shadow: none !important;
   filter: none !important;
@@ -616,7 +617,7 @@ html[data-skin="comic"] .cp-c::after {
   animation: cpWidth 1.3s ease-in-out infinite alternate;
 }
 @keyframes cpWidth { from { width: 14%; } to { width: 98%; } }
-html[data-skin="comic"] .cp-c::before {
+html[data-skin="comic"] .cp-c:not(.step-item)::before {
   content: "加载中…";
   position: absolute;
   top: 50%;
@@ -641,6 +642,7 @@ html[data-skin="comic"] .cp-a .step-body::before,
 html[data-skin="comic"] .cp-b .step-body::before,
 html[data-skin="comic"] .cp-c .step-body::before {
   height: 10px;
+  overflow: hidden;
 }
 html[data-skin="comic"] .cp-a .step-body::after,
 html[data-skin="comic"] .cp-b .step-body::after,
@@ -691,6 +693,25 @@ html[data-skin="comic"] .cp-c .step-body::after {
   clip-path: none !important;
   filter: none !important;
   animation: cpWidth 1.3s ease-in-out infinite alternate;
+}
+/* 步骤内 C 气泡（comic-skin.js 注入 .cp-bubble），与独立进度条一致 */
+html[data-skin="comic"] .step-item .cp-bubble {
+  position: absolute;
+  bottom: -4px;
+  left: 4%;
+  transform: translateY(50%);
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+  background: #7c5cff;
+  border: 2px solid #000;
+  border-radius: 999px;
+  padding: 2px 9px;
+  box-shadow: 2px 2px 0 #000;
+  white-space: nowrap;
+  z-index: 2;
+  pointer-events: none;
+  animation: cpTip 1.3s ease-in-out infinite alternate;
 }
 html[data-skin="comic"] .step-item {
   border: 3px solid #000 !important;

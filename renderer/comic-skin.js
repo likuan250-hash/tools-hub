@@ -86,6 +86,8 @@
   function scan(root) {
     var els = (root || document).querySelectorAll(PROG);
     for (var i = 0; i < els.length; i += 1) decorate(els[i]);
+    // querySelectorAll 不含根元素自身：动态添加的元素（如素材收集的 step-item）需单独匹配
+    if (root && root.nodeType === 1 && root.matches && root.matches(PROG)) decorate(root);
   }
   scan(document);
   if (window.MutationObserver) {

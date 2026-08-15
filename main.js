@@ -1,7 +1,7 @@
 // tools-hub 主进程（Electron）
 // 职责：单实例锁、fork 四个 node 子进程(kdocs/netdisk/biliup/material)、原生文件对话框、状态推送、看门狗、自动更新。
 // 启动后渲染进程显示入口页；点击卡片后在同一窗口内以 <webview> 标签打开工具。
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell, net } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell, net, session } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { fork, spawnSync } = require("child_process");
@@ -654,9 +654,11 @@ ipcMain.handle("set-theme", (_e, t) => {
   if (t === "light" || t === "dark" || t === "cosmic" || t === "comic") currentTheme = t;
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // 去掉 Electron 默认菜单栏，避免顶部出现 File/Edit/View 等系统菜单，保持工具壳体风格统一
   Menu.setApplicationMenu(null);
+  // 启动时清一次磁盘缓存：renderer 外链 css/js 升级后仍可能命中旧缓存（皮肤/进度条改动不生效的根因）
+  try { await session.defaultSession.clearCache(); } catch (e) { /* 清缓存失败不影响启动 */ }
   createMainWindow();
   startChild(CHILDREN.kdocs);
   relocateNetdiskData();

@@ -1,6 +1,6 @@
 {
   "name": "resolve-hub",
-  "version": "2.7.100",
+  "version": "2.7.101",
   "private": true,
   "description": "达芬奇剪辑工具：选素材目录 → 自动建项目/导模板(0-4) → 手动5-7 → 一键渲染导出(8-9)",
   "main": "server.js",

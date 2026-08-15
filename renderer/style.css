@@ -65,6 +65,18 @@ body {
 }
 .update-btn:disabled { opacity: .6; cursor: not-allowed; }
 .agg, .update-status { color: var(--text-dim); font-size: 13px; }
+/* 入口聚合状态：漫画皮肤下为 P5 社群卡，非漫画皮肤退化为简洁圆点 */
+.agg { display: inline-flex; align-items: center; gap: 6px; }
+.agg .dball {
+  position: relative; width: 13px; height: 13px; border-radius: 50%;
+  border: 1px solid var(--glass-border, rgba(128,128,128,.35));
+  background: rgba(128,128,128,.18);
+  cursor: pointer;
+}
+.agg .dball.on { background: var(--ok, #4ade80); box-shadow: 0 0 7px rgba(74,222,128,.65); }
+/* 社群卡内部与全在线横幅仅漫画皮肤显示 */
+.agg .card-head, .agg .card-dot, .agg .card-pic, .agg .card-name, .agg .card-rank { display: none; }
+.agg .aoa-banner { display: none !important; }
 
 /* 皮肤下拉（暗色 / 亮色 / 宇宙） */
 .skin-menu{position:relative;display:inline-block}

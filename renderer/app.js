@@ -647,45 +647,69 @@
   }
 
   // ── 服务状态 ──
+  // 入口聚合状态：五个模块，漫画皮肤下为 P5 社群卡（在线点亮/离线灰暗，点击直达工具，
+  // 全在线时播放 ALL-OUT ATTACK 特效），其他皮肤退化为彩色圆点
+  const AGG_MODULES = [
+    ["kdocs", "金山文档录入", 1],
+    ["netdisk", "网盘转存中转", 2],
+    ["biliup", "B站自动投稿", 3],
+    ["material", "素材搜集", 4],
+    ["resolve", "达芬奇剪辑", 5],
+  ];
+  const AGG_ICONS = ["✧", "◈", "✦", "◉", "◆"];
+  let aggAoaPlayed = false;
+  function renderAggBalls(status) {
+    if (!aggEl) return;
+    aggEl.innerHTML = "";
+    aggEl.classList.remove("agg-aoa");
+    const cards = [];
+    const banner = document.createElement("span");
+    banner.className = "aoa-banner";
+    banner.innerHTML = "<span>ALL-OUT ATTACK!!</span>";
+    aggEl.appendChild(banner);
+    for (let i = 0; i < AGG_MODULES.length; i++) {
+      const [key, name, rank] = AGG_MODULES[i];
+      const on = !!(status && status[key] && status[key].running);
+      const b = document.createElement("span");
+      b.className = "dball " + (on ? "on" : "off");
+      b.title = name;
+      b.innerHTML =
+        '<span class="card-head">RANK <b>' +
+        rank +
+        "</b></span>" +
+        '<span class="card-dot"></span>' +
+        '<span class="card-pic">' +
+        AGG_ICONS[i] +
+        "</span>" +
+        '<span class="card-name">' +
+        name +
+        "</span>" +
+        '<span class="card-rank">' +
+        rank +
+        "</span>";
+      b.addEventListener("click", () => openTab(key));
+      aggEl.appendChild(b);
+      cards.push(on);
+    }
+    // 全在线（漫画皮肤）→ 播放 ALL-OUT ATTACK 特效（只播一次，回归后不再重播）
+    const allOn = cards.length > 0 && cards.every(Boolean);
+    if (allOn && !aggAoaPlayed) {
+      aggAoaPlayed = true;
+      aggEl.classList.add("agg-aoa");
+      setTimeout(() => aggEl.classList.remove("agg-aoa"), 5200);
+    } else if (!allOn) {
+      aggAoaPlayed = false;
+    }
+  }
   function renderStatus(status) {
     serviceStatus = status || {};
-    // 防御性：状态系统组件（status-luxe.js 提供的全局函数）若未加载成功，
-    // 必须保证卡片渲染与页面可操作，绝不能让状态胶囊的异常阻断整个初始化序列。
     try {
-      const kdocsLevel = serviceStatus.kdocs && serviceStatus.kdocs.running ? "ok" : "off";
-      const netdiskLevel = serviceStatus.netdisk && serviceStatus.netdisk.running ? "ok" : "off";
-      const biliupLevel = serviceStatus.biliup && serviceStatus.biliup.running ? "ok" : "off";
-      const materialLevel = serviceStatus.material && serviceStatus.material.running ? "ok" : "off";
-      const resolveLevel = serviceStatus.resolve && serviceStatus.resolve.running ? "ok" : "off";
-      const agg =
-        typeof aggregateStatus === "function"
-          ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel, materialLevel, resolveLevel])
-          : "off";
-      const colorLevel = typeof aggColorLevel === "function" ? aggColorLevel(agg) : agg;
-      aggEl.innerHTML =
-        typeof statusHTML === "function"
-          ? statusHTML(colorLevel, aggLabel(agg))
-          : aggLabel(agg) || "";
+      renderAggBalls(serviceStatus);
     } catch (e) {
-      // 状态胶囊渲染失败不应阻断卡片与页面：回退为纯文本标签，保证 #aggStatus 被替换。
-      if (aggEl) aggEl.textContent = aggLabel("off");
+      // 聚合状态渲染失败不应阻断卡片与页面：回退为纯文本标签，保证 #aggStatus 被替换。
+      if (aggEl) aggEl.textContent = "离线";
     }
     renderCards(); // 无论状态系统是否成功，卡片必须渲染、页面必须可操作
-  }
-  // 入口聚合标签：err→异常 / off→离线 / warn→需注意 / info→检测中 / ok→全部正常
-  function aggLabel(level) {
-    switch (level) {
-      case "err":
-        return "异常";
-      case "off":
-        return "离线";
-      case "warn":
-        return "需注意";
-      case "info":
-        return "检测中";
-      default:
-        return "全部正常";
-    }
   }
   if (api && api.getStatus) {
     api

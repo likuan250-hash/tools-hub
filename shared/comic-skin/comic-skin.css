@@ -505,6 +505,7 @@ html[data-skin="comic"] .exec-bar,
 html[data-skin="comic"] .step-indeterminate,
 html[data-skin="comic"] .step-item .exec-bar,
 html[data-skin="comic"] .bili-exec-bar {
+  height: 10px;
   border: 2px solid #000;
   background: #f3eefe !important;
   border-radius: 999px;
@@ -533,15 +534,14 @@ html[data-skin="comic"] .cp-a::after {
 /* B · 分格能量槽 + 星星滑块 */
 html[data-skin="comic"] .cp-b {
   overflow: visible !important;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 15px, rgba(0, 0, 0, .14) 15px 17px),
-    #fff !important;
+  background: #fff !important;
 }
 html[data-skin="comic"] .cp-b::after {
   content: "★";
   width: auto !important;
   height: auto !important;
   top: 50% !important;
+  bottom: auto !important;
   left: 2%;
   transform: translateY(-50%);
   background: none !important;
@@ -554,12 +554,57 @@ html[data-skin="comic"] .cp-b::after {
   color: #fbbf24;
   -webkit-text-stroke: 1.5px #000;
   text-shadow: 2px 2px 0 #000;
-  animation: cpStar 1.4s ease-in-out infinite;
+  animation: cpStar 1.4s ease-in-out infinite alternate;
+  z-index: 2;
+}
+/* JS 驱动模式：禁用伪元素星星（改由 comic-skin.js 注入 .cp-star span 精确同步） */
+html[data-skin="comic"] .cp-js::after,
+html[data-skin="comic"] .cp-js .step-body::after { content: none !important; }
+html[data-skin="comic"] .cp-star {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  font-size: 19px;
+  line-height: 1;
+  color: #fbbf24;
+  -webkit-text-stroke: 1.5px #000;
+  text-shadow: 2px 2px 0 #000;
+  z-index: 2;
+  pointer-events: none;
 }
 @keyframes cpStar {
   0% { left: 2%; transform: translateY(-50%) rotate(-10deg) scale(1); }
   50% { transform: translateY(-50%) rotate(14deg) scale(1.35); }
   100% { left: calc(100% - 22px); transform: translateY(-50%) rotate(-10deg) scale(1); }
+}
+/* B 变体分格能量槽：格子随星星扫过逐个点亮/熄灭（delay 由 comic-skin.js 注入） */
+html[data-skin="comic"] .cp-seg {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; gap: 1px; padding: 0;
+  pointer-events: none;
+}
+html[data-skin="comic"] .cp-seg i {
+  flex: 1; border-radius: 2px;
+  background-color: rgba(0, 0, 0, .08);
+  border: 1px solid rgba(0, 0, 0, .35);
+  transition: background-color .08s;
+}
+html[data-skin="comic"] .cp-seg i.lit {
+  background-color: #fbbf24;
+}
+/* 步骤内进度条（kdocs/netdisk）：格子只占底部轨道区域，不覆盖步骤文字 */
+html[data-skin="comic"] .step-item .cp-seg {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 10px;
+  z-index: 1;
+  display: flex; gap: 1px; padding: 0;
+  pointer-events: none;
+}
+@keyframes cellLit {
+  0%, 60%, 100% { background-color: rgba(0, 0, 0, .08); }
+  10%, 50% { background-color: #fbbf24; }
 }
 /* C · 气泡进度：三色条纹条 + 前端「加载中…」气泡 */
 html[data-skin="comic"] .cp-c { overflow: visible !important; }
@@ -570,7 +615,7 @@ html[data-skin="comic"] .cp-c::after {
   clip-path: none !important;
   animation: cpWidth 1.3s ease-in-out infinite alternate;
 }
-@keyframes cpWidth { from { width: 14%; } to { width: 86%; } }
+@keyframes cpWidth { from { width: 14%; } to { width: 98%; } }
 html[data-skin="comic"] .cp-c::before {
   content: "加载中…";
   position: absolute;
@@ -589,7 +634,64 @@ html[data-skin="comic"] .cp-c::before {
   z-index: 2;
   animation: cpTip 1.3s ease-in-out infinite alternate;
 }
-@keyframes cpTip { from { left: 4%; } to { left: 82%; } }
+@keyframes cpTip { from { left: 4%; } to { left: 92%; } }
+
+/* kdocs / netdisk 步骤内进度条：统一为大进度条形态（10px 粗条），随机三变体同大条 */
+html[data-skin="comic"] .cp-a .step-body::before,
+html[data-skin="comic"] .cp-b .step-body::before,
+html[data-skin="comic"] .cp-c .step-body::before {
+  height: 10px;
+}
+html[data-skin="comic"] .cp-a .step-body::after,
+html[data-skin="comic"] .cp-b .step-body::after,
+html[data-skin="comic"] .cp-c .step-body::after {
+  height: 10px;
+  max-width: none;
+}
+/* A · 锯齿能量条 */
+html[data-skin="comic"] .cp-a .step-body::after {
+  background:
+    repeating-linear-gradient(105deg, rgba(255, 255, 255, .6) 0 8px, transparent 8px 16px),
+    linear-gradient(90deg, #a78bfa, #f472b6, #fbbf24, #a78bfa) !important;
+  background-size: auto, 300% 100%;
+  box-shadow: none !important;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, .55));
+  clip-path: polygon(0 22%, 6% 8%, 12% 26%, 20% 4%, 30% 24%, 40% 6%, 52% 28%, 64% 8%,
+                     76% 26%, 88% 6%, 100% 22%, 100% 78%, 88% 94%, 76% 74%, 64% 92%,
+                     52% 72%, 40% 94%, 30% 76%, 20% 96%, 12% 74%, 6% 92%, 0 78%);
+}
+/* B · 分格能量槽 + 星星 */
+html[data-skin="comic"] .cp-b .step-body::before {
+  background: #fff !important;
+}
+html[data-skin="comic"] .cp-b .step-body::after {
+  content: "★";
+  width: auto !important;
+  height: auto !important;
+  top: 50% !important;
+  bottom: auto !important;
+  left: 2%;
+  transform: translateY(-50%);
+  background: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  clip-path: none !important;
+  border-radius: 0 !important;
+  font-size: 19px;
+  line-height: 1;
+  color: #fbbf24;
+  -webkit-text-stroke: 1.5px #000;
+  text-shadow: 2px 2px 0 #000;
+  animation: cpStar 1.4s ease-in-out infinite alternate;
+}
+/* C · 条纹伸缩（步骤内伪元素结构放不下气泡，退化为条纹伸缩） */
+html[data-skin="comic"] .cp-c .step-body::after {
+  background: repeating-linear-gradient(90deg, #a78bfa 0 12px, #f472b6 12px 24px, #fbbf24 24px 36px) !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+  filter: none !important;
+  animation: cpWidth 1.3s ease-in-out infinite alternate;
+}
 html[data-skin="comic"] .step-item {
   border: 3px solid #000 !important;
   border-radius: 12px !important;

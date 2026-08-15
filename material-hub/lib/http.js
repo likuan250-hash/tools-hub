@@ -14,10 +14,10 @@
 //
 // 纯函数（parseProxyUrl / parseNoProxy / shouldBypassProxy / pickProxyEnv / resolveProxy / toProxyUrl）
 // 全部可单测，测试中绝不发真实网络请求。
-const http = require('http');
-const https = require('https');
-const fsDefault = require('fs');
-const pathMod = require('path');
+const http = require("http");
+const https = require("https");
+const fsDefault = require("fs");
+const pathMod = require("path");
 
 /** 默认超时（下载 18MB 的 yt-dlp.exe 经代理约 25s，留足余量）。 */
 const DEFAULT_TIMEOUT = 120 * 1000;
@@ -26,21 +26,28 @@ const PROBE_TIMEOUT = 2500;
 /** 自动探测的本地常见代理端口（按出现频率排序；用户可在 .proxy 显式指定覆盖）。 */
 const LOCAL_PROXY_PORTS = [7990, 7890, 7897, 10809, 10808, 1080, 8888, 2080];
 /** 自动探测的验证目标（须在墙外，能过 CONNECT 即说明代理可用）。 */
-const PROBE_TARGET = 'www.google.com';
+const PROBE_TARGET = "www.google.com";
 /** 环境变量开关：设置后禁用本地代理自动探测（高级用户强制直连）。 */
-const AUTO_PROXY_DISABLE_ENV = 'MATERIAL_NO_AUTO_PROXY';
+const AUTO_PROXY_DISABLE_ENV = "MATERIAL_NO_AUTO_PROXY";
 /** 默认 UA：壁纸站 / DuckDuckGo 对无 UA 请求一律拒绝。 */
 const DEFAULT_USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 /** 最大重定向跳数，防环。 */
 const MAX_REDIRECTS = 8;
 
 /** https 目标的代理环境变量查找顺序。 */
-const PROXY_ENV_KEYS_HTTPS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'];
+const PROXY_ENV_KEYS_HTTPS = [
+  "HTTPS_PROXY",
+  "https_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+  "ALL_PROXY",
+  "all_proxy",
+];
 /** http 目标的代理环境变量查找顺序（不回落到 HTTPS_PROXY）。 */
-const PROXY_ENV_KEYS_HTTP = ['HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'];
+const PROXY_ENV_KEYS_HTTP = ["HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"];
 /** NO_PROXY 环境变量查找顺序。 */
-const NO_PROXY_ENV_KEYS = ['NO_PROXY', 'no_proxy'];
+const NO_PROXY_ENV_KEYS = ["NO_PROXY", "no_proxy"];
 
 /** 自动探测结果缓存：null=未探测；'none'=探测过但没找到；其余为代理 href。 */
 let autoProxyCache = undefined;
@@ -53,20 +60,25 @@ let autoProxyCache = undefined;
  * @returns {Promise<{protocol: string, hostname: string, port: number, auth: string, href: string}|null>}
  */
 async function detectLocalProxy(env, ports) {
-  const src = env && typeof env === 'object' ? env : process.env;
-  if (String(firstEnv(src, [AUTO_PROXY_DISABLE_ENV, AUTO_PROXY_DISABLE_ENV.toLowerCase()])) === '1') return null;
+  const src = env && typeof env === "object" ? env : process.env;
+  if (String(firstEnv(src, [AUTO_PROXY_DISABLE_ENV, AUTO_PROXY_DISABLE_ENV.toLowerCase()])) === "1")
+    return null;
   if (autoProxyCache !== undefined) return autoProxyCache;
 
   const probe = async (port) => {
     try {
       const sock = await openProxyTunnel(
-        { hostname: '127.0.0.1', port, auth: '' },
+        { hostname: "127.0.0.1", port, auth: "" },
         PROBE_TARGET,
         443,
-        PROBE_TIMEOUT
+        PROBE_TIMEOUT,
       );
       // 探测只需确认隧道能建立，用完立即销毁，避免 socket 泄漏挂住进程
-      try { sock.destroy(); } catch (e) { /* 已销毁 */ }
+      try {
+        sock.destroy();
+      } catch (e) {
+        /* 已销毁 */
+      }
       return true;
     } catch (e) {
       return false;
@@ -78,18 +90,32 @@ async function detectLocalProxy(env, ports) {
   for (const port of list) {
     // 先确认端口在监听（比真实 CONNECT 快得多），没监听直接跳过
     const listening = await new Promise((resolve) => {
-      const sock = require('net').connect({ host: '127.0.0.1', port });
-      const timer = setTimeout(() => { try { sock.destroy(); } catch (e) { /* ignore */ } resolve(false); }, 300);
-      sock.on('connect', () => { clearTimeout(timer); sock.destroy(); resolve(true); });
-      sock.on('error', () => { clearTimeout(timer); resolve(false); });
+      const sock = require("net").connect({ host: "127.0.0.1", port });
+      const timer = setTimeout(() => {
+        try {
+          sock.destroy();
+        } catch (e) {
+          /* ignore */
+        }
+        resolve(false);
+      }, 300);
+      sock.on("connect", () => {
+        clearTimeout(timer);
+        sock.destroy();
+        resolve(true);
+      });
+      sock.on("error", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
     });
     if (!listening) continue;
     if (await probe(port)) {
-      found = parseProxyUrl('http://127.0.0.1:' + port);
+      found = parseProxyUrl("http://127.0.0.1:" + port);
       if (found) break;
     }
   }
-  autoProxyCache = found || 'none';
+  autoProxyCache = found || "none";
   return found;
 }
 
@@ -105,12 +131,12 @@ function resetAutoProxyCache() {
  * @returns {string} 命中的值（已 trim）；都没有时返回空串
  */
 function firstEnv(env, keys) {
-  const src = env && typeof env === 'object' ? env : {};
+  const src = env && typeof env === "object" ? env : {};
   for (const key of keys) {
     const raw = src[key];
-    if (typeof raw === 'string' && raw.trim()) return raw.trim();
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
   }
-  return '';
+  return "";
 }
 
 /**
@@ -120,8 +146,8 @@ function firstEnv(env, keys) {
  * @returns {string} 代理地址原始串；未配置返回空串
  */
 function pickProxyEnv(env, protocol) {
-  const p = String(protocol == null ? '' : protocol).toLowerCase();
-  const isHttps = p.indexOf('https') === 0;
+  const p = String(protocol == null ? "" : protocol).toLowerCase();
+  const isHttps = p.indexOf("https") === 0;
   return firstEnv(env, isHttps ? PROXY_ENV_KEYS_HTTPS : PROXY_ENV_KEYS_HTTP);
 }
 
@@ -133,11 +159,11 @@ function pickProxyEnv(env, protocol) {
  *   解析失败返回 null（非法值等同于「不走代理」，绝不抛异常）
  */
 function parseProxyUrl(raw) {
-  let s = String(raw == null ? '' : raw).trim();
+  let s = String(raw == null ? "" : raw).trim();
   if (!s) return null;
   // socks 代理本模块不支持（需要额外协议实现），直接视为未配置
   if (/^socks/i.test(s)) return null;
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = 'http://' + s;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = "http://" + s;
 
   let u = null;
   try {
@@ -145,17 +171,17 @@ function parseProxyUrl(raw) {
   } catch (e) {
     return null;
   }
-  const protocol = String(u.protocol || '').toLowerCase();
-  if (protocol !== 'http:' && protocol !== 'https:') return null;
-  const hostname = String(u.hostname || '');
+  const protocol = String(u.protocol || "").toLowerCase();
+  if (protocol !== "http:" && protocol !== "https:") return null;
+  const hostname = String(u.hostname || "");
   if (!hostname) return null;
-  const port = u.port ? Number.parseInt(u.port, 10) : (protocol === 'https:' ? 443 : 80);
+  const port = u.port ? Number.parseInt(u.port, 10) : protocol === "https:" ? 443 : 80;
   if (!Number.isFinite(port) || port <= 0 || port > 65535) return null;
 
-  const user = u.username ? decodeURIComponent(u.username) : '';
-  const pass = u.password ? decodeURIComponent(u.password) : '';
-  const auth = user || pass ? user + ':' + pass : '';
-  return { protocol, hostname, port, auth, href: protocol + '//' + hostname + ':' + port };
+  const user = u.username ? decodeURIComponent(u.username) : "";
+  const pass = u.password ? decodeURIComponent(u.password) : "";
+  const auth = user || pass ? user + ":" + pass : "";
+  return { protocol, hostname, port, auth, href: protocol + "//" + hostname + ":" + port };
 }
 
 /**
@@ -164,10 +190,14 @@ function parseProxyUrl(raw) {
  * @returns {string} 形如 'http://127.0.0.1:7990'；proxy 为空时返回空串
  */
 function toProxyUrl(proxy) {
-  if (!proxy || !proxy.hostname) return '';
-  const credential = proxy.auth ? encodeURIComponent(proxy.auth.split(':')[0]) + ':'
-    + encodeURIComponent(proxy.auth.slice(proxy.auth.indexOf(':') + 1)) + '@' : '';
-  return proxy.protocol + '//' + credential + proxy.hostname + ':' + proxy.port;
+  if (!proxy || !proxy.hostname) return "";
+  const credential = proxy.auth
+    ? encodeURIComponent(proxy.auth.split(":")[0]) +
+      ":" +
+      encodeURIComponent(proxy.auth.slice(proxy.auth.indexOf(":") + 1)) +
+      "@"
+    : "";
+  return proxy.protocol + "//" + credential + proxy.hostname + ":" + proxy.port;
 }
 
 /**
@@ -177,9 +207,15 @@ function toProxyUrl(proxy) {
  */
 function parseNoProxy(raw) {
   if (Array.isArray(raw)) {
-    return raw.map((s) => String(s == null ? '' : s).trim().toLowerCase()).filter((s) => s.length > 0);
+    return raw
+      .map((s) =>
+        String(s == null ? "" : s)
+          .trim()
+          .toLowerCase(),
+      )
+      .filter((s) => s.length > 0);
   }
-  return String(raw == null ? '' : raw)
+  return String(raw == null ? "" : raw)
     .split(/[,\s]+/)
     .map((s) => s.trim().toLowerCase())
     .filter((s) => s.length > 0);
@@ -194,21 +230,24 @@ function parseNoProxy(raw) {
  * @returns {boolean} true = 绕过代理直连
  */
 function shouldBypassProxy(hostname, noProxy) {
-  const host = String(hostname == null ? '' : hostname).trim().toLowerCase().replace(/\.$/, '');
+  const host = String(hostname == null ? "" : hostname)
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "");
   if (!host) return false;
   const list = parseNoProxy(noProxy);
   if (!list.length) return false;
-  if (list.indexOf('*') >= 0) return true;
+  if (list.indexOf("*") >= 0) return true;
 
-  const bare = host.replace(/^\[/, '').replace(/\]$/, '');
+  const bare = host.replace(/^\[/, "").replace(/\]$/, "");
   for (const item of list) {
-    let entry = item.replace(/^\*/, '');
-    entry = entry.replace(/^\[/, '').replace(/\]$/, '');
+    let entry = item.replace(/^\*/, "");
+    entry = entry.replace(/^\[/, "").replace(/\]$/, "");
     // 条目形如 example.com:8080 时按主机名匹配（IPv6 字面量含 '::'，不能误剥）
-    if (entry.indexOf('::') < 0) entry = entry.replace(/:\d+$/, '');
+    if (entry.indexOf("::") < 0) entry = entry.replace(/:\d+$/, "");
     if (!entry) continue;
     if (entry === bare) return true;
-    const suffix = entry[0] === '.' ? entry : '.' + entry;
+    const suffix = entry[0] === "." ? entry : "." + entry;
     if (bare.endsWith(suffix)) return true;
   }
   return false;
@@ -222,10 +261,10 @@ function shouldBypassProxy(hostname, noProxy) {
  *   null 表示直连
  */
 function resolveProxy(target, env) {
-  const source = env && typeof env === 'object' ? env : process.env;
+  const source = env && typeof env === "object" ? env : process.env;
   let u = null;
   try {
-    u = typeof target === 'string' ? new URL(target) : target;
+    u = typeof target === "string" ? new URL(target) : target;
   } catch (e) {
     return null;
   }
@@ -240,18 +279,20 @@ function resolveProxy(target, env) {
     // 优先 .proxy（用户自定义），不存在则读 proxy-default（用户按 proxy-default.example
     // 模板创建的本地文件）。两者均被 .gitignore 排除，不会进 git；模板文件
     // proxy-default.example 随包分发仅供参照，运行时不读取。
-    const base = pathMod.join(__dirname, '..');
-    for (const name of ['.proxy', 'proxy-default']) {
+    const base = pathMod.join(__dirname, "..");
+    for (const name of [".proxy", "proxy-default"]) {
       const cfgPath = pathMod.join(base, name);
       if (fsDefault.existsSync(cfgPath)) {
-        const cfg = fsDefault.readFileSync(cfgPath, 'utf8').split('\n')[0].trim();
+        const cfg = fsDefault.readFileSync(cfgPath, "utf8").split("\n")[0].trim();
         if (cfg) return parseProxyUrl(cfg);
       }
     }
-  } catch (e) { /* 文件不存在或不可读，静默跳过 */ }
+  } catch (e) {
+    /* 文件不存在或不可读，静默跳过 */
+  }
   // 自动探测结果缓存：异步探测（collect 启动时）成功后，这里直接复用，
   // 让后续所有同步 fetch 都能拿到代理；'none' 表示探测过但没有可用代理。
-  if (autoProxyCache && autoProxyCache !== 'none') return autoProxyCache;
+  if (autoProxyCache && autoProxyCache !== "none") return autoProxyCache;
   return null;
 }
 
@@ -279,13 +320,13 @@ async function resolveProxyAsync(target, env) {
 function mergeHeaders(defaults, extra) {
   const out = {};
   const taken = new Set();
-  const src = extra && typeof extra === 'object' ? extra : {};
+  const src = extra && typeof extra === "object" ? extra : {};
   for (const key of Object.keys(src)) {
     if (src[key] === undefined || src[key] === null) continue;
     out[key] = src[key];
     taken.add(key.toLowerCase());
   }
-  const base = defaults && typeof defaults === 'object' ? defaults : {};
+  const base = defaults && typeof defaults === "object" ? defaults : {};
   for (const key of Object.keys(base)) {
     if (taken.has(key.toLowerCase())) continue;
     out[key] = base[key];
@@ -304,16 +345,17 @@ function mergeHeaders(defaults, extra) {
  */
 function openProxyTunnel(proxy, host, port, timeout) {
   return new Promise((resolve, reject) => {
-    const target = host + ':' + port;
-    const headers = { Host: target, 'Proxy-Connection': 'keep-alive' };
+    const target = host + ":" + port;
+    const headers = { Host: target, "Proxy-Connection": "keep-alive" };
     if (proxy.auth) {
-      headers['Proxy-Authorization'] = 'Basic ' + Buffer.from(proxy.auth, 'utf8').toString('base64');
+      headers["Proxy-Authorization"] =
+        "Basic " + Buffer.from(proxy.auth, "utf8").toString("base64");
     }
     let settled = false;
     const req = http.request({
       host: proxy.hostname,
       port: proxy.port,
-      method: 'CONNECT',
+      method: "CONNECT",
       path: target,
       headers,
       agent: false,
@@ -322,28 +364,56 @@ function openProxyTunnel(proxy, host, port, timeout) {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      try { req.destroy(); } catch (e) { /* 已销毁 */ }
-      reject(new Error('代理 CONNECT 超时（' + Math.round(timeout / 1000) + 's）：' + target));
+      try {
+        req.destroy();
+      } catch (e) {
+        /* 已销毁 */
+      }
+      reject(new Error("代理 CONNECT 超时（" + Math.round(timeout / 1000) + "s）：" + target));
     }, timeout);
     if (timer.unref) timer.unref();
 
-    req.on('connect', (res, socket) => {
-      if (settled) { try { socket.destroy(); } catch (e) { /* 已销毁 */ } return; }
+    req.on("connect", (res, socket) => {
+      if (settled) {
+        try {
+          socket.destroy();
+        } catch (e) {
+          /* 已销毁 */
+        }
+        return;
+      }
       settled = true;
       clearTimeout(timer);
       const status = res && res.statusCode ? res.statusCode : 0;
       if (status !== 200) {
-        try { socket.destroy(); } catch (e) { /* 已销毁 */ }
-        reject(new Error('代理 CONNECT 失败：HTTP ' + status + '（' + proxy.hostname + ':' + proxy.port + '）'));
+        try {
+          socket.destroy();
+        } catch (e) {
+          /* 已销毁 */
+        }
+        reject(
+          new Error(
+            "代理 CONNECT 失败：HTTP " + status + "（" + proxy.hostname + ":" + proxy.port + "）",
+          ),
+        );
         return;
       }
       resolve(socket);
     });
-    req.on('error', (e) => {
+    req.on("error", (e) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new Error('无法连接代理 ' + proxy.hostname + ':' + proxy.port + '：' + (e && e.message ? e.message : String(e))));
+      reject(
+        new Error(
+          "无法连接代理 " +
+            proxy.hostname +
+            ":" +
+            proxy.port +
+            "：" +
+            (e && e.message ? e.message : String(e)),
+        ),
+      );
     });
     req.end();
   });
@@ -364,45 +434,95 @@ function requestOnce(targetUrl, opts = {}) {
     try {
       u = new URL(targetUrl);
     } catch (e) {
-      reject(new Error('非法 URL：' + String(targetUrl)));
+      reject(new Error("非法 URL：" + String(targetUrl)));
       return;
     }
-    const isHttps = u.protocol === 'https:';
-    if (!isHttps && u.protocol !== 'http:') {
-      reject(new Error('不支持的协议：' + u.protocol));
+    const isHttps = u.protocol === "https:";
+    if (!isHttps && u.protocol !== "http:") {
+      reject(new Error("不支持的协议：" + u.protocol));
       return;
     }
-    const port = u.port ? Number.parseInt(u.port, 10) : (isHttps ? 443 : 80);
-    const method = String(opts.method || 'GET').toUpperCase();
-    const timeout = Number.isFinite(opts.timeout) && opts.timeout > 0 ? opts.timeout : DEFAULT_TIMEOUT;
+    const port = u.port ? Number.parseInt(u.port, 10) : isHttps ? 443 : 80;
+    const method = String(opts.method || "GET").toUpperCase();
+    const timeout =
+      Number.isFinite(opts.timeout) && opts.timeout > 0 ? opts.timeout : DEFAULT_TIMEOUT;
     const proxy = opts.proxy !== undefined ? opts.proxy : resolveProxy(u, opts.env);
-    const headers = mergeHeaders({
-      'User-Agent': opts.userAgent || DEFAULT_USER_AGENT,
-      Accept: '*/*',
-      // 本模块不做解压，强制服务端返回原始字节，避免拿到 gzip 乱码
-      'Accept-Encoding': 'identity',
-      Connection: 'close',
-    }, opts.headers);
+    const headers = mergeHeaders(
+      {
+        "User-Agent": opts.userAgent || DEFAULT_USER_AGENT,
+        Accept: "*/*",
+        // 本模块不做解压，强制服务端返回原始字节，避免拿到 gzip 乱码
+        "Accept-Encoding": "identity",
+        Connection: "close",
+      },
+      opts.headers,
+    );
 
     let settled = false;
     let req = null;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      if (req) { try { req.destroy(); } catch (e) { /* 已销毁 */ } }
-      reject(new Error('请求超时（' + Math.round(timeout / 1000) + 's）：' + targetUrl));
+      if (req) {
+        try {
+          req.destroy();
+        } catch (e) {
+          /* 已销毁 */
+        }
+      }
+      reject(new Error("请求超时（" + Math.round(timeout / 1000) + "s）：" + targetUrl));
     }, timeout);
     if (timer.unref) timer.unref();
+
+    const signal = opts.signal || null;
+    const detachSignal = () => {
+      if (signal) {
+        try {
+          signal.removeEventListener("abort", onAbort);
+        } catch (e) {
+          /* 已移除 */
+        }
+      }
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (req) {
+        try {
+          req.destroy();
+        } catch (e) {
+          /* 已销毁 */
+        }
+      }
+      reject(new Error("请求已中止"));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     const fail = (e) => {
       if (settled) return;
       settled = true;
+      detachSignal();
       clearTimeout(timer);
       reject(e instanceof Error ? e : new Error(String(e)));
     };
     const succeed = (res) => {
-      if (settled) { try { res.destroy(); } catch (e) { /* 已销毁 */ } return; }
+      if (settled) {
+        try {
+          res.destroy();
+        } catch (e) {
+          /* 已销毁 */
+        }
+        return;
+      }
       settled = true;
+      detachSignal();
       clearTimeout(timer);
       resolve({ res, proxy, url: targetUrl });
     };
@@ -411,15 +531,18 @@ function requestOnce(targetUrl, opts = {}) {
       // ① 直连
       if (!proxy) {
         const mod = isHttps ? https : http;
-        req = mod.request({
-          host: u.hostname,
-          port,
-          path: (u.pathname || '/') + (u.search || ''),
-          method,
-          headers,
-          agent: false,
-        }, succeed);
-        req.on('error', fail);
+        req = mod.request(
+          {
+            host: u.hostname,
+            port,
+            path: (u.pathname || "/") + (u.search || ""),
+            method,
+            headers,
+            agent: false,
+          },
+          succeed,
+        );
+        req.on("error", fail);
         req.end();
         return;
       }
@@ -427,17 +550,21 @@ function requestOnce(targetUrl, opts = {}) {
       if (!isHttps) {
         const proxied = Object.assign({}, headers, { Host: u.host });
         if (proxy.auth) {
-          proxied['Proxy-Authorization'] = 'Basic ' + Buffer.from(proxy.auth, 'utf8').toString('base64');
+          proxied["Proxy-Authorization"] =
+            "Basic " + Buffer.from(proxy.auth, "utf8").toString("base64");
         }
-        req = http.request({
-          host: proxy.hostname,
-          port: proxy.port,
-          path: u.href,
-          method,
-          headers: proxied,
-          agent: false,
-        }, succeed);
-        req.on('error', fail);
+        req = http.request(
+          {
+            host: proxy.hostname,
+            port: proxy.port,
+            path: u.href,
+            method,
+            headers: proxied,
+            agent: false,
+          },
+          succeed,
+        );
+        req.on("error", fail);
         req.end();
         return;
       }
@@ -445,18 +572,28 @@ function requestOnce(targetUrl, opts = {}) {
       // 注意：本机 Node 版本下 https.request 不会调用 createConnection（agent:false 时直接连目标），
       // 因此这里把「原始隧道 socket」通过 socket 选项交给 https.request，由它自己在隧道上完成 TLS 握手。
       const socket = await openProxyTunnel(proxy, u.hostname, port, timeout);
-      if (settled) { try { socket.destroy(); } catch (e) { /* 已销毁 */ } return; }
-      req = https.request({
-        host: u.hostname,
-        port,
-        path: (u.pathname || '/') + (u.search || ''),
-        method,
-        headers,
-        agent: false,
-        socket,
-        servername: u.hostname,
-      }, succeed);
-      req.on('error', fail);
+      if (settled) {
+        try {
+          socket.destroy();
+        } catch (e) {
+          /* 已销毁 */
+        }
+        return;
+      }
+      req = https.request(
+        {
+          host: u.hostname,
+          port,
+          path: (u.pathname || "/") + (u.search || ""),
+          method,
+          headers,
+          agent: false,
+          socket,
+          servername: u.hostname,
+        },
+        succeed,
+      );
+      req.on("error", fail);
       req.end();
     };
 
@@ -479,34 +616,37 @@ function requestOnce(targetUrl, opts = {}) {
  */
 async function requestFollow(targetUrl, opts = {}) {
   const max = Number.isFinite(opts.maxRedirects) ? Math.max(0, opts.maxRedirects) : MAX_REDIRECTS;
-  const follow = opts.redirect !== 'manual';
+  const follow = opts.redirect !== "manual";
   let url = String(targetUrl);
   for (let hop = 0; hop <= max; hop += 1) {
-    // eslint-disable-next-line no-await-in-loop
     const got = await requestOnce(url, opts);
     const res = got.res;
     const status = res.statusCode || 0;
-    const location = res.headers && res.headers.location ? String(res.headers.location) : '';
+    const location = res.headers && res.headers.location ? String(res.headers.location) : "";
     if (follow && status >= 300 && status < 400 && location) {
       res.resume();
-      let next = '';
+      let next = "";
       try {
         next = new URL(location, url).toString();
       } catch (e) {
-        next = '';
+        next = "";
       }
       if (!next) {
         return { res, status, headers: res.headers || {}, url, proxy: got.proxy, redirects: hop };
       }
-      if (typeof opts.onRedirect === 'function') {
-        try { opts.onRedirect(status, next); } catch (e) { /* 回调异常不影响下载 */ }
+      if (typeof opts.onRedirect === "function") {
+        try {
+          opts.onRedirect(status, next);
+        } catch (e) {
+          /* 回调异常不影响下载 */
+        }
       }
       url = next;
       continue;
     }
     return { res, status, headers: res.headers || {}, url, proxy: got.proxy, redirects: hop };
   }
-  throw new Error('重定向次数超过 ' + max + ' 次：' + targetUrl);
+  throw new Error("重定向次数超过 " + max + " 次：" + targetUrl);
 }
 
 /**
@@ -518,36 +658,65 @@ async function requestFollow(targetUrl, opts = {}) {
 function readBody(res, opts = {}) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    const total = Number(res.headers && res.headers['content-length']) || 0;
+    const total = Number(res.headers && res.headers["content-length"]) || 0;
     const maxBytes = Number.isFinite(opts.maxBytes) && opts.maxBytes > 0 ? opts.maxBytes : 0;
-    const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+    const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
     let received = 0;
     let settled = false;
 
     const fail = (e) => {
       if (settled) return;
       settled = true;
-      try { res.destroy(); } catch (err) { /* 已销毁 */ }
+      if (signal) {
+        try {
+          signal.removeEventListener("abort", onAbort);
+        } catch (err) {
+          /* 已移除 */
+        }
+      }
+      try {
+        res.destroy();
+      } catch (err) {
+        /* 已销毁 */
+      }
       reject(e instanceof Error ? e : new Error(String(e)));
     };
+    const signal = opts.signal || null;
+    const onAbort = () => fail(new Error("读取响应体已中止"));
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
     // 空闲超时：防止服务端挂着连接不发数据把流程拖死
-    if (Number.isFinite(opts.timeout) && opts.timeout > 0 && typeof res.setTimeout === 'function') {
-      res.setTimeout(opts.timeout, () => fail(new Error('读取响应体超时（' + Math.round(opts.timeout / 1000) + 's）')));
+    if (Number.isFinite(opts.timeout) && opts.timeout > 0 && typeof res.setTimeout === "function") {
+      res.setTimeout(opts.timeout, () =>
+        fail(new Error("读取响应体超时（" + Math.round(opts.timeout / 1000) + "s）")),
+      );
     }
 
-    res.on('data', (chunk) => {
+    res.on("data", (chunk) => {
       received += chunk.length;
       if (maxBytes && received > maxBytes) {
-        fail(new Error('响应体超过上限 ' + maxBytes + ' 字节'));
+        fail(new Error("响应体超过上限 " + maxBytes + " 字节"));
         return;
       }
       chunks.push(chunk);
       if (onProgress) onProgress(received, total);
     });
-    res.on('error', fail);
-    res.on('end', () => {
+    res.on("error", fail);
+    res.on("end", () => {
       if (settled) return;
       settled = true;
+      if (signal) {
+        try {
+          signal.removeEventListener("abort", onAbort);
+        } catch (err) {
+          /* 已移除 */
+        }
+      }
       resolve(Buffer.concat(chunks, received));
     });
   });
@@ -565,6 +734,7 @@ async function fetchBuffer(url, opts = {}) {
     timeout: opts.timeout,
     maxBytes: opts.maxBytes,
     onProgress: opts.onProgress,
+    signal: opts.signal,
   });
   return {
     ok: r.status >= 200 && r.status < 300,
@@ -584,7 +754,13 @@ async function fetchBuffer(url, opts = {}) {
  */
 async function fetchText(url, opts = {}) {
   const r = await fetchBuffer(url, opts);
-  return { ok: r.ok, status: r.status, headers: r.headers, url: r.url, text: r.buffer.toString('utf8') };
+  return {
+    ok: r.ok,
+    status: r.status,
+    headers: r.headers,
+    url: r.url,
+    text: r.buffer.toString("utf8"),
+  };
 }
 
 /**
@@ -594,14 +770,17 @@ async function fetchText(url, opts = {}) {
  * @returns {Promise<{ok: boolean, status: number, headers: object, url: string, json: object|null}>}
  */
 async function fetchJson(url, opts = {}) {
-  const r = await fetchBuffer(url, Object.assign({}, opts, {
-    headers: mergeHeaders({ Accept: 'application/json' }, opts.headers),
-  }));
+  const r = await fetchBuffer(
+    url,
+    Object.assign({}, opts, {
+      headers: mergeHeaders({ Accept: "application/json" }, opts.headers),
+    }),
+  );
   let json = null;
   try {
-    json = JSON.parse(r.buffer.toString('utf8'));
+    json = JSON.parse(r.buffer.toString("utf8"));
   } catch (e) {
-    throw new Error('响应不是合法 JSON（HTTP ' + r.status + '）');
+    throw new Error("响应不是合法 JSON（HTTP " + r.status + "）");
   }
   return { ok: r.ok, status: r.status, headers: r.headers, url: r.url, json };
 }
@@ -623,12 +802,12 @@ async function downloadToFile(url, dest, opts = {}) {
   const r = await requestFollow(url, opts);
   if (r.status !== 200) {
     r.res.resume();
-    throw new Error('HTTP ' + r.status + '：' + r.url);
+    throw new Error("HTTP " + r.status + "：" + r.url);
   }
 
-  const total = Number(r.headers['content-length']) || 0;
-  const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
-  const tmp = dest + '.download';
+  const total = Number(r.headers["content-length"]) || 0;
+  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+  const tmp = dest + ".download";
   fs.mkdirSync(pathMod.dirname(dest), { recursive: true });
 
   const bytes = await new Promise((resolve, reject) => {
@@ -638,21 +817,39 @@ async function downloadToFile(url, dest, opts = {}) {
     const fail = (e) => {
       if (settled) return;
       settled = true;
-      try { r.res.destroy(); } catch (err) { /* 已销毁 */ }
-      try { out.destroy(); } catch (err) { /* 已销毁 */ }
-      try { fs.unlinkSync(tmp); } catch (err) { /* 清理失败不阻断报错 */ }
+      try {
+        r.res.destroy();
+      } catch (err) {
+        /* 已销毁 */
+      }
+      try {
+        out.destroy();
+      } catch (err) {
+        /* 已销毁 */
+      }
+      try {
+        fs.unlinkSync(tmp);
+      } catch (err) {
+        /* 清理失败不阻断报错 */
+      }
       reject(e instanceof Error ? e : new Error(String(e)));
     };
-    if (Number.isFinite(opts.timeout) && opts.timeout > 0 && typeof r.res.setTimeout === 'function') {
-      r.res.setTimeout(opts.timeout, () => fail(new Error('下载超时（' + Math.round(opts.timeout / 1000) + 's）：' + r.url)));
+    if (
+      Number.isFinite(opts.timeout) &&
+      opts.timeout > 0 &&
+      typeof r.res.setTimeout === "function"
+    ) {
+      r.res.setTimeout(opts.timeout, () =>
+        fail(new Error("下载超时（" + Math.round(opts.timeout / 1000) + "s）：" + r.url)),
+      );
     }
-    r.res.on('data', (chunk) => {
+    r.res.on("data", (chunk) => {
       received += chunk.length;
       if (onProgress) onProgress(received, total);
     });
-    r.res.on('error', fail);
-    out.on('error', fail);
-    out.on('finish', () => {
+    r.res.on("error", fail);
+    out.on("error", fail);
+    out.on("finish", () => {
       if (settled) return;
       settled = true;
       resolve(received);
@@ -661,15 +858,19 @@ async function downloadToFile(url, dest, opts = {}) {
   });
 
   if (minBytes && bytes < minBytes) {
-    try { fs.unlinkSync(tmp); } catch (e) { /* 清理失败不阻断报错 */ }
-    throw new Error('下载体积异常（' + bytes + ' 字节，低于下限 ' + minBytes + '），疑似失败页');
+    try {
+      fs.unlinkSync(tmp);
+    } catch (e) {
+      /* 清理失败不阻断报错 */
+    }
+    throw new Error("下载体积异常（" + bytes + " 字节，低于下限 " + minBytes + "），疑似失败页");
   }
   try {
     // Windows 上 rename 到已存在文件会失败，先删旧
     if (fs.existsSync(dest)) fs.unlinkSync(dest);
     fs.renameSync(tmp, dest);
   } catch (e) {
-    throw new Error('落盘失败：' + (e && e.message ? e.message : String(e)));
+    throw new Error("落盘失败：" + (e && e.message ? e.message : String(e)));
   }
   return { ok: true, status: r.status, bytes, path: dest, url: r.url, proxy: r.proxy };
 }
@@ -693,9 +894,15 @@ async function proxyFetch(url, opts = {}) {
     url: r.url,
     headers: r.headers,
     buffer: buf,
-    async text() { return buf.toString('utf8'); },
-    async json() { return JSON.parse(buf.toString('utf8')); },
-    async arrayBuffer() { return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength); },
+    async text() {
+      return buf.toString("utf8");
+    },
+    async json() {
+      return JSON.parse(buf.toString("utf8"));
+    },
+    async arrayBuffer() {
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    },
   };
 }
 
@@ -707,9 +914,9 @@ async function proxyFetch(url, opts = {}) {
  */
 function describeProxy(target, env) {
   const p = resolveProxy(target, env);
-  if (!p) return 'direct';
+  if (!p) return "direct";
   // 日志摘要脱敏：代理可能带账号密码，不能把密码写进日志
-  return 'via ' + toProxyUrl(p).replace(/\/\/[^@/]+@/, '//***@');
+  return "via " + toProxyUrl(p).replace(/\/\/[^@/]+@/, "//***@");
 }
 
 module.exports = {

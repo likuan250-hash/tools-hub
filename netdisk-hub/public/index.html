@@ -390,7 +390,7 @@
     /* ── 转存执行进度（SSE 实时，kdocs 一键执行同款语言）── */
     .exec-progress { margin-top: 16px; display: none; }
     .exec-progress.show { display: block; animation: pop 0.4s ease; }
-    .progress-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; opacity: .85; }
+.exec-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; font-weight: 700; opacity: .9; }
     #transferSteps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
     .step-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: rgba(128,128,128,.06); }
     .step-icon { flex: none; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(128,128,128,.12); color: currentColor; }
@@ -965,7 +965,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="batch-result" id="batchResult"></div>
       <!-- 转存执行进度（SSE 实时，kdocs 一键执行同款语言） -->
       <div class="exec-progress" id="transferProgress">
-        <div class="progress-title"><i class="app-ico" data-ico="settings"></i> 执行进度</div>
+        <div class="exec-title">执行进度</div>
         <div id="transferSteps"></div>
         <details class="log-card" open>
           <summary><span>执行日志</span><span class="chev">⌄</span></summary>

@@ -50,6 +50,12 @@
   function isRunningStep(el) {
     return el.classList.contains("info") || !!el.querySelector(".st-luxe--info");
   }
+  // 进度条动画是否还应继续：步骤完成（非执行中）或独立条被隐藏时自停，避免常驻 rAF 空转烧 CPU
+  function keepLoopRunning(el) {
+    if (!el || !el.isConnected) return false;
+    if (el.classList.contains("step-item")) return isRunningStep(el);
+    return getComputedStyle(el).display !== "none";
+  }
   // 步骤内进度条的宿主：step-item → .step-body 内的 .cp-track；独立进度条 → 元素自身
   function trackHost(el) {
     if (el.classList.contains("step-item")) {
@@ -119,7 +125,7 @@
     var dur = 1400; // 单程 700ms，往返 1400ms
     var t0 = null;
     function frame(now) {
-      if (!star.isConnected) return; // 步骤被重渲染后旧循环自停，由 refreshStep 重启
+      if (!keepLoopRunning(el) || !star.isConnected) return; // 重渲染/步骤完成/隐藏后自停
       if (t0 === null) t0 = now;
       var p = ((now - t0) % (dur * 2)) / dur; // 0..2
       var f = p <= 1 ? p : 2 - p; // 往返 0..1..0
@@ -156,7 +162,7 @@
     var dur = 1300;
     var t0 = null;
     function frame(now) {
-      if (!bub.isConnected) return;
+      if (!keepLoopRunning(el) || !bub.isConnected) return;
       if (t0 === null) t0 = now;
       var p = ((now - t0) % (dur * 2)) / dur;
       var f = p <= 1 ? p : 2 - p;

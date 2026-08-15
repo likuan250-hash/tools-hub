@@ -254,7 +254,7 @@
 
     /* 执行面板容器：对齐 kdocs .auto-result（JS 仍用内联 display:none / display:"" 切换显隐，DOM 契约不变） */
     #logWrap { display: flex; flex-direction: column; gap: 18px; }
-    .exec-title { font-size: 15px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
+    .exec-title { font-size: 15px; font-weight: 700; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
     /* 分步骤执行进度（对齐达芬奇/素材收集：每阶段一条卡片） */
     .exec-steps { display: flex; flex-direction: column; gap: 10px; }
     .step-item {
@@ -1116,7 +1116,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <p class="hint" id="submitHint">选择视频后点击投稿（发布前会二次确认模式）</p>
       <!-- #4 日志面板默认隐藏，仅在点击投稿时展示（玻璃执行面板：对齐 kdocs .auto-result / .log-card 视觉语言，DOM 契约不变） -->
       <div id="logWrap" style="display:none">
-        <h3 class="exec-title"><i class="app-ico" data-ico="history"></i> 投稿日志</h3>
+        <div class="exec-title">执行进度</div>
         <div class="exec-steps" id="execSteps"></div>
         <details class="log-card" open>
           <summary><span>投稿进度与结果</span><span class="chev">⌄</span></summary>

@@ -8,9 +8,9 @@
 //
 // 全部依赖（name/cover/trailer/probe/env/logger/fs）经构造函数注入替身，
 // 不访问网络、不启动子进程、不读写磁盘。
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const path = require('node:path');
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const path = require("node:path");
 const {
   CollectService,
   STEP_SCAN,
@@ -19,11 +19,11 @@ const {
   STEP_DONE,
   STEP_DONE_PARTIAL,
   STEP_DONE_FAIL,
-} = require('../lib/collect');
-const { COVER_FILE } = require('../lib/cover');
+} = require("../lib/collect");
+const { COVER_FILE } = require("../lib/cover");
 
-const OUT_DIR = 'E:\\素材\\';
-const FOLDER_NAME = '【游戏268】正当防卫4';
+const OUT_DIR = "E:\\素材\\";
+const FOLDER_NAME = "【游戏268】正当防卫4";
 const FOLDER = path.join(OUT_DIR, FOLDER_NAME);
 
 /**
@@ -32,17 +32,20 @@ const FOLDER = path.join(OUT_DIR, FOLDER_NAME);
  * @returns {object}
  */
 function fakeEnv(over = {}) {
-  const info = Object.assign({
-    ytDlp: true,
-    ffmpeg: true,
-    ffprobe: true,
-    ytDlpPath: 'E:\\bin\\yt-dlp.exe',
-    ffmpegPath: 'E:\\bin\\ffmpeg.exe',
-    ffprobePath: 'E:\\bin\\ffprobe.exe',
-    sources: { ytDlp: 'builtin', ffmpeg: 'builtin', ffprobe: 'builtin' },
-    missing: [],
-    guidance: '',
-  }, over);
+  const info = Object.assign(
+    {
+      ytDlp: true,
+      ffmpeg: true,
+      ffprobe: true,
+      ytDlpPath: "E:\\bin\\yt-dlp.exe",
+      ffmpegPath: "E:\\bin\\ffmpeg.exe",
+      ffprobePath: "E:\\bin\\ffprobe.exe",
+      sources: { ytDlp: "builtin", ffmpeg: "builtin", ffprobe: "builtin" },
+      missing: [],
+      guidance: "",
+    },
+    over,
+  );
   return { detect: () => info, info };
 }
 
@@ -58,12 +61,15 @@ function fakeName(over = {}) {
     reserveFolder(outputDir, gameName, opts) {
       calls.push({ outputDir, gameName, opts });
       if (over.throws) throw over.throws;
-      return Object.assign({
-        folder: FOLDER,
-        folderName: FOLDER_NAME,
-        index: 268,
-        reused: false,
-      }, over.reserved || {});
+      return Object.assign(
+        {
+          folder: FOLDER,
+          folderName: FOLDER_NAME,
+          index: 268,
+          reused: false,
+        },
+        over.reserved || {},
+      );
     },
   };
 }
@@ -77,36 +83,51 @@ function fakeTrailer(over = {}) {
   const calls = { setBinaries: [], search: [], searchCandidates: [], download: [], transcode: [] };
   return {
     calls,
-    setBinaries(p) { calls.setBinaries.push(p); },
+    setBinaries(p) {
+      calls.setBinaries.push(p);
+    },
     async searchTrailer(name, opts) {
       calls.search.push({ name, opts });
       if (over.searchThrows) throw over.searchThrows;
       return over.info === undefined
-        ? { id: 'vid123', title: 'Just Cause 4 - Launch Trailer', url: 'https://youtu.be/vid123', channel: 'Square Enix' }
+        ? {
+            id: "vid123",
+            title: "Just Cause 4 - Launch Trailer",
+            url: "https://youtu.be/vid123",
+            channel: "Square Enix",
+          }
         : over.info;
     },
     async searchTrailerCandidates(name, opts) {
       calls.searchCandidates.push({ name, opts });
       if (over.searchThrows) throw over.searchThrows;
       if (over.candidates !== undefined) return over.candidates;
-      const info = over.info === undefined
-        ? { id: 'vid123', title: 'Just Cause 4 - Launch Trailer', url: 'https://youtu.be/vid123', channel: 'Square Enix' }
-        : over.info;
+      const info =
+        over.info === undefined
+          ? {
+              id: "vid123",
+              title: "Just Cause 4 - Launch Trailer",
+              url: "https://youtu.be/vid123",
+              channel: "Square Enix",
+            }
+          : over.info;
       return info ? [info] : null;
     },
     async download(name, dir, env, opts) {
       calls.download.push({ name, dir, env, opts });
-      return over.download || {
-        ok: true,
-        file: '【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4',
-        path: path.join(dir, '【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4'),
-        title: 'Just Cause 4 - Launch Trailer',
-        url: 'https://youtu.be/vid123',
-        channel: 'Square Enix',
-        width: 1920,
-        height: 1080,
-        hd: true,
-      };
+      return (
+        over.download || {
+          ok: true,
+          file: "【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4",
+          path: path.join(dir, "【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4"),
+          title: "Just Cause 4 - Launch Trailer",
+          url: "https://youtu.be/vid123",
+          channel: "Square Enix",
+          width: 1920,
+          height: 1080,
+          hd: true,
+        }
+      );
     },
     async transcodeIfNeeded(file, dir, env, opts) {
       calls.transcode.push({ file, dir });
@@ -125,24 +146,46 @@ function fakeCover(over = {}) {
   return {
     calls,
     async resolveEnglishTitle(gameName, opts) {
-      const eng = opts && opts.englishTitle ? opts.englishTitle : (over.englishTitle || '');
-      return { title: eng, source: eng ? 'opts' : 'none' };
+      const eng = opts && opts.englishTitle ? opts.englishTitle : over.englishTitle || "";
+      return { title: eng, source: eng ? "opts" : "none" };
     },
     async fetchCover(gameName, outDir, opts) {
       calls.push({ gameName, outDir, opts });
       if (over.throws) throw over.throws;
-      return over.result || {
-        ok: true,
-        source: 'wallhaven',
-        file: COVER_FILE,
-        path: path.join(outDir, COVER_FILE),
-        width: 2560,
-        height: 1440,
-        url: 'https://w.wallhaven.cc/full/xx/wallhaven-abc.jpg',
-      };
+      return (
+        over.result || {
+          ok: true,
+          source: "wallhaven",
+          file: COVER_FILE,
+          path: path.join(outDir, COVER_FILE),
+          width: 2560,
+          height: 1440,
+          url: "https://w.wallhaven.cc/full/xx/wallhaven-abc.jpg",
+        }
+      );
     },
-    readCoverMeta() { return over.coverMeta || null; },
-    saveCoverMeta() { (calls.meta = calls.meta || []).push(true); },
+    async applyCandidate(url, outDir, opts) {
+      calls.applyCandidate = calls.applyCandidate || [];
+      calls.applyCandidate.push({ url, outDir, opts });
+      if (over.applyThrows) throw over.applyThrows;
+      return (
+        over.result || {
+          ok: true,
+          source: (opts && opts.source) || "user",
+          file: COVER_FILE,
+          path: path.join(outDir, COVER_FILE),
+          width: 1920,
+          height: 1080,
+          url,
+        }
+      );
+    },
+    readCoverMeta() {
+      return over.coverMeta || null;
+    },
+    saveCoverMeta() {
+      (calls.meta = calls.meta || []).push(true);
+    },
     clearPreviewTmp() {},
   };
 }
@@ -156,11 +199,13 @@ function fakeProbe(over = {}) {
   const calls = { setBinaries: [], extractFrame: [], probeSize: [] };
   return {
     calls,
-    setBinaries(p) { calls.setBinaries.push(p); },
+    setBinaries(p) {
+      calls.setBinaries.push(p);
+    },
     async extractFrame(video, output, opts) {
       calls.extractFrame.push({ video, output, opts });
       if (over.frameThrows) throw over.frameThrows;
-      return over.frame || { ok: true, seek: '00:00:15', file: output };
+      return over.frame || { ok: true, seek: "00:00:15", file: output };
     },
     async probeSize(file, opts) {
       calls.probeSize.push({ file, opts });
@@ -174,9 +219,15 @@ function fakeLogger() {
   const lines = [];
   return {
     lines,
-    info(...a) { lines.push(['info', a.join(' ')]); },
-    warn(...a) { lines.push(['warn', a.join(' ')]); },
-    error(...a) { lines.push(['error', a.join(' ')]); },
+    info(...a) {
+      lines.push(["info", a.join(" ")]);
+    },
+    warn(...a) {
+      lines.push(["warn", a.join(" ")]);
+    },
+    error(...a) {
+      lines.push(["error", a.join(" ")]);
+    },
   };
 }
 
@@ -186,7 +237,11 @@ function fakeLogger() {
  * @returns {object}
  */
 function fakeFs(entries) {
-  return { readdirSync() { return entries || []; } };
+  return {
+    readdirSync() {
+      return entries || [];
+    },
+  };
 }
 
 /**
@@ -207,10 +262,9 @@ async function runCollect(deps = {}, opts = {}) {
   };
   const svc = new CollectService(d);
   const events = [];
-  const result = await svc.run(
-    Object.assign({ name: '正当防卫4', outDir: OUT_DIR }, opts),
-    { onEvent: (ev) => events.push(ev) },
-  );
+  const result = await svc.run(Object.assign({ name: "正当防卫4", outDir: OUT_DIR }, opts), {
+    onEvent: (ev) => events.push(ev),
+  });
   return { result, events, deps: d };
 }
 
@@ -226,7 +280,7 @@ function ofType(events, type) {
 
 // ───────────────────────── 正常路径 ─────────────────────────
 
-test('全绿路径：新建文件夹 + 视频 + 网络封面 → success=true，不触发抽帧', async () => {
+test("全绿路径：新建文件夹 + 视频 + 网络封面 → success=true，不触发抽帧", async () => {
   const probe = fakeProbe();
   const { result, events } = await runCollect({ probe });
 
@@ -237,60 +291,82 @@ test('全绿路径：新建文件夹 + 视频 + 网络封面 → success=true，
   assert.equal(result.reused, false);
   assert.equal(result.folder, FOLDER);
   assert.equal(result.index, 268);
-  assert.equal(result.cover.source, 'wallhaven');
+  assert.equal(result.cover.source, "wallhaven");
   assert.equal(result.cover.degraded, false);
   assert.equal(result.trailer.hd, true);
 
   // 封面达标，不应抽帧
   assert.equal(probe.calls.extractFrame.length, 0);
-  assert.equal(ofType(events, 'cover_extract').length, 0);
+  assert.equal(ofType(events, "cover_extract").length, 0);
 
-  const done = ofType(events, 'done')[0];
+  const done = ofType(events, "done")[0];
   assert.equal(done.step, STEP_DONE);
   assert.equal(done.ok, true);
   assert.equal(done.detail.coverOk, true);
   assert.equal(done.detail.trailerOk, true);
 });
 
-test('环境三件套一次性解析并注入 probe / trailer（Bug B 根因之一）', async () => {
+test("环境三件套一次性解析并注入 probe / trailer（Bug B 根因之一）", async () => {
   const probe = fakeProbe();
   const trailer = fakeTrailer();
   await runCollect({ probe, trailer });
 
   assert.deepEqual(probe.calls.setBinaries[0], {
-    ffmpegPath: 'E:\\bin\\ffmpeg.exe',
-    ffprobePath: 'E:\\bin\\ffprobe.exe',
+    ffmpegPath: "E:\\bin\\ffmpeg.exe",
+    ffprobePath: "E:\\bin\\ffprobe.exe",
   });
   assert.deepEqual(trailer.calls.setBinaries[0], {
-    ytDlpPath: 'E:\\bin\\yt-dlp.exe',
-    ffmpegPath: 'E:\\bin\\ffmpeg.exe',
-    ffprobePath: 'E:\\bin\\ffprobe.exe',
+    ytDlpPath: "E:\\bin\\yt-dlp.exe",
+    ffmpegPath: "E:\\bin\\ffmpeg.exe",
+    ffprobePath: "E:\\bin\\ffprobe.exe",
   });
 });
 
-test('先下视频后取封面：宣传片 videoId 透传给封面模块（第 6 级来源前提）', async () => {
+test("先下视频后取封面：宣传片 videoId 透传给封面模块（第 6 级来源前提）", async () => {
   const cover = fakeCover();
   const trailer = fakeTrailer();
-  await runCollect({ cover, trailer }, { coverUrl: 'https://example.com/my.jpg' });
+  await runCollect({ cover, trailer });
 
   // 顺序：searchTrailer 先于 fetchCover
   assert.equal(trailer.calls.searchCandidates.length, 1);
   assert.equal(cover.calls.length, 1);
-  assert.equal(cover.calls[0].opts.videoId, 'vid123');
-  assert.equal(cover.calls[0].opts.coverUrl, 'https://example.com/my.jpg');
+  assert.equal(cover.calls[0].opts.videoId, "vid123");
   assert.equal(cover.calls[0].outDir, FOLDER);
+});
+
+test("用户指定封面 URL：直接下载链接，跳过来源检索（不再走 fetchCover/候选流程）", async () => {
+  const cover = fakeCover();
+  const trailer = fakeTrailer();
+  await runCollect({ cover, trailer }, { coverUrl: "https://example.com/my.jpg" });
+
+  assert.equal(cover.calls.length, 0, "用户指定链接时不再调用 fetchCover 来源检索");
+  assert.equal(cover.calls.applyCandidate.length, 1);
+  assert.equal(cover.calls.applyCandidate[0].url, "https://example.com/my.jpg");
+  assert.equal(cover.calls.applyCandidate[0].opts.source, "user");
+  assert.equal(cover.calls.applyCandidate[0].outDir, FOLDER);
 });
 
 // ───────────────────────── Bug B 核心：抽帧兜底 ─────────────────────────
 
-test('【Bug B 核心】网络封面 6 级全失败 + 视频成功 → 抽帧兜底 → 整体判成功', async () => {
-  const probe = fakeProbe({ frame: { ok: true, seek: '00:00:15' }, size: { ok: true, width: 1920, height: 1080 } });
+test("【Bug B 核心】网络封面 6 级全失败 + 视频成功 → 抽帧兜底 → 整体判成功", async () => {
+  const probe = fakeProbe({
+    frame: { ok: true, seek: "00:00:15" },
+    size: { ok: true, width: 1920, height: 1080 },
+  });
   const cover = fakeCover({
     result: {
       ok: false,
-      reason: 'cover-all-sources-failed',
-      error: '规范前 6 级封面来源均未取到达标图',
-      tried: ['4kwallpapers', 'alphacoders', 'wallhaven', 'game-sites', 'chinese-sites', 'reddit', 'youtube'],
+      reason: "cover-all-sources-failed",
+      error: "规范前 6 级封面来源均未取到达标图",
+      tried: [
+        "4kwallpapers",
+        "alphacoders",
+        "wallhaven",
+        "game-sites",
+        "chinese-sites",
+        "reddit",
+        "youtube",
+      ],
     },
   });
   const { result, events } = await runCollect({ probe, cover });
@@ -300,7 +376,7 @@ test('【Bug B 核心】网络封面 6 级全失败 + 视频成功 → 抽帧兜
   assert.equal(result.partial, false);
   assert.equal(result.coverOk, true);
   assert.equal(result.trailerOk, true);
-  assert.equal(result.cover.source, 'ffmpeg-frame');
+  assert.equal(result.cover.source, "ffmpeg-frame");
   assert.equal(result.cover.file, COVER_FILE);
   assert.equal(result.cover.width, 1920);
   assert.equal(result.cover.height, 1080);
@@ -311,28 +387,33 @@ test('【Bug B 核心】网络封面 6 级全失败 + 视频成功 → 抽帧兜
   assert.equal(probe.calls.extractFrame[0].output, path.join(FOLDER, COVER_FILE));
   assert.equal(probe.calls.extractFrame[0].video, result.trailer.path);
 
-  const extract = ofType(events, 'cover_extract')[0];
+  const extract = ofType(events, "cover_extract")[0];
   assert.ok(extract);
-  assert.ok(extract.msg.includes('抽帧兜底'));
-  const dl = ofType(events, 'cover_download').find((e) => e.detail && e.detail.source === 'ffmpeg-frame');
+  assert.ok(extract.msg.includes("抽帧兜底"));
+  const dl = ofType(events, "cover_download").find(
+    (e) => e.detail && e.detail.source === "ffmpeg-frame",
+  );
   assert.ok(dl);
   assert.equal(dl.ok, true);
-  assert.equal(dl.detail.seek, '00:00:15');
+  assert.equal(dl.detail.seek, "00:00:15");
 
   // 不应再对外报封面失败
-  assert.equal(ofType(events, 'error').length, 0);
-  const done = ofType(events, 'done')[0];
+  assert.equal(ofType(events, "error").length, 0);
+  const done = ofType(events, "done")[0];
   assert.equal(done.step, STEP_DONE);
   assert.equal(done.ok, true);
 });
 
-test('YouTube 官方 720p 缩略图保留，不再被抽帧覆盖（发售宣传图优先）', async () => {
-  const probe = fakeProbe({ frame: { ok: true, seek: '00:00:05' }, size: { ok: true, width: 1920, height: 1080 } });
+test("YouTube 官方 720p 缩略图保留，不再被抽帧覆盖（发售宣传图优先）", async () => {
+  const probe = fakeProbe({
+    frame: { ok: true, seek: "00:00:05" },
+    size: { ok: true, width: 1920, height: 1080 },
+  });
   const cover = fakeCover({
     result: {
       ok: true,
       degraded: true,
-      source: 'youtube',
+      source: "youtube",
       file: COVER_FILE,
       path: path.join(FOLDER, COVER_FILE),
       width: 1280,
@@ -342,80 +423,111 @@ test('YouTube 官方 720p 缩略图保留，不再被抽帧覆盖（发售宣传
   const { result, events } = await runCollect({ probe, cover });
 
   assert.equal(result.success, true);
-  assert.equal(result.cover.source, 'youtube');
+  assert.equal(result.cover.source, "youtube");
   assert.equal(result.cover.height, 720);
   assert.equal(result.cover.degraded, true);
-  assert.equal(probe.calls.extractFrame.length, 0, '官方图不触发抽帧');
-  assert.equal(ofType(events, 'cover_extract').length, 0);
+  assert.equal(probe.calls.extractFrame.length, 0, "官方图不触发抽帧");
+  assert.equal(ofType(events, "cover_extract").length, 0);
 });
 
-test('YouTube 官方图直接采纳，仍判成功（有总比没有强）', async () => {
-  const probe = fakeProbe({ frame: { ok: false, reason: 'extract-failed', error: 'ffmpeg 退出码 1' } });
+test("YouTube 官方图直接采纳，仍判成功（有总比没有强）", async () => {
+  const probe = fakeProbe({
+    frame: { ok: false, reason: "extract-failed", error: "ffmpeg 退出码 1" },
+  });
   const cover = fakeCover({
-    result: { ok: true, degraded: true, source: 'youtube', file: COVER_FILE, path: path.join(FOLDER, COVER_FILE), width: 1280, height: 720 },
+    result: {
+      ok: true,
+      degraded: true,
+      source: "youtube",
+      file: COVER_FILE,
+      path: path.join(FOLDER, COVER_FILE),
+      width: 1280,
+      height: 720,
+    },
   });
   const { result, events } = await runCollect({ probe, cover });
 
   assert.equal(result.success, true);
   assert.equal(result.coverOk, true);
-  assert.equal(result.cover.source, 'youtube');
+  assert.equal(result.cover.source, "youtube");
   assert.equal(result.cover.degraded, true);
   assert.equal(probe.calls.extractFrame.length, 0);
 });
 
-test('抽帧产出低于 1280×720 时标记 degraded 但不判失败', async () => {
-  const probe = fakeProbe({ frame: { ok: true, seek: '00:00:05' }, size: { ok: true, width: 960, height: 540 } });
-  const cover = fakeCover({ result: { ok: false, reason: 'cover-all-sources-failed', error: 'x', tried: [] } });
+test("抽帧产出低于 1280×720 时标记 degraded 但不判失败", async () => {
+  const probe = fakeProbe({
+    frame: { ok: true, seek: "00:00:05" },
+    size: { ok: true, width: 960, height: 540 },
+  });
+  const cover = fakeCover({
+    result: { ok: false, reason: "cover-all-sources-failed", error: "x", tried: [] },
+  });
   const { result } = await runCollect({ probe, cover });
 
   assert.equal(result.success, true);
-  assert.equal(result.cover.source, 'ffmpeg-frame');
+  assert.equal(result.cover.source, "ffmpeg-frame");
   assert.equal(result.cover.degraded, true);
 });
 
-test('抽帧后读不到尺寸时采纳结果，不因此判失败', async () => {
-  const probe = fakeProbe({ frame: { ok: true, seek: '00:00:05' }, size: { ok: false, error: 'parse-failed' } });
-  const cover = fakeCover({ result: { ok: false, reason: 'cover-all-sources-failed', error: 'x', tried: [] } });
+test("抽帧后读不到尺寸时采纳结果，不因此判失败", async () => {
+  const probe = fakeProbe({
+    frame: { ok: true, seek: "00:00:05" },
+    size: { ok: false, error: "parse-failed" },
+  });
+  const cover = fakeCover({
+    result: { ok: false, reason: "cover-all-sources-failed", error: "x", tried: [] },
+  });
   const { result } = await runCollect({ probe, cover });
 
   assert.equal(result.success, true);
-  assert.equal(result.cover.source, 'ffmpeg-frame');
+  assert.equal(result.cover.source, "ffmpeg-frame");
   assert.equal(result.cover.degraded, false);
   assert.equal(result.cover.width, undefined);
 });
 
-test('抽帧抛异常被吞掉，不使整个流程崩溃', async () => {
-  const probe = fakeProbe({ frameThrows: new Error('spawn EACCES') });
-  const cover = fakeCover({ result: { ok: false, reason: 'cover-all-sources-failed', error: '全挂', tried: ['wallhaven'] } });
+test("抽帧抛异常被吞掉，不使整个流程崩溃", async () => {
+  const probe = fakeProbe({ frameThrows: new Error("spawn EACCES") });
+  const cover = fakeCover({
+    result: { ok: false, reason: "cover-all-sources-failed", error: "全挂", tried: ["wallhaven"] },
+  });
   const { result, events } = await runCollect({ probe, cover });
 
   assert.equal(result.coverOk, false);
   assert.equal(result.trailerOk, true);
   assert.equal(result.success, false);
   assert.equal(result.partial, true);
-  const err = ofType(events, 'error').find((e) => e.detail.group === 'cover');
+  const err = ofType(events, "error").find((e) => e.detail.group === "cover");
   assert.ok(err);
-  assert.deepEqual(err.detail.tried, ['wallhaven']);
+  assert.deepEqual(err.detail.tried, ["wallhaven"]);
 });
 
-test('没有视频时不触发抽帧（抽帧的前提就是有视频）', async () => {
+test("没有视频时不触发抽帧（抽帧的前提就是有视频）", async () => {
   const probe = fakeProbe();
-  const cover = fakeCover({ result: { ok: false, reason: 'cover-all-sources-failed', error: '全挂', tried: [] } });
-  const trailer = fakeTrailer({ download: { ok: false, reason: 'trailer-not-found', error: '未搜索到符合规范的官方宣传片' } });
+  const cover = fakeCover({
+    result: { ok: false, reason: "cover-all-sources-failed", error: "全挂", tried: [] },
+  });
+  const trailer = fakeTrailer({
+    download: { ok: false, reason: "trailer-not-found", error: "未搜索到符合规范的官方宣传片" },
+  });
   const { result, events } = await runCollect({ probe, cover, trailer });
 
   assert.equal(probe.calls.extractFrame.length, 0);
   assert.equal(result.success, false);
   assert.equal(result.partial, false);
-  const done = ofType(events, 'done')[0];
+  const done = ofType(events, "done")[0];
   assert.equal(done.step, STEP_DONE_FAIL);
-  assert.ok(done.msg.includes('仅创建了文件夹'));
+  assert.ok(done.msg.includes("仅创建了文件夹"));
 });
 
 // ───────────────────────── 视频侧分支 ─────────────────────────
 
-test('yt-dlp 缺失时给出明确报错与引导，封面仍继续走 → partial', async () => {
-  const env = fakeEnv({ ytDlp: false, ytDlpPath: null, missing: ['yt-dlp'], guidance: '请运行 npm run prepare:material-bins' });
+test("yt-dlp 缺失时给出明确报错与引导，封面仍继续走 → partial", async () => {
+  const env = fakeEnv({
+    ytDlp: false,
+    ytDlpPath: null,
+    missing: ["yt-dlp"],
+    guidance: "请运行 npm run prepare:material-bins",
+  });
   const trailer = fakeTrailer();
   const { result, events } = await runCollect({ env, trailer });
 
@@ -426,33 +538,33 @@ test('yt-dlp 缺失时给出明确报错与引导，封面仍继续走 → parti
   assert.equal(result.success, false);
   assert.equal(result.partial, true);
 
-  const err = ofType(events, 'error').find((e) => e.detail.reason === 'yt-dlp-not-found');
+  const err = ofType(events, "error").find((e) => e.detail.reason === "yt-dlp-not-found");
   assert.ok(err);
-  assert.equal(err.detail.group, 'trailer');
+  assert.equal(err.detail.group, "trailer");
   assert.equal(err.step, STEP_TRAILER);
-  assert.ok(ofType(events, 'log').some((e) => e.msg.includes('缺少依赖')));
+  assert.ok(ofType(events, "log").some((e) => e.msg.includes("缺少依赖")));
 
-  const done = ofType(events, 'done')[0];
+  const done = ofType(events, "done")[0];
   assert.equal(done.step, STEP_DONE_PARTIAL);
-  assert.ok(done.msg.includes('仅封面落盘'));
+  assert.ok(done.msg.includes("仅封面落盘"));
 });
 
-test('searchTrailer 抛异常时降级为 trailer-exception，不中断封面流程', async () => {
-  const trailer = fakeTrailer({ searchThrows: new Error('yt-dlp 执行超时（90s）') });
+test("searchTrailer 抛异常时降级为 trailer-exception，不中断封面流程", async () => {
+  const trailer = fakeTrailer({ searchThrows: new Error("yt-dlp 执行超时（90s）") });
   const { result, events } = await runCollect({ trailer });
 
   assert.equal(result.trailerOk, false);
   assert.equal(result.coverOk, true);
-  const err = ofType(events, 'error').find((e) => e.detail.reason === 'trailer-exception');
+  const err = ofType(events, "error").find((e) => e.detail.reason === "trailer-exception");
   assert.ok(err);
-  assert.ok(err.msg.includes('超时'));
+  assert.ok(err.msg.includes("超时"));
 });
 
-test('下载到 .webm 时经转码得到最终 mp4 文件名', async () => {
-  const webm = '【游戏268】正当防卫4 Launch Trailer 免费学习版下载.webm';
-  const mp4 = '【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4';
+test("下载到 .webm 时经转码得到最终 mp4 文件名", async () => {
+  const webm = "【游戏268】正当防卫4 Launch Trailer 免费学习版下载.webm";
+  const mp4 = "【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4";
   const trailer = fakeTrailer({
-    download: { ok: true, file: webm, title: 'T', url: 'u' },
+    download: { ok: true, file: webm, title: "T", url: "u" },
     transcode: { file: mp4, converted: true },
   });
   const { result, events } = await runCollect({ trailer });
@@ -461,29 +573,46 @@ test('下载到 .webm 时经转码得到最终 mp4 文件名', async () => {
   assert.equal(result.trailer.converted, true);
   assert.equal(result.trailer.path, path.join(FOLDER, mp4));
   assert.equal(trailer.calls.transcode[0].file, webm);
-  const ev = ofType(events, 'trailer_download').find((e) => e.detail && e.detail.converted === true);
+  const ev = ofType(events, "trailer_download").find(
+    (e) => e.detail && e.detail.converted === true,
+  );
   assert.ok(ev);
 });
 
-test('download 的命名参数（编号 / 英文名 / 版本描述 / kind）如实透传', async () => {
+test("download 的命名参数（编号 / 英文名 / 版本描述 / kind）如实透传", async () => {
   const trailer = fakeTrailer();
-  await runCollect({ trailer }, {
-    englishName: 'Just Cause 4',
-    versionDesc: '官方中文+全DLC',
-    kind: 'main',
-    developer: 'Avalanche Studios',
-  });
+  await runCollect(
+    { trailer },
+    {
+      englishName: "Just Cause 4",
+      versionDesc: "官方中文+全DLC",
+      kind: "main",
+      developer: "Avalanche Studios",
+    },
+  );
   const o = trailer.calls.download[0].opts;
   assert.equal(o.index, 268);
-  assert.equal(o.englishName, 'Just Cause 4');
-  assert.equal(o.versionDesc, '官方中文+全DLC');
-  assert.equal(o.kind, 'main');
-  assert.equal(trailer.calls.searchCandidates[0].opts.developer, 'Avalanche Studios');
+  assert.equal(o.englishName, "Just Cause 4");
+  assert.equal(o.versionDesc, "官方中文+全DLC");
+  assert.equal(o.kind, "main");
+  assert.equal(trailer.calls.searchCandidates[0].opts.developer, "Avalanche Studios");
 });
 
-test('宣传片完整候选列表透传给 download（下载失败自动换候选的前提）', async () => {
-  const c1 = { id: 'v1', title: 'Just Cause 4 - Launch Trailer', url: 'https://youtu.be/v1', channel: 'Square Enix', score: 125 };
-  const c2 = { id: 'v2', title: 'Just Cause 4 - Official Trailer', url: 'https://youtu.be/v2', channel: 'Avalanche Studios', score: 100 };
+test("宣传片完整候选列表透传给 download（下载失败自动换候选的前提）", async () => {
+  const c1 = {
+    id: "v1",
+    title: "Just Cause 4 - Launch Trailer",
+    url: "https://youtu.be/v1",
+    channel: "Square Enix",
+    score: 125,
+  };
+  const c2 = {
+    id: "v2",
+    title: "Just Cause 4 - Official Trailer",
+    url: "https://youtu.be/v2",
+    channel: "Avalanche Studios",
+    score: 100,
+  };
   const trailer = fakeTrailer({ candidates: [c1, c2] });
   const { result, deps } = await runCollect({ trailer });
 
@@ -491,29 +620,33 @@ test('宣传片完整候选列表透传给 download（下载失败自动换候�
   const o = trailer.calls.download[0].opts;
   assert.equal(Array.isArray(o.candidates), true);
   assert.equal(o.candidates.length, 2);
-  assert.equal(o.candidates[0].url, 'https://youtu.be/v1');
-  assert.equal(o.candidates[1].url, 'https://youtu.be/v2');
+  assert.equal(o.candidates[0].url, "https://youtu.be/v1");
+  assert.equal(o.candidates[1].url, "https://youtu.be/v2");
 });
 
 // ───────────────────────── 复用路径（Bug A 贯通） ─────────────────────────
 
-test('复用已有文件夹时 reused 贯通到 scan 事件与 done 事件', async () => {
+test("复用已有文件夹时 reused 贯通到 scan 事件与 done 事件", async () => {
   const name = fakeName({ reserved: { reused: true } });
   const { result, events } = await runCollect({ name });
 
   assert.equal(result.reused, true);
-  const scan = ofType(events, 'scan').find((e) => e.ok === true);
-  assert.ok(scan.msg.includes('复用已有文件夹'));
+  const scan = ofType(events, "scan").find((e) => e.ok === true);
+  assert.ok(scan.msg.includes("复用已有文件夹"));
   assert.equal(scan.detail.reused, true);
   assert.equal(scan.detail.index, 268);
-  assert.equal(ofType(events, 'done')[0].detail.reused, true);
+  assert.equal(ofType(events, "done")[0].detail.reused, true);
   // 复用判定由 name.js 负责，编排层不再传 startIndex
   assert.equal(name.calls[0].opts, undefined);
 });
 
-test('复用文件夹里已有封面与视频时直接沿用，不重复下载', async () => {
+test("复用文件夹里已有封面与视频时直接沿用，不重复下载", async () => {
   const name = fakeName({ reserved: { reused: true } });
-  const fs = fakeFs(['封面.jpg', '【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4', '.uploaded']);
+  const fs = fakeFs([
+    "封面.jpg",
+    "【游戏268】正当防卫4 Launch Trailer 免费学习版下载.mp4",
+    ".uploaded",
+  ]);
   const trailer = fakeTrailer();
   const cover = fakeCover();
   const probe = fakeProbe();
@@ -523,16 +656,16 @@ test('复用文件夹里已有封面与视频时直接沿用，不重复下载',
   assert.equal(cover.calls.length, 0);
   assert.equal(probe.calls.extractFrame.length, 0);
   assert.equal(result.success, true);
-  assert.equal(result.cover.source, 'reused');
+  assert.equal(result.cover.source, "reused");
   assert.equal(result.cover.reused, true);
   assert.equal(result.trailer.reused, true);
-  assert.ok(ofType(events, 'trailer_download')[0].msg.includes('复用已有视频'));
-  assert.ok(ofType(events, 'cover_download')[0].msg.includes('复用已有封面'));
+  assert.ok(ofType(events, "trailer_download")[0].msg.includes("复用已有视频"));
+  assert.ok(ofType(events, "cover_download")[0].msg.includes("复用已有封面"));
 });
 
-test('.uploaded 标记文件不会被误当成视频产物', async () => {
+test(".uploaded 标记文件不会被误当成视频产物", async () => {
   const name = fakeName({ reserved: { reused: true } });
-  const fs = fakeFs(['.uploaded']);
+  const fs = fakeFs([".uploaded"]);
   const trailer = fakeTrailer();
   const { result } = await runCollect({ name, fs, trailer });
 
@@ -540,90 +673,90 @@ test('.uploaded 标记文件不会被误当成视频产物', async () => {
   assert.equal(result.trailer.reused, false);
 });
 
-test('force=true 时忽略既有产物强制重下', async () => {
+test("force=true 时忽略既有产物强制重下", async () => {
   const name = fakeName({ reserved: { reused: true } });
-  const fs = fakeFs(['封面.jpg', 'old.mp4']);
+  const fs = fakeFs(["封面.jpg", "old.mp4"]);
   const trailer = fakeTrailer();
   const cover = fakeCover();
   const { result } = await runCollect({ name, fs, trailer, cover }, { force: true });
 
   assert.equal(trailer.calls.download.length, 1);
   assert.equal(cover.calls.length, 1);
-  assert.equal(result.cover.source, 'wallhaven');
+  assert.equal(result.cover.source, "wallhaven");
   assert.equal(result.trailer.reused, false);
 });
 
-test('forceTrailer=true 单独勾选：只重下视频，封面复用', async () => {
+test("forceTrailer=true 单独勾选：只重下视频，封面复用", async () => {
   const name = fakeName({ reserved: { reused: true } });
-  const fs = fakeFs(['封面.jpg', 'old.mp4']);
+  const fs = fakeFs(["封面.jpg", "old.mp4"]);
   const trailer = fakeTrailer();
   const cover = fakeCover();
   const { result } = await runCollect({ name, fs, trailer, cover }, { forceTrailer: true });
 
-  assert.equal(trailer.calls.download.length, 1, '应重新下载视频');
-  assert.equal(cover.calls.length, 0, '封面应复用，不重下');
-  assert.equal(result.cover.source, 'reused');
+  assert.equal(trailer.calls.download.length, 1, "应重新下载视频");
+  assert.equal(cover.calls.length, 0, "封面应复用，不重下");
+  assert.equal(result.cover.source, "reused");
   assert.equal(result.trailer.reused, false);
 });
 
-test('forceCover=true 单独勾选：只重找封面，视频复用', async () => {
+test("forceCover=true 单独勾选：只重找封面，视频复用", async () => {
   const name = fakeName({ reserved: { reused: true } });
-  const fs = fakeFs(['封面.jpg', 'old.mp4']);
+  const fs = fakeFs(["封面.jpg", "old.mp4"]);
   const trailer = fakeTrailer();
   const cover = fakeCover();
   const { result } = await runCollect({ name, fs, trailer, cover }, { forceCover: true });
 
-  assert.equal(trailer.calls.download.length, 0, '视频应复用，不重下');
-  assert.equal(cover.calls.length, 1, '应重新获取封面');
+  assert.equal(trailer.calls.download.length, 0, "视频应复用，不重下");
+  assert.equal(cover.calls.length, 1, "应重新获取封面");
   assert.equal(result.trailer.reused, true);
-  assert.equal(result.cover.source, 'wallhaven');
+  assert.equal(result.cover.source, "wallhaven");
 });
 
 // ───────────────────────── 失败与边界 ─────────────────────────
 
-test('游戏名为空时立即结束，不建目录不联网', async () => {
+test("游戏名为空时立即结束，不建目录不联网", async () => {
   const name = fakeName();
   const cover = fakeCover();
   const trailer = fakeTrailer();
-  const { result, events } = await runCollect({ name, cover, trailer }, { name: '   ' });
+  const { result, events } = await runCollect({ name, cover, trailer }, { name: "   " });
 
   assert.equal(result.success, false);
-  assert.equal(result.folder, '');
+  assert.equal(result.folder, "");
   assert.equal(name.calls.length, 0);
   assert.equal(cover.calls.length, 0);
   assert.equal(trailer.calls.download.length, 0);
-  assert.equal(ofType(events, 'error')[0].detail.reason, 'empty-name');
-  assert.equal(ofType(events, 'done')[0].step, STEP_DONE_FAIL);
+  assert.equal(ofType(events, "error")[0].detail.reason, "empty-name");
+  assert.equal(ofType(events, "done")[0].step, STEP_DONE_FAIL);
 });
 
-test('创建素材文件夹失败时明确报错并终止', async () => {
-  const err = new Error('拒绝访问');
-  err.code = 'EPERM';
+test("创建素材文件夹失败时明确报错并终止", async () => {
+  const err = new Error("拒绝访问");
+  err.code = "EPERM";
   const name = fakeName({ throws: err });
   const cover = fakeCover();
   const { result, events } = await runCollect({ name, cover });
 
   assert.equal(result.success, false);
-  assert.equal(result.folder, '');
+  assert.equal(result.folder, "");
   assert.equal(cover.calls.length, 0);
-  const e = ofType(events, 'error')[0];
-  assert.equal(e.detail.reason, 'mkdir-failed');
+  const e = ofType(events, "error")[0];
+  assert.equal(e.detail.reason, "mkdir-failed");
   assert.equal(e.step, STEP_SCAN);
   assert.equal(e.detail.outDir, OUT_DIR);
-  assert.equal(ofType(events, 'done')[0].step, STEP_DONE_FAIL);
+  assert.equal(ofType(events, "done")[0].step, STEP_DONE_FAIL);
 });
 
-test('cover.fetchCover 抛异常时兜成 cover-exception，不炸整个流程', async () => {
-  const cover = fakeCover({ throws: new Error('fetch is not a function') });
-  const probe = fakeProbe({ frame: { ok: true, seek: '00:00:05' } });
+test("cover.fetchCover 抛异常时兜成 cover-exception，不炸整个流程", async () => {
+  const cover = fakeCover({ throws: new Error("fetch is not a function") });
+  const probe = fakeProbe({ frame: { ok: true, seek: "00:00:05" } });
   const { result } = await runCollect({ cover, probe });
 
   // 有视频 → 仍走抽帧兜底 → 最终成功
   assert.equal(result.success, true);
-  assert.equal(result.cover.source, 'ffmpeg-frame');
+  assert.equal(result.cover.source, "ffmpeg-frame");
 });
 
-test('onEvent 抛异常（客户端断开）不影响流程与返回值', async () => {
+test("onEvent 抛异常（客户端断开）不影响流程与返回值", async () => {
   const svc = new CollectService({
     name: fakeName(),
     cover: fakeCover(),
@@ -633,13 +766,18 @@ test('onEvent 抛异常（客户端断开）不影响流程与返回值', async 
     logger: fakeLogger(),
     fs: fakeFs([]),
   });
-  const result = await svc.run({ name: '正当防卫4', outDir: OUT_DIR }, {
-    onEvent() { throw new Error('client aborted'); },
-  });
+  const result = await svc.run(
+    { name: "正当防卫4", outDir: OUT_DIR },
+    {
+      onEvent() {
+        throw new Error("client aborted");
+      },
+    },
+  );
   assert.equal(result.success, true);
 });
 
-test('未传 handlers 时不报错', async () => {
+test("未传 handlers 时不报错", async () => {
   const svc = new CollectService({
     name: fakeName(),
     cover: fakeCover(),
@@ -649,39 +787,39 @@ test('未传 handlers 时不报错', async () => {
     logger: fakeLogger(),
     fs: fakeFs([]),
   });
-  const result = await svc.run({ name: '正当防卫4', outDir: OUT_DIR });
+  const result = await svc.run({ name: "正当防卫4", outDir: OUT_DIR });
   assert.equal(result.success, true);
 });
 
-test('所有 SSE 事件形状统一：type/step/msg/ok 四字段齐备', async () => {
+test("所有 SSE 事件形状统一：type/step/msg/ok 四字段齐备", async () => {
   const { events } = await runCollect();
   assert.ok(events.length > 0);
   for (const ev of events) {
-    assert.equal(typeof ev.type, 'string', 'type 必须是字符串');
-    assert.equal(typeof ev.step, 'string', 'step 必须是字符串');
-    assert.equal(typeof ev.msg, 'string', 'msg 必须是字符串');
-    assert.ok(ev.ok === true || ev.ok === false || ev.ok === null, 'ok 必须是 true/false/null');
-    if (ev.detail !== undefined) assert.equal(typeof ev.detail, 'object');
+    assert.equal(typeof ev.type, "string", "type 必须是字符串");
+    assert.equal(typeof ev.step, "string", "step 必须是字符串");
+    assert.equal(typeof ev.msg, "string", "msg 必须是字符串");
+    assert.ok(ev.ok === true || ev.ok === false || ev.ok === null, "ok 必须是 true/false/null");
+    if (ev.detail !== undefined) assert.equal(typeof ev.detail, "object");
   }
   // done 永远是最后一条
-  assert.equal(events[events.length - 1].type, 'done');
-  assert.equal(ofType(events, 'done').length, 1);
+  assert.equal(events[events.length - 1].type, "done");
+  assert.equal(ofType(events, "done").length, 1);
 });
 
-test('done 事件携带完整落盘信息供前端渲染', async () => {
+test("done 事件携带完整落盘信息供前端渲染", async () => {
   const { events } = await runCollect();
-  const done = ofType(events, 'done')[0];
+  const done = ofType(events, "done")[0];
   assert.equal(done.detail.folder, FOLDER);
   assert.equal(done.detail.folderName, FOLDER_NAME);
   assert.equal(done.detail.index, 268);
   assert.equal(done.detail.reused, false);
   assert.equal(done.detail.partial, false);
-  assert.equal(done.detail.cover.source, 'wallhaven');
+  assert.equal(done.detail.cover.source, "wallhaven");
   assert.equal(done.detail.trailer.hd, true);
   assert.ok(done.msg.includes(FOLDER));
 });
 
-test('未传 outDir 时使用规范默认根目录 E:\\素材\\', async () => {
+test("未传 outDir 时使用规范默认根目录 E:\\素材\\", async () => {
   const name = fakeName();
   const svc = new CollectService({
     name,
@@ -692,8 +830,8 @@ test('未传 outDir 时使用规范默认根目录 E:\\素材\\', async () => {
     logger: fakeLogger(),
     fs: fakeFs([]),
   });
-  await svc.run({ name: '正当防卫4' });
-  assert.equal(name.calls[0].outputDir, 'E:\\素材\\');
+  await svc.run({ name: "正当防卫4" });
+  assert.equal(name.calls[0].outputDir, "E:\\素材\\");
 });
 
 // ─────────────────────── 交互式封面选择 ───────────────────────
@@ -704,8 +842,8 @@ function fakeInteractiveCover(over = {}) {
   return {
     calls,
     async resolveEnglishTitle(gameName, opts) {
-      const eng = opts && opts.englishTitle ? opts.englishTitle : '';
-      return { title: eng, source: eng ? 'opts' : 'none' };
+      const eng = opts && opts.englishTitle ? opts.englishTitle : "";
+      return { title: eng, source: eng ? "opts" : "none" };
     },
     async collectCandidates(gameName, opts) {
       calls.collectCandidates.push({ gameName, opts });
@@ -714,20 +852,28 @@ function fakeInteractiveCover(over = {}) {
         ? {
             ok: true,
             candidates: [
-              { url: 'https://cdn.akamai.steamstatic.com/steam/apps/517630/capsule_616x353_2x.jpg', source: 'steam-cdn', label: 'Steam 官方图' },
-              { url: 'https://w.wallhaven.cc/full/xx/wallhaven-abc.jpg', source: 'wallhaven', label: 'wallhaven.cc' },
+              {
+                url: "https://cdn.akamai.steamstatic.com/steam/apps/517630/capsule_616x353_2x.jpg",
+                source: "steam-cdn",
+                label: "Steam 官方图",
+              },
+              {
+                url: "https://w.wallhaven.cc/full/xx/wallhaven-abc.jpg",
+                source: "wallhaven",
+                label: "wallhaven.cc",
+              },
             ],
-            queryPlan: ['Just Cause 4'],
-            englishTitle: '',
-            steamAppId: '517630',
+            queryPlan: ["Just Cause 4"],
+            englishTitle: "",
+            steamAppId: "517630",
           }
         : over.candidates;
     },
     async precheckCandidates(candidates, opts) {
       calls.precheck = (candidates || []).map((c, i) => ({
-        url: '/cover-tmp/cand-' + i + '.jpg',
+        url: "/cover-tmp/cand-" + i + ".jpg",
         originalUrl: c.url,
-        localPath: '/tmp/cand-' + i + '.jpg',
+        localPath: "/tmp/cand-" + i + ".jpg",
         width: 1920,
         height: 1080,
         source: c.source,
@@ -738,17 +884,22 @@ function fakeInteractiveCover(over = {}) {
     async applyCandidate(url, outDir, opts) {
       calls.applyCandidate.push({ url, outDir, opts });
       if (over.applyThrows) throw over.applyThrows;
-      return Object.assign({
-        ok: true,
-        source: (opts && opts.source) || 'user',
-        file: COVER_FILE,
-        path: path.join(outDir, COVER_FILE),
-        width: 1920,
-        height: 1080,
-        url,
-      }, over.applyResult || {});
+      return Object.assign(
+        {
+          ok: true,
+          source: (opts && opts.source) || "user",
+          file: COVER_FILE,
+          path: path.join(outDir, COVER_FILE),
+          width: 1920,
+          height: 1080,
+          url,
+        },
+        over.applyResult || {},
+      );
     },
-    readCoverMeta() { return null; },
+    readCoverMeta() {
+      return null;
+    },
     saveCoverMeta() {},
     clearPreviewTmp() {},
   };
@@ -762,10 +913,10 @@ async function waitEvent(events, type, ms = 3000) {
     if (ev) return ev;
     await new Promise((r) => setTimeout(r, 10));
   }
-  throw new Error('等待事件超时: ' + type);
+  throw new Error("等待事件超时: " + type);
 }
 
-test('交互式封面：发出 cover_candidates → chooseCover 选中 → 应用所选 URL', async () => {
+test("交互式封面：发出 cover_candidates → chooseCover 选中 → 应用所选 URL", async () => {
   const cover = fakeInteractiveCover();
   const svc = new CollectService({
     name: fakeName(),
@@ -778,27 +929,45 @@ test('交互式封面：发出 cover_candidates → chooseCover 选中 → 应�
   });
   const events = [];
   const p = svc.run(
-    { name: '正当防卫4', outDir: OUT_DIR, coverInteractive: true },
+    { name: "正当防卫4", outDir: OUT_DIR, coverInteractive: true },
     { onEvent: (ev) => events.push(ev) },
   );
-  const ev = await waitEvent(events, 'cover_candidates');
+  const ev = await waitEvent(events, "cover_candidates");
   assert.equal(ev.detail.candidates.length, 2);
-  assert.equal(ev.detail.candidates[0].source, 'steam-cdn');
+  assert.equal(ev.detail.candidates[0].source, "steam-cdn");
   const pickedUrl = ev.detail.candidates[1].url;
   assert.equal(svc.chooseCover(ev.detail.requestId, pickedUrl), true);
   const result = await p;
   assert.equal(result.coverOk, true);
   assert.equal(cover.calls.applyCandidate.length, 1);
   assert.equal(cover.calls.applyCandidate[0].url, pickedUrl);
-  assert.equal(cover.calls.applyCandidate[0].opts.source, 'wallhaven');
-  const dlOk = ofType(events, 'cover_download').some((e) => e.ok === true && e.detail && e.detail.interactive === true);
-  assert.equal(dlOk, true, '交互式封面应用成功后必须补发 ok 终态，避免执行进度误判失败');
+  assert.equal(cover.calls.applyCandidate[0].opts.source, "wallhaven");
+  const dlOk = ofType(events, "cover_download").some(
+    (e) => e.ok === true && e.detail && e.detail.interactive === true,
+  );
+  assert.equal(dlOk, true, "交互式封面应用成功后必须补发 ok 终态，避免执行进度误判失败");
 });
 
-test('交互式宣传片：video_candidates 弹出 → chooseVideo 选中 → 只下载选中的候选', async () => {
+test("交互式宣传片：video_candidates 弹出 → chooseVideo 选中 → 只下载选中的候选", async () => {
   const cands = [
-    { id: 'v1', title: 'A - Launch Trailer', url: 'https://youtu.be/v1', channel: 'XBOX', score: 125, duration: 100, thumb: '' },
-    { id: 'v2', title: 'B - Official Trailer', url: 'https://youtu.be/v2', channel: 'Publisher', score: 100, duration: 90, thumb: '' },
+    {
+      id: "v1",
+      title: "A - Launch Trailer",
+      url: "https://youtu.be/v1",
+      channel: "XBOX",
+      score: 125,
+      duration: 100,
+      thumb: "",
+    },
+    {
+      id: "v2",
+      title: "B - Official Trailer",
+      url: "https://youtu.be/v2",
+      channel: "Publisher",
+      score: 100,
+      duration: 90,
+      thumb: "",
+    },
   ];
   const cover = fakeCover();
   const trailer = fakeTrailer({ candidates: cands });
@@ -813,10 +982,10 @@ test('交互式宣传片：video_candidates 弹出 → chooseVideo 选中 → �
   });
   const events = [];
   const p = svc.run(
-    { name: '正当防卫4', outDir: OUT_DIR, videoInteractive: true },
+    { name: "正当防卫4", outDir: OUT_DIR, videoInteractive: true },
     { onEvent: (ev) => events.push(ev) },
   );
-  const ev = await waitEvent(events, 'video_candidates');
+  const ev = await waitEvent(events, "video_candidates");
   assert.equal(ev.detail.candidates.length, 2);
   const pickedUrl = ev.detail.candidates[1].url;
   assert.equal(svc.chooseVideo(ev.detail.requestId, pickedUrl), true);
@@ -827,11 +996,27 @@ test('交互式宣传片：video_candidates 弹出 → chooseVideo 选中 → �
   assert.equal(trailer.calls.download[0].opts.candidates[0].url, pickedUrl);
 });
 
-test('重找视频：forceTrailer 时排除上次已落盘候选（读 .trailer.json）', async () => {
-  const prev = { id: 'v1', title: 'A - Launch Trailer', url: 'https://youtu.be/v1' };
+test("重找视频：forceTrailer 时排除上次已落盘候选（读 .trailer.json）", async () => {
+  const prev = { id: "v1", title: "A - Launch Trailer", url: "https://youtu.be/v1" };
   const cands = [
-    { id: 'v1', title: 'A - Launch Trailer', url: 'https://youtu.be/v1', channel: 'XBOX', score: 125, duration: 100, thumb: '' },
-    { id: 'v2', title: 'B - Official Trailer', url: 'https://youtu.be/v2', channel: 'Publisher', score: 100, duration: 90, thumb: '' },
+    {
+      id: "v1",
+      title: "A - Launch Trailer",
+      url: "https://youtu.be/v1",
+      channel: "XBOX",
+      score: 125,
+      duration: 100,
+      thumb: "",
+    },
+    {
+      id: "v2",
+      title: "B - Official Trailer",
+      url: "https://youtu.be/v2",
+      channel: "Publisher",
+      score: 100,
+      duration: 90,
+      thumb: "",
+    },
   ];
   const cover = fakeCover();
   const trailer = fakeTrailer({ candidates: cands });
@@ -849,19 +1034,19 @@ test('重找视频：forceTrailer 时排除上次已落盘候选（读 .trailer.
   });
   const events = [];
   const p = svc.run(
-    { name: '正当防卫4', outDir: OUT_DIR, forceTrailer: true, videoInteractive: false },
+    { name: "正当防卫4", outDir: OUT_DIR, forceTrailer: true, videoInteractive: false },
     { onEvent: (ev) => events.push(ev) },
   );
   const result = await p;
   assert.equal(trailer.calls.download.length, 1);
   const got = trailer.calls.download[0].opts.candidates;
   assert.equal(got.length, 1);
-  assert.equal(got[0].id, 'v2', '上次落盘候选 v1 必须被排除');
-  assert.ok(events.some((e) => e.type === 'log' && (e.msg || '').includes('已排除上次落盘候选')));
+  assert.equal(got[0].id, "v2", "上次落盘候选 v1 必须被排除");
+  assert.ok(events.some((e) => e.type === "log" && (e.msg || "").includes("已排除上次落盘候选")));
   assert.equal(result.trailerOk, true);
 });
 
-test('交互式封面：跳过选择 → 走主视频抽帧兜底', async () => {
+test("交互式封面：跳过选择 → 走主视频抽帧兜底", async () => {
   const cover = fakeInteractiveCover();
   const probe = fakeProbe();
   const svc = new CollectService({
@@ -875,32 +1060,34 @@ test('交互式封面：跳过选择 → 走主视频抽帧兜底', async () => 
   });
   const events = [];
   const p = svc.run(
-    { name: '正当防卫4', outDir: OUT_DIR, coverInteractive: true },
+    { name: "正当防卫4", outDir: OUT_DIR, coverInteractive: true },
     { onEvent: (ev) => events.push(ev) },
   );
-  const ev = await waitEvent(events, 'cover_candidates');
-  assert.equal(svc.chooseCover(ev.detail.requestId, ''), true);
+  const ev = await waitEvent(events, "cover_candidates");
+  assert.equal(svc.chooseCover(ev.detail.requestId, ""), true);
   const result = await p;
   assert.equal(cover.calls.applyCandidate.length, 0);
   assert.equal(probe.calls.extractFrame.length, 1);
   assert.equal(result.coverOk, true);
-  assert.equal(result.cover.source, 'ffmpeg-frame');
+  assert.equal(result.cover.source, "ffmpeg-frame");
 });
 
-test('交互式封面：无候选 → 直接失败走抽帧兜底（不发 cover_candidates）', async () => {
-  const cover = fakeInteractiveCover({ candidates: { ok: false, candidates: [], reason: 'cover-no-candidates', error: '无候选封面' } });
+test("交互式封面：无候选 → 直接失败走抽帧兜底（不发 cover_candidates）", async () => {
+  const cover = fakeInteractiveCover({
+    candidates: { ok: false, candidates: [], reason: "cover-no-candidates", error: "无候选封面" },
+  });
   const probe = fakeProbe();
   const { result, events } = await runCollect({ cover, probe }, { coverInteractive: true });
-  assert.equal(ofType(events, 'cover_candidates').length, 0);
+  assert.equal(ofType(events, "cover_candidates").length, 0);
   assert.equal(cover.calls.applyCandidate.length, 0);
   assert.equal(probe.calls.extractFrame.length, 1);
   assert.equal(result.coverOk, true);
-  assert.equal(result.cover.source, 'ffmpeg-frame');
+  assert.equal(result.cover.source, "ffmpeg-frame");
 });
 
-test('交互式封面：主动勾选降级候选（非官方源）→ 确认保留，不再被抽帧覆盖', async () => {
+test("交互式封面：主动勾选降级候选（非官方源）→ 确认保留，不再被抽帧覆盖", async () => {
   const cover = fakeInteractiveCover({
-    applyResult: { ok: true, degraded: true, width: 640, height: 360, source: 'wallhaven' },
+    applyResult: { ok: true, degraded: true, width: 640, height: 360, source: "wallhaven" },
   });
   const probe = fakeProbe();
   const svc = new CollectService({
@@ -914,37 +1101,40 @@ test('交互式封面：主动勾选降级候选（非官方源）→ 确认保�
   });
   const events = [];
   const p = svc.run(
-    { name: '正当防卫4', outDir: OUT_DIR, coverInteractive: true },
+    { name: "正当防卫4", outDir: OUT_DIR, coverInteractive: true },
     { onEvent: (ev) => events.push(ev) },
   );
-  const ev = await waitEvent(events, 'cover_candidates');
+  const ev = await waitEvent(events, "cover_candidates");
   const pickedUrl = ev.detail.candidates[1].url;
   assert.equal(svc.chooseCover(ev.detail.requestId, pickedUrl), true);
   const result = await p;
   assert.equal(result.coverOk, true);
-  assert.equal(result.cover.source, 'wallhaven');
+  assert.equal(result.cover.source, "wallhaven");
   assert.equal(result.cover.degraded, true);
-  assert.equal(probe.calls.extractFrame.length, 0, '用户勾选确认后不再抽帧覆盖');
-  assert.equal(ofType(events, 'cover_extract').length, 0);
+  assert.equal(probe.calls.extractFrame.length, 0, "用户勾选确认后不再抽帧覆盖");
+  assert.equal(ofType(events, "cover_extract").length, 0);
 });
 
-test('用户指定封面 URL（user 源）降级 → 保留，不触发抽帧覆盖', async () => {
+test("用户指定封面 URL（user 源）降级 → 保留，不触发抽帧覆盖", async () => {
   const probe = fakeProbe();
   const cover = fakeCover({
     result: {
       ok: true,
       degraded: true,
-      source: 'user',
+      source: "user",
       file: COVER_FILE,
       path: path.join(FOLDER, COVER_FILE),
       width: 640,
       height: 360,
     },
   });
-  const { result, events } = await runCollect({ probe, cover }, { coverUrl: 'https://x.example/cover.jpg' });
+  const { result, events } = await runCollect(
+    { probe, cover },
+    { coverUrl: "https://x.example/cover.jpg" },
+  );
   assert.equal(result.coverOk, true);
-  assert.equal(result.cover.source, 'user');
+  assert.equal(result.cover.source, "user");
   assert.equal(result.cover.degraded, true);
-  assert.equal(probe.calls.extractFrame.length, 0, '用户指定封面不触发抽帧');
-  assert.equal(ofType(events, 'cover_extract').length, 0);
+  assert.equal(probe.calls.extractFrame.length, 0, "用户指定封面不触发抽帧");
+  assert.equal(ofType(events, "cover_extract").length, 0);
 });

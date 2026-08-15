@@ -1,5 +1,6 @@
 // renderer/app.js —— 工具箱入口页 + 内嵌多标签
 // 启动后显示入口页（工具卡片），点击卡片在顶部新增/切换标签，内嵌 <webview>。
+/* global statusHTML, aggregateStatus, aggColorLevel, bindStatusCursor */
 (function () {
   "use strict";
 
@@ -18,9 +19,15 @@
   const updateBtn = document.getElementById("updateBtn");
   let currentVersion = "";
   if (api && api.getVersion) {
-    api.getVersion()
-      .then((v) => { currentVersion = v; updateBtn.textContent = "v" + v; })
-      .catch(() => { updateBtn.textContent = "v?"; });
+    api
+      .getVersion()
+      .then((v) => {
+        currentVersion = v;
+        updateBtn.textContent = "v" + v;
+      })
+      .catch(() => {
+        updateBtn.textContent = "v?";
+      });
   }
   const updateStatusEl = document.getElementById("updateStatus");
   const stageLoadingEl = document.getElementById("stageLoading");
@@ -38,7 +45,7 @@
   // 改为从 window 读取（drag-geometry.js 已以 <script> 注入），并保留一份内联兜底实现，
   // 保证即使该文件缺失也能渲染卡片、拖拽仍可工作，绝不再依赖 require。
   const computeInsertIndex =
-    (typeof window !== "undefined" && typeof window.computeInsertIndex === "function")
+    typeof window !== "undefined" && typeof window.computeInsertIndex === "function"
       ? window.computeInsertIndex
       : function fallbackComputeInsertIndex(rects, px, py) {
           let idx = rects.length;
@@ -46,8 +53,14 @@
             const r = rects[i];
             const cy = r.top + r.height / 2;
             const cx = r.left + r.width / 2;
-            if (py < cy - r.height / 2) { idx = i; break; }
-            if (Math.abs(py - cy) <= r.height / 2 && px < cx) { idx = i; break; }
+            if (py < cy - r.height / 2) {
+              idx = i;
+              break;
+            }
+            if (Math.abs(py - cy) <= r.height / 2 && px < cx) {
+              idx = i;
+              break;
+            }
           }
           return idx;
         };
@@ -66,13 +79,21 @@
       document.documentElement.setAttribute("data-theme", t);
       document.documentElement.removeAttribute("data-skin");
     }
-    try { localStorage.setItem("th-theme", t); } catch (e) {}
+    try {
+      localStorage.setItem("th-theme", t);
+    } catch (e) {}
     if (skinIcon) skinIcon.textContent = SKIN_ICONS[t] || "🌙";
   }
   let theme = "dark";
-  try { theme = localStorage.getItem("th-theme") || "dark"; } catch (e) {}
+  try {
+    theme = localStorage.getItem("th-theme") || "dark";
+  } catch (e) {}
   applyTheme(theme);
-  if (api && api.setTheme) { try { api.setTheme(theme); } catch (e) {} } // 上报主进程，供 webview 拉取
+  if (api && api.setTheme) {
+    try {
+      api.setTheme(theme);
+    } catch (e) {}
+  } // 上报主进程，供 webview 拉取
   themeBtn.onclick = (e) => {
     e.stopPropagation();
     skinMenu.classList.toggle("open");
@@ -82,7 +103,11 @@
     if (!b) return;
     theme = b.dataset.skin;
     applyTheme(theme);
-    if (api && api.setTheme) { try { api.setTheme(theme); } catch (e) {} }
+    if (api && api.setTheme) {
+      try {
+        api.setTheme(theme);
+      } catch (e) {}
+    }
     syncThemeToWebviews(theme); // 工具箱切换 → 内嵌项目同步切换
     skinMenu.classList.remove("open");
   });
@@ -94,7 +119,9 @@
       if (x.key === HOME_KEY) return;
       const wv = document.getElementById("wv-" + x.key);
       if (wv && wv.send) {
-        try { wv.send("sync-theme", t); } catch (e) {}
+        try {
+          wv.send("sync-theme", t);
+        } catch (e) {}
       }
     });
   }
@@ -108,35 +135,35 @@
       url: "http://localhost:3599",
       icon: '<svg viewBox="0 0 24 24" fill="#1677FF" stroke="#000" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h5" fill="none" stroke="#fff" stroke-width="1.6"/></svg>',
     },
-  netdisk: {
-    key: "netdisk",
-    name: "网盘转存中转",
-    desc: "分享链接 → 转存我盘 → 生成我的分享（百度/夸克/迅雷）",
-    url: "http://localhost:3000",
-    icon: '<svg viewBox="0 0 24 24" fill="#00A870" stroke="#000" stroke-width="1.6"><path d="M7 18a4 4 0 0 1-.6-7.96A5 5 0 0 1 16.6 9.4 3.5 3.5 0 0 1 17 16.5H7z"/><path d="M12 11v5M10 14l2 2 2-2" fill="none" stroke="#fff" stroke-width="1.6"/></svg>',
-  },
-  biliup: {
-    key: "biliup",
-    name: "B站自动投稿",
-    desc: "选视频 → 填标签 → 选模式 → 一键投稿（上传/抽帧/合集/置顶）",
-    url: "http://localhost:3600",
-    icon: '<svg viewBox="0 0 24 24" fill="#FB7299" stroke="#000" stroke-width="1.6"><rect x="2" y="7" width="20" height="13" rx="2.5"/><path d="M8 3l4 4 4-4" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M6 12h3M6 15h5" stroke="#fff" stroke-width="1.6" fill="none"/></svg>',
-  },
-  material: {
-    key: "material",
-    name: "素材搜集",
-    desc: "输入游戏名 → 自动建号文件夹 → 官方封面 + 宣传片落盘素材库",
-    url: "http://localhost:3700",
-    icon: '<svg viewBox="0 0 24 24" fill="#7c5cff" stroke="#000" stroke-width="1.6"><rect x="2" y="6" width="20" height="12" rx="6"/><path d="M8 10v4M6 12h4M15.5 11h.01M18 13h.01" fill="none" stroke="#fff" stroke-width="2"/></svg>',
-  },
-  resolve: {
-    key: "resolve",
-    name: "达芬奇剪辑",
-    desc: "选素材目录 → 自动建项目/导模板 → 手动 5-7 → 一键渲染导出",
-    url: "http://localhost:3800",
-    icon: '<svg viewBox="0 0 24 24" fill="#22d3ee" stroke="#000" stroke-width="1.6"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 8h5M2 16h5M17 8h5M17 16h5"/></svg>',
-  },
-};
+    netdisk: {
+      key: "netdisk",
+      name: "网盘转存中转",
+      desc: "分享链接 → 转存我盘 → 生成我的分享（百度/夸克/迅雷）",
+      url: "http://localhost:3000",
+      icon: '<svg viewBox="0 0 24 24" fill="#00A870" stroke="#000" stroke-width="1.6"><path d="M7 18a4 4 0 0 1-.6-7.96A5 5 0 0 1 16.6 9.4 3.5 3.5 0 0 1 17 16.5H7z"/><path d="M12 11v5M10 14l2 2 2-2" fill="none" stroke="#fff" stroke-width="1.6"/></svg>',
+    },
+    biliup: {
+      key: "biliup",
+      name: "B站自动投稿",
+      desc: "选视频 → 填标签 → 选模式 → 一键投稿（上传/抽帧/合集/置顶）",
+      url: "http://localhost:3600",
+      icon: '<svg viewBox="0 0 24 24" fill="#FB7299" stroke="#000" stroke-width="1.6"><rect x="2" y="7" width="20" height="13" rx="2.5"/><path d="M8 3l4 4 4-4" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M6 12h3M6 15h5" stroke="#fff" stroke-width="1.6" fill="none"/></svg>',
+    },
+    material: {
+      key: "material",
+      name: "素材搜集",
+      desc: "输入游戏名 → 自动建号文件夹 → 官方封面 + 宣传片落盘素材库",
+      url: "http://localhost:3700",
+      icon: '<svg viewBox="0 0 24 24" fill="#7c5cff" stroke="#000" stroke-width="1.6"><rect x="2" y="6" width="20" height="12" rx="6"/><path d="M8 10v4M6 12h4M15.5 11h.01M18 13h.01" fill="none" stroke="#fff" stroke-width="2"/></svg>',
+    },
+    resolve: {
+      key: "resolve",
+      name: "达芬奇剪辑",
+      desc: "选素材目录 → 自动建项目/导模板 → 手动 5-7 → 一键渲染导出",
+      url: "http://localhost:3800",
+      icon: '<svg viewBox="0 0 24 24" fill="#22d3ee" stroke="#000" stroke-width="1.6"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 8h5M2 16h5M17 8h5M17 16h5"/></svg>',
+    },
+  };
 
   let serviceStatus = {};
   let webviewPreload = "";
@@ -158,13 +185,17 @@
     } catch (e) {}
     if (!Array.isArray(stored)) stored = [];
     const valid = stored.filter((k) => TOOLS[k]);
-    Object.keys(TOOLS).forEach((k) => { if (!valid.includes(k)) valid.push(k); });
+    Object.keys(TOOLS).forEach((k) => {
+      if (!valid.includes(k)) valid.push(k);
+    });
     return valid;
   }
   // 把当前 DOM 顺序写回 localStorage
   function saveCardOrder() {
     const order = [...cardsEl.children].map((c) => c.dataset.key).filter(Boolean);
-    try { localStorage.setItem("card-order", JSON.stringify(order)); } catch (e) {}
+    try {
+      localStorage.setItem("card-order", JSON.stringify(order));
+    } catch (e) {}
   }
 
   // ── 入口卡片 ──
@@ -190,9 +221,13 @@
           <div class="card-title">${t.name}</div>
           <div class="card-desc">${t.desc}</div>
           <div class="card-meta">
-            ${(typeof statusHTML === "function")
-              ? statusHTML(running ? "ok" : "off", running ? "在线" : "离线")
-              : (running ? "在线" : "离线")}
+            ${
+              typeof statusHTML === "function"
+                ? statusHTML(running ? "ok" : "off", running ? "在线" : "离线")
+                : running
+                  ? "在线"
+                  : "离线"
+            }
             <span class="card-port">${t.url.replace("http://localhost:", "端口 ")}</span>
           </div>
         </div>
@@ -202,8 +237,8 @@
       card.addEventListener("mousemove", (e) => {
         if (sortMode || card.classList.contains("dragging")) return;
         const r = card.getBoundingClientRect();
-        card.style.setProperty("--mx", ((e.clientX - r.left) / r.width * 100) + "%");
-        card.style.setProperty("--my", ((e.clientY - r.top) / r.height * 100) + "%");
+        card.style.setProperty("--mx", ((e.clientX - r.left) / r.width) * 100 + "%");
+        card.style.setProperty("--my", ((e.clientY - r.top) / r.height) * 100 + "%");
       });
       card.querySelector(".card-open").onclick = () => openTab(t.key);
       card.addEventListener("pointerdown", (e) => onCardPointerDown(e, card));
@@ -236,13 +271,13 @@
   //   5) CSS 侧 .dragging-active 给卡片加 will-change:transform 并临时去掉 backdrop-filter，
   //      避免每帧重绘昂贵的毛玻璃（见 style.css）。
   function onCardPointerDown(e, card) {
-    if (!sortMode) return;          // 非排序模式不触发拖拽
-    if (e.button !== 0) return;     // 仅左键
+    if (!sortMode) return; // 非排序模式不触发拖拽
+    if (e.button !== 0) return; // 仅左键
     e.preventDefault();
     const rect = card.getBoundingClientRect();
     const grabX = e.clientX - rect.left;
     const grabY = e.clientY - rect.top;
-    let layoutLeft = rect.left;     // 被拖卡片布局基准（不含 transform），仅重排时刷新
+    let layoutLeft = rect.left; // 被拖卡片布局基准（不含 transform），仅重排时刷新
     let layoutTop = rect.top;
     // 缓存兄弟卡片矩形：拖拽中兄弟仅在重排时变动，平时稳定 → 判定插入位无需每帧测量
     let siblingRects = [...cardsEl.children]
@@ -253,7 +288,8 @@
     let rafId = 0;
     let flipRaf = 0;
     let reorderLockUntil = 0; // FLIP 过渡期间锁住插入判定，防动画中横跳
-    let lastX = e.clientX, lastY = e.clientY;
+    let lastX = e.clientX,
+      lastY = e.clientY;
 
     card.setPointerCapture(e.pointerId);
     card.classList.add("dragging");
@@ -261,8 +297,8 @@
 
     // 被拖卡片始终贴着指针：相对其布局基准推算位移，避免每帧读取自身 rect
     function applyFollow(x, y) {
-      const dx = (x - grabX) - layoutLeft;
-      const dy = (y - grabY) - layoutTop;
+      const dx = x - grabX - layoutLeft;
+      const dy = y - grabY - layoutTop;
       card.style.transform = `translate(${dx}px, ${dy}px) scale(1.04) rotate(1.5deg)`;
     }
 
@@ -280,7 +316,10 @@
       if (curKeys === newKeys) return;
       if (flipRaf) cancelAnimationFrame(flipRaf);
       // 落定兄弟卡片可能残留的 FLIP 过渡/位移，保证 first 测量是真实 layout
-      siblings.forEach((c) => { c.style.transition = "none"; c.style.transform = ""; });
+      siblings.forEach((c) => {
+        c.style.transition = "none";
+        c.style.transform = "";
+      });
       // 读阶段：neutralize 被拖卡片后，测得所有卡片当前 layout（first）
       card.style.transform = "";
       const first = new Map();
@@ -293,14 +332,19 @@
       // FLIP 兄弟卡片（被拖卡片单独处理，不参加过渡动画）
       newOrder.forEach((c) => {
         if (c === card) return;
-        const f = first.get(c), l = last.get(c);
-        const dx = f.left - l.left, dy = f.top - l.top;
+        const f = first.get(c),
+          l = last.get(c);
+        const dx = f.left - l.left,
+          dy = f.top - l.top;
         c.style.transition = "none";
         c.style.transform = `translate(${dx}px, ${dy}px)`;
       });
       // 被拖卡片：把布局基准更新为新槽位，稍后由 applyFollow 重新贴合指针
       const cl = last.get(card);
-      if (cl) { layoutLeft = cl.left; layoutTop = cl.top; }
+      if (cl) {
+        layoutLeft = cl.left;
+        layoutTop = cl.top;
+      }
       flipRaf = requestAnimationFrame(() => {
         newOrder.forEach((c) => {
           if (c === card) return;
@@ -330,7 +374,8 @@
       }
     }
     function move(ev) {
-      lastX = ev.clientX; lastY = ev.clientY;
+      lastX = ev.clientX;
+      lastY = ev.clientY;
       if (!rafScheduled) {
         rafScheduled = true;
         rafId = requestAnimationFrame(frame);
@@ -362,7 +407,10 @@
   // 键盘可达性：排序模式下方向键移动卡片；普通模式 Enter/空格 打开
   function onCardKeyDown(e, card) {
     if (!sortMode) {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTab(card.dataset.key); }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openTab(card.dataset.key);
+      }
       return;
     }
     const order = [...cardsEl.children];
@@ -396,9 +444,20 @@
   async function openTab(key) {
     const t = TOOLS[key];
     if (!t) return;
+    // 按需拉起对应子服务（若空闲已停止则自动重启），并刷新其活动时间
+    if (api && api.toolOpen) api.toolOpen(key).catch(() => {});
     if (openTabs.find((x) => x.key === key)) {
       switchTab(key);
       return;
+    }
+    // 新开标签：服务冷启动约 1~3s，期间显示加载动画（就绪/兜底后自动隐藏）
+    stageLoadingEl.hidden = false;
+    if (api && api.toolReady) {
+      try {
+        await api.toolReady(key, 8000);
+      } catch (e) {
+        /* 超时继续，页面自带重连 */
+      }
     }
 
     openTabs.push({ key, name: t.name });
@@ -414,18 +473,40 @@
     wv.dataset.key = key;
     wv.addEventListener("did-fail-load", (e) => {
       if (e.errorCode === -3) return;
-      console.warn("webview 加载失败", key, e.errorDescription);
+      // 服务冷启动未就绪时首载可能失败：自动重载几次（最多 5 次，间隔 1.5s）
+      const retries = Number(wv.dataset.retries || 0);
+      if (retries >= 5) {
+        console.warn("webview 加载失败", key, e.errorDescription);
+        return;
+      }
+      wv.dataset.retries = String(retries + 1);
+      setTimeout(() => {
+        try {
+          wv.reload();
+        } catch (err) {
+          try {
+            wv.src = t.url;
+          } catch (e2) {
+            /* 忽略 */
+          }
+        }
+      }, 1500);
     });
     // DOM 准备好后触发一次 resize，确保 webview 内部内容正确撑满容器
     wv.addEventListener("dom-ready", () => {
       wv.dataset.ready = "1";
-      try { wv.send("sync-theme", theme); } catch (e) {} // 加载完成后同步工具箱主题
+      try {
+        wv.send("sync-theme", theme);
+      } catch (e) {} // 加载完成后同步工具箱主题
       // 仍是当前要展示的标签才淡入；否则仅标记就绪，等切回时直接激活（避免黑闪）
       if (wv.dataset.key === activeKey) {
         wv.dataset.pending = "";
         stageLoadingEl.hidden = true;
         const ft = pendingFallbacks.get(wv.dataset.key);
-        if (ft) { clearTimeout(ft); pendingFallbacks.delete(wv.dataset.key); }
+        if (ft) {
+          clearTimeout(ft);
+          pendingFallbacks.delete(wv.dataset.key);
+        }
         activateWebview(wv);
       } else {
         wv.dataset.pending = ""; // 已就绪，pending 失效
@@ -444,9 +525,22 @@
     if (idx === -1) return;
     openTabs.splice(idx, 1);
     const wv = document.getElementById("wv-" + key);
-    if (wv) wv.remove();
+    if (wv) {
+      // 先卸载再移除，立即释放该标签的渲染进程与页面状态，避免残留内存
+      try {
+        wv.src = "about:blank";
+      } catch (e) {
+        /* 忽略 */
+      }
+      wv.remove();
+    }
+    // 标签关闭 → 同步停止对应子服务（再打开时自动拉起）
+    if (api && api.toolClose) api.toolClose(key).catch(() => {});
     const ft = pendingFallbacks.get(key);
-    if (ft) { clearTimeout(ft); pendingFallbacks.delete(key); }
+    if (ft) {
+      clearTimeout(ft);
+      pendingFallbacks.delete(key);
+    }
     renderTabs();
     if (activeKey === key) {
       const tools = openTabs.filter((x) => x.key !== HOME_KEY);
@@ -457,7 +551,9 @@
   function resizeWebview(wv) {
     // webview 在显示/窗口大小变化后需要触发 resize 才能正确重绘内部尺寸
     if (!wv || !wv.resize) return;
-    try { wv.resize(); } catch (e) {}
+    try {
+      wv.resize();
+    } catch (e) {}
   }
 
   // 激活一个 webview：隐藏 landing + 挂 .active（CSS 淡入微缩放），并触发内部 resize
@@ -479,7 +575,7 @@
     if (pendingFallbacks.has(key)) return;
     const ft = setTimeout(() => {
       pendingFallbacks.delete(key);
-      if (wv.dataset.ready) return;             // 已就绪
+      if (wv.dataset.ready) return; // 已就绪
       if (wv.dataset.key !== activeKey) return; // 已切走
       wv.dataset.pending = "";
       activateWebview(wv);
@@ -502,6 +598,8 @@
       });
       return;
     }
+    // 切到工具标签：刷新该服务活动时间（防止空闲误停当前正在看的工具）
+    if (api && api.toolOpen) api.toolOpen(key).catch(() => {});
     // 工具页：显示对应 webview
     openTabs.forEach((x) => {
       if (x.key === HOME_KEY) return; // 跳过入口页，它不走 webview
@@ -554,36 +652,46 @@
     // 防御性：状态系统组件（status-luxe.js 提供的全局函数）若未加载成功，
     // 必须保证卡片渲染与页面可操作，绝不能让状态胶囊的异常阻断整个初始化序列。
     try {
-      const kdocsLevel = (serviceStatus.kdocs && serviceStatus.kdocs.running) ? 'ok' : 'off';
-      const netdiskLevel = (serviceStatus.netdisk && serviceStatus.netdisk.running) ? 'ok' : 'off';
-      const biliupLevel = (serviceStatus.biliup && serviceStatus.biliup.running) ? 'ok' : 'off';
-      const materialLevel = (serviceStatus.material && serviceStatus.material.running) ? 'ok' : 'off';
-      const resolveLevel = (serviceStatus.resolve && serviceStatus.resolve.running) ? 'ok' : 'off';
-      const agg = (typeof aggregateStatus === "function")
-        ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel, materialLevel, resolveLevel])
-        : 'off';
-      const colorLevel = (typeof aggColorLevel === "function") ? aggColorLevel(agg) : agg;
-      aggEl.innerHTML = (typeof statusHTML === "function")
-        ? statusHTML(colorLevel, aggLabel(agg))
-        : (aggLabel(agg) || "");
+      const kdocsLevel = serviceStatus.kdocs && serviceStatus.kdocs.running ? "ok" : "off";
+      const netdiskLevel = serviceStatus.netdisk && serviceStatus.netdisk.running ? "ok" : "off";
+      const biliupLevel = serviceStatus.biliup && serviceStatus.biliup.running ? "ok" : "off";
+      const materialLevel = serviceStatus.material && serviceStatus.material.running ? "ok" : "off";
+      const resolveLevel = serviceStatus.resolve && serviceStatus.resolve.running ? "ok" : "off";
+      const agg =
+        typeof aggregateStatus === "function"
+          ? aggregateStatus([kdocsLevel, netdiskLevel, biliupLevel, materialLevel, resolveLevel])
+          : "off";
+      const colorLevel = typeof aggColorLevel === "function" ? aggColorLevel(agg) : agg;
+      aggEl.innerHTML =
+        typeof statusHTML === "function"
+          ? statusHTML(colorLevel, aggLabel(agg))
+          : aggLabel(agg) || "";
     } catch (e) {
       // 状态胶囊渲染失败不应阻断卡片与页面：回退为纯文本标签，保证 #aggStatus 被替换。
-      if (aggEl) aggEl.textContent = aggLabel('off');
+      if (aggEl) aggEl.textContent = aggLabel("off");
     }
     renderCards(); // 无论状态系统是否成功，卡片必须渲染、页面必须可操作
   }
   // 入口聚合标签：err→异常 / off→离线 / warn→需注意 / info→检测中 / ok→全部正常
   function aggLabel(level) {
     switch (level) {
-      case 'err': return '异常';
-      case 'off': return '离线';
-      case 'warn': return '需注意';
-      case 'info': return '检测中';
-      default: return '全部正常';
+      case "err":
+        return "异常";
+      case "off":
+        return "离线";
+      case "warn":
+        return "需注意";
+      case "info":
+        return "检测中";
+      default:
+        return "全部正常";
     }
   }
   if (api && api.getStatus) {
-    api.getStatus().then(renderStatus).catch(() => renderStatus({}));
+    api
+      .getStatus()
+      .then(renderStatus)
+      .catch(() => renderStatus({}));
     if (api.onStatus) api.onStatus(renderStatus);
   } else {
     aggEl.textContent = "未运行在桌面应用环境中";
@@ -602,10 +710,16 @@
   }
   function setUpdateUI(text, busy, level) {
     updateStatusEl.innerHTML = level
-      ? ((typeof statusHTML === "function") ? statusHTML(level, text || "") : (text || ""))
-      : (text || "");
+      ? typeof statusHTML === "function"
+        ? statusHTML(level, text || "")
+        : text || ""
+      : text || "";
     updateBtn.disabled = !!busy;
-    updateBtn.textContent = busy ? "⏳ 检查中…" : (currentVersion ? "v" + currentVersion : "🔄 检测更新");
+    updateBtn.textContent = busy
+      ? "⏳ 检查中…"
+      : currentVersion
+        ? "v" + currentVersion
+        : "🔄 检测更新";
   }
   if (api && api.onUpdateStatus) {
     api.onUpdateStatus((p) => {
@@ -631,7 +745,8 @@
           const msg = cleanErrMsg(p.message);
           // 对已知临时性问题给友好提示
           const hint = /latest\.yml|Cannot find|404|network|timeout/i.test(msg)
-            ? "（可能正在构建中，稍后重试）" : "";
+            ? "（可能正在构建中，稍后重试）"
+            : "";
           setUpdateUI(`更新失败：${msg}${hint}`, false, "err");
           break;
       }
@@ -639,7 +754,9 @@
   }
   updateBtn.onclick = () => {
     if (api && api.checkUpdate) {
-      api.checkUpdate().catch((e) => setUpdateUI("检查失败：" + cleanErrMsg(e.message), false, "err"));
+      api
+        .checkUpdate()
+        .catch((e) => setUpdateUI("检查失败：" + cleanErrMsg(e.message), false, "err"));
     }
   };
 
@@ -663,7 +780,9 @@
     });
   }
   if (quitCancel) {
-    quitCancel.onclick = () => { if (quitModal) quitModal.hidden = true; };
+    quitCancel.onclick = () => {
+      if (quitModal) quitModal.hidden = true;
+    };
   }
   if (quitConfirm) {
     quitConfirm.onclick = () => {

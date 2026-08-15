@@ -721,8 +721,13 @@ html[data-skin="comic"] .step-item {
   border-radius: 12px !important;
   box-shadow: 4px 4px 0 rgba(0, 0, 0, .9) !important;
   margin-bottom: 14px;
+  padding: 10px 12px !important; /* 五页步骤盒统一内边距（素材/金山原为时间线布局 0 下 20px） */
 }
 html[data-skin="comic"] .step-item:last-child { margin-bottom: 0; }
+/* 不要时间线竖线：素材/金山 base 的 .step-item:not(:last-child)::before 统一隐藏 */
+html[data-skin="comic"] .step-item::before { display: none !important; }
+/* 达芬奇顶部总状态行不需要：只保留分步骤 */
+html[data-skin="comic"] #execStep { display: none !important; }
 html[data-skin="comic"] #autoSteps,
 html[data-skin="comic"] .auto-result,
 html[data-skin="comic"] .steps {
@@ -732,6 +737,29 @@ html[data-skin="comic"] .step-item .step-icon,
 html[data-skin="comic"] .step-item .st-icon {
   border: 2px solid #000 !important;
   box-shadow: 2px 2px 0 #000 !important;
+}
+
+/* ===== 执行进度标题行：五页统一「执行进度」漫画胶囊 ===== */
+html[data-skin="comic"] .exec-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffe9a8;
+  border: 3px solid #000;
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 #000;
+  padding: 5px 14px;
+  font-size: 14px;
+  font-weight: 900;
+  color: #4a3a66;
+  transform: rotate(-1deg);
+  margin-bottom: 12px;
+}
+html[data-skin="comic"] .exec-title::after {
+  content: "▶";
+  margin-left: 2px;
+  font-size: 10px;
+  color: #fbbf24;
 }
 
 /* ===== 滚动条 ===== */
@@ -774,6 +802,69 @@ html[data-skin="comic"] .card-open {
 }
 html[data-skin="comic"] .grip { color: #000; opacity: .35; }
 
+/* ===== 入口页加载动画：漫画风（方案 C · 速度线 + 感叹号） ===== */
+html[data-skin="comic"] .stage-loading {
+  background: rgba(255, 247, 232, .82) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  overflow: hidden;
+}
+/* 放射速度线：绕中心缓慢旋转 */
+html[data-skin="comic"] .stage-loading::before {
+  content: "";
+  position: absolute; inset: -20%;
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    rgba(17, 17, 17, 0) 0deg 3deg, rgba(17, 17, 17, .07) 3deg 4deg);
+  animation: comicSlRotate 6s linear infinite;
+  pointer-events: none;
+}
+@keyframes comicSlRotate { to { transform: rotate(360deg); } }
+/* 感叹号标记：金色圆 + 黑边硬阴影 + 上下弹跳 */
+html[data-skin="comic"] .stage-loading .sl-ring {
+  position: relative;
+  width: 92px; height: 92px;
+  background: #fbbf24 !important;
+  border: 4px solid #000 !important;
+  border-radius: 50% !important;
+  box-shadow: 5px 5px 0 #000 !important;
+  animation: comicSlJump .55s ease-in-out infinite alternate;
+}
+html[data-skin="comic"] .stage-loading .sl-ring::before {
+  content: "";
+  position: absolute; left: -8px; top: -10px;
+  width: 16px; height: 16px;
+  background: #a78bfa; border: 3px solid #000; border-radius: 4px;
+  animation: comicSlTwinkle .8s ease-in-out infinite alternate;
+}
+html[data-skin="comic"] .stage-loading .sl-ring::after {
+  content: "!";
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 58px; font-weight: 900; color: #111; line-height: 1;
+}
+@keyframes comicSlJump {
+  from { transform: translateY(0) scale(1) rotate(-4deg); }
+  to { transform: translateY(-16px) scale(1.08) rotate(4deg); }
+}
+@keyframes comicSlTwinkle {
+  from { transform: scale(.5) rotate(0deg); opacity: .6; }
+  to { transform: scale(1.25) rotate(45deg); opacity: 1; }
+}
+/* 文字：加粗漫画字 + 「加载」闪烁 */
+html[data-skin="comic"] .stage-loading .sl-text {
+  font-size: 17px !important;
+  font-weight: 900 !important;
+  color: #111 !important;
+  letter-spacing: 6px !important;
+  text-shadow: 2px 2px 0 #ffe9a8;
+  position: relative;
+}
+html[data-skin="comic"] .stage-loading .sl-text .sl-hl {
+  color: #7c5cff;
+  animation: comicSlBlink .9s steps(2) infinite;
+}
+@keyframes comicSlBlink { 50% { opacity: 0; } }
+
 /* ===== 账号区 / 登录态 ===== */
 html[data-skin="comic"] .avatar,
 html[data-skin="comic"] .acct .ava {
@@ -809,22 +900,6 @@ html[data-skin="comic"] .skin-drop button {
   border-radius: 8px;
 }
 html[data-skin="comic"] .skin-drop button:hover { background: #ffe9a8 !important; }
-html[data-skin="comic"] .stage-loading {
-  background: rgba(255, 247, 232, .82) !important;
-}
-
-/* ===== 主页加载动画 ===== */
-html[data-skin="comic"] .stage-loading .sl-ring {
-  border: 3px solid #000 !important;
-  border-top-color: #fbbf24 !important;
-  box-shadow: 3px 3px 0 rgba(0, 0, 0, .5);
-  background: #fff;
-}
-html[data-skin="comic"] .stage-loading .sl-text {
-  font-weight: 900;
-  color: #111;
-  text-shadow: 2px 2px 0 #ffe9a8;
-}
 
 /* ===== 角落拟声词装饰（comic-skin.js 注入；非漫画皮肤默认隐藏） ===== */
 .comic-sfx { display: none; }

@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   // 获取 webview 的 preload 绝对路径（渲染进程用来创建内嵌 webview）
   getWebviewPreload: () => ipcRenderer.invoke("get-webview-preload"),
+  // 打开/切换工具标签时通知主进程按需拉起对应子服务（空闲停止后可自动重启）
+  toolOpen: (key) => ipcRenderer.invoke("tool-open", key),
+  // 等待对应子服务就绪（冷启动约 1~3s），避免 webview 首载失败白屏
+  toolReady: (key, timeoutMs) => ipcRenderer.invoke("tool-ready", key, timeoutMs),
+  // 关闭工具标签 → 立即停止对应子服务
+  toolClose: (key) => ipcRenderer.invoke("tool-close", key),
   // 原生文件夹选择（替代 Tkinter IPC）
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
   // 原生文件选择（biliup-hub 选 mp4）

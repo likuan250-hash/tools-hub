@@ -17,12 +17,18 @@
 //   · 每个候选「下载后」必须用 imagesize.readImageSize + meetsMinSize 校验真实分辨率再采纳，绝不相信 URL 字样。
 //   · 任何一级失败（网络异常 / 解析不出 / 尺寸不达标）都干净降级到下一级，绝不抛异常中断链路。
 //   · 默认走 lib/http.js 的 proxyFetch —— Node 内置 fetch 不认 HTTP_PROXY，在需代理机器上会 100% 超时。
-const fsDefault = require('fs');
-const path = require('path');
-const { readImageSize, meetsMinSize, extForImageFormat, MIN_WIDTH, MIN_HEIGHT } = require('./imagesize');
-const { proxyFetch } = require('./http');
-const { decodeText } = require('./runner');
-const { lookupOfflineEnglishName, lookupOfflineAppId } = require('./offline-map');
+const fsDefault = require("fs");
+const path = require("path");
+const {
+  readImageSize,
+  meetsMinSize,
+  extForImageFormat,
+  MIN_WIDTH,
+  MIN_HEIGHT,
+} = require("./imagesize");
+const { proxyFetch } = require("./http");
+const { decodeText } = require("./runner");
+const { lookupOfflineEnglishName, lookupOfflineAppId } = require("./offline-map");
 
 /** 单次网络请求超时（经代理可能慢，取 30s）。 */
 const FETCH_TIMEOUT = 30 * 1000;
@@ -31,13 +37,13 @@ const SEARCH_TIMEOUT = 12 * 1000;
 /** 直连探测超时（首次直连只给 8s，失败时立即降级代理）。 */
 const DIRECT_PROBE_TIMEOUT = 8 * 1000;
 /** 直连优先逃生开关（auto / always / never），从 env 读取。 */
-const DIRECT_FIRST_ENV_KEY = 'MATERIAL_DIRECT_FIRST';
+const DIRECT_FIRST_ENV_KEY = "MATERIAL_DIRECT_FIRST";
 /** Bing 图片搜索端点（国内可直连，比走代理更稳）。 */
-const BING_IMAGE_SEARCH = 'https://cn.bing.com/images/search';
+const BING_IMAGE_SEARCH = "https://cn.bing.com/images/search";
 /** Bing 尺寸过滤（≥1280×720），**字面量**拼接，绝不 encodeURIComponent。 */
-const BING_SIZE_FILTER = '+filterui:imagesize-custom_' + MIN_WIDTH + '_' + MIN_HEIGHT;
+const BING_SIZE_FILTER = "+filterui:imagesize-custom_" + MIN_WIDTH + "_" + MIN_HEIGHT;
 /** Bing 表单标识（固定值，官方图片搜索必带）。 */
-const BING_FORM = 'HDRSC2';
+const BING_FORM = "HDRSC2";
 /** Bing 请求最小间隔（节流，防脉冲）。 */
 const BING_MIN_INTERVAL_MS = 600;
 /** Bing 失败重试退避（最多 1 次）。 */
@@ -47,18 +53,18 @@ const BING_MAX_RETRY = 1;
 /** Bing 单 run 请求熔断上限（护 IP）。 */
 const BING_MAX_REQUESTS_PER_RUN = 12;
 /** Bing 请求头：中文版布局，避免 consent 跳转。 */
-const BING_ACCEPT_LANGUAGE = 'zh-CN,zh;q=0.9,en;q=0.8';
-const BING_REFERER = 'https://cn.bing.com/';
+const BING_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8";
+const BING_REFERER = "https://cn.bing.com/";
 /** Steam CDN 官方图基础地址（cdn.akamai.steamstatic.com）。 */
-const STEAM_CDN_BASE = 'https://cdn.akamai.steamstatic.com/steam/apps';
+const STEAM_CDN_BASE = "https://cdn.akamai.steamstatic.com/steam/apps";
 /** Steam CDN 官方宣传主视觉（商店胶囊图/头图，发行商上传的 key art）。 */
-const STEAM_CDN_STRICT = ['capsule_616x353_2x.jpg', 'capsule_616x353.jpg', 'header.jpg'];
+const STEAM_CDN_STRICT = ["capsule_616x353_2x.jpg", "capsule_616x353.jpg", "header.jpg"];
 /** Steam CDN 官方宽幅横幅（商店页顶部 hero / 背景图，非宣传主视觉，仅作兜底）。 */
-const STEAM_CDN_HERO = ['library_hero_2x.jpg', 'page_bg_generated_v6b.jpg'];
+const STEAM_CDN_HERO = ["library_hero_2x.jpg", "page_bg_generated_v6b.jpg"];
 /** Steam CDN 降级档资源（library_hero 仅 1920×620，必不达标）。 */
-const STEAM_CDN_LOWRES = ['library_hero.jpg'];
+const STEAM_CDN_LOWRES = ["library_hero.jpg"];
 /** wallhaven 公开搜索 API（免 key）。 */
-const WALLHAVEN_API = 'https://wallhaven.cc/api/v1/search';
+const WALLHAVEN_API = "https://wallhaven.cc/api/v1/search";
 /**
  * wallhaven categories 是 3 个二进制开关位 `general/anime/people`：
  *   100 = general（游戏原画、Key Art、截图都归在这一类）
@@ -67,33 +73,33 @@ const WALLHAVEN_API = 'https://wallhaven.cc/api/v1/search';
  * 曾经误写成 010，导致主力可编程封面源对绝大多数游戏静默返回 0 条
  * （实测 Just Cause 4：010 → 0 条；100 → 2 条含 3840×2160），是「点击运行一直不成功」的直接原因之一。
  */
-const WALLHAVEN_CATEGORIES = '100';
+const WALLHAVEN_CATEGORIES = "100";
 /** wallhaven purity 同样是 3 位开关 `sfw/sketchy/nsfw`；100 = 只要 SFW。 */
-const WALLHAVEN_PURITY = '100';
+const WALLHAVEN_PURITY = "100";
 /** 服务端分辨率下限，直接在 API 层过滤掉不达标图，省一次下载。 */
-const WALLHAVEN_ATLEAST = MIN_WIDTH + 'x' + MIN_HEIGHT;
+const WALLHAVEN_ATLEAST = MIN_WIDTH + "x" + MIN_HEIGHT;
 /** 默认排序：相关度。 */
-const WALLHAVEN_SORTING = 'relevance';
+const WALLHAVEN_SORTING = "relevance";
 /** YouTube 缩略图 CDN。 */
-const YT_THUMB_CDN = 'https://i.ytimg.com/vi';
+const YT_THUMB_CDN = "https://i.ytimg.com/vi";
 /** 必带的浏览器 UA：DuckDuckGo / 壁纸站对无 UA 请求一律拒绝。 */
 const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 /** 规范要求的封面固定文件名。 */
-const COVER_BASE = '封面';
-const COVER_FILE = COVER_BASE + '.jpg';
+const COVER_BASE = "封面";
+const COVER_FILE = COVER_BASE + ".jpg";
 // 封面来源 sidecar：记录本次采纳的来源/URL，供「重找封面」跳过已用来源
-const COVER_META_FILE = '.cover.json';
+const COVER_META_FILE = ".cover.json";
 // 候选预检临时目录（后端下载到本地供前端预览，彻底绕开外网防盗链/失效）
-const PREVIEW_TMP_DIR = path.join(require('os').tmpdir(), 'material-cover-preview');
+const PREVIEW_TMP_DIR = path.join(require("os").tmpdir(), "material-cover-preview");
 // 预检候选上限（并行下载 + 过滤后保留的预览数量）
 const PREVIEW_MAX = 12;
 const PREVIEW_CONCURRENCY = 4;
 /** 每级来源最多实际下载校验多少个候选（防止一个来源把时间耗光）。 */
 const MAX_CANDIDATES_PER_SOURCE = 4;
 /** 步骤名（SSE 事件 step 字段）。 */
-const STEP_SEARCH = '检索封面来源';
-const STEP_DOWNLOAD = '下载封面';
+const STEP_SEARCH = "检索封面来源";
+const STEP_DOWNLOAD = "下载封面";
 
 // ─────────────────────── 缺陷 3：英文查询词 ───────────────────────
 
@@ -108,11 +114,11 @@ const STEP_DOWNLOAD = '下载封面';
  * Steam 在此**只用来查英文名，不再用来取封面**：官方 library_hero 最大 1920×620，
  * 物理上达不到规范要求的 ≥1920×1080（这正是旧 lib/steam.js 被删除的原因）。
  */
-const STEAM_SEARCH_API = 'https://store.steampowered.com/api/storesearch/';
+const STEAM_SEARCH_API = "https://store.steampowered.com/api/storesearch/";
 /** Steam 应用详情 API（appid → 英文名；filters=basic 只取基础字段，响应体小很多）。 */
-const STEAM_DETAILS_API = 'https://store.steampowered.com/api/appdetails';
+const STEAM_DETAILS_API = "https://store.steampowered.com/api/appdetails";
 /** 依赖英文查询词的来源：这几个站没有中文索引，喂中文名必然 0 结果。 */
-const ENGLISH_QUERY_SOURCES = ['wallhaven', 'reddit', 'alphacoders'];
+const ENGLISH_QUERY_SOURCES = ["wallhaven", "reddit", "alphacoders"];
 
 // ─────────────────────── 缺陷 4：相关性校验 ───────────────────────
 
@@ -121,13 +127,63 @@ const ENGLISH_QUERY_SOURCES = ['wallhaven', 'reddit', 'alphacoders'];
  * 计入命中率只会把「随便一张 4K 壁纸」判成相关。
  */
 const STOP_TOKENS = new Set([
-  'the', 'a', 'an', 'of', 'and', 'or', 'in', 'on', 'at', 'for', 'to', 'with', 'by',
-  'game', 'games', 'gaming', 'key', 'art', 'keyart', 'artwork', 'cover',
-  'wallpaper', 'wallpapers', 'background', 'backgrounds', 'image', 'images',
-  'photo', 'photos', 'pic', 'pics', 'picture', 'pictures', 'poster', 'posters',
-  'hd', 'fhd', 'qhd', 'uhd', '2k', '4k', '5k', '8k', '1080p', '1440p', '2160p',
-  'ultra', 'widescreen', 'desktop', 'screenshot', 'screenshots',
-  'official', 'free', 'download', 'downloads', 'pc', 'video',
+  "the",
+  "a",
+  "an",
+  "of",
+  "and",
+  "or",
+  "in",
+  "on",
+  "at",
+  "for",
+  "to",
+  "with",
+  "by",
+  "game",
+  "games",
+  "gaming",
+  "key",
+  "art",
+  "keyart",
+  "artwork",
+  "cover",
+  "wallpaper",
+  "wallpapers",
+  "background",
+  "backgrounds",
+  "image",
+  "images",
+  "photo",
+  "photos",
+  "pic",
+  "pics",
+  "picture",
+  "pictures",
+  "poster",
+  "posters",
+  "hd",
+  "fhd",
+  "qhd",
+  "uhd",
+  "2k",
+  "4k",
+  "5k",
+  "8k",
+  "1080p",
+  "1440p",
+  "2160p",
+  "ultra",
+  "widescreen",
+  "desktop",
+  "screenshot",
+  "screenshots",
+  "official",
+  "free",
+  "download",
+  "downloads",
+  "pc",
+  "video",
 ]);
 
 /**
@@ -136,8 +192,19 @@ const STOP_TOKENS = new Set([
  * 误转会制造大量假匹配。查询词与候选词都过同一张表，所以映射本身是对称安全的。
  */
 const ROMAN_MAP = {
-  ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9',
-  xi: '11', xii: '12', xiii: '13', xiv: '14', xv: '15',
+  ii: "2",
+  iii: "3",
+  iv: "4",
+  v: "5",
+  vi: "6",
+  vii: "7",
+  viii: "8",
+  ix: "9",
+  xi: "11",
+  xii: "12",
+  xiii: "13",
+  xiv: "14",
+  xv: "15",
 };
 
 /** 查询词「主要 token」的最低命中比例（0.6 → 2 个词必须全中，3 个词至少中 2 个）。 */
@@ -148,12 +215,12 @@ const CJK_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/;
 
 /** 常见「版本后缀」——Steam 英文名带着它会明显拉低壁纸站命中率。 */
 const EDITION_TAIL_RE = new RegExp(
-  '\\s*(?:[-–—:|]\\s*)?(?:the\\s+)?'
-  + '(?:complete|definitive|deluxe|digital\\s+deluxe|ultimate|premium|gold|standard|legendary'
-  + '|anniversary|remastered|remaster|remake|reloaded|enhanced|redux|goty'
-  + '|game\\s+of\\s+the\\s+year|director\'?s\\s+cut)'
-  + '(?:\\s+edition)?\\s*$',
-  'i',
+  "\\s*(?:[-–—:|]\\s*)?(?:the\\s+)?" +
+    "(?:complete|definitive|deluxe|digital\\s+deluxe|ultimate|premium|gold|standard|legendary" +
+    "|anniversary|remastered|remaster|remake|reloaded|enhanced|redux|goty" +
+    "|game\\s+of\\s+the\\s+year|director'?s\\s+cut)" +
+    "(?:\\s+edition)?\\s*$",
+  "i",
 );
 
 /**
@@ -162,7 +229,7 @@ const EDITION_TAIL_RE = new RegExp(
  * @returns {boolean}
  */
 function hasCjk(s) {
-  return CJK_RE.test(String(s == null ? '' : s));
+  return CJK_RE.test(String(s == null ? "" : s));
 }
 
 /**
@@ -172,7 +239,7 @@ function hasCjk(s) {
  * @returns {boolean}
  */
 function isLatinTitle(s) {
-  const t = String(s == null ? '' : s).trim();
+  const t = String(s == null ? "" : s).trim();
   if (!t) return false;
   if (hasCjk(t)) return false;
   return /[A-Za-z]/.test(t);
@@ -197,8 +264,8 @@ function isLatinTitle(s) {
  * @returns {boolean} true=可信，可采纳为英文名
  */
 function isYouTubeTitleRelevant(candidate, query) {
-  const cand = String(candidate == null ? '' : candidate).trim();
-  const q = String(query == null ? '' : query).trim();
+  const cand = String(candidate == null ? "" : candidate).trim();
+  const q = String(query == null ? "" : query).trim();
   if (!cand || !q) return false;
   if (!isLatinTitle(cand)) return false;
 
@@ -226,10 +293,41 @@ function isYouTubeTitleRelevant(candidate, query) {
 
 /** wallhaven 标签里几乎无区分度的通用词，不参与相关性判定。 */
 const WALLHAVEN_GENERIC_TAGS = new Set([
-  'game', 'games', 'gaming', 'video', 'wallpaper', 'wallpapers', 'art', 'artwork', 'digital',
-  'anime', 'woman', 'women', 'girl', 'action', 'fantasy', 'dark', 'scenery', 'landscape',
-  'nature', 'city', 'night', 'battle', 'war', 'hero', 'epic', 'background', 'backgrounds',
-  'image', 'images', 'poster', 'posters', 'photo', 'photos', 'gameart', 'gameartwork',
+  "game",
+  "games",
+  "gaming",
+  "video",
+  "wallpaper",
+  "wallpapers",
+  "art",
+  "artwork",
+  "digital",
+  "anime",
+  "woman",
+  "women",
+  "girl",
+  "action",
+  "fantasy",
+  "dark",
+  "scenery",
+  "landscape",
+  "nature",
+  "city",
+  "night",
+  "battle",
+  "war",
+  "hero",
+  "epic",
+  "background",
+  "backgrounds",
+  "image",
+  "images",
+  "poster",
+  "posters",
+  "photo",
+  "photos",
+  "gameart",
+  "gameartwork",
 ]);
 
 /**
@@ -241,10 +339,16 @@ const WALLHAVEN_GENERIC_TAGS = new Set([
  * @returns {boolean}
  */
 function isWallhavenRelevant(item, opts = {}) {
-  const qTokens = Array.isArray(opts.queryTokens) ? opts.queryTokens : normalizeTokens(opts.query || '');
-  const words = qTokens.filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !WALLHAVEN_GENERIC_TAGS.has(t));
+  const qTokens = Array.isArray(opts.queryTokens)
+    ? opts.queryTokens
+    : normalizeTokens(opts.query || "");
+  const words = qTokens.filter(
+    (t) => t.length >= 3 && !/^\d+$/.test(t) && !WALLHAVEN_GENERIC_TAGS.has(t),
+  );
   if (words.length < 2) return true;
-  const tags = Array.isArray(item && item.tags) ? item.tags.map((t) => String(t).toLowerCase()) : [];
+  const tags = Array.isArray(item && item.tags)
+    ? item.tags.map((t) => String(t).toLowerCase())
+    : [];
   if (!tags.length) return true;
   return words.some((w) => tags.some((t) => t.includes(w)));
 }
@@ -255,13 +359,13 @@ function isWallhavenRelevant(item, opts = {}) {
  * @returns {string}
  */
 function decodeEntities(s) {
-  return String(s == null ? '' : s)
-    .replace(/&nbsp;/gi, ' ')
+  return String(s == null ? "" : s)
+    .replace(/&nbsp;/gi, " ")
     .replace(/&#0*39;|&apos;/gi, "'")
     .replace(/&quot;/gi, '"')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&amp;/gi, '&');
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&");
 }
 
 /**
@@ -280,17 +384,17 @@ function decodeEntities(s) {
  * @returns {string[]} 规范化 token 列表
  */
 function normalizeTokens(str) {
-  let s = String(str == null ? '' : str).toLowerCase();
+  let s = String(str == null ? "" : str).toLowerCase();
   s = decodeEntities(s);
   // 撇号/重音撇号先删掉，别让它变成分隔符
-  s = s.replace(/['’`´ʼ]/g, '');
+  s = s.replace(/['’`´ʼ]/g, "");
   // 非字母数字 CJK 一律换成空格
-  s = s.replace(/[^0-9a-z\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]+/g, ' ');
+  s = s.replace(/[^0-9a-z\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]+/g, " ");
   // CJK ↔ 数字/拉丁 边界补空格
-  s = s.replace(/([\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff])([0-9a-z])/g, '$1 $2');
-  s = s.replace(/([0-9a-z])([\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff])/g, '$1 $2');
+  s = s.replace(/([\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff])([0-9a-z])/g, "$1 $2");
+  s = s.replace(/([0-9a-z])([\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff])/g, "$1 $2");
   // `witcher3` → `witcher 3`（≥3 字母 + 1~2 数字，且数字后不再接字母数字）
-  s = s.replace(/([a-z]{3,})(\d{1,2})(?![0-9a-z])/g, '$1 $2');
+  s = s.replace(/([a-z]{3,})(\d{1,2})(?![0-9a-z])/g, "$1 $2");
 
   const out = [];
   for (const raw of s.split(/\s+/)) {
@@ -313,20 +417,20 @@ function normalizeTokens(str) {
  * @returns {string} slug（取不到返回空串）
  */
 function extractSlugFromUrl(url) {
-  const raw = String(url == null ? '' : url).trim();
-  if (!raw) return '';
-  let pathname = '';
+  const raw = String(url == null ? "" : url).trim();
+  if (!raw) return "";
+  let pathname = "";
   try {
     pathname = new URL(raw).pathname;
   } catch (e) {
-    pathname = raw.split('#')[0].split('?')[0];
+    pathname = raw.split("#")[0].split("?")[0];
   }
-  const segments = pathname.split('/').filter((x) => x.length > 0);
-  let slug = segments.length ? segments[segments.length - 1] : '';
-  if (!slug) return '';
-  slug = slug.replace(/\.(?:jpe?g|png|webp|gif|bmp|avif|html?|php|aspx?)$/i, '');
-  slug = slug.replace(/[-_]\d{3,5}x\d{3,5}(?:[-_]\d+)?$/i, '');
-  slug = slug.replace(/[-_]\d{4,}$/, '');
+  const segments = pathname.split("/").filter((x) => x.length > 0);
+  let slug = segments.length ? segments[segments.length - 1] : "";
+  if (!slug) return "";
+  slug = slug.replace(/\.(?:jpe?g|png|webp|gif|bmp|avif|html?|php|aspx?)$/i, "");
+  slug = slug.replace(/[-_]\d{3,5}x\d{3,5}(?:[-_]\d+)?$/i, "");
+  slug = slug.replace(/[-_]\d{4,}$/, "");
   return slug;
 }
 
@@ -338,15 +442,15 @@ function extractSlugFromUrl(url) {
  * @returns {string} 标题（取不到返回空串）
  */
 function extractTitleFromHtml(html) {
-  const text = String(html == null ? '' : html);
+  const text = String(html == null ? "" : html);
   const ogTag = /<meta[^>]+(?:property|name)\s*=\s*["']og:title["'][^>]*>/i.exec(text);
   if (ogTag) {
     const c = /content\s*=\s*["']([^"']*)["']/i.exec(ogTag[0]);
-    if (c && c[1].trim()) return decodeEntities(c[1].replace(/\s+/g, ' ').trim());
+    if (c && c[1].trim()) return decodeEntities(c[1].replace(/\s+/g, " ").trim());
   }
   const titleTag = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(text);
-  if (titleTag) return decodeEntities(titleTag[1].replace(/\s+/g, ' ').trim());
-  return '';
+  if (titleTag) return decodeEntities(titleTag[1].replace(/\s+/g, " ").trim());
+  return "";
 }
 
 /**
@@ -385,11 +489,14 @@ function isRelevantCandidate(candidate, queryTokens, opts = {}) {
   const candTokens = normalizeTokens(candidate);
   if (!candTokens.length) return false;
   const candSet = new Set(candTokens);
-  const candJoined = candTokens.join('');
+  const candJoined = candTokens.join("");
 
   let hit = 0;
   for (const w of words) {
-    if (candSet.has(w)) { hit += 1; continue; }
+    if (candSet.has(w)) {
+      hit += 1;
+      continue;
+    }
     if (CJK_RE.test(w) && candJoined.indexOf(w) >= 0) hit += 1;
   }
   const ratio = Number.isFinite(opts.minHitRatio) ? opts.minHitRatio : RELEVANCE_MIN_HIT_RATIO;
@@ -414,15 +521,18 @@ function isRelevantCandidate(candidate, queryTokens, opts = {}) {
  * @returns {string} 清洗后的英文名（清空则返回空串）
  */
 function cleanEnglishTitle(raw) {
-  let s = String(raw == null ? '' : raw).replace(/[™®©]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!s) return '';
+  let s = String(raw == null ? "" : raw)
+    .replace(/[™®©]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!s) return "";
   // 可能叠加多层后缀（`… Digital Deluxe Edition`），最多剥 3 次
   for (let i = 0; i < 3; i += 1) {
-    const next = s.replace(EDITION_TAIL_RE, '').trim();
+    const next = s.replace(EDITION_TAIL_RE, "").trim();
     if (!next || next === s) break;
     s = next;
   }
-  return s.replace(/[\s:–—|-]+$/, '').trim();
+  return s.replace(/[\s:–—|-]+$/, "").trim();
 }
 
 /**
@@ -434,20 +544,24 @@ function cleanEnglishTitle(raw) {
  * @returns {string} 提取出的英文名；无则返回空串
  */
 function extractEmbeddedEnglishTitle(raw) {
-  const s = String(raw == null ? '' : raw).trim();
-  if (!s || !hasCjk(s)) return '';
+  const s = String(raw == null ? "" : raw).trim();
+  if (!s || !hasCjk(s)) return "";
   const runs = s.match(/[A-Za-z][A-Za-z0-9 .,'&:()\-.]*/g) || [];
-  let best = '';
+  let best = "";
   for (const run of runs) {
     const letters = (run.match(/[A-Za-z]/g) || []).length;
     if (letters < 2) continue;
     if (run.length > best.length) best = run;
   }
-  if (!best) return '';
+  if (!best) return "";
   // 剥版本尾巴：英文名不带 v14.0 / v1.2.3 这类后缀
-  best = best.replace(/\s*v?\d+(?:\.\d+){1,3}\s*$/i, '');
+  best = best.replace(/\s*v?\d+(?:\.\d+){1,3}\s*$/i, "");
   // 只清商标符号与尾部标点，绝不剥版本词——「Gears of War: Reloaded」的 Reloaded 是正式名一部分
-  return best.replace(/[™®©]/g, ' ').replace(/\s+/g, ' ').replace(/[\s:–—|-]+$/, '').trim();
+  return best
+    .replace(/[™®©]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[\s:–—|-]+$/, "")
+    .trim();
 }
 
 /**
@@ -460,7 +574,7 @@ function extractEmbeddedEnglishTitle(raw) {
 function buildQueryPlan(gameName, englishTitle) {
   const out = [];
   const push = (v) => {
-    const t = String(v == null ? '' : v).trim();
+    const t = String(v == null ? "" : v).trim();
     if (!t) return;
     if (out.some((x) => x.toLowerCase() === t.toLowerCase())) return;
     out.push(t);
@@ -476,13 +590,13 @@ function buildQueryPlan(gameName, englishTitle) {
  * @returns {string} appid 字符串；无结果返回空串
  */
 function parseSteamSearchAppId(json) {
-  if (!json || !Array.isArray(json.items)) return '';
+  if (!json || !Array.isArray(json.items)) return "";
   for (const it of json.items) {
     if (!it) continue;
-    const id = it.id == null ? '' : String(it.id).trim();
+    const id = it.id == null ? "" : String(it.id).trim();
     if (/^\d+$/.test(id)) return id;
   }
-  return '';
+  return "";
 }
 
 /**
@@ -492,24 +606,24 @@ function parseSteamSearchAppId(json) {
  * @returns {string} 英文名；取不到返回空串
  */
 function parseSteamAppName(json, appId) {
-  if (!json) return '';
-  const node = json[String(appId == null ? '' : appId)];
-  if (!node || node.success !== true || !node.data) return '';
-  return String(node.data.name == null ? '' : node.data.name).trim();
+  if (!json) return "";
+  const node = json[String(appId == null ? "" : appId)];
+  if (!node || node.success !== true || !node.data) return "";
+  return String(node.data.name == null ? "" : node.data.name).trim();
 }
 
 /** 来源标识 → 中文展示名（前端 detail.source 直接用得上）。 */
 const SOURCE_LABEL = {
-  'steam-cdn': 'Steam 官方图',
-  'steam-cdn-hero': 'Steam 官方横幅',
-  'steam-cdn-lowres': 'Steam 官方图（低分辨率）',
-  alphacoders: 'alphacoders.com',
-  wallhaven: 'wallhaven.cc',
-  user: '用户指定 URL',
-  nintendo: 'Nintendo 官网',
-  reddit: 'Reddit 壁纸社区',
-  youtube: 'YouTube 缩略图',
-  'ffmpeg-frame': '主视频抽帧',
+  "steam-cdn": "Steam 官方图",
+  "steam-cdn-hero": "Steam 官方横幅",
+  "steam-cdn-lowres": "Steam 官方图（低分辨率）",
+  alphacoders: "alphacoders.com",
+  wallhaven: "wallhaven.cc",
+  user: "用户指定 URL",
+  nintendo: "Nintendo 官网",
+  reddit: "Reddit 壁纸社区",
+  youtube: "YouTube 缩略图",
+  "ffmpeg-frame": "主视频抽帧",
 };
 
 // ─────────────────────── Bing 图片搜索解析（纯函数）──────────────────────
@@ -526,7 +640,7 @@ const SOURCE_LABEL = {
  *   murl 解析不出或非 http(s) 的条目直接丢弃；保持 Bing 的相关度原序
  */
 function parseBingImageResults(html) {
-  const text = String(html == null ? '' : html);
+  const text = String(html == null ? "" : html);
   const out = [];
   // 取所有带 m= 属性的标签（iusc）；属性值以 " 或 ' 界定
   const re = /<a\b[^>]*\bm=["']([^"']*)["'][^>]*>/gi;
@@ -536,27 +650,27 @@ function parseBingImageResults(html) {
     // HTML 转义的 JSON（Bing 用 &quot; 代替 "）：先反转义再解析
     const jsonStr = String(raw)
       .replace(/&quot;/gi, '"')
-      .replace(/&amp;/gi, '&')
+      .replace(/&amp;/gi, "&")
       .replace(/&#0*39;/gi, "'")
       .replace(/&#x27;/gi, "'")
       .replace(/&apos;/gi, "'")
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&nbsp;/gi, ' ');
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&nbsp;/gi, " ");
     let obj;
     try {
       obj = JSON.parse(jsonStr);
     } catch (e) {
       continue; // 坏 JSON 跳过，绝不崩
     }
-    if (!obj || typeof obj !== 'object') continue;
-    const murl = normalizeUrl(obj.murl || obj.m || '');
+    if (!obj || typeof obj !== "object") continue;
+    const murl = normalizeUrl(obj.murl || obj.m || "");
     if (!murl) continue; // 无原图直链丢弃
     out.push({
       murl,
-      purl: normalizeUrl(obj.purl || obj.p || ''),
-      title: String(obj.t || obj.title || ''),
-      turl: normalizeUrl(obj.turl || ''),
+      purl: normalizeUrl(obj.purl || obj.p || ""),
+      title: String(obj.t || obj.title || ""),
+      turl: normalizeUrl(obj.turl || ""),
     });
   }
   return out;
@@ -602,11 +716,11 @@ function filterBingCandidates(items, queryTokens, opts = {}) {
   const limit = Number.isFinite(opts.limit) ? opts.limit : MAX_CANDIDATES_PER_SOURCE;
   const seen = new Set();
   const out = [];
-  for (const it of (Array.isArray(items) ? items : [])) {
+  for (const it of Array.isArray(items) ? items : []) {
     if (!it || !it.murl) continue;
     if (hosts.length) {
-      const ph = hostOf(it.purl || '');
-      if (!ph || !hosts.some((h) => ph === h || ph.endsWith('.' + h))) continue;
+      const ph = hostOf(it.purl || "");
+      if (!ph || !hosts.some((h) => ph === h || ph.endsWith("." + h))) continue;
     }
     if (relevance && !isBingItemRelevant(it, queryTokens)) continue;
     if (seen.has(it.murl)) continue;
@@ -625,15 +739,20 @@ function filterBingCandidates(items, queryTokens, opts = {}) {
  * @returns {boolean}
  */
 function looksLikeBingBlockPage(html) {
-  const text = String(html == null ? '' : html);
+  const text = String(html == null ? "" : html);
   if (!text) return true;
   // 含有 Bing 图片结果标记（<a class="iusc"）即结构完整，是正常页——
   // 哪怕只有 1 条或 0 条结果也**不是**拦截页，绝不能重试。
   if (/class\s*=\s*["']iusc/i.test(text)) return false;
   if (text.length < 2000) return true; // 正文过短，疑似拦截/空页
   const lower = text.toLowerCase();
-  return ['captcha', 'unusual traffic', 'challenge-form', 'verify you are human', 'automated access']
-    .some((w) => lower.includes(w));
+  return [
+    "captcha",
+    "unusual traffic",
+    "challenge-form",
+    "verify you are human",
+    "automated access",
+  ].some((w) => lower.includes(w));
 }
 
 /**
@@ -644,10 +763,11 @@ function looksLikeBingBlockPage(html) {
  * @returns {string[]} 原图直链列表
  */
 function parseAlphacodersDirect(html) {
-  const re = /https?:\/\/images\.alphacoders\.com\/\d+\/(?!thumb-)[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)/gi;
+  const re =
+    /https?:\/\/images\.alphacoders\.com\/\d+\/(?!thumb-)[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)/gi;
   const seen = new Set();
   const out = [];
-  for (const m of String(html == null ? '' : html).matchAll(re)) {
+  for (const m of String(html == null ? "" : html).matchAll(re)) {
     const u = m[0];
     if (seen.has(u)) continue;
     seen.add(u);
@@ -666,16 +786,16 @@ function parseAlphacodersDirect(html) {
  */
 function pickRelevantSteamAppId(json, queryTokens) {
   const tokens = Array.isArray(queryTokens) ? queryTokens.slice() : normalizeTokens(queryTokens);
-  if (!json || !Array.isArray(json.items)) return '';
+  if (!json || !Array.isArray(json.items)) return "";
   for (const it of json.items) {
     if (!it) continue;
-    const id = it.id == null ? '' : String(it.id).trim();
+    const id = it.id == null ? "" : String(it.id).trim();
     if (!/^\d+$/.test(id)) continue;
-    const name = String(it.name || '').trim();
+    const name = String(it.name || "").trim();
     if (name && tokens.length && isRelevantCandidate(name, tokens)) return id;
   }
   // 无标题相关项 → 返回空，绝不退回首条
-  return '';
+  return "";
 }
 
 /**
@@ -684,11 +804,11 @@ function pickRelevantSteamAppId(json, queryTokens) {
  * @returns {string} 归一化后的绝对 URL（无法归一化时返回空串）
  */
 function normalizeUrl(raw) {
-  let s = String(raw == null ? '' : raw).trim();
-  if (!s) return '';
-  s = s.replace(/&amp;/g, '&').replace(/\\\//g, '/');
-  if (s.startsWith('//')) s = 'https:' + s;
-  if (!/^https?:\/\//i.test(s)) return '';
+  let s = String(raw == null ? "" : raw).trim();
+  if (!s) return "";
+  s = s.replace(/&amp;/g, "&").replace(/\\\//g, "/");
+  if (s.startsWith("//")) s = "https:" + s;
+  if (!/^https?:\/\//i.test(s)) return "";
   return s;
 }
 
@@ -701,7 +821,7 @@ function hostOf(url) {
   try {
     return new URL(url).hostname.toLowerCase();
   } catch (e) {
-    return '';
+    return "";
   }
 }
 
@@ -752,12 +872,13 @@ class CoverFetcher {
     // Bing 反爬参数（可注入以加速单测）
     // 注：用 != null 而非 || —— 允许单测显式注入 0 来彻底关掉节流/退避
     this.bingThrottleMs = deps.bingThrottleMs != null ? deps.bingThrottleMs : BING_MIN_INTERVAL_MS;
-    this.bingRetryDelayMs = deps.bingRetryDelayMs != null ? deps.bingRetryDelayMs : BING_RETRY_DELAY_MS;
+    this.bingRetryDelayMs =
+      deps.bingRetryDelayMs != null ? deps.bingRetryDelayMs : BING_RETRY_DELAY_MS;
     // Bing 专用请求头（中文版布局 + Referer，避免 consent 跳转）
     this.bingHeaders = {
-      'User-Agent': this.userAgent,
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': BING_ACCEPT_LANGUAGE,
+      "User-Agent": this.userAgent,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": BING_ACCEPT_LANGUAGE,
       Referer: BING_REFERER,
     };
   }
@@ -772,9 +893,9 @@ class CoverFetcher {
    * @returns {string} 完整 API 地址
    */
   buildSteamSearchUrl(gameName) {
-    const term = String(gameName == null ? '' : gameName).trim();
-    const lang = hasCjk(term) ? 'l=schinese&cc=CN' : 'l=english&cc=US';
-    return STEAM_SEARCH_API + '?term=' + encodeURIComponent(term) + '&' + lang;
+    const term = String(gameName == null ? "" : gameName).trim();
+    const lang = hasCjk(term) ? "l=schinese&cc=CN" : "l=english&cc=US";
+    return STEAM_SEARCH_API + "?term=" + encodeURIComponent(term) + "&" + lang;
   }
 
   /**
@@ -784,9 +905,12 @@ class CoverFetcher {
    * @returns {string} 完整 API 地址
    */
   buildSteamDetailsUrl(appId) {
-    return STEAM_DETAILS_API
-      + '?appids=' + encodeURIComponent(String(appId == null ? '' : appId).trim())
-      + '&l=english&filters=basic';
+    return (
+      STEAM_DETAILS_API +
+      "?appids=" +
+      encodeURIComponent(String(appId == null ? "" : appId).trim()) +
+      "&l=english&filters=basic"
+    );
   }
 
   /**
@@ -795,18 +919,22 @@ class CoverFetcher {
    * 远胜 Steam storesearch（很多游戏在 Steam 国区没条目）。
    */
   async lookupEnglishTitleFromWiki(gameName, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const name = String(gameName == null ? '' : gameName).trim();
-    if (!name) return { title: '', source: 'none' };
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const name = String(gameName == null ? "" : gameName).trim();
+    if (!name) return { title: "", source: "none" };
 
-    emit('cover_search', STEP_SEARCH, '维基百科反查「' + name + '」的英文名…', null, { source: 'wiki' });
+    emit("cover_search", STEP_SEARCH, "维基百科反查「" + name + "」的英文名…", null, {
+      source: "wiki",
+    });
     try {
       // 第一步：中文维基搜索
-      const srUrl = 'https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch='
-        + encodeURIComponent(name) + '&format=json&srlimit=5';
+      const srUrl =
+        "https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=" +
+        encodeURIComponent(name) +
+        "&format=json&srlimit=5";
       const srRes = await this.httpJson(srUrl, { timeout: SEARCH_TIMEOUT });
       if (!srRes.ok) {
-        return { title: '', source: 'none', error: 'Wikipedia 返回 ' + srRes.status };
+        return { title: "", source: "none", error: "Wikipedia 返回 " + srRes.status };
       }
       const srData = srRes.json;
       // 相关性闸门：搜索结果可能混入完全无关条目（实测「战争机器：重装上阵」首条是《黑客帝国动画版》），
@@ -815,62 +943,83 @@ class CoverFetcher {
       const qTokens = normalizeTokens(name);
       const page = srPages.find((p) => isRelevantCandidate(p.title, qTokens, { minHitRatio: 0.5 }));
       if (!page) {
-        emit('log', STEP_SEARCH, '[cover] 维基百科未找到与「' + name + '」相关的条目', null, { level: 'info' });
-        return { title: '', source: 'none' };
+        emit("log", STEP_SEARCH, "[cover] 维基百科未找到与「" + name + "」相关的条目", null, {
+          level: "info",
+        });
+        return { title: "", source: "none" };
       }
 
       // 第二步：取英文跨语言链接
-      const llUrl = 'https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks'
-        + '&lllang=en&pageids=' + page.pageid + '&format=json&lllimit=1';
+      const llUrl =
+        "https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks" +
+        "&lllang=en&pageids=" +
+        page.pageid +
+        "&format=json&lllimit=1";
       const llRes = await this.httpJson(llUrl, { timeout: SEARCH_TIMEOUT });
       if (!llRes.ok) {
-        return { title: '', source: 'none', error: 'Wikipedia langlinks 返回 ' + llRes.status };
+        return { title: "", source: "none", error: "Wikipedia langlinks 返回 " + llRes.status };
       }
       const llData = llRes.json;
-      const pages = llData.query && llData.query.pages || {};
+      const pages = (llData.query && llData.query.pages) || {};
       const pg = Object.values(pages)[0];
-      const ll = (pg && pg.langlinks || [])[0];
-      if (!ll || !ll['*']) {
-        emit('log', STEP_SEARCH, '[cover] 维基百科无英文跨语言链接', null, { level: 'info' });
-        return { title: '', source: 'none' };
+      const ll = ((pg && pg.langlinks) || [])[0];
+      if (!ll || !ll["*"]) {
+        emit("log", STEP_SEARCH, "[cover] 维基百科无英文跨语言链接", null, { level: "info" });
+        return { title: "", source: "none" };
       }
-      const title = String(ll['*']).trim();
+      const title = String(ll["*"]).trim();
       if (title && isLatinTitle(title) && title.length >= 3) {
         // 第三步：尝试从 Wikidata 取 Steam appid（供后续 Steam 视频/封面源使用）
-        let steamAppId = '';
+        let steamAppId = "";
         try {
-          const enPageUrl = 'https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&titles='
-            + encodeURIComponent(title) + '&format=json';
+          const enPageUrl =
+            "https://en.wikipedia.org/w/api.php?action=query&prop=pageprops&titles=" +
+            encodeURIComponent(title) +
+            "&format=json";
           const enPageRes = await this.httpJson(enPageUrl, { timeout: SEARCH_TIMEOUT });
           if (enPageRes.ok) {
             const enPageData = enPageRes.json;
-            const enPages = enPageData.query && enPageData.query.pages || {};
+            const enPages = (enPageData.query && enPageData.query.pages) || {};
             const enPg = Object.values(enPages)[0];
             const wb = enPg && enPg.pageprops && enPg.pageprops.wikibase_item;
             if (wb) {
-              const wdUrl = 'https://www.wikidata.org/wiki/Special:EntityData/' + wb + '.json';
+              const wdUrl = "https://www.wikidata.org/wiki/Special:EntityData/" + wb + ".json";
               const wdRes = await this.httpJson(wdUrl, { timeout: SEARCH_TIMEOUT });
               if (wdRes.ok) {
                 const wdData = wdRes.json;
                 const entity = wdData.entities && wdData.entities[wb];
-                steamAppId = (entity && entity.claims && entity.claims.P1733 || [])
-                  .map((c) => (c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value) || '')
-                  .find(Boolean) || '';
+                steamAppId =
+                  ((entity && entity.claims && entity.claims.P1733) || [])
+                    .map(
+                      (c) =>
+                        (c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value) || "",
+                    )
+                    .find(Boolean) || "";
               }
             }
           }
-        } catch (e) { /* Wikidata 失败不影响主链路 */ }
-        emit('cover_search', STEP_SEARCH, '维基百科英文名：' + title
-          + (steamAppId ? '（Steam appid=' + steamAppId + '）' : ''), null, {
-          source: 'wiki', englishTitle: title, zhPage: page.title, steamAppId: steamAppId || undefined,
-        });
-        return { title, source: 'wiki', zhPage: page.title, steamAppId: steamAppId || '' };
+        } catch (e) {
+          /* Wikidata 失败不影响主链路 */
+        }
+        emit(
+          "cover_search",
+          STEP_SEARCH,
+          "维基百科英文名：" + title + (steamAppId ? "（Steam appid=" + steamAppId + "）" : ""),
+          null,
+          {
+            source: "wiki",
+            englishTitle: title,
+            zhPage: page.title,
+            steamAppId: steamAppId || undefined,
+          },
+        );
+        return { title, source: "wiki", zhPage: page.title, steamAppId: steamAppId || "" };
       }
     } catch (e) {
       // 静默降级
     }
-    emit('log', STEP_SEARCH, '[cover] 维基百科英文名反查失败', null, { level: 'info' });
-    return { title: '', source: 'none' };
+    emit("log", STEP_SEARCH, "[cover] 维基百科英文名反查失败", null, { level: "info" });
+    return { title: "", source: "none" };
   }
 
   /**
@@ -885,42 +1034,53 @@ class CoverFetcher {
    * @returns {Promise<{title: string, source: 'youtube-title'|'none'}>}
    */
   async lookupEnglishTitleFromWeb(gameName, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
     const ytDlpPath = opts.ytDlpPath;
-    const name = String(gameName == null ? '' : gameName).trim();
-    if (!name || !ytDlpPath) return { title: '', source: 'none' };
+    const name = String(gameName == null ? "" : gameName).trim();
+    if (!name || !ytDlpPath) return { title: "", source: "none" };
 
-    emit('cover_search', STEP_SEARCH, 'YouTube 反查「' + name + '」的英文名…', null, { source: 'youtube-title' });
+    emit("cover_search", STEP_SEARCH, "YouTube 反查「" + name + "」的英文名…", null, {
+      source: "youtube-title",
+    });
     try {
-      const { spawn } = require('child_process');
+      const { spawn } = require("child_process");
       const args = [
-        '--flat-playlist', '--dump-json',
-        '--playlist-end', '3',
-        '--no-warnings',
-        'ytsearch3:' + name + ' game',
+        "--flat-playlist",
+        "--dump-json",
+        "--playlist-end",
+        "3",
+        "--no-warnings",
+        "ytsearch3:" + name + " game",
       ];
-      const { resolveProxy, toProxyUrl } = require('./http');
-      const px = resolveProxy('https://www.youtube.com/');
+      const { resolveProxy, toProxyUrl } = require("./http");
+      const px = resolveProxy("https://www.youtube.com/");
       if (px) {
         const u = toProxyUrl(px);
-        if (u) args.unshift('--proxy', u);
+        if (u) args.unshift("--proxy", u);
       }
       const raw = await new Promise((resolve) => {
         const chunks = [];
-        const child = spawn(ytDlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-        child.stdout.on('data', (d) => chunks.push(d));
-        child.stderr.on('data', () => {});
-        child.on('close', () => resolve(decodeText(Buffer.concat(chunks))));
-        setTimeout(() => { try { child.kill(); } catch (e) { /* ignore */ } resolve(''); }, 12000);
+        const child = spawn(ytDlpPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+        child.stdout.on("data", (d) => chunks.push(d));
+        child.stderr.on("data", () => {});
+        child.on("close", () => resolve(decodeText(Buffer.concat(chunks))));
+        setTimeout(() => {
+          try {
+            child.kill();
+          } catch (e) {
+            /* ignore */
+          }
+          resolve("");
+        }, 12000);
       });
-      if (!raw) return { title: '', source: 'none' };
-      const lines = raw.split('\n').filter(Boolean);
+      if (!raw) return { title: "", source: "none" };
+      const lines = raw.split("\n").filter(Boolean);
       for (const line of lines) {
         try {
           const item = JSON.parse(line);
-          const title = String(item.title || '');
+          const title = String(item.title || "");
           // YouTube 标题格式："{Game Name} - {trailer/type} | {channel}"
-          const idx = title.indexOf(' - ');
+          const idx = title.indexOf(" - ");
           if (idx <= 0) continue;
           const candidate = title.slice(0, idx).trim();
           // 必须是拉丁字母为主的游戏名
@@ -928,17 +1088,22 @@ class CoverFetcher {
           if (candidate.toLowerCase() === name.toLowerCase()) continue;
           // 相关性校验（防止「正当防卫4」被搜成 How to make Connect 4 game）
           if (!isYouTubeTitleRelevant(candidate, name)) continue;
-          emit('cover_search', STEP_SEARCH, 'YouTube 反查英文名：' + candidate, null, {
-            source: 'youtube-title', englishTitle: candidate,
+          emit("cover_search", STEP_SEARCH, "YouTube 反查英文名：" + candidate, null, {
+            source: "youtube-title",
+            englishTitle: candidate,
           });
-          return { title: candidate, source: 'youtube-title' };
-        } catch (e) { /* 跳过解析失败的 JSON 行 */ }
+          return { title: candidate, source: "youtube-title" };
+        } catch (e) {
+          /* 跳过解析失败的 JSON 行 */
+        }
       }
     } catch (e) {
       // 静默降级
     }
-    emit('log', STEP_SEARCH, '[cover] YouTube 英文名反查无结果，退回原名查询', null, { level: 'info' });
-    return { title: '', source: 'none' };
+    emit("log", STEP_SEARCH, "[cover] YouTube 英文名反查无结果，退回原名查询", null, {
+      level: "info",
+    });
+    return { title: "", source: "none" };
   }
 
   /**
@@ -958,40 +1123,44 @@ class CoverFetcher {
    * @returns {Promise<{title: string, source: 'opts'|'origin'|'embedded'|'steam'|'none', appId?: string}>}
    */
   async resolveEnglishTitle(gameName, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const name = String(gameName == null ? '' : gameName).trim();
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const name = String(gameName == null ? "" : gameName).trim();
     // 传入的英文名视为权威完整名（用户手输或离线/wiki/YouTube 已解析结果），
     // 只 trim 不再剥版本后缀——「Gears of War: Reloaded」的 Reloaded 是正式名一部分，
     // 旧逻辑把它当版本词剥掉导致离线 AppID 与官方图全部失配。
-    const given = String(opts.englishTitle == null ? '' : opts.englishTitle).trim();
-    if (given) return { title: given, source: 'opts' };
-    if (!name) return { title: '', source: 'none' };
-    if (isLatinTitle(name)) return { title: name, source: 'origin' };
+    const given = String(opts.englishTitle == null ? "" : opts.englishTitle).trim();
+    if (given) return { title: given, source: "opts" };
+    if (!name) return { title: "", source: "none" };
+    if (isLatinTitle(name)) return { title: name, source: "origin" };
     // 混合标题内嵌英文名直接提取，免维基/YouTube 反查，离线也稳
     const embedded = extractEmbeddedEnglishTitle(name);
-    if (embedded) return { title: embedded, source: 'embedded' };
-    if (opts.lookup === false) return { title: '', source: 'none' };
+    if (embedded) return { title: embedded, source: "embedded" };
+    if (opts.lookup === false) return { title: "", source: "none" };
 
     // 离线映射优先（复用 kdocs-tool 共享数据：精选 data-pack + 2.5 万条大库），命中即用，不再打维基/YouTube
     const offlineEn = lookupOfflineEnglishName(name);
     if (offlineEn) {
-      emit('cover_search', STEP_SEARCH, '离线映射命中英文名：' + offlineEn, null, {
-        source: 'offline', englishTitle: offlineEn,
+      emit("cover_search", STEP_SEARCH, "离线映射命中英文名：" + offlineEn, null, {
+        source: "offline",
+        englishTitle: offlineEn,
       });
-      return { title: offlineEn, source: 'offline' };
+      return { title: offlineEn, source: "offline" };
     }
 
     if (this.englishTitleCache.has(name)) return this.englishTitleCache.get(name);
-    let r = { title: '', source: 'none' };
+    let r = { title: "", source: "none" };
     try {
       r = await this.lookupEnglishTitleFromWiki(name, { emit: opts.emit });
     } catch (e) {
-      r = { title: '', source: 'none', error: e && e.message ? e.message : String(e) };
+      r = { title: "", source: "none", error: e && e.message ? e.message : String(e) };
     }
     // 维基没查到 → YouTube 搜索兜底
     if (!r.title) {
       try {
-        const webR = await this.lookupEnglishTitleFromWeb(name, { emit: opts.emit, ytDlpPath: opts.ytDlpPath });
+        const webR = await this.lookupEnglishTitleFromWeb(name, {
+          emit: opts.emit,
+          ytDlpPath: opts.ytDlpPath,
+        });
         if (webR.title) r = webR;
       } catch (e) {
         // 保持 Steam 的 error 信息不覆盖
@@ -1013,13 +1182,16 @@ class CoverFetcher {
     if (!this.autoProbe) return null;
     this.autoProbe = false;
     try {
-      // eslint-disable-next-line global-require
-      const { MediaProbe } = require('./probe');
-      // eslint-disable-next-line global-require
-      const { EnvDetector } = require('./env');
+      const { MediaProbe } = require("./probe");
+
+      const { EnvDetector } = require("./env");
       const info = new EnvDetector({ fs: this.fs }).detect();
       if (!info.ffmpegPath) return null;
-      this.probe = new MediaProbe({ fs: this.fs, ffmpegPath: info.ffmpegPath, ffprobePath: info.ffprobePath });
+      this.probe = new MediaProbe({
+        fs: this.fs,
+        ffmpegPath: info.ffmpegPath,
+        ffprobePath: info.ffprobePath,
+      });
       return this.probe;
     } catch (e) {
       return null;
@@ -1052,21 +1224,27 @@ class CoverFetcher {
    *   ⚠ BING_SIZE_FILTER 以**字面量**拼接，绝不 encodeURIComponent
    *     （Bing 期望 `qft=+filterui:...`，编码成 %2B 会让过滤失效）
    */
-  buildBingImageUrl(sites, query, extra = '') {
+  buildBingImageUrl(sites, query, extra = "") {
     let sitePart;
     if (Array.isArray(sites)) {
-      sitePart = '(' + sites.map((s) => 'site:' + String(s || '').trim()).join(' OR ') + ')';
+      sitePart = "(" + sites.map((s) => "site:" + String(s || "").trim()).join(" OR ") + ")";
     } else {
-      sitePart = 'site:' + String(sites || '').trim();
+      sitePart = "site:" + String(sites || "").trim();
     }
-    const parts = [sitePart, String(query || '').trim(), String(extra || '').trim()]
-      .filter((s) => s.length > 0);
-    const q = parts.join(' ');
-    return BING_IMAGE_SEARCH
-      + '?q=' + encodeURIComponent(q)
-      + '&form=' + BING_FORM
-      + '&first=1'
-      + '&qft=' + BING_SIZE_FILTER;
+    const parts = [sitePart, String(query || "").trim(), String(extra || "").trim()].filter(
+      (s) => s.length > 0,
+    );
+    const q = parts.join(" ");
+    return (
+      BING_IMAGE_SEARCH +
+      "?q=" +
+      encodeURIComponent(q) +
+      "&form=" +
+      BING_FORM +
+      "&first=1" +
+      "&qft=" +
+      BING_SIZE_FILTER
+    );
   }
 
   /**
@@ -1082,31 +1260,39 @@ class CoverFetcher {
    *     → parseBingImageResults → filterBingCandidates(hosts=[...sites])
    */
   async discoverViaBing(sites, query, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const source = opts.source || (Array.isArray(sites) ? 'bing-multi' : sites);
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const source = opts.source || (Array.isArray(sites) ? "bing-multi" : sites);
     const queryTokens = normalizeTokens(opts.query == null ? query : opts.query);
 
     // 节流：相邻两次 Bing 搜索间隔 ≥ bingThrottleMs
     await this._throttleBing();
     // 熔断：单 run 请求数超限后所有 Bing 来源直接返回空
     if (this._bingRequests >= BING_MAX_REQUESTS_PER_RUN) {
-      emit('log', STEP_SEARCH,
-        '[cover] Bing 请求已达熔断上限（' + BING_MAX_REQUESTS_PER_RUN + '），跳过 ' + source,
-        null, { level: 'warn', source });
+      emit(
+        "log",
+        STEP_SEARCH,
+        "[cover] Bing 请求已达熔断上限（" + BING_MAX_REQUESTS_PER_RUN + "），跳过 " + source,
+        null,
+        { level: "warn", source },
+      );
       return [];
     }
     this._bingRequests += 1;
 
     const url = this.buildBingImageUrl(sites, query, opts.extra);
-    emit('cover_search', STEP_SEARCH, 'Bing 图片搜索 ' + source + '…', null, { source, url, query: opts.query || query });
+    emit("cover_search", STEP_SEARCH, "Bing 图片搜索 " + source + "…", null, {
+      source,
+      url,
+      query: opts.query || query,
+    });
 
     const doFetch = async () => {
       const resp = await this.netFetch(url, { timeout: this.timeout });
-      if (!resp.ok) return { resp, html: '' };
+      if (!resp.ok) return { resp, html: "" };
       const html = await resp.text();
       if (looksLikeBingBlockPage(html)) {
         // 拦截页映射成 429，触发一次重试
-        return { resp: { ok: false, status: 429, error: 'bing-block-page' }, html: '' };
+        return { resp: { ok: false, status: 429, error: "bing-block-page" }, html: "" };
       }
       return { resp, html };
     };
@@ -1117,8 +1303,16 @@ class CoverFetcher {
       result = await doFetch();
     }
     if (!result.resp.ok) {
-      emit('log', STEP_SEARCH, '[cover] ' + source + ' Bing 检索失败：' + (result.resp.error || ('HTTP ' + (result.resp.status || '?'))),
-        null, { level: 'info', source });
+      emit(
+        "log",
+        STEP_SEARCH,
+        "[cover] " +
+          source +
+          " Bing 检索失败：" +
+          (result.resp.error || "HTTP " + (result.resp.status || "?")),
+        null,
+        { level: "info", source },
+      );
       return [];
     }
 
@@ -1126,10 +1320,16 @@ class CoverFetcher {
     const hosts = Array.isArray(sites) ? sites.slice() : [sites];
     const urls = filterBingCandidates(items, queryTokens, { hosts, limit: opts.limit });
     if (!urls.length) {
-      emit('log', STEP_SEARCH, '[cover] ' + source + ' 未检索到相关直链', null, { level: 'info', source });
+      emit("log", STEP_SEARCH, "[cover] " + source + " 未检索到相关直链", null, {
+        level: "info",
+        source,
+      });
       return [];
     }
-    emit('cover_search', STEP_SEARCH, source + ' 命中 ' + urls.length + ' 张候选', null, { source, count: urls.length });
+    emit("cover_search", STEP_SEARCH, source + " 命中 " + urls.length + " 张候选", null, {
+      source,
+      count: urls.length,
+    });
     return urls;
   }
 
@@ -1148,12 +1348,19 @@ class CoverFetcher {
     const sorting = opts.sorting || this.wallhaven.sorting;
     const categories = opts.categories || this.wallhaven.categories;
     const purity = opts.purity || this.wallhaven.purity;
-    return WALLHAVEN_API
-      + '?q=' + encodeURIComponent(String(gameName == null ? '' : gameName).trim())
-      + '&atleast=' + encodeURIComponent(atleast)
-      + '&categories=' + encodeURIComponent(categories)
-      + '&purity=' + encodeURIComponent(purity)
-      + '&sorting=' + encodeURIComponent(sorting);
+    return (
+      WALLHAVEN_API +
+      "?q=" +
+      encodeURIComponent(String(gameName == null ? "" : gameName).trim()) +
+      "&atleast=" +
+      encodeURIComponent(atleast) +
+      "&categories=" +
+      encodeURIComponent(categories) +
+      "&purity=" +
+      encodeURIComponent(purity) +
+      "&sorting=" +
+      encodeURIComponent(sorting)
+    );
   }
 
   /**
@@ -1168,7 +1375,7 @@ class CoverFetcher {
     if (!json || !Array.isArray(json.data)) return [];
     const out = [];
     for (const it of json.data) {
-      if (!it || typeof it.path !== 'string' || !it.path) continue;
+      if (!it || typeof it.path !== "string" || !it.path) continue;
       const w = Number(it.dimension_x);
       const h = Number(it.dimension_y);
       // 维度字段缺失时不武断丢弃：下载后仍会做本地校验，这里只挡掉明确不达标的
@@ -1186,7 +1393,7 @@ class CoverFetcher {
    * @returns {string} 直链
    */
   youtubeThumbUrl(videoId) {
-    return YT_THUMB_CDN + '/' + String(videoId == null ? '' : videoId) + '/maxresdefault.jpg';
+    return YT_THUMB_CDN + "/" + String(videoId == null ? "" : videoId) + "/maxresdefault.jpg";
   }
 
   // ─────────────────────── 带 IO 的底层方法 ───────────────────────
@@ -1195,10 +1402,11 @@ class CoverFetcher {
    * 统一的超时 signal（Node 18+ 有 AbortSignal.timeout；缺失时降级为不设超时）。
    * @returns {AbortSignal|undefined}
    */
-  timeoutSignal() {
+  timeoutSignal(ms) {
+    const t = Number.isFinite(ms) && ms > 0 ? ms : this.timeout;
     try {
-      return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-        ? AbortSignal.timeout(this.timeout)
+      return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(t)
         : undefined;
     } catch (e) {
       return undefined;
@@ -1224,9 +1432,9 @@ class CoverFetcher {
   async netFetch(url, opts = {}) {
     const headers = Object.assign({}, this.bingHeaders, opts.headers || {});
     const timeout = opts.timeout || this.timeout;
-    const mode = String((this.env && this.env[DIRECT_FIRST_ENV_KEY]) || 'auto').toLowerCase();
-    const allowDirect = mode !== 'never';
-    const forceDirect = mode === 'always';
+    const mode = String((this.env && this.env[DIRECT_FIRST_ENV_KEY]) || "auto").toLowerCase();
+    const allowDirect = mode !== "never";
+    const forceDirect = mode === "always";
 
     let useDirect;
     if (this.directFirstOk === true) useDirect = true;
@@ -1234,18 +1442,30 @@ class CoverFetcher {
     else useDirect = allowDirect;
     if (forceDirect) useDirect = true;
 
-    const call = (proxy) => this.fetch(url, {
-      headers,
-      timeout: (proxy === null && this.directFirstOk !== true) ? DIRECT_PROBE_TIMEOUT : timeout,
-      env: this.env,
-      proxy, // null = 强制直连；undefined = 走 resolveProxy 默认
-      signal: this.timeoutSignal(),
-    });
+    const call = (proxy) =>
+      this.fetch(url, {
+        headers,
+        timeout: proxy === null && this.directFirstOk !== true ? DIRECT_PROBE_TIMEOUT : timeout,
+        env: this.env,
+        proxy, // null = 强制直连；undefined = 走 resolveProxy 默认
+        signal: this.timeoutSignal(
+          proxy === null && this.directFirstOk !== true ? DIRECT_PROBE_TIMEOUT : timeout,
+        ),
+      });
 
     const failed = (e, status) => ({
-      ok: false, status, error: (e && e.message) ? e.message : String(e),
-      async text() { return ''; }, async json() { throw new Error('no json'); },
-      async arrayBuffer() { return new ArrayBuffer(0); },
+      ok: false,
+      status,
+      error: e && e.message ? e.message : String(e),
+      async text() {
+        return "";
+      },
+      async json() {
+        throw new Error("no json");
+      },
+      async arrayBuffer() {
+        return new ArrayBuffer(0);
+      },
     });
 
     let resp;
@@ -1274,9 +1494,7 @@ class CoverFetcher {
   /** Bing 请求节流：保证相邻两次 Bing 搜索间隔 ≥ bingThrottleMs。 */
   async _throttleBing() {
     const now = Date.now();
-    const wait = this._lastBingAt
-      ? Math.max(0, this.bingThrottleMs - (now - this._lastBingAt))
-      : 0;
+    const wait = this._lastBingAt ? Math.max(0, this.bingThrottleMs - (now - this._lastBingAt)) : 0;
     if (wait > 0) await this._sleep(wait);
     this._lastBingAt = Date.now();
   }
@@ -1302,21 +1520,21 @@ class CoverFetcher {
     try {
       const resp = await this.fetch(url, {
         headers: {
-          'User-Agent': this.userAgent,
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8',
+          "User-Agent": this.userAgent,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8",
         },
-        redirect: 'follow',
+        redirect: "follow",
         // timeout 供 lib/http.js 的 proxyFetch 使用；signal 供注入的原生 fetch 使用，两者并存
         timeout: this.timeout,
         env: this.env,
         signal: this.timeoutSignal(),
       });
-      if (!resp || !resp.ok) return { ok: false, error: 'HTTP ' + ((resp && resp.status) || '?') };
+      if (!resp || !resp.ok) return { ok: false, error: "HTTP " + ((resp && resp.status) || "?") };
       const text = await resp.text();
-      return { ok: true, text: String(text == null ? '' : text) };
+      return { ok: true, text: String(text == null ? "" : text) };
     } catch (e) {
-      return { ok: false, error: '请求失败：' + (e && e.message ? e.message : String(e)) };
+      return { ok: false, error: "请求失败：" + (e && e.message ? e.message : String(e)) };
     }
   }
 
@@ -1329,17 +1547,20 @@ class CoverFetcher {
   async httpJson(url, opts = {}) {
     try {
       const resp = await this.fetch(url, {
-        headers: Object.assign({ 'User-Agent': this.userAgent, Accept: 'application/json' }, opts.headers || {}),
-        redirect: 'follow',
+        headers: Object.assign(
+          { "User-Agent": this.userAgent, Accept: "application/json" },
+          opts.headers || {},
+        ),
+        redirect: "follow",
         timeout: opts.timeout || this.timeout,
         env: this.env,
-        signal: this.timeoutSignal(),
+        signal: this.timeoutSignal(opts.timeout),
       });
-      if (!resp || !resp.ok) return { ok: false, error: 'HTTP ' + ((resp && resp.status) || '?') };
+      if (!resp || !resp.ok) return { ok: false, error: "HTTP " + ((resp && resp.status) || "?") };
       const json = await resp.json();
       return { ok: true, json };
     } catch (e) {
-      return { ok: false, error: '请求失败：' + (e && e.message ? e.message : String(e)) };
+      return { ok: false, error: "请求失败：" + (e && e.message ? e.message : String(e)) };
     }
   }
 
@@ -1354,26 +1575,26 @@ class CoverFetcher {
     try {
       resp = await this.fetch(url, {
         headers: Object.assign(
-          { 'User-Agent': this.userAgent, Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' },
+          { "User-Agent": this.userAgent, Accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
           opts.headers || {},
         ),
-        redirect: 'follow',
+        redirect: "follow",
         timeout: opts.timeout || this.timeout,
         env: this.env,
-        signal: this.timeoutSignal(),
+        signal: this.timeoutSignal(opts.timeout),
       });
     } catch (e) {
-      return { ok: false, error: '请求失败：' + (e && e.message ? e.message : String(e)) };
+      return { ok: false, error: "请求失败：" + (e && e.message ? e.message : String(e)) };
     }
-    if (!resp || !resp.ok) return { ok: false, error: 'HTTP ' + ((resp && resp.status) || '?') };
+    if (!resp || !resp.ok) return { ok: false, error: "HTTP " + ((resp && resp.status) || "?") };
     let buf = null;
     try {
       buf = Buffer.from(await resp.arrayBuffer());
     } catch (e) {
-      return { ok: false, error: '读取响应体失败：' + (e && e.message ? e.message : String(e)) };
+      return { ok: false, error: "读取响应体失败：" + (e && e.message ? e.message : String(e)) };
     }
     const size = readImageSize(buf);
-    if (!size) return { ok: false, error: '无法识别图片格式（可能是 HTML 错误页）' };
+    if (!size) return { ok: false, error: "无法识别图片格式（可能是 HTML 错误页）" };
     return { ok: true, buf, size };
   }
 
@@ -1396,13 +1617,13 @@ class CoverFetcher {
     try {
       this.fs.writeFileSync(rawPath, buf);
     } catch (e) {
-      return { ok: false, error: '写盘失败：' + (e && e.message ? e.message : String(e)) };
+      return { ok: false, error: "写盘失败：" + (e && e.message ? e.message : String(e)) };
     }
-    if (ext === '.jpg') return { ok: true, file: COVER_FILE, path: rawPath, converted: false };
+    if (ext === ".jpg") return { ok: true, file: COVER_FILE, path: rawPath, converted: false };
 
     // 规范明确「格式：JPG（保存为 封面.jpg）」→ 有 ffmpeg 就转，没有就保留原格式并说明
     const probe = this.resolveProbe();
-    if (probe && typeof probe.convertToJpg === 'function') {
+    if (probe && typeof probe.convertToJpg === "function") {
       const jpgPath = path.join(outDir, COVER_FILE);
       let conv = { ok: false };
       try {
@@ -1411,7 +1632,11 @@ class CoverFetcher {
         conv = { ok: false, error: e && e.message ? e.message : String(e) };
       }
       if (conv && conv.ok) {
-        try { this.fs.unlinkSync(rawPath); } catch (e) { /* 原图删不掉不影响结果 */ }
+        try {
+          this.fs.unlinkSync(rawPath);
+        } catch (e) {
+          /* 原图删不掉不影响结果 */
+        }
         return { ok: true, file: COVER_FILE, path: jpgPath, converted: true };
       }
     }
@@ -1429,32 +1654,46 @@ class CoverFetcher {
    * @returns {Promise<{ok: boolean, file?: string, path?: string, width?: number, height?: number, url?: string, error?: string}>}
    */
   async tryCandidates(urls, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const source = opts.source || 'unknown';
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const source = opts.source || "unknown";
     const requireMin = opts.requireMin !== false;
     const minSize = opts.minSize || { width: MIN_WIDTH, height: MIN_HEIGHT };
     const limit = Number.isFinite(opts.limit) ? opts.limit : MAX_CANDIDATES_PER_SOURCE;
     const list = (Array.isArray(urls) ? urls : []).slice(0, Math.max(0, limit));
-    if (!list.length) return { ok: false, error: '无候选直链' };
+    if (!list.length) return { ok: false, error: "无候选直链" };
 
-    let lastError = '无候选直链';
+    let lastError = "无候选直链";
     for (const url of list) {
-      emit('cover_download', STEP_DOWNLOAD, 'GET ' + (SOURCE_LABEL[source] || source) + ' 候选图…', null, { url, source });
+      emit(
+        "cover_download",
+        STEP_DOWNLOAD,
+        "GET " + (SOURCE_LABEL[source] || source) + " 候选图…",
+        null,
+        { url, source },
+      );
       const got = await this.fetchImage(url, opts.fetchOpts || {});
       if (!got.ok) {
-        lastError = got.error || '下载失败';
-        emit('log', STEP_DOWNLOAD, '[cover] ' + source + ' 候选不可用：' + lastError, null, { level: 'info' });
+        lastError = got.error || "下载失败";
+        emit("log", STEP_DOWNLOAD, "[cover] " + source + " 候选不可用：" + lastError, null, {
+          level: "info",
+        });
         continue;
       }
       // 硬校验：不信 URL 里的分辨率字样，只认实际字节头解析出来的尺寸
       if (requireMin && !meetsMinSize(got.size, minSize)) {
-        lastError = '尺寸不达标 ' + got.size.width + '×' + got.size.height;
-        emit('log', STEP_DOWNLOAD, '[cover] ' + source + ' 候选 ' + lastError + '，继续下一个', null, { level: 'info' });
+        lastError = "尺寸不达标 " + got.size.width + "×" + got.size.height;
+        emit(
+          "log",
+          STEP_DOWNLOAD,
+          "[cover] " + source + " 候选 " + lastError + "，继续下一个",
+          null,
+          { level: "info" },
+        );
         continue;
       }
       const saved = await this.saveCover(got.buf, got.size, outDir);
       if (!saved.ok) {
-        lastError = saved.error || '写盘失败';
+        lastError = saved.error || "写盘失败";
         continue;
       }
       return {
@@ -1482,7 +1721,9 @@ class CoverFetcher {
    * @returns {string} 完整直链
    */
   buildSteamCdnUrl(appId, file) {
-    return STEAM_CDN_BASE + '/' + String(appId == null ? '' : appId).trim() + '/' + String(file || '');
+    return (
+      STEAM_CDN_BASE + "/" + String(appId == null ? "" : appId).trim() + "/" + String(file || "")
+    );
   }
 
   /**
@@ -1492,9 +1733,10 @@ class CoverFetcher {
    * @returns {string[]} 直链（appId 非纯数字时返回空数组）
    */
   buildSteamCdnCandidates(appId, tier) {
-    const id = String(appId == null ? '' : appId).trim();
+    const id = String(appId == null ? "" : appId).trim();
     if (!/^\d+$/.test(id)) return [];
-    const files = tier === 'hero' ? STEAM_CDN_HERO : (tier === 'lowres' ? STEAM_CDN_LOWRES : STEAM_CDN_STRICT);
+    const files =
+      tier === "hero" ? STEAM_CDN_HERO : tier === "lowres" ? STEAM_CDN_LOWRES : STEAM_CDN_STRICT;
     return files.map((f) => this.buildSteamCdnUrl(id, f));
   }
 
@@ -1507,20 +1749,30 @@ class CoverFetcher {
    * @returns {Promise<string>} 官方图直链；未命中返回 ''
    */
   async fetchSteamOfficialImage(appId, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const id = String(appId == null ? '' : appId).trim();
-    if (!/^\d+$/.test(id)) return '';
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const id = String(appId == null ? "" : appId).trim();
+    if (!/^\d+$/.test(id)) return "";
     if (this.steamOfficialImageCache.has(id)) return this.steamOfficialImageCache.get(id);
-    const url = 'https://store.steampowered.com/api/appdetails?appids=' + id + '&l=english&filters=basic';
-    emit('cover_search', STEP_SEARCH, 'Steam 官方 API 解析官方图（appid=' + id + '）…', null, { source: 'steam-cdn', url });
-    let img = '';
+    const url =
+      "https://store.steampowered.com/api/appdetails?appids=" + id + "&l=english&filters=basic";
+    emit("cover_search", STEP_SEARCH, "Steam 官方 API 解析官方图（appid=" + id + "）…", null, {
+      source: "steam-cdn",
+      url,
+    });
+    let img = "";
     try {
       const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
       const data = res.ok && res.json && res.json[id] && res.json[id].data;
-      if (data) img = String(data.header_image || '').trim();
-    } catch (e) { /* 官方 API 失败静默降级，不影响后续固定路径 */ }
+      if (data) img = String(data.header_image || "").trim();
+    } catch (e) {
+      /* 官方 API 失败静默降级，不影响后续固定路径 */
+    }
     this.steamOfficialImageCache.set(id, img);
-    if (img) emit('cover_search', STEP_SEARCH, 'Steam 官方 API 命中官方图：' + img, null, { source: 'steam-cdn', headerImage: img });
+    if (img)
+      emit("cover_search", STEP_SEARCH, "Steam 官方 API 命中官方图：" + img, null, {
+        source: "steam-cdn",
+        headerImage: img,
+      });
     return img;
   }
 
@@ -1531,21 +1783,21 @@ class CoverFetcher {
    * @returns {Promise<string>} appid 字符串（未找到返回 ''）
    */
   async resolveSteamAppId(query, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const direct = String(opts.steamAppId == null ? '' : opts.steamAppId).trim();
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const direct = String(opts.steamAppId == null ? "" : opts.steamAppId).trim();
     if (direct) {
       this.steamAppIdCache.set(query, direct);
       return direct;
     }
     if (this.steamAppIdCache.has(query)) return this.steamAppIdCache.get(query);
-    if (opts.lookup === false) return '';
+    if (opts.lookup === false) return "";
 
     // 查询变体：完整词 → 剥版本词后的基础名（对齐 kdocs searchSteamAppId）。
     // storesearch 对「Alan Wake Remastered」这类带版本词的名称实测返回 0 条，
     // 必须降级到「Alan Wake」再查一轮，否则 Steam 官方封面源永远跳过。
     const variants = [];
     const pushV = (t) => {
-      const v = String(t == null ? '' : t).trim();
+      const v = String(t == null ? "" : t).trim();
       if (v && variants.indexOf(v) < 0) variants.push(v);
     };
     pushV(query);
@@ -1556,7 +1808,10 @@ class CoverFetcher {
       const offId = lookupOfflineAppId(term);
       if (offId) {
         this.steamAppIdCache.set(query, offId);
-        emit('cover_search', STEP_SEARCH, '离线映射命中 Steam AppID：' + offId, null, { source: 'offline', appId: offId });
+        emit("cover_search", STEP_SEARCH, "离线映射命中 Steam AppID：" + offId, null, {
+          source: "offline",
+          appId: offId,
+        });
         return offId;
       }
     }
@@ -1564,11 +1819,16 @@ class CoverFetcher {
     for (let i = 0; i < variants.length; i += 1) {
       const term = variants[i];
       const url = this.buildSteamSearchUrl(term);
-      emit('cover_search', STEP_SEARCH, 'Steam storesearch 反查 appid（' + term + '）…', null, { source: 'steam-cdn', url });
+      emit("cover_search", STEP_SEARCH, "Steam storesearch 反查 appid（" + term + "）…", null, {
+        source: "steam-cdn",
+        url,
+      });
       try {
         const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
         if (!res.ok) {
-          emit('log', STEP_SEARCH, '[cover] Steam storesearch 失败：' + res.error, null, { level: 'info' });
+          emit("log", STEP_SEARCH, "[cover] Steam storesearch 失败：" + res.error, null, {
+            level: "info",
+          });
           continue;
         }
         const tokens = normalizeTokens(term);
@@ -1577,13 +1837,23 @@ class CoverFetcher {
           this.steamAppIdCache.set(query, appId);
           return appId;
         }
-        emit('log', STEP_SEARCH, '[cover] Steam storesearch 无相关结果（' + term + '）', null, { level: 'info' });
+        emit("log", STEP_SEARCH, "[cover] Steam storesearch 无相关结果（" + term + "）", null, {
+          level: "info",
+        });
       } catch (e) {
-        emit('log', STEP_SEARCH, '[cover] Steam storesearch 异常：' + (e && e.message ? e.message : String(e)), null, { level: 'info' });
+        emit(
+          "log",
+          STEP_SEARCH,
+          "[cover] Steam storesearch 异常：" + (e && e.message ? e.message : String(e)),
+          null,
+          { level: "info" },
+        );
       }
     }
-    emit('log', STEP_SEARCH, '[cover] Steam 未收录或无法匹配，跳过 Steam 官方封面源', null, { level: 'info' });
-    return '';
+    emit("log", STEP_SEARCH, "[cover] Steam 未收录或无法匹配，跳过 Steam 官方封面源", null, {
+      level: "info",
+    });
+    return "";
   }
 
   /**
@@ -1595,23 +1865,29 @@ class CoverFetcher {
    * @returns {Promise<object>} tryCandidates 结果（附 degraded）
    */
   async fromSteamCdn(appId, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const tier = opts.tier === 'hero' ? 'hero' : (opts.tier === 'lowres' ? 'lowres' : 'strict');
-    const source = tier === 'lowres' ? 'steam-cdn-lowres' : (tier === 'hero' ? 'steam-cdn-hero' : 'steam-cdn');
-    const id = String(appId == null ? '' : appId).trim();
-    if (!id) return { ok: false, error: '无可用 Steam appid', source };
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const tier = opts.tier === "hero" ? "hero" : opts.tier === "lowres" ? "lowres" : "strict";
+    const source =
+      tier === "lowres" ? "steam-cdn-lowres" : tier === "hero" ? "steam-cdn-hero" : "steam-cdn";
+    const id = String(appId == null ? "" : appId).trim();
+    if (!id) return { ok: false, error: "无可用 Steam appid", source };
     // 严格档：官方 API 直链（带哈希的真实路径）优先，旧固定路径兜底（兼容未迁移的老游戏）
-    const urls = tier === 'strict'
-      ? [await this.fetchSteamOfficialImage(id, { emit })].filter(Boolean)
-        .concat(this.buildSteamCdnCandidates(id, tier))
-      : this.buildSteamCdnCandidates(id, tier);
+    const urls =
+      tier === "strict"
+        ? [await this.fetchSteamOfficialImage(id, { emit })]
+            .filter(Boolean)
+            .concat(this.buildSteamCdnCandidates(id, tier))
+        : this.buildSteamCdnCandidates(id, tier);
     // 官方图一律优先采纳（capsule 最大 1232×706 不满足 1920×1080 门槛），尺寸不达标标 degraded，
     // 由 collect.js 对「非官方来源」才用抽帧覆盖。
     const requireMin = false;
     const r = await this.tryCandidates(urls, outDir, { emit, source, requireMin });
     if (!r.ok) return r;
     // 实测尺寸未达门槛则标记 degraded
-    const degraded = !meetsMinSize({ width: r.width, height: r.height }, { width: MIN_WIDTH, height: MIN_HEIGHT });
+    const degraded = !meetsMinSize(
+      { width: r.width, height: r.height },
+      { width: MIN_WIDTH, height: MIN_HEIGHT },
+    );
     return Object.assign({}, r, { degraded, source });
   }
 
@@ -1625,9 +1901,9 @@ class CoverFetcher {
    * @returns {string} 查询词
    */
   pickQuery(gameName, opts = {}) {
-    const q = String(opts.query == null ? '' : opts.query).trim();
+    const q = String(opts.query == null ? "" : opts.query).trim();
     if (q) return q;
-    return String(gameName == null ? '' : gameName).trim();
+    return String(gameName == null ? "" : gameName).trim();
   }
 
   /**
@@ -1639,30 +1915,51 @@ class CoverFetcher {
    * @returns {Promise<string[]>} 原图直链；任何失败一律返回 []（绝不抛）
    */
   async discoverAlphacodersDirect(query, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const q = String(query == null ? '' : query).trim();
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const q = String(query == null ? "" : query).trim();
     if (!q) return [];
-    const url = 'https://wall.alphacoders.com/search.php?search=' + encodeURIComponent(q);
-    emit('cover_search', STEP_SEARCH, 'alphacoders 站内搜索 ' + q + '…', null, { source: 'alphacoders', url, query: q });
-    let html = '';
+    const url = "https://wall.alphacoders.com/search.php?search=" + encodeURIComponent(q);
+    emit("cover_search", STEP_SEARCH, "alphacoders 站内搜索 " + q + "…", null, {
+      source: "alphacoders",
+      url,
+      query: q,
+    });
+    let html = "";
     try {
-      const resp = await this.netFetch(url, { timeout: this.timeout, headers: { Accept: 'text/html' } });
+      const resp = await this.netFetch(url, {
+        timeout: this.timeout,
+        headers: { Accept: "text/html" },
+      });
       if (!resp.ok) {
-        emit('log', STEP_SEARCH, '[cover] alphacoders 检索失败：' + (resp.error || ('HTTP ' + resp.status)), null, { level: 'info' });
+        emit(
+          "log",
+          STEP_SEARCH,
+          "[cover] alphacoders 检索失败：" + (resp.error || "HTTP " + resp.status),
+          null,
+          { level: "info" },
+        );
         return [];
       }
       html = await resp.text();
     } catch (e) {
-      emit('log', STEP_SEARCH, '[cover] alphacoders 检索异常：' + (e && e.message ? e.message : String(e)), null, { level: 'info' });
+      emit(
+        "log",
+        STEP_SEARCH,
+        "[cover] alphacoders 检索异常：" + (e && e.message ? e.message : String(e)),
+        null,
+        { level: "info" },
+      );
       return [];
     }
     const urls = parseAlphacodersDirect(html);
     if (!urls.length) {
-      emit('log', STEP_SEARCH, '[cover] alphacoders 未检索到直链', null, { level: 'info' });
+      emit("log", STEP_SEARCH, "[cover] alphacoders 未检索到直链", null, { level: "info" });
       return [];
     }
-    emit('cover_search', STEP_SEARCH, 'alphacoders 命中 ' + urls.length + ' 张候选', null, {
-      source: 'alphacoders', count: urls.length, query: q,
+    emit("cover_search", STEP_SEARCH, "alphacoders 命中 " + urls.length + " 张候选", null, {
+      source: "alphacoders",
+      count: urls.length,
+      query: q,
     });
     return urls;
   }
@@ -1677,7 +1974,10 @@ class CoverFetcher {
   async fromAlphacoders(gameName, outDir, opts = {}) {
     const query = this.pickQuery(gameName, opts);
     const urls = await this.discoverAlphacodersDirect(query, opts);
-    const r = await this.tryCandidates(urls.slice(0, MAX_CANDIDATES_PER_SOURCE), outDir, { emit: opts.emit, source: 'alphacoders' });
+    const r = await this.tryCandidates(urls.slice(0, MAX_CANDIDATES_PER_SOURCE), outDir, {
+      emit: opts.emit,
+      source: "alphacoders",
+    });
     return Object.assign({}, r, { queryUsed: query });
   }
 
@@ -1693,28 +1993,36 @@ class CoverFetcher {
    * @returns {Promise<object>} tryCandidates 结果（附 queryUsed）
    */
   async fromWallhaven(gameName, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
     const query = this.pickQuery(gameName, opts);
     const api = this.buildWallhavenApiUrl(query);
-    emit('cover_search', STEP_SEARCH, '检索 wallhaven.cc API（q=' + query + '）…', null, {
-      source: 'wallhaven', url: api, query,
+    emit("cover_search", STEP_SEARCH, "检索 wallhaven.cc API（q=" + query + "）…", null, {
+      source: "wallhaven",
+      url: api,
+      query,
     });
     const r = await this.httpJson(api);
     if (!r.ok) {
-      emit('log', STEP_SEARCH, '[cover] wallhaven 检索失败：' + r.error, null, { level: 'info' });
-      return { ok: false, error: r.error, source: 'wallhaven', queryUsed: query };
+      emit("log", STEP_SEARCH, "[cover] wallhaven 检索失败：" + r.error, null, { level: "info" });
+      return { ok: false, error: r.error, source: "wallhaven", queryUsed: query };
     }
     const urls = this.parseWallhavenResults(r.json, { queryTokens: normalizeTokens(query) });
     if (!urls.length) {
-      emit('log', STEP_SEARCH, '[cover] wallhaven 无满足 ≥1920×1080 的结果（q=' + query + '）', null, { level: 'info' });
-      return { ok: false, error: 'wallhaven 无命中', source: 'wallhaven', queryUsed: query };
+      emit(
+        "log",
+        STEP_SEARCH,
+        "[cover] wallhaven 无满足 ≥1920×1080 的结果（q=" + query + "）",
+        null,
+        { level: "info" },
+      );
+      return { ok: false, error: "wallhaven 无命中", source: "wallhaven", queryUsed: query };
     }
-    emit('cover_search', STEP_SEARCH, 'wallhaven 命中 ' + urls.length + ' 张候选', null, {
-      source: 'wallhaven',
+    emit("cover_search", STEP_SEARCH, "wallhaven 命中 " + urls.length + " 张候选", null, {
+      source: "wallhaven",
       count: urls.length,
       query,
     });
-    const got = await this.tryCandidates(urls, outDir, { emit: opts.emit, source: 'wallhaven' });
+    const got = await this.tryCandidates(urls, outDir, { emit: opts.emit, source: "wallhaven" });
     return Object.assign({}, got, { queryUsed: query });
   }
 
@@ -1726,11 +2034,11 @@ class CoverFetcher {
    * @returns {Promise<object>} tryCandidates 结果
    */
   async fromUserUrl(url, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
     const clean = normalizeUrl(url);
-    if (!clean) return { ok: false, error: '未提供合法的用户封面 URL', source: 'user' };
-    emit('cover_search', STEP_SEARCH, '使用用户指定 URL', null, { source: 'user', url: clean });
-    return this.tryCandidates([clean], outDir, { emit: opts.emit, source: 'user', limit: 1 });
+    if (!clean) return { ok: false, error: "未提供合法的用户封面 URL", source: "user" };
+    emit("cover_search", STEP_SEARCH, "使用用户指定 URL", null, { source: "user", url: clean });
+    return this.tryCandidates([clean], outDir, { emit: opts.emit, source: "user", limit: 1 });
   }
 
   /**
@@ -1739,42 +2047,53 @@ class CoverFetcher {
    * 新增相关性闸门：贴标题须与查询词相关，挡掉「热门但与本游戏无关」的图。
    */
   async fromReddit(gameName, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const query = String(opts.query || gameName || '').trim();
-    if (!query) return { ok: false, error: '无可用查询词', source: 'reddit' };
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const query = String(opts.query || gameName || "").trim();
+    if (!query) return { ok: false, error: "无可用查询词", source: "reddit" };
     const queryTokens = normalizeTokens(query);
-    const subreddits = ['gamewallpaper', 'wallpapers'];
+    const subreddits = ["gamewallpaper", "wallpapers"];
     for (const sub of subreddits) {
       try {
-        const url = 'https://www.reddit.com/r/' + sub + '/search.json?q='
-          + encodeURIComponent(query) + '&sort=relevance&limit=10&restrict_sr=on';
-        emit('cover_search', STEP_SEARCH, '检索 Reddit r/' + sub + '…', null, { source: 'reddit', url });
+        const url =
+          "https://www.reddit.com/r/" +
+          sub +
+          "/search.json?q=" +
+          encodeURIComponent(query) +
+          "&sort=relevance&limit=10&restrict_sr=on";
+        emit("cover_search", STEP_SEARCH, "检索 Reddit r/" + sub + "…", null, {
+          source: "reddit",
+          url,
+        });
         const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
         if (!res.ok) {
-          emit('log', STEP_SEARCH, '[cover] Reddit r/' + sub + ' 检索失败：' + res.error, null, { level: 'info' });
+          emit("log", STEP_SEARCH, "[cover] Reddit r/" + sub + " 检索失败：" + res.error, null, {
+            level: "info",
+          });
           continue;
         }
         const data = res.json;
         const posts = (data.data && data.data.children) || [];
         const urls = [];
         for (const p of posts) {
-          const postUrl = (p.data && p.data.url) || '';
+          const postUrl = (p.data && p.data.url) || "";
           if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(postUrl)) continue;
           // 相关性闸门：贴标题须与查询词相关（i.redd.it 类无语义 slug，只能靠标题判）
-          if (!isRelevantCandidate(p.data.title || '', queryTokens)
-            && !isRelevantCandidate(extractSlugFromUrl(postUrl), queryTokens)) {
+          if (
+            !isRelevantCandidate(p.data.title || "", queryTokens) &&
+            !isRelevantCandidate(extractSlugFromUrl(postUrl), queryTokens)
+          ) {
             continue;
           }
           urls.push(postUrl);
         }
         if (!urls.length) continue;
-        const r = await this.tryCandidates(urls, outDir, { emit, source: 'reddit' });
+        const r = await this.tryCandidates(urls, outDir, { emit, source: "reddit" });
         if (r.ok) return Object.assign({}, r, { queryUsed: query, subreddit: sub });
       } catch (e) {
         // 静默降级
       }
     }
-    return { ok: false, error: 'Reddit 社区未找到封面', source: 'reddit', queryUsed: query };
+    return { ok: false, error: "Reddit 社区未找到封面", source: "reddit", queryUsed: query };
   }
 
   /**
@@ -1793,17 +2112,20 @@ class CoverFetcher {
    * @returns {Promise<object>} 结果对象，附 degraded 标记
    */
   async fromYouTube(videoId, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const id = String(videoId == null ? '' : videoId).trim();
-    if (!id) return { ok: false, error: '无可用的宣传片视频 id', source: 'youtube' };
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const id = String(videoId == null ? "" : videoId).trim();
+    if (!id) return { ok: false, error: "无可用的宣传片视频 id", source: "youtube" };
     const url = this.youtubeThumbUrl(id);
-    emit('cover_search', STEP_SEARCH, '回退：YouTube maxresdefault 缩略图', null, { source: 'youtube', url });
+    emit("cover_search", STEP_SEARCH, "回退：YouTube maxresdefault 缩略图", null, {
+      source: "youtube",
+      url,
+    });
 
     const got = await this.fetchImage(url);
-    if (!got.ok) return { ok: false, error: got.error, source: 'youtube' };
+    if (!got.ok) return { ok: false, error: got.error, source: "youtube" };
     const meets = meetsMinSize(got.size, { width: MIN_WIDTH, height: MIN_HEIGHT });
     const saved = await this.saveCover(got.buf, got.size, outDir);
-    if (!saved.ok) return { ok: false, error: saved.error, source: 'youtube' };
+    if (!saved.ok) return { ok: false, error: saved.error, source: "youtube" };
     return {
       ok: true,
       degraded: !meets,
@@ -1816,7 +2138,7 @@ class CoverFetcher {
       bytes: got.buf.length,
       url,
       videoId: id,
-      source: 'youtube',
+      source: "youtube",
     };
   }
 
@@ -1859,8 +2181,8 @@ class CoverFetcher {
    * }>}
    */
   async fetchCover(gameName, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const name = String(gameName == null ? '' : gameName).trim();
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const name = String(gameName == null ? "" : gameName).trim();
     const tried = [];
     const failures = [];
 
@@ -1881,92 +2203,159 @@ class CoverFetcher {
     });
     const meta = {
       queryPlan: queryPlan.slice(),
-      englishTitle: english.title || '',
-      englishTitleSource: english.source || 'none',
+      englishTitle: english.title || "",
+      englishTitleSource: english.source || "none",
       steamAppId,
     };
-    emit('log', STEP_SEARCH,
-      '[cover] 查询词计划：' + queryPlan.join(' → ') + '（英文名来源：' + meta.englishTitleSource
-      + '；Steam appid：' + (steamAppId || '无') + '）',
-      null, Object.assign({ level: 'info' }, meta));
+    emit(
+      "log",
+      STEP_SEARCH,
+      "[cover] 查询词计划：" +
+        queryPlan.join(" → ") +
+        "（英文名来源：" +
+        meta.englishTitleSource +
+        "；Steam appid：" +
+        (steamAppId || "无") +
+        "）",
+      null,
+      Object.assign({ level: "info" }, meta),
+    );
 
     // 规范《封面来源优先级》表格顺序；userUrlFirst 仅在调用方显式要求时改变位次
-  // youtube（官方宣传片缩略图）提级到壁纸站之前：无 Steam 页的游戏（PS5 独占等）也优先用发行商官方图
-  let order = ['steam-cdn', 'youtube', 'steam-cdn-hero', 'wallhaven', 'reddit', 'user', 'alphacoders', 'steam-cdn-lowres'];
-    if (opts.userUrlFirst === true) order = ['user'].concat(order.filter((s) => s !== 'user'));
+    // youtube（官方宣传片缩略图）提级到壁纸站之前：无 Steam 页的游戏（PS5 独占等）也优先用发行商官方图
+    let order = [
+      "steam-cdn",
+      "youtube",
+      "steam-cdn-hero",
+      "wallhaven",
+      "reddit",
+      "user",
+      "alphacoders",
+      "steam-cdn-lowres",
+    ];
+    if (opts.userUrlFirst === true) order = ["user"].concat(order.filter((s) => s !== "user"));
     if (Array.isArray(opts.sources) && opts.sources.length) {
       order = order.filter((s) => opts.sources.indexOf(s) >= 0);
     }
     // 重找封面：跳过上次已采纳的来源，确保换来源重找
-    const skipSource = String(opts.skipSource || '').trim();
+    const skipSource = String(opts.skipSource || "").trim();
     if (skipSource) order = order.filter((s) => s !== skipSource);
-    const skipUrl = String(opts.skipUrl || '').trim();
+    const skipUrl = String(opts.skipUrl || "").trim();
 
     for (const source of order) {
       // 缺少必需入参的来源直接跳过，不计入失败
-      if (source === 'user' && !normalizeUrl(opts.coverUrl)) continue;
-      if (source === 'youtube' && !String(opts.videoId || '').trim()) continue;
-      if ((source === 'steam-cdn' || source === 'steam-cdn-hero' || source === 'steam-cdn-lowres') && !steamAppId) continue;
+      if (source === "user" && !normalizeUrl(opts.coverUrl)) continue;
+      if (source === "youtube" && !String(opts.videoId || "").trim()) continue;
+      if (
+        (source === "steam-cdn" || source === "steam-cdn-hero" || source === "steam-cdn-lowres") &&
+        !steamAppId
+      )
+        continue;
 
       tried.push(source);
       // 只有「靠关键词检索」的英文站才需要多轮查询词；user/youtube 是直链，跑一轮即可
       const usesQuery = ENGLISH_QUERY_SOURCES.indexOf(source) >= 0;
       const plan = usesQuery ? queryPlan : [name];
 
-      let r = { ok: false, error: '未执行' };
-      let usedQuery = '';
+      let r = { ok: false, error: "未执行" };
+      let usedQuery = "";
       for (let round = 0; round < plan.length; round += 1) {
         const query = plan[round];
-        usedQuery = usesQuery ? query : '';
+        usedQuery = usesQuery ? query : "";
         if (round > 0) {
-          emit('log', STEP_SEARCH,
-            '[cover] ' + (SOURCE_LABEL[source] || source) + ' 用「' + plan[round - 1]
-            + '」无果，改用「' + query + '」再查一轮', null, { level: 'info', source, query });
+          emit(
+            "log",
+            STEP_SEARCH,
+            "[cover] " +
+              (SOURCE_LABEL[source] || source) +
+              " 用「" +
+              plan[round - 1] +
+              "」无果，改用「" +
+              query +
+              "」再查一轮",
+            null,
+            { level: "info", source, query },
+          );
         }
         try {
-          if (source === 'steam-cdn') r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: 'strict' });
-          else if (source === 'steam-cdn-hero') r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: 'hero' });
-          else if (source === 'steam-cdn-lowres') r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: 'lowres' });
-          else if (source === 'wallhaven') r = await this.fromWallhaven(name, outDir, { emit, query });
-          else if (source === 'reddit') r = await this.fromReddit(name, outDir, { emit, query: name });
-          else if (source === 'user') r = await this.fromUserUrl(opts.coverUrl, outDir, { emit });
-          else if (source === 'alphacoders') r = await this.fromAlphacoders(name, outDir, { emit, query });
-          else if (source === 'youtube') r = await this.fromYouTube(opts.videoId, outDir, { emit });
+          if (source === "steam-cdn")
+            r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: "strict" });
+          else if (source === "steam-cdn-hero")
+            r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: "hero" });
+          else if (source === "steam-cdn-lowres")
+            r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: "lowres" });
+          else if (source === "wallhaven")
+            r = await this.fromWallhaven(name, outDir, { emit, query });
+          else if (source === "reddit")
+            r = await this.fromReddit(name, outDir, { emit, query: name });
+          else if (source === "user") r = await this.fromUserUrl(opts.coverUrl, outDir, { emit });
+          else if (source === "alphacoders")
+            r = await this.fromAlphacoders(name, outDir, { emit, query });
+          else if (source === "youtube") r = await this.fromYouTube(opts.videoId, outDir, { emit });
         } catch (e) {
-          r = { ok: false, error: '来源异常：' + (e && e.message ? e.message : String(e)) };
+          r = { ok: false, error: "来源异常：" + (e && e.message ? e.message : String(e)) };
         }
         if (r && r.ok) break;
       }
 
       if (r && r.ok && skipUrl && r.url === skipUrl) {
-        emit('log', STEP_SEARCH, '[cover] ' + (SOURCE_LABEL[source] || source) + ' 命中上次已用封面 URL，跳过', null, { level: 'info' });
-        r = { ok: false, error: '命中上次已用 URL' };
+        emit(
+          "log",
+          STEP_SEARCH,
+          "[cover] " + (SOURCE_LABEL[source] || source) + " 命中上次已用封面 URL，跳过",
+          null,
+          { level: "info" },
+        );
+        r = { ok: false, error: "命中上次已用 URL" };
       }
       if (r && r.ok) {
         const label = SOURCE_LABEL[source] || source;
-        const dim = (r.width || '?') + '×' + (r.height || '?');
+        const dim = (r.width || "?") + "×" + (r.height || "?");
         const queryUsed = r.queryUsed || usedQuery;
         if (r.degraded) {
-          emit('cover_download', STEP_DOWNLOAD, label + ' ' + dim + '（未达 1920×1080，待抽帧覆盖）', null, {
-            source, file: r.file, width: r.width, height: r.height, degraded: true, queryUsed,
-          });
+          emit(
+            "cover_download",
+            STEP_DOWNLOAD,
+            label + " " + dim + "（未达 1920×1080，待抽帧覆盖）",
+            null,
+            {
+              source,
+              file: r.file,
+              width: r.width,
+              height: r.height,
+              degraded: true,
+              queryUsed,
+            },
+          );
         } else {
-          emit('cover_download', STEP_DOWNLOAD, r.file + '（' + dim + ' · ' + label + '）', true, {
-            source, file: r.file, path: r.path, width: r.width, height: r.height, degraded: false, queryUsed,
+          emit("cover_download", STEP_DOWNLOAD, r.file + "（" + dim + " · " + label + "）", true, {
+            source,
+            file: r.file,
+            path: r.path,
+            width: r.width,
+            height: r.height,
+            degraded: false,
+            queryUsed,
           });
         }
-        return Object.assign({ tried }, meta, r, { source, queryUsed: r.queryUsed || usedQuery || '' });
+        return Object.assign({ tried }, meta, r, {
+          source,
+          queryUsed: r.queryUsed || usedQuery || "",
+        });
       }
-      failures.push(source + '：' + ((r && r.error) || '未知原因'));
+      failures.push(source + "：" + ((r && r.error) || "未知原因"));
     }
 
-    return Object.assign({
-      ok: false,
-      reason: 'cover-all-sources-failed',
-      error: '规范 10 级封面来源均未取到达标图（' + (failures.join('；') || '无可用来源') + '）',
-      tried,
-      queryUsed: queryPlan[0] || name,
-    }, meta);
+    return Object.assign(
+      {
+        ok: false,
+        reason: "cover-all-sources-failed",
+        error: "规范 10 级封面来源均未取到达标图（" + (failures.join("；") || "无可用来源") + "）",
+        tried,
+        queryUsed: queryPlan[0] || name,
+      },
+      meta,
+    );
   }
 
   /**
@@ -1983,8 +2372,8 @@ class CoverFetcher {
    * @returns {Promise<{ok: boolean, candidates: Array<{url: string, source: string, label: string, degraded?: boolean}>, reason?: string, error?: string, queryPlan?: string[], englishTitle?: string, englishTitleSource?: string, steamAppId?: string}>}
    */
   async collectCandidates(gameName, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const name = String(gameName == null ? '' : gameName).trim();
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const name = String(gameName == null ? "" : gameName).trim();
     const MAX_PICK_CANDIDATES = 12;
 
     const english = await this.resolveEnglishTitle(name, {
@@ -2001,74 +2390,105 @@ class CoverFetcher {
     });
     const meta = {
       queryPlan: queryPlan.slice(),
-      englishTitle: english.title || '',
-      englishTitleSource: english.source || 'none',
+      englishTitle: english.title || "",
+      englishTitleSource: english.source || "none",
       steamAppId,
     };
 
-    let order = ['steam-cdn', 'youtube', 'steam-cdn-hero', 'wallhaven', 'reddit', 'user',
-      'alphacoders', 'steam-cdn-lowres'];
-    if (opts.userUrlFirst === true) order = ['user'].concat(order.filter((s) => s !== 'user'));
+    let order = [
+      "steam-cdn",
+      "youtube",
+      "steam-cdn-hero",
+      "wallhaven",
+      "reddit",
+      "user",
+      "alphacoders",
+      "steam-cdn-lowres",
+    ];
+    if (opts.userUrlFirst === true) order = ["user"].concat(order.filter((s) => s !== "user"));
 
     const seen = new Set();
     const candidates = [];
-    const skipSource = String(opts.skipSource || '').trim();
-    const skipUrl = String(opts.skipUrl || '').trim();
+    const skipSource = String(opts.skipSource || "").trim();
+    const skipUrl = String(opts.skipUrl || "").trim();
     const push = (url, source, extra) => {
       const clean = normalizeUrl(url);
       if (!clean || seen.has(clean)) return;
       if (skipSource && source === skipSource) return;
       if (skipUrl && clean === skipUrl) return;
       seen.add(clean);
-      candidates.push(Object.assign({ url: clean, source, label: SOURCE_LABEL[source] || source }, extra));
+      candidates.push(
+        Object.assign({ url: clean, source, label: SOURCE_LABEL[source] || source }, extra),
+      );
     };
 
     for (const source of order) {
       if (candidates.length >= MAX_PICK_CANDIDATES) break;
-      if (source === 'user' && !normalizeUrl(opts.coverUrl)) continue;
-      if (source === 'youtube' && !String(opts.videoId || '').trim()) continue;
-      if ((source === 'steam-cdn' || source === 'steam-cdn-hero' || source === 'steam-cdn-lowres') && !steamAppId) continue;
+      if (source === "user" && !normalizeUrl(opts.coverUrl)) continue;
+      if (source === "youtube" && !String(opts.videoId || "").trim()) continue;
+      if (
+        (source === "steam-cdn" || source === "steam-cdn-hero" || source === "steam-cdn-lowres") &&
+        !steamAppId
+      )
+        continue;
 
       try {
-        if (source === 'steam-cdn') {
+        if (source === "steam-cdn") {
           const official = await this.fetchSteamOfficialImage(steamAppId, { emit });
-          if (official) push(official, 'steam-cdn');
-          this.buildSteamCdnCandidates(steamAppId, 'strict').forEach((u) => push(u, 'steam-cdn'));
-        } else if (source === 'steam-cdn-hero') {
-          this.buildSteamCdnCandidates(steamAppId, 'hero').forEach((u) => push(u, 'steam-cdn-hero', { degraded: true }));
-        } else if (source === 'steam-cdn-lowres') {
-          this.buildSteamCdnCandidates(steamAppId, 'lowres').forEach((u) => push(u, 'steam-cdn-lowres', { degraded: true }));
-        } else if (source === 'youtube') {
-          push(this.youtubeThumbUrl(opts.videoId), 'youtube');
-        } else if (source === 'user') {
-          push(opts.coverUrl, 'user');
-        } else if (source === 'wallhaven') {
+          if (official) push(official, "steam-cdn");
+          this.buildSteamCdnCandidates(steamAppId, "strict").forEach((u) => push(u, "steam-cdn"));
+        } else if (source === "steam-cdn-hero") {
+          this.buildSteamCdnCandidates(steamAppId, "hero").forEach((u) =>
+            push(u, "steam-cdn-hero", { degraded: true }),
+          );
+        } else if (source === "steam-cdn-lowres") {
+          this.buildSteamCdnCandidates(steamAppId, "lowres").forEach((u) =>
+            push(u, "steam-cdn-lowres", { degraded: true }),
+          );
+        } else if (source === "youtube") {
+          push(this.youtubeThumbUrl(opts.videoId), "youtube");
+        } else if (source === "user") {
+          push(opts.coverUrl, "user");
+        } else if (source === "wallhaven") {
           const r = await this.httpJson(this.buildWallhavenApiUrl(name));
           if (r.ok) {
             this.parseWallhavenResults(r.json, { queryTokens: normalizeTokens(name) })
-              .slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, 'wallhaven'));
+              .slice(0, MAX_CANDIDATES_PER_SOURCE)
+              .forEach((u) => push(u, "wallhaven"));
           }
-        } else if (source === 'reddit') {
-          const query = String(name || '').trim();
+        } else if (source === "reddit") {
+          const query = String(name || "").trim();
           const queryTokens = query ? normalizeTokens(query) : [];
-          for (const sub of ['gamewallpaper', 'wallpapers']) {
-            const url = 'https://www.reddit.com/r/' + sub + '/search.json?q='
-              + encodeURIComponent(query) + '&sort=relevance&limit=10&restrict_sr=on';
+          for (const sub of ["gamewallpaper", "wallpapers"]) {
+            const url =
+              "https://www.reddit.com/r/" +
+              sub +
+              "/search.json?q=" +
+              encodeURIComponent(query) +
+              "&sort=relevance&limit=10&restrict_sr=on";
             const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
             if (!res.ok) {
-              emit('log', STEP_SEARCH, '[cover] Reddit r/' + sub + ' 检索失败：' + res.error, null, { level: 'info' });
+              emit(
+                "log",
+                STEP_SEARCH,
+                "[cover] Reddit r/" + sub + " 检索失败：" + res.error,
+                null,
+                { level: "info" },
+              );
               continue;
             }
             const posts = (res.json && res.json.data && res.json.data.children) || [];
             for (const p of posts) {
-              const postUrl = (p.data && p.data.url) || '';
+              const postUrl = (p.data && p.data.url) || "";
               if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(postUrl)) continue;
-              if (queryTokens.length
-                && !isRelevantCandidate(p.data.title || '', queryTokens)
-                && !isRelevantCandidate(extractSlugFromUrl(postUrl), queryTokens)) {
+              if (
+                queryTokens.length &&
+                !isRelevantCandidate(p.data.title || "", queryTokens) &&
+                !isRelevantCandidate(extractSlugFromUrl(postUrl), queryTokens)
+              ) {
                 continue;
               }
-              push(postUrl, 'reddit');
+              push(postUrl, "reddit");
             }
             if (candidates.length >= MAX_PICK_CANDIDATES) break;
           }
@@ -2076,7 +2496,7 @@ class CoverFetcher {
           const plan = ENGLISH_QUERY_SOURCES.indexOf(source) >= 0 ? queryPlan : [name];
           for (const query of plan) {
             let urls = [];
-            if (source === 'alphacoders') {
+            if (source === "alphacoders") {
               urls = await this.discoverAlphacodersDirect(query, { emit, query });
             }
             urls.slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, source));
@@ -2084,19 +2504,28 @@ class CoverFetcher {
           }
         }
       } catch (e) {
-        emit('log', STEP_SEARCH,
-          '[cover] ' + (SOURCE_LABEL[source] || source) + ' 候选收集异常：'
-          + (e && e.message ? e.message : String(e)),
-          null, { level: 'info' });
+        emit(
+          "log",
+          STEP_SEARCH,
+          "[cover] " +
+            (SOURCE_LABEL[source] || source) +
+            " 候选收集异常：" +
+            (e && e.message ? e.message : String(e)),
+          null,
+          { level: "info" },
+        );
       }
     }
 
-    return Object.assign({
-      ok: candidates.length > 0,
-      candidates,
-      reason: candidates.length ? '' : 'cover-no-candidates',
-      error: candidates.length ? '' : '无候选封面',
-    }, meta);
+    return Object.assign(
+      {
+        ok: candidates.length > 0,
+        candidates,
+        reason: candidates.length ? "" : "cover-no-candidates",
+        error: candidates.length ? "" : "无候选封面",
+      },
+      meta,
+    );
   }
 
   /**
@@ -2108,23 +2537,33 @@ class CoverFetcher {
    * @returns {Promise<{ok: boolean, degraded?: boolean, file?: string, path?: string, width?: number, height?: number, url?: string, source?: string, error?: string}>}
    */
   async applyCandidate(url, outDir, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const source = opts.source || 'user';
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const source = opts.source || "user";
     let got = null;
     if (opts.localPath) {
       // 候选预检模式：本地文件已下载并校验过，直接读入转正
       try {
         const buf = this.fs.readFileSync(opts.localPath);
         const size = readImageSize(buf);
-        if (!size) return { ok: false, error: '本地候选文件无法识别为图片', source };
+        if (!size) return { ok: false, error: "本地候选文件无法识别为图片", source };
         got = { ok: true, buf, size };
       } catch (e) {
-        return { ok: false, error: '读取本地候选失败：' + (e && e.message ? e.message : String(e)), source };
+        return {
+          ok: false,
+          error: "读取本地候选失败：" + (e && e.message ? e.message : String(e)),
+          source,
+        };
       }
     } else {
       const clean = normalizeUrl(url);
-      if (!clean) return { ok: false, error: '无效封面 URL', source };
-      emit('cover_download', STEP_DOWNLOAD, 'GET ' + (SOURCE_LABEL[source] || source) + ' 候选图…', null, { url: clean, source });
+      if (!clean) return { ok: false, error: "无效封面 URL", source };
+      emit(
+        "cover_download",
+        STEP_DOWNLOAD,
+        "GET " + (SOURCE_LABEL[source] || source) + " 候选图…",
+        null,
+        { url: clean, source },
+      );
       got = await this.fetchImage(clean, opts.fetchOpts || {});
       if (!got.ok) return { ok: false, error: got.error, source };
     }
@@ -2154,15 +2593,23 @@ class CoverFetcher {
     try {
       const p = path.join(folder, COVER_META_FILE);
       if (!this.fs.existsSync(p)) return null;
-      return JSON.parse(this.fs.readFileSync(p, 'utf8'));
-    } catch (_) { return null; }
+      return JSON.parse(this.fs.readFileSync(p, "utf8"));
+    } catch (_) {
+      return null;
+    }
   }
 
   /** 写封面来源 sidecar（仅网络来源；reused / ffmpeg-frame 无意义不写）。 */
   saveCoverMeta(folder, meta) {
     try {
-      this.fs.writeFileSync(path.join(folder, COVER_META_FILE), JSON.stringify(meta, null, 2), 'utf8');
-    } catch (_) { /* sidecar 静默失败 */ }
+      this.fs.writeFileSync(
+        path.join(folder, COVER_META_FILE),
+        JSON.stringify(meta, null, 2),
+        "utf8",
+      );
+    } catch (_) {
+      /* sidecar 静默失败 */
+    }
   }
 
   /** 清空候选预检临时目录（收集结束后调用，避免残留）。 */
@@ -2170,7 +2617,9 @@ class CoverFetcher {
     try {
       if (this.fs.existsSync(PREVIEW_TMP_DIR)) {
         for (const f of this.fs.readdirSync(PREVIEW_TMP_DIR)) {
-          try { this.fs.unlinkSync(path.join(PREVIEW_TMP_DIR, f)); } catch (_) {}
+          try {
+            this.fs.unlinkSync(path.join(PREVIEW_TMP_DIR, f));
+          } catch (_) {}
         }
       }
     } catch (_) {}
@@ -2184,16 +2633,18 @@ class CoverFetcher {
    * @returns {Promise<Array<{url:string,localPath:string,width:number,height:number,source:string,label:string}>>}
    */
   async precheckCandidates(candidates, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const skipSource = String(opts.skipSource || '').trim();
-    const skipUrl = String(opts.skipUrl || '').trim();
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const skipSource = String(opts.skipSource || "").trim();
+    const skipUrl = String(opts.skipUrl || "").trim();
     const list = candidates.filter((c) => {
       if (skipSource && c.source === skipSource) return false;
       if (skipUrl && c.url === skipUrl) return false;
       return true;
     });
     if (!list.length) return [];
-    try { this.fs.mkdirSync(PREVIEW_TMP_DIR, { recursive: true }); } catch (_) {}
+    try {
+      this.fs.mkdirSync(PREVIEW_TMP_DIR, { recursive: true });
+    } catch (_) {}
     const results = new Array(list.length);
     let idx = 0;
     const worker = async () => {
@@ -2203,21 +2654,39 @@ class CoverFetcher {
         try {
           const got = await this.fetchImage(c.url, { timeout: DIRECT_PROBE_TIMEOUT });
           if (!got.ok || !got.size) {
-            emit('log', STEP_SEARCH, '[cover] 候选预检剔除（不可访问）：' + (c.source || '') + ' ' + (got.error || ''), null, { level: 'info' });
+            emit(
+              "log",
+              STEP_SEARCH,
+              "[cover] 候选预检剔除（不可访问）：" + (c.source || "") + " " + (got.error || ""),
+              null,
+              { level: "info" },
+            );
             results[i] = null;
             continue;
           }
           if (got.size.width < MIN_WIDTH || got.size.height < MIN_HEIGHT) {
-            emit('log', STEP_SEARCH, '[cover] 候选预检剔除（低于 720P）：' + got.size.width + '×' + got.size.height + ' ' + (c.source || ''), null, { level: 'info' });
+            emit(
+              "log",
+              STEP_SEARCH,
+              "[cover] 候选预检剔除（低于 720P）：" +
+                got.size.width +
+                "×" +
+                got.size.height +
+                " " +
+                (c.source || ""),
+              null,
+              { level: "info" },
+            );
             results[i] = null;
             continue;
           }
-          const ext = extForImageFormat(got.size.format) || '.jpg';
-          const name = 'cand-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6) + ext;
+          const ext = extForImageFormat(got.size.format) || ".jpg";
+          const name =
+            "cand-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6) + ext;
           const localPath = path.join(PREVIEW_TMP_DIR, name);
           this.fs.writeFileSync(localPath, got.buf);
           results[i] = {
-            url: '/cover-tmp/' + name,
+            url: "/cover-tmp/" + name,
             originalUrl: c.url,
             localPath,
             width: got.size.width,
@@ -2234,7 +2703,13 @@ class CoverFetcher {
     for (let k = 0; k < PREVIEW_CONCURRENCY && k < list.length; k++) workers.push(worker());
     await Promise.all(workers);
     const ok = results.filter(Boolean);
-    emit('log', STEP_SEARCH, '[cover] 候选预检完成：' + ok.length + '/' + list.length + ' 张可通过（≥720P 且可访问）', null, { level: 'info' });
+    emit(
+      "log",
+      STEP_SEARCH,
+      "[cover] 候选预检完成：" + ok.length + "/" + list.length + " 张可通过（≥720P 且可访问）",
+      null,
+      { level: "info" },
+    );
     return ok.slice(0, PREVIEW_MAX);
   }
 }

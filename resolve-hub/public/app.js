@@ -39,10 +39,12 @@
     const item = document.createElement("div");
     item.className = "step-item info";
     item.innerHTML =
-      '<span class="step-icon">›</span>' +
+      '<span class="step-icon"><svg class="app-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></span>' +
       '<div class="step-body">' +
-        '<div class="step-name">' + esc(def.name) + "</div>" +
-        '<div class="step-detail"></div>' +
+      '<div class="step-name">' +
+      esc(def.name) +
+      "</div>" +
+      '<div class="step-detail"></div>' +
       "</div>";
     execSteps.appendChild(item);
     stepEls[tag] = item;
@@ -54,7 +56,7 @@
     logBuf = lines.pop() || "";
     for (const raw of lines) {
       if (!raw.trim()) continue;
-      const cls = /\[错误\]|Traceback|失败/.test(raw) ? "err" : (/完成|成功|✓/.test(raw) ? "ok" : "");
+      const cls = /\[错误\]|Traceback|失败/.test(raw) ? "err" : /完成|成功|✓/.test(raw) ? "ok" : "";
       const div = document.createElement("div");
       div.className = "line" + (cls ? " " + cls : "");
       div.textContent = raw;
@@ -104,7 +106,9 @@
     execCard.classList.add("show");
     execLog.innerHTML = "";
     execSteps.innerHTML = "";
-    Object.keys(stepEls).forEach((k) => { delete stepEls[k]; });
+    Object.keys(stepEls).forEach((k) => {
+      delete stepEls[k];
+    });
     logBuf = "";
     execStep.className = "step-item info";
     execStepName.textContent = title;
@@ -113,7 +117,11 @@
 
   async function refreshInfo() {
     const dir = dirInput.value.trim();
-    if (!dir) { infoEl.textContent = ""; startBtn.disabled = true; return; }
+    if (!dir) {
+      infoEl.textContent = "";
+      startBtn.disabled = true;
+      return;
+    }
     try {
       const r = await fetch("/api/folder-info?dir=" + encodeURIComponent(dir));
       const j = await r.json();
@@ -142,9 +150,17 @@
   }
 
   function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-    }[c]));
+    return String(s == null ? "" : s).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
   }
 
   async function streamRun(url, body) {
@@ -161,7 +177,12 @@
       });
       if (!resp.ok) {
         let msg = "请求失败（HTTP " + resp.status + "）";
-        try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch (e) { /* ignore */ }
+        try {
+          const j = await resp.json();
+          if (j && j.error) msg = j.error;
+        } catch (e) {
+          /* ignore */
+        }
         output += "[错误] " + msg + "\n";
         addLog("[错误] " + msg + "\n");
         ok = false;
@@ -210,7 +231,10 @@
     if (!current) return;
     beginRun("渲染导出（8-9）", "正在加载导出预设并渲染…");
     const out = outInput.value.trim();
-    const ok = await streamRun("/api/render", out ? { project: current.name, out } : { project: current.name });
+    const ok = await streamRun(
+      "/api/render",
+      out ? { project: current.name, out } : { project: current.name },
+    );
     if (ok) {
       finishBtn.disabled = true;
       finishBtn.textContent = "已导出完成";
@@ -226,9 +250,11 @@
       return;
     }
     const res = await window.electronAPI.pickFolder();
-    const dir = (res && typeof res === "object" && res.dir)
-      || (typeof res === "string" ? res : "");
-    if (dir) { dirInput.value = dir; refreshInfo(); }
+    const dir = (res && typeof res === "object" && res.dir) || (typeof res === "string" ? res : "");
+    if (dir) {
+      dirInput.value = dir;
+      refreshInfo();
+    }
   };
   clearBtn.onclick = () => {
     dirInput.value = "";

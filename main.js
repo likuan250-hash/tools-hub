@@ -15,7 +15,7 @@ const http = require("http");
 // 仅绕过 GitHub 域名，其余域名仍走系统代理，不影响 YouTube 等依赖代理的功能。
 app.commandLine.appendSwitch(
   "proxy-bypass-list",
-  "github.com;api.github.com;*.githubusercontent.com;*.githubassets.com;*.github.io"
+  "github.com;api.github.com;*.githubusercontent.com;*.githubassets.com;*.github.io",
 );
 
 // 主进程中不依赖 Electron 运行时的纯函数（safeStr / copyDir），抽到 lib 以便独立单测。
@@ -64,7 +64,11 @@ const CHILDREN = {
     script: path.join(NETDISK_DIR, "server.js"),
     cwd: NETDISK_DIR,
     url: "http://localhost:3000",
-    env: Object.assign({}, process.env, { TOOLSHUB_VERSION: app.getVersion(), PORT: "3000", PLAYWRIGHT_BROWSERS_PATH: "0" }),
+    env: Object.assign({}, process.env, {
+      TOOLSHUB_VERSION: app.getVersion(),
+      PORT: "3000",
+      PLAYWRIGHT_BROWSERS_PATH: "0",
+    }),
     proc: null,
     running: false,
     attempts: 0,
@@ -118,11 +122,43 @@ const CHILDREN = {
       // 达芬奇自动化配置（与 scripts/resolve-auto/config.js 默认值同源，可用环境变量覆盖）
       RESOLVE_MATERIAL_ROOT: process.env.RESOLVE_MATERIAL_ROOT || "E:\\素材",
       // ffmpeg/ffprobe 复用 material-hub 内置二进制（开发/打包路径均可用）
-      RESOLVE_FFMPEG: fs.existsSync(path.join(RES, "material-hub", "node_modules", "@ffmpeg-installer", "win32-x64", "ffmpeg.exe"))
-        ? path.join(RES, "material-hub", "node_modules", "@ffmpeg-installer", "win32-x64", "ffmpeg.exe")
+      RESOLVE_FFMPEG: fs.existsSync(
+        path.join(
+          RES,
+          "material-hub",
+          "node_modules",
+          "@ffmpeg-installer",
+          "win32-x64",
+          "ffmpeg.exe",
+        ),
+      )
+        ? path.join(
+            RES,
+            "material-hub",
+            "node_modules",
+            "@ffmpeg-installer",
+            "win32-x64",
+            "ffmpeg.exe",
+          )
         : "ffmpeg",
-      RESOLVE_FFPROBE: fs.existsSync(path.join(RES, "material-hub", "node_modules", "@ffprobe-installer", "win32-x64", "ffprobe.exe"))
-        ? path.join(RES, "material-hub", "node_modules", "@ffprobe-installer", "win32-x64", "ffprobe.exe")
+      RESOLVE_FFPROBE: fs.existsSync(
+        path.join(
+          RES,
+          "material-hub",
+          "node_modules",
+          "@ffprobe-installer",
+          "win32-x64",
+          "ffprobe.exe",
+        ),
+      )
+        ? path.join(
+            RES,
+            "material-hub",
+            "node_modules",
+            "@ffprobe-installer",
+            "win32-x64",
+            "ffprobe.exe",
+          )
         : "ffprobe",
     }),
     proc: null,
@@ -136,8 +172,21 @@ const CHILDREN = {
 const MAX_RESTART = 5;
 let mainWindow = null;
 let quitting = false;
-let allowClose = false;     // 更新安装等场景直接关闭，跳过确认
+let allowClose = false; // 更新安装等场景直接关闭，跳过确认
 let confirmedClose = false; // 用户已在确认框点了“确认关闭”
+
+// ── 资源优化：子服务随子页面生命周期启停 ──
+// 打开工具标签 → 启动对应子服务；关闭标签 → 立即停止对应子服务；再打开自动重启。
+function stopChild(cfg) {
+  if (!cfg.proc) return;
+  cfg.stopRequested = true;
+  log(`停止子进程 ${cfg.key}（标签已关闭）`);
+  try {
+    cfg.proc.kill("SIGTERM");
+  } catch (e) {
+    /* 已退出 */
+  }
+}
 
 // ── 主题单一真源：主进程缓存工具箱当前主题，供 webview-preload 主动拉取 ──
 let currentTheme = "dark";
@@ -164,12 +213,18 @@ function relocateNetdiskData() {
     const st = fs.statSync(p);
     return st.isDirectory() || st.size > 10;
   });
-  if (!userHasData &&
-      fs.existsSync(srcData) &&
-      fs.statSync(srcData).isDirectory() &&
-      !fs.lstatSync(srcData).isSymbolicLink()) {
-    try { copyDir(srcData, userDataDir); log("已从安装目录迁移 netdisk 数据到 userData:", userDataDir); }
-    catch (e) { log("迁移失败:", e.message); }
+  if (
+    !userHasData &&
+    fs.existsSync(srcData) &&
+    fs.statSync(srcData).isDirectory() &&
+    !fs.lstatSync(srcData).isSymbolicLink()
+  ) {
+    try {
+      copyDir(srcData, userDataDir);
+      log("已从安装目录迁移 netdisk 数据到 userData:", userDataDir);
+    } catch (e) {
+      log("迁移失败:", e.message);
+    }
   } else {
     log("netdisk 数据目录:", userDataDir);
   }
@@ -216,8 +271,11 @@ if (!gotLock) {
 let _logFile = null;
 function getLogFile() {
   if (_logFile === null) {
-    try { _logFile = path.join(app.getPath("userData"), "tools-hub.log"); }
-    catch (e) { _logFile = false; }
+    try {
+      _logFile = path.join(app.getPath("userData"), "tools-hub.log");
+    } catch (e) {
+      _logFile = false;
+    }
   }
   return _logFile || null;
 }
@@ -229,13 +287,18 @@ function log(...args) {
   try {
     try {
       const st = fs.statSync(f);
-      if (st.size > 5 * 1024 * 1024) { // >5MB 滚动：保留一份 .1 备份
+      if (st.size > 5 * 1024 * 1024) {
+        // >5MB 滚动：保留一份 .1 备份
         fs.copyFileSync(f, f + ".1");
         fs.writeFileSync(f, "");
       }
-    } catch (e) { /* 首次写入 */ }
+    } catch (e) {
+      /* 首次写入 */
+    }
     fs.appendFileSync(f, line + "\n");
-  } catch (e) { /* 日志失败不影响主流程 */ }
+  } catch (e) {
+    /* 日志失败不影响主流程 */
+  }
 }
 
 // 启动后清理 userData/netdisk-hub 下残留的过期备份目录(如 *.backup-*)，防止长期堆积占盘
@@ -248,10 +311,13 @@ function cleanupStaleBackups() {
     for (const n of fs.readdirSync(dir)) {
       if (!/\.backup-/.test(n)) continue;
       const p = path.join(dir, n);
-      try { if (now - fs.statSync(p).mtimeMs > maxAge) fs.rmSync(p, { recursive: true, force: true }); }
-      catch (e) {}
+      try {
+        if (now - fs.statSync(p).mtimeMs > maxAge) fs.rmSync(p, { recursive: true, force: true });
+      } catch (e) {}
     }
-  } catch (e) { log("cleanupStaleBackups error:", e.message); }
+  } catch (e) {
+    log("cleanupStaleBackups error:", e.message);
+  }
 }
 
 // 端口防抢占检测：拉取子服务 /api/version，校验 bootToken 是否匹配我们注入的令牌。
@@ -264,13 +330,22 @@ function verifyChildBoot(cfg) {
       try {
         const j = JSON.parse(d);
         if (j.bootToken && j.bootToken !== BOOT_TOKEN) {
-          log("⚠️ 安全警告：" + cfg.key + " 端口 " + cfg.url +
-            " 返回的 bootToken 不匹配，疑似端口被其他进程抢占/伪造，请检查本机是否有可疑进程。");
+          log(
+            "⚠️ 安全警告：" +
+              cfg.key +
+              " 端口 " +
+              cfg.url +
+              " 返回的 bootToken 不匹配，疑似端口被其他进程抢占/伪造，请检查本机是否有可疑进程。",
+          );
         }
-      } catch (e) { /* 响应非 JSON，忽略 */ }
+      } catch (e) {
+        /* 响应非 JSON，忽略 */
+      }
     });
   });
-  req.on("error", () => { /* 子进程未起/暂不可达，不判违规 */ });
+  req.on("error", () => {
+    /* 子进程未起/暂不可达，不判违规 */
+  });
   req.setTimeout(3000, () => req.destroy());
 }
 
@@ -286,7 +361,10 @@ function healthCheck(cfg) {
       resolve(res.statusCode === 200);
     });
     req.on("error", () => resolve(false));
-    req.setTimeout(3000, () => { req.destroy(); resolve(false); });
+    req.setTimeout(3000, () => {
+      req.destroy();
+      resolve(false);
+    });
   });
 }
 
@@ -294,9 +372,15 @@ function healthCheck(cfg) {
 // 同样用 /api/version：只要端口上有进程在监听就返回响应，足以判断“端口被占用”。
 function isPortInUse(url) {
   return new Promise((resolve) => {
-    const req = http.get(url + "/api/version", (res) => { res.resume(); resolve(true); });
+    const req = http.get(url + "/api/version", (res) => {
+      res.resume();
+      resolve(true);
+    });
     req.on("error", () => resolve(false));
-    req.setTimeout(2000, () => { req.destroy(); resolve(false); });
+    req.setTimeout(2000, () => {
+      req.destroy();
+      resolve(false);
+    });
   });
 }
 
@@ -310,11 +394,16 @@ function probeChildPort(cfg) {
         try {
           const j = JSON.parse(d);
           resolve(j.bootToken === BOOT_TOKEN ? "ours" : "foreign");
-        } catch (e) { resolve("foreign"); }
+        } catch (e) {
+          resolve("foreign");
+        }
       });
     });
     req.on("error", () => resolve("empty"));
-    req.setTimeout(2000, () => { req.destroy(); resolve("empty"); });
+    req.setTimeout(2000, () => {
+      req.destroy();
+      resolve("empty");
+    });
   });
 }
 
@@ -323,21 +412,34 @@ function startChild(cfg) {
     log(`子进程脚本不存在，跳过 ${cfg.key}: ${cfg.script}`);
     return;
   }
+  cfg.stopRequested = false;
+  cfg.lastActive = Date.now();
   log(`启动子进程 ${cfg.key} -> ${cfg.script}`);
   // 数据目录 env：仅打包后注入。netdisk 读 NETDISK_DATA_DIR，kdocs 读 NETDISK_DATA_DIR(夸克 cookie) + KDOCS_DATA_DIR(browse IPC)，
   // biliup 读 BILIUP_DATA_DIR（cookies/数据，与投稿上传同目录）。
   // 开发模式不注入，子进程回退到各自的安装目录 data/，保持开发兼容。
-  const dataEnv = app.isPackaged ? {
-    NETDISK_DATA_DIR: path.join(app.getPath("userData"), "netdisk-hub", "data"),
-    KDOCS_DATA_DIR: path.join(app.getPath("userData"), "kdocs-tool", "data"),
-    BILIUP_DATA_DIR: path.join(app.getPath("userData"), "biliup-hub", "data"),
-  } : {};
+  const dataEnv = app.isPackaged
+    ? {
+        NETDISK_DATA_DIR: path.join(app.getPath("userData"), "netdisk-hub", "data"),
+        KDOCS_DATA_DIR: path.join(app.getPath("userData"), "kdocs-tool", "data"),
+        BILIUP_DATA_DIR: path.join(app.getPath("userData"), "biliup-hub", "data"),
+      }
+    : {};
   // #7 透传系统代理环境变量到 fork 子进程。
   //   背景：kdocs-tool 等子进程是独立 Node 进程，不读系统代理/Windows 证书库，
   //   若这里不显式继承 process.env 的代理变量，用户在系统/客户端配的 HTTP 代理对子进程无效，
   //   导致 Wikipedia / Wikidata / 百度百科 等被墙数据源依旧连不上。
   //   （kdocs-tool/lib/proxyHttp.js 会读取这些变量走 CONNECT 隧道。）
-  const PROXY_ENV_KEYS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"];
+  const PROXY_ENV_KEYS = [
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+  ];
   const proxyEnv = {};
   for (const k of PROXY_ENV_KEYS) {
     if (process.env[k]) proxyEnv[k] = process.env[k];
@@ -369,6 +471,12 @@ function startChild(cfg) {
     log(`子进程 ${cfg.key} 退出 code=${code} signal=${signal}`);
     pushStatus();
     if (quitting) return;
+    if (cfg.stopRequested) {
+      // 标签关闭停止（非崩溃）：重置重启计数，避免反复拉起的次数被耗尽
+      cfg.stopRequested = false;
+      cfg.attempts = 0;
+      return;
+    }
     // #5 D：端口占用友好提示（EADDRINUSE 探活）。仅异常退出时探活。
     if (code && code !== 0) {
       isPortInUse(cfg.url)
@@ -415,12 +523,17 @@ function stopAllChildren() {
       if (cfg.proc) {
         try {
           if (process.platform === "win32") {
-            try { spawnSync("taskkill", ["/F", "/PID", String(cfg.proc.pid)], { windowsHide: true }); }
-            catch (e) { /* ignore */ }
+            try {
+              spawnSync("taskkill", ["/F", "/PID", String(cfg.proc.pid)], { windowsHide: true });
+            } catch (e) {
+              /* ignore */
+            }
           } else {
             cfg.proc.kill("SIGKILL");
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          /* ignore */
+        }
         cfg.proc = null;
         cfg.running = false;
       }
@@ -444,7 +557,12 @@ function startWatchdog() {
       // 探活失败：进程可能已崩溃但未触发 exit（幽灵进程）→ 强制重启。
       log(`看门狗：检测到 ${cfg.key} 无响应，尝试重启`);
       cfg.running = false;
-      if (cfg.proc) { try { cfg.proc.kill("SIGKILL"); } catch (e) {} cfg.proc = null; }
+      if (cfg.proc) {
+        try {
+          cfg.proc.kill("SIGKILL");
+        } catch (e) {}
+        cfg.proc = null;
+      }
       if (cfg.attempts > MAX_RESTART) {
         log(`看门狗：${cfg.key} 重启次数超限，停止`);
         continue;
@@ -458,7 +576,9 @@ function startWatchdog() {
         continue;
       }
       if (state === "foreign") {
-        log(`⚠️ ${cfg.key} 端口被其它进程占用（bootToken 不匹配，疑似端口抢占/伪造）；未自动清理以免误杀`);
+        log(
+          `⚠️ ${cfg.key} 端口被其它进程占用（bootToken 不匹配，疑似端口抢占/伪造）；未自动清理以免误杀`,
+        );
         // 不重复拉起：端口被外来进程占用时，新实例必然 EADDRINUSE 反复失败，
         // 只会浪费重试次数并刷日志。保持 running=false，等下一轮看门狗再探。
         continue;
@@ -550,10 +670,10 @@ function setupAutoUpdater() {
   });
   autoUpdater.on("update-not-available", () => sendUpdate("not-available"));
   autoUpdater.on("download-progress", (p) =>
-    sendUpdate("progress", { percent: p.percent, bytesPerSecond: p.bytesPerSecond })
+    sendUpdate("progress", { percent: p.percent, bytesPerSecond: p.bytesPerSecond }),
   );
   autoUpdater.on("update-downloaded", (info) =>
-    sendUpdate("downloaded", { version: info.version })
+    sendUpdate("downloaded", { version: info.version }),
   );
   autoUpdater.on("error", (err) => sendUpdate("error", { message: err.message }));
 }
@@ -565,10 +685,14 @@ function setupAutoUpdater() {
 // 用 Electron net.fetch：认系统代理 + 系统证书库（比子进程代理感知层更通用）。失败/超时/版本非法一律静默。
 async function refreshDataPack() {
   try {
-    const url = "https://github.com/likuan250-hash/tools-hub/releases/latest/download/data-pack.json";
+    const url =
+      "https://github.com/likuan250-hash/tools-hub/releases/latest/download/data-pack.json";
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    const res = await net.fetch(url, { signal: controller.signal, headers: { "User-Agent": "ToolsHub" } });
+    const res = await net.fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "ToolsHub" },
+    });
     clearTimeout(timer);
     if (!res.ok) return;
     const txt = await res.text();
@@ -653,20 +777,52 @@ ipcMain.handle("get-theme", () => currentTheme);
 ipcMain.handle("set-theme", (_e, t) => {
   if (t === "light" || t === "dark" || t === "cosmic" || t === "comic") currentTheme = t;
 });
+// ── 资源优化：入口页打开/切换工具标签时，按需拉起对应子服务（空闲停止后可自动重启）──
+ipcMain.handle("tool-open", (_e, key) => {
+  const cfg = CHILDREN[key];
+  if (!cfg) return { ok: false };
+  cfg.lastActive = Date.now();
+  if (!cfg.running && !cfg.proc) {
+    cfg.attempts = 0;
+    startChild(cfg);
+  }
+  return { ok: true };
+});
+// 等待子服务就绪（冷启动约 1~3s），供入口页创建 webview 前等待，避免首载失败白屏
+ipcMain.handle("tool-ready", (_e, key, timeoutMs) => {
+  const cfg = CHILDREN[key];
+  if (!cfg) return false;
+  const deadline = Date.now() + (Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 8000);
+  return new Promise((resolve) => {
+    const poll = async () => {
+      const ok = await healthCheck(cfg).catch(() => false);
+      if (ok) return resolve(true);
+      if (Date.now() >= deadline) return resolve(false);
+      setTimeout(poll, 400);
+    };
+    poll();
+  });
+});
+// 关闭工具标签 → 立即停止对应子服务（再打开时 tool-open 自动拉起）
+ipcMain.handle("tool-close", (_e, key) => {
+  const cfg = CHILDREN[key];
+  if (!cfg) return { ok: false };
+  stopChild(cfg);
+  return { ok: true };
+});
 
 app.whenReady().then(async () => {
   // 去掉 Electron 默认菜单栏，避免顶部出现 File/Edit/View 等系统菜单，保持工具壳体风格统一
   Menu.setApplicationMenu(null);
   // 启动时清一次磁盘缓存：renderer 外链 css/js 升级后仍可能命中旧缓存（皮肤/进度条改动不生效的根因）
-  try { await session.defaultSession.clearCache(); } catch (e) { /* 清缓存失败不影响启动 */ }
+  try {
+    await session.defaultSession.clearCache();
+  } catch (e) {
+    /* 清缓存失败不影响启动 */
+  }
   createMainWindow();
-  startChild(CHILDREN.kdocs);
   relocateNetdiskData();
   cleanupStaleBackups();
-  startChild(CHILDREN.netdisk);
-  startChild(CHILDREN.biliup);
-  startChild(CHILDREN.material);
-  startChild(CHILDREN.resolve);
   setupAutoUpdater();
   // 数据包静默增量更新（后台 fire-and-forget，失败静默回退内置，不阻塞启动）
   refreshDataPack().catch(() => {});

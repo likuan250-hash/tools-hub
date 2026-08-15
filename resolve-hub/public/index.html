@@ -21,6 +21,7 @@ h1 { font-size: 20px; margin: 0 0 4px; }
 .sub { font-size: 12px; color: var(--dim); font-weight: normal; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 14px; }
 .card h3 { margin: 0 0 10px; font-size: 14px; }
+.exec-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin: 0 0 10px; opacity: .9; }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 label { font-size: 13px; color: var(--dim); }
 select { flex: 1; min-width: 260px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); font-size: 14px; }
@@ -107,9 +108,9 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
   </section>
 
   <section class="card exec-card" id="execCard">
-    <h3>执行进度</h3>
+    <div class="exec-title">执行进度</div>
     <div class="step-item info" id="execStep">
-      <span class="step-icon" id="execIcon">›</span>
+      <span class="step-icon" id="execIcon"><svg class="app-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></span>
       <div class="step-body">
         <div class="step-name" id="execStepName">准备中…</div>
         <div class="step-detail" id="execStepDetail"></div>

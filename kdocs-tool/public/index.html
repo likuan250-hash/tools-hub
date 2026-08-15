@@ -197,8 +197,9 @@
     .preview-grid .value { color: var(--text); word-break: break-all; }
     .preview-grid .tag { display: inline-block; padding: 1px 9px; background: rgba(var(--accent-rgb),0.18); color: var(--accent-3); border-radius: 6px; font-size: 12px; margin: 2px 3px; }
 
-    /* 执行进度面板：子区块统一 18px 间距 + 12px 圆角卡片语言（与步骤/日志视觉一致） */
-    .auto-result { display: none; }
+/* 执行进度面板：子区块统一 18px 间距 + 12px 圆角卡片语言（与步骤/日志视觉一致） */
+.exec-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 10px; opacity: .9; }
+.auto-result { display: none; }
     .auto-result.show { display: flex; flex-direction: column; gap: 18px; }
 
     /* ===== 执行步骤 · 统一垂直时间线（v2.1.12，对齐原型；JS DOM 契约不变） =====
@@ -915,7 +916,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   </div>
 
   <div class="panel auto-result" id="autoResult">
-    <div class="panel-head"><h2><i class="app-ico" data-ico="settings"></i> 执行进度</h2></div>
+    <div class="exec-title">执行进度</div>
     <div id="autoSteps"></div>
     <div class="result-summary" id="autoSummary"></div>
     <button class="btn ghost" id="kdocsViewBtn" style="display:none;"><i class="app-ico" data-ico="link"></i> 在金山文档查看</button>

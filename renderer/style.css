@@ -75,7 +75,7 @@ body {
 }
 .agg .dball.on { background: var(--ok, #4ade80); box-shadow: 0 0 7px rgba(74,222,128,.65); }
 /* 社群卡内部与全在线横幅仅漫画皮肤显示 */
-.agg .card-head, .agg .card-dot, .agg .card-pic, .agg .card-name, .agg .card-rank { display: none; }
+.agg .card-head, .agg .card-dot, .agg .card-pic, .agg .card-name { display: none; }
 .agg .aoa-banner { display: none !important; }
 
 /* 皮肤下拉（暗色 / 亮色 / 宇宙） */

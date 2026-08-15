@@ -656,8 +656,11 @@
     ["material", "素材搜集", 4],
     ["resolve", "达芬奇剪辑", 5],
   ];
+  const AGG_SHORT = ["金山", "网盘", "投稿", "素材", "剪辑"];
   const AGG_ICONS = ["✧", "◈", "✦", "◉", "◆"];
   let aggAoaPlayed = false;
+  let aggAllOnline = false;
+  let aggAoaTimer = null;
   function renderAggBalls(status) {
     if (!aggEl) return;
     aggEl.innerHTML = "";
@@ -678,14 +681,11 @@
         rank +
         "</b></span>" +
         '<span class="card-dot"></span>' +
-        '<span class="card-pic">' +
+        '<span class="card-pic"><span class="card-ico">' +
         AGG_ICONS[i] +
-        "</span>" +
+        "</span></span>" +
         '<span class="card-name">' +
-        name +
-        "</span>" +
-        '<span class="card-rank">' +
-        rank +
+        AGG_SHORT[i] +
         "</span>";
       b.addEventListener("click", () => openTab(key));
       aggEl.appendChild(b);
@@ -693,13 +693,25 @@
     }
     // 全在线（漫画皮肤）→ 播放 ALL-OUT ATTACK 特效（只播一次，回归后不再重播）
     const allOn = cards.length > 0 && cards.every(Boolean);
-    if (allOn && !aggAoaPlayed) {
-      aggAoaPlayed = true;
-      aggEl.classList.add("agg-aoa");
-      setTimeout(() => aggEl.classList.remove("agg-aoa"), 5200);
+    aggAllOnline = allOn;
+    if (allOn && !aggAoaPlayed && !aggAoaTimer) {
+      // 全部在线 2S 后播放（避开页面加载动画卡顿）
+      aggAoaTimer = setTimeout(tryPlayAggAoa, 2000);
     } else if (!allOn) {
+      if (aggAoaTimer) {
+        clearTimeout(aggAoaTimer);
+        aggAoaTimer = null;
+      }
       aggAoaPlayed = false;
     }
+  }
+  // 全亮 2S 后播放 ALL-OUT ATTACK 特效（只播一次，掉线后重新全亮可再播）
+  function tryPlayAggAoa() {
+    if (!aggAllOnline || aggAoaPlayed || !aggEl) return;
+    aggAoaTimer = null;
+    aggAoaPlayed = true;
+    aggEl.classList.add("agg-aoa");
+    setTimeout(() => aggEl.classList.remove("agg-aoa"), 5200);
   }
   function renderStatus(status) {
     serviceStatus = status || {};

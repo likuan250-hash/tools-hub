@@ -484,8 +484,8 @@ html[data-skin="comic"] .agg::before {
 }
 html[data-skin="comic"] .agg .dball {
   position: relative;
-  width: 56px;
-  height: 82px;
+  width: 46px;
+  height: 66px;
   background: linear-gradient(160deg, #f2f2f2 0 84%, #d9d9d9 84%), #eee;
   clip-path: polygon(0 0, 100% 0, 100% 86%, 86% 100%, 0 100%);
   color: #111;
@@ -497,7 +497,11 @@ html[data-skin="comic"] .agg .dball {
 }
 html[data-skin="comic"] .agg .dball.on {
   background: linear-gradient(160deg, #fff 0 84%, #f0f0f0 84%), #fff;
-  box-shadow: 0 0 0 2px #e60012, 0 0 14px rgba(230, 0, 18, .5), 0 3px 8px rgba(0, 0, 0, .45);
+  box-shadow:
+    0 0 0 2px #d9a400,
+    0 0 0 4px #e60012,
+    0 0 16px rgba(217, 164, 0, .65),
+    0 3px 8px rgba(0, 0, 0, .45);
 }
 html[data-skin="comic"] .agg .dball.off {
   filter: grayscale(1) brightness(.62);
@@ -505,23 +509,23 @@ html[data-skin="comic"] .agg .dball.off {
 }
 html[data-skin="comic"] .agg .card-head {
   display: block;
-  height: 20px;
-  line-height: 20px;
-  padding: 0 6px;
+  height: 17px;
+  line-height: 17px;
+  padding: 0 5px;
   background: #e60012;
   color: #fff;
   font-weight: 900;
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: .5px;
   font-family: "Arial Black", "Microsoft YaHei", sans-serif;
 }
-html[data-skin="comic"] .agg .card-head b { font-size: 11px; }
+html[data-skin="comic"] .agg .card-head b { font-size: 10px; }
 html[data-skin="comic"] .agg .card-dot {
   position: absolute;
-  left: 6px;
-  top: 24px;
-  width: 6px;
-  height: 6px;
+  left: 5px;
+  top: 21px;
+  width: 5px;
+  height: 5px;
   background: #e60012;
   transform: rotate(45deg);
 }
@@ -529,30 +533,38 @@ html[data-skin="comic"] .agg .dball.off .card-dot { background: #777; }
 html[data-skin="comic"] .agg .card-pic {
   display: grid;
   place-items: center;
-  height: 42px;
+  height: 30px;
   margin-top: 2px;
   background: linear-gradient(135deg, rgba(230, 0, 18, .85) 0 24%, transparent 24% 100%), #1a1a1c;
   color: #fff;
-  font-size: 21px;
+  font-size: 16px;
+}
+html[data-skin="comic"] .agg .dball.on .card-pic {
+  background: linear-gradient(135deg, rgba(230, 0, 18, .9) 0 24%, transparent 24% 100%), #241f16;
+}
+html[data-skin="comic"] .agg .dball.on .card-ico {
+  color: #ffd76a;
+  display: inline-block;
+  transform-origin: center;
+  line-height: 1;
+  animation: aoaGoldBreathe 2s ease-in-out infinite;
+}
+html[data-skin="comic"] .agg .dball.off .card-pic {
+  background: linear-gradient(135deg, rgba(120, 120, 120, .7) 0 24%, transparent 24% 100%), #1a1a1c;
 }
 html[data-skin="comic"] .agg .card-name {
   display: block;
-  padding: 4px 5px 0;
-  font-size: 9px;
+  padding: 4px 0 0;
+  font-size: 8px;
   font-weight: 900;
   line-height: 1.25;
   color: #111;
+  text-align: center;
 }
-html[data-skin="comic"] .agg .card-rank {
-  position: absolute;
-  right: 5px;
-  bottom: 5px;
-  font-size: 17px;
-  font-weight: 900;
-  font-family: "Arial Black", "Microsoft YaHei", sans-serif;
-  color: #e60012;
-  -webkit-text-stroke: 1px #111;
-  text-shadow: 1px 1px 0 #111;
+/* 在线：中心图标金色发光 + 呼吸 */
+@keyframes aoaGoldBreathe {
+  0%, 100% { text-shadow: 0 0 1px rgba(245, 180, 0, .4), 0 0 5px rgba(245, 180, 0, .25); }
+  50% { text-shadow: 0 0 12px rgba(245, 180, 0, 1), 0 0 26px rgba(245, 180, 0, .9); }
 }
 /* 全部在线：ALL-OUT ATTACK 特效（依次点亮 → 横幅+红闪 → 定格3S → 回归常规） */
 html[data-skin="comic"] .agg .aoa-banner {
@@ -610,20 +622,6 @@ html[data-skin="comic"] .agg.agg-aoa::before {
   32% { opacity: .5; }
   88% { opacity: 0; }
   100% { opacity: 0; }
-}
-html[data-skin="comic"] .agg.agg-aoa .card-rank {
-  animation: aoaRank .3s ease-out both;
-  transform-origin: center;
-}
-html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(1) .card-rank { animation-delay: .95s; }
-html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(2) .card-rank { animation-delay: 1.05s; }
-html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(3) .card-rank { animation-delay: 1.15s; }
-html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(4) .card-rank { animation-delay: 1.25s; }
-html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(5) .card-rank { animation-delay: 1.35s; }
-@keyframes aoaRank {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.55); }
-  100% { transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
   html[data-skin="comic"] .agg.agg-aoa .dball,

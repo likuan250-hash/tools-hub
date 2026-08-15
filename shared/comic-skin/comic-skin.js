@@ -33,7 +33,7 @@
     var cls = CLASSES[(Math.random() * CLASSES.length) | 0];
     el.classList.add(cls);
     if (cls === 'cp-b') { addSeg(el); driveB(el); }
-    if (cls === 'cp-c' && el.classList.contains('step-item')) addBubble(el);
+    if (cls === 'cp-c' && el.classList.contains('step-item')) { addBubble(el); driveBubble(el); }
   }
   // B 变体：注入分格能量槽（32 格），格子随星星扫过逐个点亮/熄灭
   function addSeg(el) {
@@ -73,7 +73,10 @@
       if (t0 === null) t0 = now;
       var p = ((now - t0) % (dur * 2)) / dur; // 0..2
       var f = p <= 1 ? p : 2 - p;              // 往返 0..1..0
-      var w = host.clientWidth || 200;
+      // 星星活动范围：步骤内用格子层宽度（对齐 220px 轨道），独立进度条用轨道全宽
+      var w = el.classList.contains('step-item')
+        ? (seg.clientWidth || 200)
+        : (host.clientWidth || 200);
       var sw = star.offsetWidth || 20;
       star.style.left = Math.max(0, f * (w - sw - 2)) + 'px';
       var lit = Math.round(f * N);
@@ -92,6 +95,27 @@
     bub.className = 'cp-bubble';
     bub.textContent = '加载中…';
     host.appendChild(bub);
+  }
+  // C 变体：步骤内气泡也用 JS 驱动，范围对齐 220px 轨道（CSS left 百分比相对 step-body 全宽会跑偏）
+  function driveBubble(el) {
+    if (el.dataset.cpC) return;
+    el.dataset.cpC = '1';
+    var host = el.querySelector('.step-body');
+    var bub = host && host.querySelector('.cp-bubble');
+    if (!bub) return;
+    bub.style.animation = 'none';
+    var dur = 1300;
+    var t0 = null;
+    function frame(now) {
+      if (t0 === null) t0 = now;
+      var p = ((now - t0) % (dur * 2)) / dur;
+      var f = p <= 1 ? p : 2 - p;
+      var w = Math.min(host.clientWidth || 200, 220);
+      var sw = bub.offsetWidth || 50;
+      bub.style.left = Math.max(0, f * (w - sw - 2)) + 'px';
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
   }
   function scan(root) {
     var els = (root || document).querySelectorAll(PROG);

@@ -505,6 +505,10 @@ html[data-skin="comic"] .bili-exec-bar {
   border-radius: 999px;
   overflow: hidden;
 }
+/* 独立大进度条（达芬奇总状态条 / B站独立条）不再需要：进度条只出现在执行进度每一步下面 */
+html[data-skin="comic"] .exec-bar,
+html[data-skin="comic"] .step-indeterminate,
+html[data-skin="comic"] .bili-exec-bar { display: none !important; }
 html[data-skin="comic"] .exec-bar::after,
 html[data-skin="comic"] .step-indeterminate::after,
 html[data-skin="comic"] .bili-exec-bar::after {
@@ -642,6 +646,25 @@ html[data-skin="comic"] .cp-c:not(.step-item)::before {
 @keyframes cpTip { from { left: 4%; } to { left: 92%; } }
 
 /* kdocs / netdisk 步骤内进度条：统一为大进度条形态（10px 粗条），随机三变体同大条 */
+/* 达芬奇 / B站步骤（.step-item.info）：执行中步骤底部内嵌进度条，与素材/金山/网盘一致 */
+html[data-skin="comic"] .step-item.info:not(#execStep) .step-body {
+  position: relative;
+  padding-bottom: 14px;
+}
+html[data-skin="comic"] .step-item.info:not(#execStep) .step-body::before {
+  content: "";
+  position: absolute; left: 0; bottom: 0;
+  width: 100%; max-width: 220px; height: 10px; border-radius: 999px;
+  background: #f3eefe; border: 2px solid #000;
+  overflow: hidden;
+}
+html[data-skin="comic"] .step-item.info:not(#execStep) .step-body::after {
+  content: "";
+  position: absolute; left: 0; bottom: 0;
+  width: 45%; max-width: 99px; height: 10px; border-radius: 999px;
+  background: repeating-linear-gradient(90deg, #a78bfa 0 10px, #fbbf24 10px 20px, #22d3ee 20px 30px);
+  animation: step-indeterminate 1.6s ease-in-out infinite alternate;
+}
 html[data-skin="comic"] .cp-a .step-body::before,
 html[data-skin="comic"] .cp-b .step-body::before,
 html[data-skin="comic"] .cp-c .step-body::before {

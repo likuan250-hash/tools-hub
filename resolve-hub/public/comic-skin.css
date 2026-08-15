@@ -591,30 +591,6 @@ html[data-skin="comic"] .cp-seg i {
 html[data-skin="comic"] .cp-seg i.lit {
   background-color: #fbbf24;
 }
-/* 步骤内进度条（kdocs/netdisk）：格子只占底部轨道区域，不覆盖步骤文字 */
-html[data-skin="comic"] .step-item .cp-seg {
-  position: absolute;
-  left: 0;
-  right: auto;
-  width: 100%;
-  max-width: 220px; /* 与步骤内轨道（step-body::before max-width:220px）对齐 */
-  bottom: 0;
-  height: 10px;
-  z-index: 1;
-  display: flex; gap: 1px; padding: 0;
-  pointer-events: none;
-}
-/* 步骤内进度条的星星：定位到底部轨道（不遮步骤文字） */
-html[data-skin="comic"] .step-item .cp-star {
-  top: auto;
-  bottom: -4px;
-  transform: none;
-  z-index: 2;
-}
-@keyframes cellLit {
-  0%, 60%, 100% { background-color: rgba(0, 0, 0, .08); }
-  10%, 50% { background-color: #fbbf24; }
-}
 /* C · 气泡进度：三色条纹条 + 前端「加载中…」气泡 */
 html[data-skin="comic"] .cp-c:not(.step-item) { overflow: visible !important; }
 html[data-skin="comic"] .cp-c:not(.step-item)::after {
@@ -645,40 +621,45 @@ html[data-skin="comic"] .cp-c:not(.step-item)::before {
 }
 @keyframes cpTip { from { left: 4%; } to { left: 92%; } }
 
-/* kdocs / netdisk 步骤内进度条：统一为大进度条形态（10px 粗条），随机三变体同大条 */
-/* 达芬奇 / B站步骤（.step-item.info）：执行中步骤底部内嵌进度条，与素材/金山/网盘一致 */
+/* ===== 步骤内进度条：真实轨道元素 .cp-track（comic-skin.js 注入），填充条为轨道子元素被裁剪，任意框宽都不变形不偏移 ===== */
+/* 非漫画皮肤：注入的轨道/格子/星星/气泡一律隐藏，不影响其他皮肤 */
+.cp-track, .cp-seg, .cp-star, .cp-bubble { display: none; }
+html[data-skin="comic"] .cp-track { display: block; }
+html[data-skin="comic"] .cp-seg { display: flex; }
+html[data-skin="comic"] .cp-star,
+html[data-skin="comic"] .cp-bubble { display: block; }
+/* 轨道本体：位于 step-body 底部，220px 大条，黑边米白底 */
+html[data-skin="comic"] .cp-track {
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 100%; max-width: 220px; height: 10px;
+  border: 2px solid #000; border-radius: 999px;
+  background: #f3eefe;
+  box-sizing: border-box;
+}
+/* 只给执行中的步骤显示轨道（完成/失败/等待一律隐藏） */
+html[data-skin="comic"] .step-item:not(.info):not(:has(.st-luxe--info)) .cp-track { display: none !important; }
+html[data-skin="comic"] .step-item:has(.st-luxe--info) .step-body,
 html[data-skin="comic"] .step-item.info:not(#execStep) .step-body {
   position: relative;
   padding-bottom: 14px;
+  overflow: visible;
 }
-html[data-skin="comic"] .step-item.info:not(#execStep) .step-body::before {
+/* 屏蔽各子页面 base 在 step-body 上的伪元素进度条，避免出现双轨 */
+html[data-skin="comic"] .step-item .step-body::before,
+html[data-skin="comic"] .step-item .step-body::after { content: none !important; }
+/* 三变体共用填充条（宽度相对轨道自身，不再是整个 step-body） */
+html[data-skin="comic"] .cp-a .cp-track::after,
+html[data-skin="comic"] .cp-b .cp-track::after,
+html[data-skin="comic"] .cp-c .cp-track::after {
   content: "";
-  position: absolute; left: 0; bottom: 0;
-  width: 100%; max-width: 220px; height: 10px; border-radius: 999px;
-  background: #f3eefe; border: 2px solid #000;
-  overflow: hidden;
+  position: absolute; top: 0; left: 0; bottom: 0;
+  width: 45%;
+  border-radius: 999px;
 }
-html[data-skin="comic"] .step-item.info:not(#execStep) .step-body::after {
-  content: "";
-  position: absolute; left: 0; bottom: 0;
-  width: 45%; max-width: 99px; height: 10px; border-radius: 999px;
-  background: repeating-linear-gradient(90deg, #a78bfa 0 10px, #fbbf24 10px 20px, #22d3ee 20px 30px);
-  animation: step-indeterminate 1.6s ease-in-out infinite alternate;
-}
-html[data-skin="comic"] .cp-a .step-body::before,
-html[data-skin="comic"] .cp-b .step-body::before,
-html[data-skin="comic"] .cp-c .step-body::before {
-  height: 10px;
-  overflow: hidden;
-}
-html[data-skin="comic"] .cp-a .step-body::after,
-html[data-skin="comic"] .cp-b .step-body::after,
-html[data-skin="comic"] .cp-c .step-body::after {
-  height: 10px;
-  max-width: none;
-}
-/* A · 锯齿能量条 */
-html[data-skin="comic"] .cp-a .step-body::after {
+/* A · 锯齿能量条（轨道内滑动，轨道 overflow hidden 裁剪） */
+html[data-skin="comic"] .cp-a .cp-track { overflow: hidden; }
+html[data-skin="comic"] .cp-a .cp-track::after {
   background:
     repeating-linear-gradient(105deg, rgba(255, 255, 255, .6) 0 8px, transparent 8px 16px),
     linear-gradient(90deg, #a78bfa, #f472b6, #fbbf24, #a78bfa) !important;
@@ -688,45 +669,41 @@ html[data-skin="comic"] .cp-a .step-body::after {
   clip-path: polygon(0 22%, 6% 8%, 12% 26%, 20% 4%, 30% 24%, 40% 6%, 52% 28%, 64% 8%,
                      76% 26%, 88% 6%, 100% 22%, 100% 78%, 88% 94%, 76% 74%, 64% 92%,
                      52% 72%, 40% 94%, 30% 76%, 20% 96%, 12% 74%, 6% 92%, 0 78%);
+  animation: thinSlide 1.3s ease-in-out infinite alternate;
 }
-/* B · 分格能量槽 + 星星 */
-html[data-skin="comic"] .cp-b .step-body::before {
-  background: #fff !important;
+@keyframes thinSlide { from { transform: translateX(-110%); } to { transform: translateX(122%); } }
+/* B · 分格能量槽 + 星星（JS 驱动；格子铺满轨道，星星在轨道内往返） */
+html[data-skin="comic"] .cp-b .cp-track { background: #fff; overflow: visible; }
+html[data-skin="comic"] .cp-track .cp-seg {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; gap: 1px; padding: 0;
+  pointer-events: none;
 }
-html[data-skin="comic"] .cp-b .step-body::after {
-  content: "★";
-  width: auto !important;
-  height: auto !important;
-  top: 50% !important;
-  bottom: auto !important;
-  left: 2%;
+html[data-skin="comic"] .cp-track .cp-star {
+  position: absolute;
+  top: 50%; left: 0;
   transform: translateY(-50%);
-  background: none !important;
-  box-shadow: none !important;
-  filter: none !important;
-  clip-path: none !important;
-  border-radius: 0 !important;
-  font-size: 19px;
-  line-height: 1;
+  font-size: 19px; line-height: 1;
   color: #fbbf24;
   -webkit-text-stroke: 1.5px #000;
   text-shadow: 2px 2px 0 #000;
-  animation: cpStar 1.4s ease-in-out infinite alternate;
+  z-index: 2;
+  pointer-events: none;
 }
-/* C · 条纹伸缩（步骤内伪元素结构放不下气泡，退化为条纹伸缩） */
-html[data-skin="comic"] .cp-c .step-body::after {
+/* C · 气泡进度：三色条纹伸缩 + 「加载中…」气泡（JS 驱动气泡在轨道内往返） */
+html[data-skin="comic"] .cp-c .cp-track { overflow: visible; }
+html[data-skin="comic"] .cp-c .cp-track::after {
   background: repeating-linear-gradient(90deg, #a78bfa 0 12px, #f472b6 12px 24px, #fbbf24 24px 36px) !important;
   box-shadow: none !important;
   clip-path: none !important;
   filter: none !important;
-  animation: cpWidth 1.3s ease-in-out infinite alternate;
+  animation: thinW 1.3s ease-in-out infinite alternate;
 }
-/* 步骤内 C 气泡（comic-skin.js 注入 .cp-bubble），与独立进度条一致 */
-html[data-skin="comic"] .step-item .cp-bubble {
+@keyframes thinW { from { width: 14%; } to { width: 96%; } }
+html[data-skin="comic"] .cp-track .cp-bubble {
   position: absolute;
-  bottom: -4px;
-  left: 4%;
-  transform: translateY(50%);
+  top: 50%; left: 4%;
+  transform: translateY(-50%);
   font-size: 11px;
   font-weight: 900;
   color: #fff;
@@ -738,7 +715,6 @@ html[data-skin="comic"] .step-item .cp-bubble {
   white-space: nowrap;
   z-index: 2;
   pointer-events: none;
-  animation: cpTip 1.3s ease-in-out infinite alternate;
 }
 html[data-skin="comic"] .step-item {
   border: 3px solid #000 !important;

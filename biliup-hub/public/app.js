@@ -12,19 +12,19 @@
     if (!btn) return;
     if (on) {
       if (btn.dataset.label === undefined) {
-        var l = btn.querySelector('.bx-label');
+        var l = btn.querySelector(".bx-label");
         btn.dataset.label = l ? l.textContent : btn.textContent;
       }
-      btn.classList.add('is-loading');
+      btn.classList.add("is-loading");
       btn.disabled = true;
-      btn.setAttribute('aria-busy', 'true');
-      var lbl = btn.querySelector('.bx-label');
-      if (lbl) lbl.textContent = '执行中…';
+      btn.setAttribute("aria-busy", "true");
+      var lbl = btn.querySelector(".bx-label");
+      if (lbl) lbl.textContent = "执行中…";
     } else {
-      btn.classList.remove('is-loading');
+      btn.classList.remove("is-loading");
       btn.disabled = false;
-      btn.removeAttribute('aria-busy');
-      var lbl2 = btn.querySelector('.bx-label');
+      btn.removeAttribute("aria-busy");
+      var lbl2 = btn.querySelector(".bx-label");
       if (lbl2 && btn.dataset.label !== undefined) lbl2.textContent = btn.dataset.label;
     }
   }
@@ -36,30 +36,106 @@
     // 停用词：中文虚词/泛化词/格式后缀 + 游戏分享场景常见"版本描述词"（纯版本描述、非内容关键词，防进 B 站标签）。
     // 版本/冗余描述词（全DLC/DLC/官方/Gameplay 等）一并过滤：作为 B 站标签既无检索价值也显得潦草（需求②/C）。
     const STOP_WORDS = new Set([
-      '的', '了', '是', '在', '和', '与', '及', '也', '都', '就', '而', '吗', '呢', '啊',
-      '吧', '哦', '啦', '嘛', '我们', '你们', '他们', '我', '你', '他', '她', '它', '这',
-      '那', '这个', '那个', '视频', '投稿', '高清', '完整', '版', 'hd', 'video', 'mp4',
-      'mkv', 'avi', 'flv', 'mov', 'webm', 'bilibili', 'b站', 'the', 'a', 'an', 'of', 'to',
-      'and', 'or', 'on', 'in', 'at', 'by', 'with', 'my', 'your', 'for', '1080p', '720p',
-      'game', 'play', 'part', 'ep', 'episode',
-      'gameplay', '全dlc', 'dlc', '官方',
+      "的",
+      "了",
+      "是",
+      "在",
+      "和",
+      "与",
+      "及",
+      "也",
+      "都",
+      "就",
+      "而",
+      "吗",
+      "呢",
+      "啊",
+      "吧",
+      "哦",
+      "啦",
+      "嘛",
+      "我们",
+      "你们",
+      "他们",
+      "我",
+      "你",
+      "他",
+      "她",
+      "它",
+      "这",
+      "那",
+      "这个",
+      "那个",
+      "视频",
+      "投稿",
+      "高清",
+      "完整",
+      "版",
+      "hd",
+      "video",
+      "mp4",
+      "mkv",
+      "avi",
+      "flv",
+      "mov",
+      "webm",
+      "bilibili",
+      "b站",
+      "the",
+      "a",
+      "an",
+      "of",
+      "to",
+      "and",
+      "or",
+      "on",
+      "in",
+      "at",
+      "by",
+      "with",
+      "my",
+      "your",
+      "for",
+      "1080p",
+      "720p",
+      "game",
+      "play",
+      "part",
+      "ep",
+      "episode",
+      "gameplay",
+      "全dlc",
+      "dlc",
+      "官方",
       // 游戏分享场景常见"版本描述词"（纯版本描述，非内容关键词）
-      '学习版', '免费学习版', '免费学习版下载', '学习版下载', '破解版', '官方中文',
-      '硬盘版', '免安装', '免安装硬盘版', '中文版', '官方中文版', '完整版', '绿色版',
-      '安装版', '便携版',
+      "学习版",
+      "免费学习版",
+      "免费学习版下载",
+      "学习版下载",
+      "破解版",
+      "官方中文",
+      "硬盘版",
+      "免安装",
+      "免安装硬盘版",
+      "中文版",
+      "官方中文版",
+      "完整版",
+      "绿色版",
+      "安装版",
+      "便携版",
     ]);
     // 绝对敏感词：token 只要包含即整体丢弃（B 站审核会因 学习版/破解版/盗版 拒稿）。
-    const ABS_SENSITIVE = ['学习版', '破解版', '盗版'];
-    const text = (title && String(title).trim()) ? String(title) : (fileName || '');
+    const ABS_SENSITIVE = ["学习版", "破解版", "盗版"];
+    const text = title && String(title).trim() ? String(title) : fileName || "";
     const cleaned = String(text)
-      .replace(/\.[a-z0-9]+$/i, '') // 去扩展名
-      .replace(/^【[^】]*】/, ''); // 剥离开头序号/索引前缀（素材库常见 【游戏268】、【268】 等）
+      .replace(/\.[a-z0-9]+$/i, "") // 去扩展名
+      .replace(/^【[^】]*】/, ""); // 剥离开头序号/索引前缀（素材库常见 【游戏268】、【268】 等）
     const seps = /[\s\-_·。，、,.\|/\\+【】（）《》：「」；！？…\x22\x27]+/; // 空格/-/_/·/。/中文标点 + 全角/中文符号与引号
     const rawParts = cleaned.split(seps);
     const seen = new Set();
     const out = [];
     function pushToken(t) {
-      t = (t || '').trim();
+      t = (t || "").trim();
       if (!t) return;
       if (t.length <= 1) return; // 过短词（含单字）过滤
       if (t.length > 12) return; // 超长 token 过滤（防序号/描述粘连残留）
@@ -74,10 +150,12 @@
     }
     for (const p of rawParts) pushToken(p);
     // 叠加默认标签（逗号分隔），与已提取词去重合并
-    const defaults = String(defaultTags || '')
-      .split(/[，,]/).map((s) => s.trim()).filter(Boolean);
+    const defaults = String(defaultTags || "")
+      .split(/[，,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     for (const d of defaults) pushToken(d);
-    return out.slice(0, 10).join(','); // 限长 ≤10
+    return out.slice(0, 10).join(","); // 限长 ≤10
   }
 
   // 推荐标签与默认标签合并去重（限长 ≤10，与 genTags 一致）。
@@ -96,7 +174,9 @@
     };
     for (const s of Array.isArray(suggested) ? suggested : []) add(s);
     const defaults = String(defaultTags || "")
-      .split(/[，,]/).map((s) => s.trim()).filter(Boolean);
+      .split(/[，,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     for (const d of defaults) add(d);
     return out.slice(0, 10).join(",");
   }
@@ -111,15 +191,21 @@
     if (tagsEl.value.trim()) return; // 已有内容不覆盖
     const fileName = (selectedVideo || "").split(/[\\/]/).pop();
     const title = $("titleInput") ? $("titleInput").value : "";
-    const kw = (title && title.trim()) ? title.trim() : fileName;
+    const kw = title && title.trim() ? title.trim() : fileName;
     if (!kw) return; // 无标题也无文件名，跳过（避免无意义请求）
-    const dt = (window.__defaultTags && typeof window.__defaultTags.trim === "function" && window.__defaultTags.trim())
-      ? window.__defaultTags : "";
+    const dt =
+      window.__defaultTags &&
+      typeof window.__defaultTags.trim === "function" &&
+      window.__defaultTags.trim()
+        ? window.__defaultTags
+        : "";
     try {
       const resp = await fetch("/api/tags/suggest?keyword=" + encodeURIComponent(kw));
       if (resp.ok) {
         const j = await resp.json().catch(() => ({ tags: [] }));
-        const suggested = Array.isArray(j && j.tags) ? j.tags.filter((t) => typeof t === "string" && t.trim()) : [];
+        const suggested = Array.isArray(j && j.tags)
+          ? j.tags.filter((t) => typeof t === "string" && t.trim())
+          : [];
         if (suggested.length) {
           const merged = mergeTags(suggested, dt);
           if (merged) tagsEl.value = merged;
@@ -163,47 +249,7 @@
 
   // ── 日志（#4：默认隐藏，点击投稿才展示）──
   function logLine(msg, cls) {
-const box = $("logBox");
-const execStepsEl = $("execSteps");
-/** 投稿阶段 → 分步骤展示（对齐达芬奇/素材收集）。 */
-const STAGE_NAMES = {
-  pending: "准备投稿（验证登录态）",
-  extracting_cover: "抽封面帧",
-  uploading: "上传视频",
-  adding_season: "合集后置",
-  commenting: "评论置顶",
-};
-const stepEls = {};
-function stepForStage(stage) {
-  if (!stage) return null;
-  if (stepEls[stage]) return stepEls[stage];
-  const item = document.createElement("div");
-  item.className = "step-item info";
-  item.innerHTML =
-    '<span class="step-icon">›</span>' +
-    '<div class="step-body"><div class="step-name">' + (STAGE_NAMES[stage] || stage) +
-    '</div><div class="step-detail"></div></div>';
-  execStepsEl.appendChild(item);
-  stepEls[stage] = item;
-  // 之前的阶段自动标记为完成
-  Object.keys(stepEls).forEach((k) => {
-    if (k !== stage && stepEls[k].classList.contains("info")) {
-      stepEls[k].classList.remove("info");
-      stepEls[k].classList.add("ok");
-    }
-  });
-  return item;
-}
-function setStepDetail(stage, msg) {
-  const el = stepEls[stage];
-  if (el) el.querySelector(".step-detail").textContent = String(msg || "").slice(0, 90);
-}
-function markAllSteps(cls) {
-  Object.keys(stepEls).forEach((k) => {
-    stepEls[k].classList.remove("info");
-    stepEls[k].classList.add(cls);
-  });
-}
+    const box = $("logBox");
     const empty = $("logEmpty");
     if (empty) empty.style.display = "none"; // 首行日志后隐藏空状态提示
     const div = document.createElement("div");
@@ -211,6 +257,48 @@ function markAllSteps(cls) {
     div.textContent = "> " + msg;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
+  }
+
+  // ── 投稿阶段 → 分步骤展示（对齐达芬奇/素材收集）──
+  const execStepsEl = $("execSteps");
+  const STAGE_NAMES = {
+    pending: "准备投稿（验证登录态）",
+    extracting_cover: "抽封面帧",
+    uploading: "上传视频",
+    adding_season: "合集后置",
+    commenting: "评论置顶",
+  };
+  const stepEls = {};
+  function stepForStage(stage) {
+    if (!stage) return null;
+    if (stepEls[stage]) return stepEls[stage];
+    const item = document.createElement("div");
+    item.className = "step-item info";
+    item.innerHTML =
+      '<span class="step-icon">›</span>' +
+      '<div class="step-body"><div class="step-name">' +
+      (STAGE_NAMES[stage] || stage) +
+      '</div><div class="step-detail"></div></div>';
+    execStepsEl.appendChild(item);
+    stepEls[stage] = item;
+    // 之前的阶段自动标记为完成
+    Object.keys(stepEls).forEach((k) => {
+      if (k !== stage && stepEls[k].classList.contains("info")) {
+        stepEls[k].classList.remove("info");
+        stepEls[k].classList.add("ok");
+      }
+    });
+    return item;
+  }
+  function setStepDetail(stage, msg) {
+    const el = stepEls[stage];
+    if (el) el.querySelector(".step-detail").textContent = String(msg || "").slice(0, 90);
+  }
+  function markAllSteps(cls) {
+    Object.keys(stepEls).forEach((k) => {
+      stepEls[k].classList.remove("info");
+      stepEls[k].classList.add(cls);
+    });
   }
 
   // ── 轻量 Toast（A2：明暗自动适配，3s 自动消失，复用 pop-in 入场；图标用 ico() 内联 SVG）──
@@ -229,14 +317,21 @@ function markAllSteps(cls) {
     el.className = "toast pop-in";
     el.setAttribute("role", "status");
     el.innerHTML = '<span class="toast-ico"></span><span class="toast-msg"></span>';
-    el.querySelector(".toast-ico").innerHTML = hasInlineIcon ? "" : (isErr ? ico("cross") : ico("check"));
+    el.querySelector(".toast-ico").innerHTML = hasInlineIcon
+      ? ""
+      : isErr
+        ? ico("cross")
+        : ico("check");
     const msgEl = el.querySelector(".toast-msg");
-    if (hasInlineIcon) msgEl.innerHTML = msg; else msgEl.textContent = msg;
+    if (hasInlineIcon) msgEl.innerHTML = msg;
+    else msgEl.textContent = msg;
     host.appendChild(el);
     // 3s 后淡出移除；reduced-motion 下过渡被全局降级为瞬隐，不影响功能。
     setTimeout(() => {
       el.classList.add("toast-out");
-      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+      setTimeout(() => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 220);
     }, 3000);
   }
 
@@ -265,16 +360,33 @@ function markAllSteps(cls) {
   const HISTORY_KEY_BILIUP = "toolshub:history:biliup";
   const HISTORY_MAX_BILIUP = 50;
   function loadHistoryBiliup(key) {
-    try { return JSON.parse(localStorage.getItem(key) || "[]") || []; } catch { return []; }
+    try {
+      return JSON.parse(localStorage.getItem(key) || "[]") || [];
+    } catch {
+      return [];
+    }
   }
   function pushHistory(key, ok, title, status, bvid) {
     const list = loadHistoryBiliup(key);
-    list.unshift({ ts: Date.now(), ok: !!ok, title: title || "（未命名）", status: status || "", bvid: bvid || "" });
+    list.unshift({
+      ts: Date.now(),
+      ok: !!ok,
+      title: title || "（未命名）",
+      status: status || "",
+      bvid: bvid || "",
+    });
     if (list.length > HISTORY_MAX_BILIUP) list.length = HISTORY_MAX_BILIUP;
-    try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* 隐私模式可能抛错，忽略 */ }
+    try {
+      localStorage.setItem(key, JSON.stringify(list));
+    } catch {
+      /* 隐私模式可能抛错，忽略 */
+    }
   }
   function escapeHtmlBiliup(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    return String(s).replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+    );
   }
 
   let selectedVideo = "";
@@ -283,12 +395,18 @@ function markAllSteps(cls) {
   // ── 选视频（#1：文件名只显示在按钮后；标题自动取文件名去扩展名）──
   $("pickBtn").addEventListener("click", async () => {
     try {
-      if (!api || !api.pickFile) { logLine("当前环境不支持选择文件（需工具箱内运行）", "err"); return; }
+      if (!api || !api.pickFile) {
+        logLine("当前环境不支持选择文件（需工具箱内运行）", "err");
+        return;
+      }
       const r = await api.pickFile();
       if (r && r.filePath) {
         selectedVideo = r.filePath;
         $("videoName").textContent = selectedVideo;
-        const base = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
+        const base = selectedVideo
+          .split(/[\\/]/)
+          .pop()
+          .replace(/\.[^.]+$/, "");
         $("titleInput").value = base; // 不再重复显示一行文件名
         updateTitleCount(); // 同步标题字节计数（B站 APP 接口按 UTF-8 字节限长）
         $("submitHint").textContent = "已选择视频，点击投稿";
@@ -314,7 +432,10 @@ function markAllSteps(cls) {
       $("titleInput").value = "";
       updateTitleCount();
       const ti = $("tagsInput");
-      if (ti) { ti.value = ""; ti.dataset.userEdited = ""; } // 重置标签（含手动编辑标记）
+      if (ti) {
+        ti.value = "";
+        ti.dataset.userEdited = "";
+      } // 重置标签（含手动编辑标记）
       $("submitHint").textContent = "选择视频后点击投稿（发布前会二次确认模式）";
     });
   }
@@ -322,12 +443,17 @@ function markAllSteps(cls) {
   // ── 标签输入：用户手动编辑后标记，避免自动生成覆盖（#②）──
   const tagsInputEl = $("tagsInput");
   if (tagsInputEl) {
-    tagsInputEl.addEventListener("input", () => { tagsInputEl.dataset.userEdited = "1"; });
+    tagsInputEl.addEventListener("input", () => {
+      tagsInputEl.dataset.userEdited = "1";
+    });
   }
   // 标题变化也可能改变自动标签（用户未手动填标签时）
   const titleInputEl = $("titleInput");
   if (titleInputEl) {
-    titleInputEl.addEventListener("input", () => { maybeAutoTag(); updateTitleCount(); });
+    titleInputEl.addEventListener("input", () => {
+      maybeAutoTag();
+      updateTitleCount();
+    });
   }
 
   // 标题/文件名计数：B站投稿接口按「字符数」校验（上限 80 字），且单P标题取文件名。
@@ -345,8 +471,12 @@ function markAllSteps(cls) {
         fc.textContent = "未选视频";
         fc.classList.remove("over");
       } else {
-        const base = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
-        fc.textContent = "文件名 " + base.length + "/80 字" + (base.length > 80 ? "（超限，请重命名文件）" : "");
+        const base = selectedVideo
+          .split(/[\\/]/)
+          .pop()
+          .replace(/\.[^.]+$/, "");
+        fc.textContent =
+          "文件名 " + base.length + "/80 字" + (base.length > 80 ? "（超限，请重命名文件）" : "");
         fc.classList.toggle("over", base.length > 80);
       }
     }
@@ -357,8 +487,17 @@ function markAllSteps(cls) {
     // 当前本地时间 + 1 小时，格式 YYYY-MM-DDTHH:mm（本地时区）。
     const d = new Date(Date.now() + 60 * 60 * 1000);
     const pad = (n) => String(n).padStart(2, "0");
-    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
-      + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    return (
+      d.getFullYear() +
+      "-" +
+      pad(d.getMonth() + 1) +
+      "-" +
+      pad(d.getDate()) +
+      "T" +
+      pad(d.getHours()) +
+      ":" +
+      pad(d.getMinutes())
+    );
   }
   document.querySelectorAll('input[name="mode"]').forEach((r) => {
     r.addEventListener("change", () => {
@@ -411,13 +550,13 @@ function markAllSteps(cls) {
   function fillSections(seasonId, prevSection) {
     const selSection = $("cfgSection");
     if (!selSection) return null;
-    const prev = (prevSection != null) ? String(prevSection) : selSection.value;
+    const prev = prevSection != null ? String(prevSection) : selSection.value;
     selSection.length = 1; // 仅保留默认空项「不指定分集」
     const secs = seasonSections[seasonId] || [];
     for (const sec of secs) {
       const opt = document.createElement("option");
       opt.value = String(sec.id);
-      opt.textContent = (sec.title != null && sec.title !== "") ? sec.title : sec.id;
+      opt.textContent = sec.title != null && sec.title !== "" ? sec.title : sec.id;
       selSection.appendChild(opt);
     }
     // 1) 用户/历史已有明确分集选择 → 优先保留（前提是该分集仍属于当前合集）。
@@ -461,7 +600,7 @@ function markAllSteps(cls) {
     return fetch("/api/seasons")
       .then((r) => r.json())
       .then((j) => {
-        const seasons = (j && Array.isArray(j.seasons)) ? j.seasons : [];
+        const seasons = j && Array.isArray(j.seasons) ? j.seasons : [];
         selSeason.length = 1; // 仅保留默认空项「不使用合集」
         selSection.length = 1;
         seasonSections = Object.create(null);
@@ -469,7 +608,7 @@ function markAllSteps(cls) {
         for (const s of seasons) {
           const opt = document.createElement("option");
           opt.value = String(s.id);
-          opt.textContent = (s.title != null && s.title !== "") ? s.title : s.id;
+          opt.textContent = s.title != null && s.title !== "" ? s.title : s.id;
           selSeason.appendChild(opt);
           seasonSections[s.id] = Array.isArray(s.sections) ? s.sections : [];
           if (s.no_section) seasonNoSection[s.id] = true;
@@ -489,7 +628,7 @@ function markAllSteps(cls) {
   const cfgSeasonEl = $("cfgSeason");
   if (cfgSeasonEl) {
     // 切换合集时清空旧分集并重新级联；单分集合集会自动对齐到分集（#问题1 修复）。
-    cfgSeasonEl.addEventListener("change", () => fillSections(cfgSeasonEl.value, ''));
+    cfgSeasonEl.addEventListener("change", () => fillSections(cfgSeasonEl.value, ""));
   }
 
   // ── 保存配置（#3：不再包含 AIGC 字段）──
@@ -526,19 +665,21 @@ function markAllSteps(cls) {
       }
     } catch (e) {
       logLine("保存配置失败: " + e.message, "err");
-      toast(ico('cross') + ' 保存失败', 'err');
+      toast(ico("cross") + " 保存失败", "err");
     }
   });
 
   // ── 账号区（#7：头像+昵称 / 登录按钮）──
   // 默认头像（内联 SVG：灰色圆底 + 小人剪影），代理失败时兜底，确保不裂图。
-  const DEFAULT_AVATAR_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-    '<rect width="32" height="32" rx="16" fill="#c8cff0"/>' +
-    '<circle cx="16" cy="12" r="6" fill="#6b7299"/>' +
-    '<path d="M5 28c0-6 5-9 11-9s11 3 11 9z" fill="#6b7299"/>' +
-    '</svg>'
-  );
+  const DEFAULT_AVATAR_SVG =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+        '<rect width="32" height="32" rx="16" fill="#c8cff0"/>' +
+        '<circle cx="16" cy="12" r="6" fill="#6b7299"/>' +
+        '<path d="M5 28c0-6 5-9 11-9s11 3 11 9z" fill="#6b7299"/>' +
+        "</svg>",
+    );
   function renderAccount(info) {
     const box = $("accountArea");
     if (!box) return;
@@ -552,19 +693,28 @@ function markAllSteps(cls) {
       img.id = "avatar";
       const face = (info.face || "").trim();
       // #A：经 /api/avatar 代理绕过防盗链；face 为空则直接用默认头像。
-      img.referrerPolicy = 'no-referrer';
-      img.src = face ? ('/api/avatar?face=' + encodeURIComponent(face)) : DEFAULT_AVATAR_SVG;
+      img.referrerPolicy = "no-referrer";
+      img.src = face ? "/api/avatar?face=" + encodeURIComponent(face) : DEFAULT_AVATAR_SVG;
       img.alt = info.uname || "用户";
       img.title = (info.uname || "") + "（点击打开菜单）";
-      img.onerror = () => { img.onerror = null; img.src = DEFAULT_AVATAR_SVG; };
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = DEFAULT_AVATAR_SVG;
+      };
       // #③ 头像点击 → 弹出二级菜单（个人中心 / 退出登录），不再平铺退出按钮。
-      img.addEventListener("click", (e) => { e.stopPropagation(); toggleAccountMenu(info, img); });
+      img.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleAccountMenu(info, img);
+      });
       const name = document.createElement("span");
       name.className = "nick-name";
       name.id = "nickName";
       name.textContent = info.uname || "用户";
       name.title = "点击打开菜单";
-      name.addEventListener("click", (e) => { e.stopPropagation(); toggleAccountMenu(info, name); });
+      name.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleAccountMenu(info, name);
+      });
       line.appendChild(img);
       line.appendChild(name);
       box.appendChild(line);
@@ -575,14 +725,23 @@ function markAllSteps(cls) {
         let cls = "ttl-ok";
         let text = "登录态正常";
         if (ttl.days != null) {
-          if (ttl.days <= 0) { cls = "ttl-dead"; text = "登录态即将失效，请重新扫码"; }
-          else if (ttl.status === "warn") { cls = "ttl-warn"; text = "登录态剩余 " + ttl.days + " 天，请提前重新扫码"; }
-          else { text = "登录态剩余 " + ttl.days + " 天"; }
+          if (ttl.days <= 0) {
+            cls = "ttl-dead";
+            text = "登录态即将失效，请重新扫码";
+          } else if (ttl.status === "warn") {
+            cls = "ttl-warn";
+            text = "登录态剩余 " + ttl.days + " 天，请提前重新扫码";
+          } else {
+            text = "登录态剩余 " + ttl.days + " 天";
+          }
         }
         badge.className = "login-ttl " + cls;
         badge.innerHTML = '<span class="dot"></span>' + text;
         badge.title = "点击重新扫码登录";
-        badge.addEventListener("click", (e) => { e.stopPropagation(); openLogin(); });
+        badge.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openLogin();
+        });
         box.appendChild(badge);
       }
       buildAccountMenu(info); // 构建二级菜单（个人中心 / 退出登录）
@@ -599,8 +758,10 @@ function markAllSteps(cls) {
   // ── 账号二级菜单（#③：头像/昵称点击弹出「个人中心 / 退出登录」）──
   // 个人中心：复用 openSpace(mid) → 优先 shell.openExternal，回退 window.open。
   // 退出登录：复用 doLogout（原平铺按钮改由菜单项触发）。点击外部/失焦关闭。
-  const ACCT_MENU_ICON_USER = '<svg class="app-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
-  const ACCT_MENU_ICON_LOGOUT = '<svg class="app-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>';
+  const ACCT_MENU_ICON_USER =
+    '<svg class="app-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  const ACCT_MENU_ICON_LOGOUT =
+    '<svg class="app-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>';
 
   let accountMenuEl = null;
   function ensureAccountMenu() {
@@ -622,22 +783,33 @@ function markAllSteps(cls) {
     itemProfile.className = "acct-menu-item";
     itemProfile.setAttribute("role", "menuitem");
     itemProfile.innerHTML = ACCT_MENU_ICON_USER + "<span>个人中心</span>";
-    itemProfile.addEventListener("click", () => { closeAccountMenu(); openSpace(info.mid); });
+    itemProfile.addEventListener("click", () => {
+      closeAccountMenu();
+      openSpace(info.mid);
+    });
     const itemLogout = document.createElement("button");
     itemLogout.type = "button";
     itemLogout.className = "acct-menu-item acct-menu-item--danger";
     itemLogout.setAttribute("role", "menuitem");
     itemLogout.innerHTML = ACCT_MENU_ICON_LOGOUT + "<span>退出登录</span>";
-    itemLogout.addEventListener("click", () => { closeAccountMenu(); doLogout(); });
+    itemLogout.addEventListener("click", () => {
+      closeAccountMenu();
+      doLogout();
+    });
     menu.appendChild(itemProfile);
     menu.appendChild(itemLogout);
   }
   function toggleAccountMenu(info, anchor) {
     const menu = ensureAccountMenu();
-    if (menu.style.display === "block") { closeAccountMenu(); return; }
-    const r = (anchor && typeof anchor.getBoundingClientRect === "function")
-      ? anchor.getBoundingClientRect() : { bottom: 0, right: 0 };
-    menu.style.top = (r.bottom + 6) + "px";
+    if (menu.style.display === "block") {
+      closeAccountMenu();
+      return;
+    }
+    const r =
+      anchor && typeof anchor.getBoundingClientRect === "function"
+        ? anchor.getBoundingClientRect()
+        : { bottom: 0, right: 0 };
+    menu.style.top = r.bottom + 6 + "px";
     menu.style.left = Math.max(8, r.right - menu.offsetWidth) + "px";
     menu.style.display = "block";
     menu._mid = info.mid;
@@ -652,8 +824,10 @@ function markAllSteps(cls) {
     const menu = accountMenuEl;
     if (!menu) return;
     if (menu.contains(e.target)) return; // 点击菜单项由各自 handler 处理
-    const area = (typeof document !== "undefined" && typeof document.getElementById === "function")
-      ? document.getElementById("accountArea") : null;
+    const area =
+      typeof document !== "undefined" && typeof document.getElementById === "function"
+        ? document.getElementById("accountArea")
+        : null;
     if (area && area.contains(e.target)) return; // 点击头像/昵称交给 toggle 处理
     closeAccountMenu();
   }
@@ -751,51 +925,85 @@ function markAllSteps(cls) {
     }
   }
   function stopLogin() {
-    if (loginTimer) { clearInterval(loginTimer); loginTimer = null; }
+    if (loginTimer) {
+      clearInterval(loginTimer);
+      loginTimer = null;
+    }
     loginKey = null;
     closeModal(); // P09：统一弹窗机制，隐藏即回到下层原页
   }
   $("loginClose").addEventListener("click", stopLogin);
   $("loginCancel").addEventListener("click", stopLogin);
-  $("loginMask").addEventListener("click", (e) => { if (e.target === $("loginMask")) stopLogin(); });
+  $("loginMask").addEventListener("click", (e) => {
+    if (e.target === $("loginMask")) stopLogin();
+  });
 
   // ── 二次确认 ──
   function openConfirm() {
     const mode = document.querySelector('input[name="mode"]:checked').value;
-    let text = "将投稿到 B站（UID 236743002）：\n• 视频：" + (selectedVideo || "(未选择)") + "\n• 模式：";
+    let text =
+      "将投稿到 B站（UID 236743002）：\n• 视频：" + (selectedVideo || "(未选择)") + "\n• 模式：";
     text += mode === "dtime" ? "定时发布 " + ($("dtimeInput").value || "") : "立即发布";
     $("confirmText").textContent = text;
     openModal($("confirmMask")); // P09：统一弹窗机制
   }
-  function closeConfirm() { closeModal(); }
+  function closeConfirm() {
+    closeModal();
+  }
   $("confirmCancel").addEventListener("click", closeConfirm);
-  $("confirmMask").addEventListener("click", (e) => { if (e.target === $("confirmMask")) closeConfirm(); });
+  $("confirmMask").addEventListener("click", (e) => {
+    if (e.target === $("confirmMask")) closeConfirm();
+  });
 
   // ── 投稿（SSE）──
   async function submit() {
     if (running) return;
-    if (!selectedVideo) { logLine("请先选择视频文件", "err"); toast("请先选择视频文件", "err"); return; }
+    if (!selectedVideo) {
+      logLine("请先选择视频文件", "err");
+      toast("请先选择视频文件", "err");
+      return;
+    }
     // B站单P标题取文件名：文件名超 80 字必失败（code=21104），先拦截提示重命名，不自动截断。
-    const fileNameBase = selectedVideo.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
+    const fileNameBase = selectedVideo
+      .split(/[\\/]/)
+      .pop()
+      .replace(/\.[^.]+$/, "");
     if (fileNameBase.length > 80) {
-      const m = "文件名超 B 站 80 字限制（" + fileNameBase.length + " 字）：B站单P标题取文件名，发布会失败，请先重命名视频文件";
-      logLine(m, "err"); toast(m, "err"); return;
+      const m =
+        "文件名超 B 站 80 字限制（" +
+        fileNameBase.length +
+        " 字）：B站单P标题取文件名，发布会失败，请先重命名视频文件";
+      logLine(m, "err");
+      toast(m, "err");
+      return;
     }
     const titleVal = ($("titleInput").value || "").trim();
     if (titleVal.length > 80) {
       const m = "标题超 B 站 80 字限制（" + titleVal.length + " 字），请修改标题后再投稿";
-      logLine(m, "err"); toast(m, "err"); return;
+      logLine(m, "err");
+      toast(m, "err");
+      return;
     }
     const mode = document.querySelector('input[name="mode"]:checked').value;
     let dtime = 0;
     if (mode === "dtime") {
       const v = $("dtimeInput").value;
-      if (!v) { logLine("请填写定时发布时间", "err"); toast("请填写定时发布时间", "err"); return; }
+      if (!v) {
+        logLine("请填写定时发布时间", "err");
+        toast("请填写定时发布时间", "err");
+        return;
+      }
       dtime = Math.floor(new Date(v).getTime() / 1000);
-      if (!dtime || isNaN(dtime)) { logLine("定时时间无效", "err"); toast("定时时间无效", "err"); return; }
+      if (!dtime || isNaN(dtime)) {
+        logLine("定时时间无效", "err");
+        toast("定时时间无效", "err");
+        return;
+      }
     }
     const tags = ($("tagsInput").value || "")
-      .split(/[，,]/).map((s) => s.trim()).filter(Boolean);
+      .split(/[，,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     const payload = {
       videoPath: selectedVideo,
       title: titleVal,
@@ -811,7 +1019,9 @@ function markAllSteps(cls) {
     $("logBox").innerHTML = "";
     $("logEmpty").style.display = "";
     execStepsEl.innerHTML = "";
-    Object.keys(stepEls).forEach((k) => { delete stepEls[k]; });
+    Object.keys(stepEls).forEach((k) => {
+      delete stepEls[k];
+    });
     logLine("开始投稿流程…");
     setCapsule("info", "准备中");
 
@@ -828,10 +1038,10 @@ function markAllSteps(cls) {
         return;
       }
       await consumeSSE(resp);
-  } catch (e) {
-    logLine("投稿异常: " + e.message, "err");
-    setCapsule("err", "失败");
-    pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", "投稿异常");
+    } catch (e) {
+      logLine("投稿异常: " + e.message, "err");
+      setCapsule("err", "失败");
+      pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", "投稿异常");
     } finally {
       running = false;
       setExec($("submitBtn"), false);
@@ -855,7 +1065,11 @@ function markAllSteps(cls) {
           if (line.startsWith("data: ")) {
             const raw = line.slice(6).trim();
             if (!raw) return;
-            try { handleEvent(JSON.parse(raw)); } catch (e) { /* ignore */ }
+            try {
+              handleEvent(JSON.parse(raw));
+            } catch (e) {
+              /* ignore */
+            }
           }
         });
       }
@@ -875,33 +1089,57 @@ function markAllSteps(cls) {
       // 分步骤：status 阶段 → 激活对应步骤
       const step = stepForStage(ev.stage);
       if (step && ev.message) setStepDetail(ev.stage, ev.message);
-  } else if (ev.type === "done") {
-    setCapsule("ok", "成功");
-    const bp = $("biliExecProgress");
-    if (bp) bp.classList.remove("show");
-    const d = ev.data || {};
-    const ok = d.success !== false;
-    logLine("投稿完成！aid=" + (d.aid || "?") + " bvid=" + (d.bvid || "?") + " cid=" + (d.cid || "?") + " 合集=" + (d.season ? "已加" : "否"), "ok");
-    markAllSteps("ok");
-    // P08：写一条投稿历史（成功/失败 + 稿件标题 + 时间 + 简要状态）
-    pushHistory(HISTORY_KEY_BILIUP, ok, $("titleInput").value || "（未命名）", ok ? ("投稿成功" + (d.bvid ? " · " + d.bvid : "")) : (d.error || "投稿未完成"), d.bvid);
-  } else if (ev.type === "error") {
-    setCapsule("err", "失败");
-    const bp = $("biliExecProgress");
-    if (bp) bp.classList.remove("show");
-    logLine("失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
-    markAllSteps("err");
-    if (ev.stage && stepEls[ev.stage]) {
-      stepEls[ev.stage].classList.remove("ok");
-      stepEls[ev.stage].classList.add("err");
+    } else if (ev.type === "done") {
+      setCapsule("ok", "成功");
+      const bp = $("biliExecProgress");
+      if (bp) bp.classList.remove("show");
+      const d = ev.data || {};
+      const ok = d.success !== false;
+      logLine(
+        "投稿完成！aid=" +
+          (d.aid || "?") +
+          " bvid=" +
+          (d.bvid || "?") +
+          " cid=" +
+          (d.cid || "?") +
+          " 合集=" +
+          (d.season ? "已加" : "否"),
+        "ok",
+      );
+      markAllSteps("ok");
+      // P08：写一条投稿历史（成功/失败 + 稿件标题 + 时间 + 简要状态）
+      pushHistory(
+        HISTORY_KEY_BILIUP,
+        ok,
+        $("titleInput").value || "（未命名）",
+        ok ? "投稿成功" + (d.bvid ? " · " + d.bvid : "") : d.error || "投稿未完成",
+        d.bvid,
+      );
+    } else if (ev.type === "error") {
+      setCapsule("err", "失败");
+      const bp = $("biliExecProgress");
+      if (bp) bp.classList.remove("show");
+      logLine("失败@" + (ev.stage || "") + ": " + (ev.message || ""), "err");
+      markAllSteps("err");
+      if (ev.stage && stepEls[ev.stage]) {
+        stepEls[ev.stage].classList.remove("ok");
+        stepEls[ev.stage].classList.add("err");
+      }
+      // P08：写一条投稿历史（失败）
+      pushHistory(
+        HISTORY_KEY_BILIUP,
+        false,
+        $("titleInput").value || "（未命名）",
+        ev.message || "投稿失败",
+      );
     }
-    // P08：写一条投稿历史（失败）
-    pushHistory(HISTORY_KEY_BILIUP, false, $("titleInput").value || "（未命名）", ev.message || "投稿失败");
-  }
   }
 
   $("submitBtn").addEventListener("click", openConfirm);
-  $("confirmOk").addEventListener("click", () => { closeConfirm(); submit(); });
+  $("confirmOk").addEventListener("click", () => {
+    closeConfirm();
+    submit();
+  });
 
   // ── 检测补合集：拉最近发布、不在所选合集的稿件，勾选后一键补加 ──
   let detectCandidates = [];
@@ -917,15 +1155,25 @@ function markAllSteps(cls) {
     const el = $("seasonDetectList");
     if (!el) return;
     if (!list || !list.length) {
-      el.innerHTML = '<div style="padding:12px 0;color:var(--text-dim)">没有发现未加入所选合集的稿件。</div>';
+      el.innerHTML =
+        '<div style="padding:12px 0;color:var(--text-dim)">没有发现未加入所选合集的稿件。</div>';
       return;
     }
-    el.innerHTML = list.map((c, i) => {
-      const dt = c.pubdate ? new Date(c.pubdate * 1000).toLocaleString() : "";
-      return '<label style="display:flex;align-items:flex-start;gap:8px;padding:7px 4px;border-bottom:1px dashed var(--glass-border);cursor:pointer;">'
-        + '<input type="checkbox" data-idx="' + i + '" checked style="margin-top:3px;" />'
-        + '<span style="flex:1;min-width:0;">' + (c.title || c.bvid || c.aid) + (dt ? ' <span style="opacity:.6;font-size:11px;">' + dt + "</span>" : "") + "</span></label>";
-    }).join("");
+    el.innerHTML = list
+      .map((c, i) => {
+        const dt = c.pubdate ? new Date(c.pubdate * 1000).toLocaleString() : "";
+        return (
+          '<label style="display:flex;align-items:flex-start;gap:8px;padding:7px 4px;border-bottom:1px dashed var(--glass-border);cursor:pointer;">' +
+          '<input type="checkbox" data-idx="' +
+          i +
+          '" checked style="margin-top:3px;" />' +
+          '<span style="flex:1;min-width:0;">' +
+          (c.title || c.bvid || c.aid) +
+          (dt ? ' <span style="opacity:.6;font-size:11px;">' + dt + "</span>" : "") +
+          "</span></label>"
+        );
+      })
+      .join("");
   }
   async function runSeasonDetect() {
     const btn = $("scanJobsBtn");
@@ -955,7 +1203,9 @@ function markAllSteps(cls) {
     }
   }
   async function submitDetectAdd() {
-    const boxes = Array.prototype.slice.call(document.querySelectorAll('#seasonDetectList input[type="checkbox"]'));
+    const boxes = Array.prototype.slice.call(
+      document.querySelectorAll('#seasonDetectList input[type="checkbox"]'),
+    );
     const selected = boxes
       .filter((b) => b.checked)
       .map((b) => {
@@ -1021,7 +1271,9 @@ function markAllSteps(cls) {
     const advClose = $("advClose");
     if (advClose) advClose.addEventListener("click", closeModal);
     // 点击遮罩空白处关闭，回到原页（不重置表单）
-    advMask.addEventListener("click", (e) => { if (e.target === advMask) closeModal(); });
+    advMask.addEventListener("click", (e) => {
+      if (e.target === advMask) closeModal();
+    });
   }
 
   // ── P08：投稿历史展示（复用 P09 统一弹窗机制）──
@@ -1034,33 +1286,41 @@ function markAllSteps(cls) {
 
   function renderBiliupHistory() {
     const all = loadHistoryBiliup(HISTORY_KEY_BILIUP);
-    const list = historyFilter === "all"
-      ? all
-      : all.filter((h) => (historyFilter === "ok" ? h.ok : !h.ok));
+    const list =
+      historyFilter === "all" ? all : all.filter((h) => (historyFilter === "ok" ? h.ok : !h.ok));
     if (!list.length) {
-      historyListBiliup.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('inbox') + '</span>'
-        + (all.length ? "没有符合条件的投稿记录" : "还没有投稿记录") + "</div>";
+      historyListBiliup.innerHTML =
+        '<div class="empty-state"><span class="es-ico">' +
+        ico("inbox") +
+        "</span>" +
+        (all.length ? "没有符合条件的投稿记录" : "还没有投稿记录") +
+        "</div>";
       return;
     }
-    historyListBiliup.innerHTML = list.map((h) => {
-      const time = new Date(h.ts).toLocaleString("zh-CN");
-      const badge = h.ok ? "成功" : "失败";
-      const link = h.ok && h.bvid
-        ? '<a href="https://www.bilibili.com/video/' + encodeURIComponent(h.bvid)
-          + '" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;border-bottom:1px dashed var(--accent);">'
-          + escapeHtmlBiliup(h.bvid) + "（打开）</a>"
-        : escapeHtmlBiliup(h.status || "");
-      const metaParts = [badge];
-      if (link) metaParts.push(link);
-      metaParts.push(time);
-      return `<div class="history-item">
+    historyListBiliup.innerHTML = list
+      .map((h) => {
+        const time = new Date(h.ts).toLocaleString("zh-CN");
+        const badge = h.ok ? "成功" : "失败";
+        const link =
+          h.ok && h.bvid
+            ? '<a href="https://www.bilibili.com/video/' +
+              encodeURIComponent(h.bvid) +
+              '" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;border-bottom:1px dashed var(--accent);">' +
+              escapeHtmlBiliup(h.bvid) +
+              "（打开）</a>"
+            : escapeHtmlBiliup(h.status || "");
+        const metaParts = [badge];
+        if (link) metaParts.push(link);
+        metaParts.push(time);
+        return `<div class="history-item">
         <span class="history-dot ${h.ok ? "ok" : "err"}"></span>
         <div class="history-main">
           <div class="history-title">${escapeHtmlBiliup(h.title)}</div>
-          <div class="history-meta">${metaParts.map((p) => (p.indexOf('<a ') === 0 ? p : escapeHtmlBiliup(p))).join(" · ")}</div>
+          <div class="history-meta">${metaParts.map((p) => (p.indexOf("<a ") === 0 ? p : escapeHtmlBiliup(p))).join(" · ")}</div>
         </div>
       </div>`;
-    }).join("");
+      })
+      .join("");
   }
   function setHistoryFilter(f) {
     historyFilter = f;
@@ -1068,19 +1328,30 @@ function markAllSteps(cls) {
     tabs.forEach((t) => t.classList.toggle("active", t.getAttribute("data-filter") === f));
     renderBiliupHistory();
   }
-  function openBiliupHistory() { renderBiliupHistory(); openModal(historyMaskBiliup); }
+  function openBiliupHistory() {
+    renderBiliupHistory();
+    openModal(historyMaskBiliup);
+  }
   if (historyBtnBiliup) historyBtnBiliup.addEventListener("click", openBiliupHistory);
   if (historyCloseBiliup) historyCloseBiliup.addEventListener("click", closeModal);
-  if (historyMaskBiliup) historyMaskBiliup.addEventListener("click", (e) => { if (e.target === historyMaskBiliup) closeModal(); });
+  if (historyMaskBiliup)
+    historyMaskBiliup.addEventListener("click", (e) => {
+      if (e.target === historyMaskBiliup) closeModal();
+    });
   document.querySelectorAll("#historyTabs .history-tab").forEach((t) => {
     t.addEventListener("click", () => setHistoryFilter(t.getAttribute("data-filter") || "all"));
   });
-  if (historyClearBiliup) historyClearBiliup.addEventListener("click", () => {
-    if (window.confirm("确定清空全部投稿历史?")) {
-      try { localStorage.removeItem(HISTORY_KEY_BILIUP); } catch { /* ignore */ }
-      renderBiliupHistory();
-    }
-  });
+  if (historyClearBiliup)
+    historyClearBiliup.addEventListener("click", () => {
+      if (window.confirm("确定清空全部投稿历史?")) {
+        try {
+          localStorage.removeItem(HISTORY_KEY_BILIUP);
+        } catch {
+          /* ignore */
+        }
+        renderBiliupHistory();
+      }
+    });
 
   // ── 待发布清单（弹窗版：名称 + 待发布日期 + 有资源/已发布，双勾=完成）──
   let pvList = [];
@@ -1148,32 +1419,63 @@ function markAllSteps(cls) {
     $("pvTabTodo").classList.toggle("active", pvTab !== "done");
     $("pvTabDone").classList.toggle("active", pvTab === "done");
     pvStatsEl.textContent =
-      "待发布 " + pvList.length +
-      " · 有资源 " + pvList.filter((x) => x.hasResource).length +
-      " · 已发布 " + pvList.filter((x) => x.published).length +
-      " · 完成 " + done.length;
+      "待发布 " +
+      pvList.length +
+      " · 有资源 " +
+      pvList.filter((x) => x.hasResource).length +
+      " · 已发布 " +
+      pvList.filter((x) => x.published).length +
+      " · 完成 " +
+      done.length;
     pvListEl.innerHTML = show.length
-      ? show.map((x, i) => {
-          const d = (x.publishDate || "").trim();
-          return (
-            '<div class="pv-item' + (pvDone(x) ? " done" : "") + '" style="animation-delay:' + (i * 55) + 'ms">' +
-            '<span class="pv-name">' + escapeHtmlBiliup(x.name) + "</span>" +
-            '<span class="pv-date">' + (d ? escapeHtmlBiliup(d.slice(5)) : "未定") + "</span>" +
-            '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="hasResource"' + (x.hasResource ? " checked" : "") + "> 有资源</label>" +
-            '<label class="pv-check"><input type="checkbox" data-id="' + x.id + '" data-key="published"' + (x.published ? " checked" : "") + "> 已发布</label>" +
-            '<button class="pv-edit" data-edit="' + x.id + '" type="button">编辑</button>' +
-            (pvTab === "todo" ? '<button class="pv-replace" data-id="' + x.id + '" type="button">顶替</button>' : "") +
-            '<button class="pv-del" data-id="' + x.id + '" type="button">删除</button>' +
-            "</div>"
-          );
-        }).join("")
+      ? show
+          .map((x, i) => {
+            const d = (x.publishDate || "").trim();
+            return (
+              '<div class="pv-item' +
+              (pvDone(x) ? " done" : "") +
+              '" style="animation-delay:' +
+              i * 55 +
+              'ms">' +
+              '<span class="pv-name">' +
+              escapeHtmlBiliup(x.name) +
+              "</span>" +
+              '<span class="pv-date">' +
+              (d ? escapeHtmlBiliup(d.slice(5)) : "未定") +
+              "</span>" +
+              '<label class="pv-check"><input type="checkbox" data-id="' +
+              x.id +
+              '" data-key="hasResource"' +
+              (x.hasResource ? " checked" : "") +
+              "> 有资源</label>" +
+              '<label class="pv-check"><input type="checkbox" data-id="' +
+              x.id +
+              '" data-key="published"' +
+              (x.published ? " checked" : "") +
+              "> 已发布</label>" +
+              '<button class="pv-edit" data-edit="' +
+              x.id +
+              '" type="button">编辑</button>' +
+              (pvTab === "todo"
+                ? '<button class="pv-replace" data-id="' + x.id + '" type="button">顶替</button>'
+                : "") +
+              '<button class="pv-del" data-id="' +
+              x.id +
+              '" type="button">删除</button>' +
+              "</div>"
+            );
+          })
+          .join("")
       : '<div class="hint">暂无' + (pvTab === "done" ? "已完成" : "待完成") + "记录</div>";
   }
 
   async function pvMutate(url, opts) {
-    const r = await fetch(url, Object.assign({ method: "POST", headers: { "Content-Type": "application/json" } }, opts));
+    const r = await fetch(
+      url,
+      Object.assign({ method: "POST", headers: { "Content-Type": "application/json" } }, opts),
+    );
     const d = await r.json().catch(() => ({}));
-    if (!d.ok) throw new Error(d.error || ("请求失败 " + r.status));
+    if (!d.ok) throw new Error(d.error || "请求失败 " + r.status);
     return d;
   }
 
@@ -1209,7 +1511,9 @@ function markAllSteps(cls) {
       $("pvSyncEnable").checked = !!d.enabled;
       $("pvSyncToken").value = "";
       pvSyncMask.classList.add("show");
-    } catch (_) { toast("读取配置失败", "err"); }
+    } catch (_) {
+      toast("读取配置失败", "err");
+    }
   });
   $("pvSyncCancel").addEventListener("click", () => pvSyncMask.classList.remove("show"));
   $("pvSyncClose").addEventListener("click", () => pvSyncMask.classList.remove("show"));
@@ -1224,7 +1528,9 @@ function markAllSteps(cls) {
       pvSyncMask.classList.remove("show");
       await loadGhSync();
       toast("已保存" + (body.token ? "，正在同步" : ""));
-    } catch (e) { toast(e.message, "err"); }
+    } catch (e) {
+      toast(e.message, "err");
+    }
   });
 
   const pvAddTitleEl = $("pvAddTitle");
@@ -1264,7 +1570,10 @@ function markAllSteps(cls) {
   $("pvAddClose").addEventListener("click", pvCloseAdd);
   $("pvAddOk").addEventListener("click", async () => {
     const name = (pvNameInput.value || "").trim();
-    if (!name) { toast("请输入视频名称", "err"); return; }
+    if (!name) {
+      toast("请输入视频名称", "err");
+      return;
+    }
     try {
       const payload = {
         name,
@@ -1279,27 +1588,40 @@ function markAllSteps(cls) {
       }
       pvCloseAdd();
       await loadPendingVideos();
-    } catch (e) { toast(e.message, "err"); }
+    } catch (e) {
+      toast(e.message, "err");
+    }
   });
   pvNameInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); $("pvAddOk").click(); }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      $("pvAddOk").click();
+    }
   });
 
   pvListEl.addEventListener("change", async (e) => {
-    const cb = e.target.closest('input[data-key]');
+    const cb = e.target.closest("input[data-key]");
     if (!cb) return;
     try {
       const patch = {};
       patch[cb.dataset.key] = cb.checked;
       await pvMutate("/api/pending-videos/" + cb.dataset.id, { body: JSON.stringify(patch) });
       await loadPendingVideos();
-    } catch (err) { toast(err.message, "err"); }
+    } catch (err) {
+      toast(err.message, "err");
+    }
   });
   pvListEl.addEventListener("click", async (e) => {
     const ed = e.target.closest(".pv-edit");
-    if (ed) { openPvEdit(ed.dataset.edit); return; }
+    if (ed) {
+      openPvEdit(ed.dataset.edit);
+      return;
+    }
     const rp = e.target.closest(".pv-replace");
-    if (rp) { openReplace(rp.dataset.id); return; }
+    if (rp) {
+      openReplace(rp.dataset.id);
+      return;
+    }
     const btn = e.target.closest(".pv-del");
     if (!btn) return;
     await fetch("/api/pending-videos/" + btn.dataset.id, { method: "DELETE" });
@@ -1321,7 +1643,18 @@ function markAllSteps(cls) {
       .slice()
       .sort((a, b) => a.publishDate.localeCompare(b.publishDate));
     pvReplaceTargetEl.innerHTML = candidates.length
-      ? candidates.map((x) => '<option value="' + x.id + '">' + escapeHtmlBiliup(x.publishDate) + " " + escapeHtmlBiliup(x.name) + "</option>").join("")
+      ? candidates
+          .map(
+            (x) =>
+              '<option value="' +
+              x.id +
+              '">' +
+              escapeHtmlBiliup(x.publishDate) +
+              " " +
+              escapeHtmlBiliup(x.name) +
+              "</option>",
+          )
+          .join("")
       : '<option value="">暂无可顶替的排期</option>';
     pvReplaceDateEl.value = "";
     pvReplaceClashEl.style.display = "none";
@@ -1330,7 +1663,9 @@ function markAllSteps(cls) {
   function pvReplaceCheckClash() {
     const nd = pvReplaceDateEl.value;
     const targetId = pvReplaceTargetEl.value;
-    const clash = pvList.find((x) => x.id !== pvReplaceMoverId && x.id !== targetId && x.publishDate === nd);
+    const clash = pvList.find(
+      (x) => x.id !== pvReplaceMoverId && x.id !== targetId && x.publishDate === nd,
+    );
     if (clash) {
       pvReplaceClashEl.textContent = "该日期已有「" + clash.name + "」，确认后将同日发布";
       pvReplaceClashEl.style.display = "block";
@@ -1345,21 +1680,38 @@ function markAllSteps(cls) {
     const nd = pvReplaceDateEl.value;
     if (!targetId) return toast("请选择被顶替的日期", "err");
     if (!nd) return toast("请为被顶替者指定新日期", "err");
-    const clash = pvList.find((x) => x.id !== pvReplaceMoverId && x.id !== targetId && x.publishDate === nd);
+    const clash = pvList.find(
+      (x) => x.id !== pvReplaceMoverId && x.id !== targetId && x.publishDate === nd,
+    );
     if (clash && !confirm("该日期已有「" + clash.name + "」，确认同日发布？")) return;
     try {
-      await pvMutate("/api/pending-videos/replace", { body: JSON.stringify({ moverId: pvReplaceMoverId, targetId, newDate: nd }) });
+      await pvMutate("/api/pending-videos/replace", {
+        body: JSON.stringify({ moverId: pvReplaceMoverId, targetId, newDate: nd }),
+      });
       pvReplaceMask.classList.remove("show");
       await loadPendingVideos();
       toast("顶替成功", "ok");
-    } catch (err) { toast(err.message, "err"); }
+    } catch (err) {
+      toast(err.message, "err");
+    }
   });
   $("pvReplaceClose").addEventListener("click", () => pvReplaceMask.classList.remove("show"));
   $("pvReplaceCancel").addEventListener("click", () => pvReplaceMask.classList.remove("show"));
-  $("pvTabTodo").addEventListener("click", () => { pvTab = "todo"; renderPendingVideos(); });
-  $("pvTabDone").addEventListener("click", () => { pvTab = "done"; renderPendingVideos(); });
+  $("pvTabTodo").addEventListener("click", () => {
+    pvTab = "todo";
+    renderPendingVideos();
+  });
+  $("pvTabDone").addEventListener("click", () => {
+    pvTab = "done";
+    renderPendingVideos();
+  });
   $("pvClearDone").addEventListener("click", async () => {
-    try { await pvMutate("/api/pending-videos/clear-done"); await loadPendingVideos(); } catch (e) { toast(e.message, "err"); }
+    try {
+      await pvMutate("/api/pending-videos/clear-done");
+      await loadPendingVideos();
+    } catch (e) {
+      toast(e.message, "err");
+    }
   });
 
   // ── 初始化 ──
@@ -1373,18 +1725,30 @@ function markAllSteps(cls) {
   try {
     const es = new EventSource("/api/events");
     es.onmessage = (ev) => {
-      let d; try { d = JSON.parse(ev.data); } catch (_) { return; }
+      let d;
+      try {
+        d = JSON.parse(ev.data);
+      } catch (_) {
+        return;
+      }
       if (!d || d.type !== "pendingPinDone") return;
       toast("定时发布评论已自动置顶" + (d.bvid ? "（" + d.bvid + "）" : ""), "ok");
-      logLine("后台自动置顶完成：" + (d.bvid || ("aid=" + d.aid)), "ok");
+      logLine("后台自动置顶完成：" + (d.bvid || "aid=" + d.aid), "ok");
     };
-    es.onerror = () => { try { es.close(); } catch (_) {} };
-  } catch (_) { /* EventSource 不可用则忽略 */ }
+    es.onerror = () => {
+      try {
+        es.close();
+      } catch (_) {}
+    };
+  } catch (_) {
+    /* EventSource 不可用则忽略 */
+  }
 
   // T02：首屏入场编排（零侵入：仅给 .wrap 首屏可见块挂 pop-in + --i，复用内联 macos-motion.css 的 stagger）
   function applyEntrance(scope, max) {
     try {
-      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+        return;
     } catch (e) {}
     const root = scope || document;
     const blocks = Array.from(root.children).filter((el) => {

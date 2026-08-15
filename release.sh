@@ -40,7 +40,7 @@ SHA="$(git rev-parse HEAD)"
 RUN_ID=""
 i=0
 while [ $i -lt 30 ]; do
-  RUN_ID="$("$GH" run list --repo "$REPO" --commit "$SHA" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
+  RUN_ID="$("$GH" run list --repo "$REPO" --workflow "Build Windows Installer" --commit "$SHA" --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)"
   [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ] && break
   node -e "setTimeout(function(){},2000)"
   i=$((i+1))

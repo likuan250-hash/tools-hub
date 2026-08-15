@@ -486,6 +486,7 @@ html[data-skin="comic"] .agg .dball {
   position: relative;
   width: 46px;
   height: 66px;
+  border-radius: 0 !important;
   background: linear-gradient(160deg, #f2f2f2 0 84%, #d9d9d9 84%), #eee;
   clip-path: polygon(0 0, 100% 0, 100% 86%, 86% 100%, 0 100%);
   color: #111;

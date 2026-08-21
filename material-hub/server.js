@@ -1,12 +1,12 @@
 // material-hub/server.js —— Express 子服务（监听 127.0.0.1:3700）
 // 同源校验 + 静态资源防缓存 + /api/version(回显 bootToken) + /api/collect(SSE 素材搜集)。
 // 契约逐段对齐 biliup-hub/server.js：主进程 verifyChildBoot 端口防抢占 + 看门狗探活均依赖 /api/version。
-require('dotenv').config();
-const express = require('express');
-const path = require('path');
-const logger = require('./lib/logger');
-const { CollectService, DEFAULT_OUTPUT_DIR } = require('./lib/collect');
-const { PREVIEW_TMP_DIR } = require('./lib/cover');
+require("dotenv").config();
+const express = require("express");
+const path = require("path");
+const logger = require("./lib/logger");
+const { CollectService, DEFAULT_OUTPUT_DIR } = require("./lib/collect");
+const { PREVIEW_TMP_DIR } = require("./lib/cover");
 
 const app = express();
 const PORT = process.env.MATERIAL_PORT || 3700;
@@ -23,7 +23,7 @@ function getCollectService() {
   return app.locals.collectService;
 }
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // ── 同源校验：阻断跨站 CSRF（与 kdocs/netdisk/biliup 同构，不可省略）──
@@ -32,11 +32,11 @@ app.use((req, res, next) => {
   if (origin) {
     try {
       const host = new URL(origin).hostname;
-      if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
-        return res.status(403).json({ error: 'forbidden: cross-origin request blocked' });
+      if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
+        return res.status(403).json({ error: "forbidden: cross-origin request blocked" });
       }
     } catch {
-      return res.status(403).json({ error: 'forbidden: invalid origin' });
+      return res.status(403).json({ error: "forbidden: invalid origin" });
     }
   }
   next();
@@ -45,27 +45,33 @@ app.use((req, res, next) => {
 // ── 共享样式：从仓库 shared/ 提供 tokens.css（三端共用单一真源，与 kdocs/netdisk 同构）──
 // 同时接受 /tokens.css 与 /shared/tokens.css（前端按设计写 ../shared/tokens.css）。
 // 打包场景 resources/shared 可能不存在 → 404，此时前端 style.css 内的同值 fallback 层兜底。
-app.get(['/tokens.css', '/shared/tokens.css'], (req, res) => {
-  const file = path.join(__dirname, '..', 'shared', 'tokens.css');
-  res.type('css').sendFile(file, (err) => { if (err) res.status(404).end(); });
+app.get(["/tokens.css", "/shared/tokens.css"], (req, res) => {
+  const file = path.join(__dirname, "..", "shared", "tokens.css");
+  res.type("css").sendFile(file, (err) => {
+    if (err) res.status(404).end();
+  });
 });
 
 // 静态资源防缓存（避免浏览器长期使用旧 app.js）
-app.use(express.static(path.join(__dirname, 'public'), {
-  setHeaders: (res, filePath) => {
-    if (/\.(js|css|html|htm)$/i.test(filePath)) {
-      res.setHeader('Cache-Control', 'no-cache');
-    }
-  },
-}));
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    setHeaders: (res, filePath) => {
+      if (/\.(js|css|html|htm)$/i.test(filePath)) {
+        res.setHeader("Cache-Control", "no-cache");
+      }
+    },
+  }),
+);
 // 候选封面预检临时目录：后端下载后由前端同源预览（避免外网防盗链/失效导致加载失败）
-try { require('fs').mkdirSync(PREVIEW_TMP_DIR, { recursive: true }); } catch (_) {}
-app.use('/cover-tmp', express.static(PREVIEW_TMP_DIR, { fallthrough: false }));
+try {
+  require("fs").mkdirSync(PREVIEW_TMP_DIR, { recursive: true });
+} catch (_) {}
+app.use("/cover-tmp", express.static(PREVIEW_TMP_DIR, { fallthrough: false }));
 
 // 主页
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   try {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, "public", "index.html"));
   } catch (e) {
     res.status(500).end();
   }
@@ -73,41 +79,51 @@ app.get('/', (req, res) => {
 
 // ── 版本（回显 bootToken 供主进程 verifyChildBoot 校验端口归属）──
 function getVersion() {
-  try { return require('./package.json').version; }
-  catch { return 'unknown'; }
+  try {
+    return require("./package.json").version;
+  } catch {
+    return "unknown";
+  }
 }
-app.get('/api/version', (req, res) => {
+app.get("/api/version", (req, res) => {
   const hubVer = process.env.TOOLSHUB_VERSION;
   const version = hubVer || getVersion();
-  const source = hubVer ? 'tools-hub' : 'standalone';
+  const source = hubVer ? "tools-hub" : "standalone";
   res.json({ version, source, updatable: false, bootToken: process.env.BOOT_TOKEN || null });
 });
 
 // ── 素材搜集（SSE 流式全流程，核心）──
-app.post('/api/collect', (req, res) => {
+app.post("/api/collect", (req, res) => {
   const body = req.body || {};
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const name = typeof body.name === "string" ? body.name.trim() : "";
   const forceTrailer = body.forceTrailer === true;
   const forceCover = body.forceCover === true;
-  const coverUrl = typeof body.coverUrl === 'string' ? body.coverUrl.trim() : '';
+  const coverUrl = typeof body.coverUrl === "string" ? body.coverUrl.trim() : "";
   if (!name) {
-    return res.status(400).json({ error: '缺少 name（游戏名）' });
+    return res.status(400).json({ error: "缺少 name（游戏名）" });
   }
 
   res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no',
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
   });
   const send = (obj) => {
     try {
-      res.write('data: ' + JSON.stringify(obj) + '\n\n');
-      if (typeof res.flush === 'function') res.flush();
-    } catch { /* 客户端已断开 */ }
+      res.write("data: " + JSON.stringify(obj) + "\n\n");
+      if (typeof res.flush === "function") res.flush();
+    } catch {
+      /* 客户端已断开 */
+    }
   };
   const heartbeat = setInterval(() => {
-    try { res.write(': hb\n\n'); if (typeof res.flush === 'function') res.flush(); } catch { /* ignore */ }
+    try {
+      res.write(": hb\n\n");
+      if (typeof res.flush === "function") res.flush();
+    } catch {
+      /* ignore */
+    }
   }, 3000);
 
   let finished = false;
@@ -115,55 +131,62 @@ app.post('/api/collect', (req, res) => {
     if (finished) return;
     finished = true;
     clearInterval(heartbeat);
-    try { res.end(); } catch { /* 已结束 */ }
+    try {
+      res.end();
+    } catch {
+      /* 已结束 */
+    }
   };
-  req.on('close', () => { clearInterval(heartbeat); });
+  req.on("close", () => {
+    clearInterval(heartbeat);
+  });
 
   const service = getCollectService();
-  logger.info('[collect] 开始：' + name + ' → ' + getOutputDir());
-  service.run(
-    { name, outDir: getOutputDir(), forceTrailer, forceCover, coverUrl, coverInteractive: true },
-    { onEvent: send },
-  )
+  logger.info("[collect] 开始：" + name + " → " + getOutputDir());
+  service
+    .run(
+      { name, outDir: getOutputDir(), forceTrailer, forceCover, coverUrl, coverInteractive: true },
+      { onEvent: send },
+    )
     .catch((e) => {
-      logger.error('[collect] 流程异常:', e && e.message);
+      logger.error("[collect] 流程异常:", e && e.message);
       send({
-        type: 'error',
-        step: '素材搜集',
-        msg: '流程异常：' + (e && e.message ? e.message : String(e)),
+        type: "error",
+        step: "素材搜集",
+        msg: "流程异常：" + (e && e.message ? e.message : String(e)),
         ok: false,
-        detail: { reason: 'internal-error' },
+        detail: { reason: "internal-error" },
       });
     })
     .finally(finish);
 });
 
 // ── 交互式封面选择：前端弹窗勾选后提交，resolve collect.js 中挂起的 waitCoverChoice ──
-app.post('/api/cover/choose', (req, res) => {
+app.post("/api/cover/choose", (req, res) => {
   const body = req.body || {};
-  const requestId = typeof body.requestId === 'string' ? body.requestId.trim() : '';
-  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  const requestId = typeof body.requestId === "string" ? body.requestId.trim() : "";
+  const url = typeof body.url === "string" ? body.url.trim() : "";
   if (!requestId) {
-    return res.status(400).json({ error: '缺少 requestId' });
+    return res.status(400).json({ error: "缺少 requestId" });
   }
   const service = getCollectService();
   if (!service.chooseCover(requestId, url)) {
-    return res.status(409).json({ error: '无待处理的封面选择（可能已超时或已处理）' });
+    return res.status(409).json({ error: "无待处理的封面选择（可能已超时或已处理）" });
   }
   res.json({ ok: true });
 });
 
 // ── 交互式宣传片选择：前端弹窗勾选后提交，resolve collect.js 中挂起的 waitVideoChoice ──
-app.post('/api/video/choose', (req, res) => {
+app.post("/api/video/choose", (req, res) => {
   const body = req.body || {};
-  const requestId = typeof body.requestId === 'string' ? body.requestId.trim() : '';
-  const url = typeof body.url === 'string' ? body.url.trim() : '';
+  const requestId = typeof body.requestId === "string" ? body.requestId.trim() : "";
+  const urls = Array.isArray(body.urls) ? body.urls : [];
   if (!requestId) {
-    return res.status(400).json({ error: '缺少 requestId' });
+    return res.status(400).json({ error: "缺少 requestId" });
   }
   const service = getCollectService();
-  if (!service.chooseVideo(requestId, url)) {
-    return res.status(409).json({ error: '无待处理的宣传片选择（可能已超时或已处理）' });
+  if (!service.chooseVideo(requestId, urls)) {
+    return res.status(409).json({ error: "无待处理的宣传片选择（可能已超时或已处理）" });
   }
   res.json({ ok: true });
 });
@@ -171,22 +194,22 @@ app.post('/api/video/choose', (req, res) => {
 // ── 兜底错误中间件（避免未捕获异常冒泡导致进程退出被看门狗误判）──
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  logger.error('[express] 未处理错误:', err && err.message);
-  if (!res.headersSent) res.status(500).json({ error: 'internal error' });
+  logger.error("[express] 未处理错误:", err && err.message);
+  if (!res.headersSent) res.status(500).json({ error: "internal error" });
 });
 
 // ── 启动（EADDRINUSE 自动重试 30 次/300ms，与 biliup/netdisk 同构）──
 let server = null;
 function startServer(attempt = 0) {
-  const srv = app.listen(PORT, '127.0.0.1', () => {
+  const srv = app.listen(PORT, "127.0.0.1", () => {
     logger.info(`material-hub 运行中 → http://localhost:${PORT} (仅本机绑定)`);
-    logger.info('素材落盘目录: ' + getOutputDir());
+    logger.info("素材落盘目录: " + getOutputDir());
   });
-  srv.on('error', (err) => {
-    if (err.code === 'EADDRINUSE' && attempt < 30) {
+  srv.on("error", (err) => {
+    if (err.code === "EADDRINUSE" && attempt < 30) {
       setTimeout(() => startServer(attempt + 1), 300);
     } else {
-      logger.error('监听失败 (code=' + (err.code || '?') + '):', err.message);
+      logger.error("监听失败 (code=" + (err.code || "?") + "):", err.message);
       process.exit(1);
     }
   });
@@ -203,15 +226,24 @@ function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.warn(`收到 ${signal}, 正在优雅关闭…`);
-  if (!server) { process.exit(0); return; }
-  server.close(() => { logger.info('服务已关闭'); process.exit(0); });
-  setTimeout(() => { logger.error('优雅关闭超时,强制退出'); process.exit(1); }, 5000).unref();
+  if (!server) {
+    process.exit(0);
+    return;
+  }
+  server.close(() => {
+    logger.info("服务已关闭");
+    process.exit(0);
+  });
+  setTimeout(() => {
+    logger.error("优雅关闭超时,强制退出");
+    process.exit(1);
+  }, 5000).unref();
 }
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 // 未捕获异常 / Promise 拒绝只记录不退出，避免子进程中途崩溃导致卡片永久离线。
-process.on('uncaughtException', (e) => logger.error('未捕获异常:', e));
-process.on('unhandledRejection', (r) => logger.error('未处理的 Promise 拒绝:', r));
+process.on("uncaughtException", (e) => logger.error("未捕获异常:", e));
+process.on("unhandledRejection", (r) => logger.error("未处理的 Promise 拒绝:", r));
 
 // 便于单测 require（实际启动走上面的 startServer）
 module.exports = app;

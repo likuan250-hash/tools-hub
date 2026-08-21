@@ -14,12 +14,12 @@
 // 缺陷 2 的修复点：yt-dlp 是**子进程**，Node 里设的代理对它无效，环境变量它也不一定认全。
 // 因此检测到代理环境变量时，显式给它加 `--proxy <url>`（yt-dlp 原生支持该参数），
 // 并同样尊重 NO_PROXY —— 判定逻辑复用 lib/http.js，与 Node 侧请求保持一致。
-const { spawn: spawnDefault } = require('child_process');
-const fsDefault = require('fs');
-const path = require('path');
-const { FilenameSanitizer, MAX_LEN } = require('./filename');
-const { runCommand } = require('./runner');
-const { resolveProxy, toProxyUrl } = require('./http');
+const { spawn: spawnDefault } = require("child_process");
+const fsDefault = require("fs");
+const path = require("path");
+const { FilenameSanitizer, MAX_LEN } = require("./filename");
+const { runCommand } = require("./runner");
+const { resolveProxy, toProxyUrl } = require("./http");
 
 /**
  * 从宣传片标题里提取英文游戏名，作为封面检索的 fallback。
@@ -36,8 +36,8 @@ const { resolveProxy, toProxyUrl } = require('./http');
  * @returns {string|null} 提取的英文游戏名；标题结构不对或中文为主时返回 null
  */
 function extractEnglishName(title) {
-  if (!title || typeof title !== 'string') return null;
-  const idx = title.indexOf(' - ');
+  if (!title || typeof title !== "string") return null;
+  const idx = title.indexOf(" - ");
   if (idx <= 0) return null;
   const name = title.slice(0, idx).trim();
   // 必须以拉丁字母开头且含至少 2 个字母（排除纯中文/纯日文标题，
@@ -49,14 +49,14 @@ function extractEnglishName(title) {
 }
 
 /** 检索关键词后缀（规范原文：{游戏名} official launch trailer）。 */
-const SEARCH_SUFFIX = 'official launch trailer';
+const SEARCH_SUFFIX = "official launch trailer";
 /** 规范指定的检索条数：ytsearch10。 */
 const SEARCH_LIMIT = 10;
 /** 步骤名（SSE 事件 step 字段）。 */
-const STEP_SEARCH = '搜索官方宣传片 (yt-dlp)';
-const STEP_DOWNLOAD = '下载宣传片';
-const STEP_TRANSCODE = '转码 .webm → .mp4';
-const STEP_PROBE = '校验视频分辨率';
+const STEP_SEARCH = "搜索官方宣传片 (yt-dlp)";
+const STEP_DOWNLOAD = "下载宣传片";
+const STEP_TRANSCODE = "转码 .webm → .mp4";
+const STEP_PROBE = "校验视频分辨率";
 /** 子进程超时。 */
 const TIMEOUT_SEARCH = 90 * 1000;
 const TIMEOUT_DOWNLOAD = 20 * 60 * 1000;
@@ -67,42 +67,95 @@ const DURATION_MAX = 300;
 const TARGET_HEIGHT = 1080;
 /** 下载失败时最多依次尝试的候选数（年龄限制/网络失败自动换下一个）。 */
 const TRAILER_DOWNLOAD_ATTEMPTS = 5;
+/** 候选间切换的停顿（ms）：YouTube 403 多为限流，稍等再试下一个候选。 */
+const RETRY_GAP_MS = 6000;
+/**
+ * 同候选内的格式降级链：YouTube 对 avc1(137) 流常做 403 限流，
+ * 撞上后换一档格式重试，避免同一视频一次失败就放弃。
+ * 0: 规范首选 H.264/AAC；1: 任意 mp4；2: 任意格式（webm 由转码兜底）。
+ */
+const FORMAT_TIERS = [
+  "bestvideo[height<=1080][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]" +
+    "/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]" +
+    "/best[height<=1080]",
+  "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]" + "/best[height<=1080]",
+  "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+];
 /** 判定「yt-dlp 该不该走代理」时使用的代表性目标地址（yt-dlp 全程只访问 YouTube）。 */
-const PROXY_PROBE_URL = 'https://www.youtube.com/';
+const PROXY_PROBE_URL = "https://www.youtube.com/";
 
 /**
  * 规范《频道优先级》第 2 档：发行商官方频道。
  * 命中即认为是官方发布源（小写子串匹配）。
  */
 const PUBLISHER_CHANNELS = [
-  'nintendo', 'electronic arts', 'ea sports', 'ubisoft', 'bandai namco', 'square enix',
-  'capcom', 'sega', 'konami', 'bethesda', 'activision', 'blizzard', 'rockstar games',
-  '2k', 'devolver', 'annapurna', 'focus entertainment', 'deep silver', 'thq nordic',
-  'paradox interactive', 'team ninja', 'koei tecmo', 'fromsoftware', 'cd projekt',
-  'warner bros. games', 'sony interactive', 'game science', '游戏科学',
+  "nintendo",
+  "electronic arts",
+  "ea sports",
+  "ubisoft",
+  "bandai namco",
+  "square enix",
+  "capcom",
+  "sega",
+  "konami",
+  "bethesda",
+  "activision",
+  "blizzard",
+  "rockstar games",
+  "2k",
+  "devolver",
+  "annapurna",
+  "focus entertainment",
+  "deep silver",
+  "thq nordic",
+  "paradox interactive",
+  "team ninja",
+  "koei tecmo",
+  "fromsoftware",
+  "cd projekt",
+  "warner bros. games",
+  "sony interactive",
+  "game science",
+  "游戏科学",
 ];
 /** 规范《频道优先级》第 3 档：平台方频道。 */
-const PLATFORM_CHANNELS = ['playstation', 'xbox', 'steam', 'epic games', 'nintendo of america'];
+const PLATFORM_CHANNELS = ["playstation", "xbox", "steam", "epic games", "nintendo of america"];
 /** 规范《频道优先级》第 4 档：非官方高质量频道（可用，但需标注来源）。 */
-const AGGREGATOR_CHANNELS = ['ign', 'gamespot', 'gametrailers', 'gamesradar', 'pc gamer', 'game informer'];
+const AGGREGATOR_CHANNELS = [
+  "ign",
+  "gamespot",
+  "gametrailers",
+  "gamesradar",
+  "pc gamer",
+  "game informer",
+];
 /** 明确排除的二创/搬运频道特征。 */
-const BAD_CHANNEL_HINTS = ['reaction', 'fan made', 'fanmade', 'concept', 'unofficial', 'edit', 'amv'];
+const BAD_CHANNEL_HINTS = [
+  "reaction",
+  "fan made",
+  "fanmade",
+  "concept",
+  "unofficial",
+  "edit",
+  "amv",
+];
 /** 明确排除的标题特征（非宣传片正片）。 */
-const BAD_TITLE_RE = /reaction|review|walkthrough|full\s*game|speedrun|let'?s\s*play|breakdown|analysis|parody|fan[\s-]?made|how\s*to/i;
+const BAD_TITLE_RE =
+  /reaction|review|walkthrough|full\s*game|speedrun|let'?s\s*play|breakdown|analysis|parody|fan[\s-]?made|how\s*to/i;
 
 /**
  * 规范《筛选标准》视频类型优先级：Launch > Release Date > Announcement。
  * 顺序敏感：第一条命中即取其分值，避免「Official Launch Trailer」被低档规则截胡。
  */
 const TYPE_RULES = [
-  { re: /launch\s*trailer/i, score: 50, kind: 'launch' },
-  { re: /official\s*trailer/i, score: 40, kind: 'official' },
-  { re: /公式\s*(?:トレーラー|pv|プロモーション)/i, score: 40, kind: 'official-jp' },
-  { re: /release\s*date\s*trailer/i, score: 35, kind: 'release-date' },
-  { re: /story\s*trailer/i, score: 28, kind: 'story' },
-  { re: /gameplay\s*trailer/i, score: 25, kind: 'gameplay' },
-  { re: /(?:announcement|reveal|teaser)\s*trailer/i, score: 20, kind: 'announcement' },
-  { re: /trailer|予告|宣传片|預告/i, score: 15, kind: 'trailer' },
+  { re: /launch\s*trailer/i, score: 50, kind: "launch" },
+  { re: /official\s*trailer/i, score: 40, kind: "official" },
+  { re: /公式\s*(?:トレーラー|pv|プロモーション)/i, score: 40, kind: "official-jp" },
+  { re: /release\s*date\s*trailer/i, score: 35, kind: "release-date" },
+  { re: /story\s*trailer/i, score: 28, kind: "story" },
+  { re: /gameplay\s*trailer/i, score: 25, kind: "gameplay" },
+  { re: /(?:announcement|reveal|teaser)\s*trailer/i, score: 20, kind: "announcement" },
+  { re: /trailer|予告|宣传片|預告/i, score: 15, kind: "trailer" },
 ];
 
 /**
@@ -111,12 +164,17 @@ const TYPE_RULES = [
  * @returns {string}
  */
 function normalizeText(raw) {
-  return String(raw == null ? '' : raw)
+  return String(raw == null ? "" : raw)
     .toLowerCase()
-    .replace(/[：:：]/g, ' ')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/[：:：]/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
     .trim();
+}
+
+/** 简单的延迟工具（候选间限流停顿用）。 */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -127,7 +185,9 @@ function normalizeText(raw) {
 function nameTokens(gameName) {
   const norm = normalizeText(gameName);
   if (!norm) return [];
-  return norm.split(' ').filter((t) => t.length >= 2 || /^\d+$/.test(t) || /[\u4e00-\u9fa5\u3040-\u30ff]/.test(t));
+  return norm
+    .split(" ")
+    .filter((t) => t.length >= 2 || /^\d+$/.test(t) || /[\u4e00-\u9fa5\u3040-\u30ff]/.test(t));
 }
 
 /** 官方宣传片下载器。 */
@@ -149,7 +209,8 @@ class TrailerDownloader {
     this.ffmpegPath = deps.ffmpegPath || null;
     this.ffprobePath = deps.ffprobePath || null;
     this.env = deps.env || process.env;
-    this.proxyUrl = typeof deps.proxyUrl === 'string' ? deps.proxyUrl : undefined;
+    this.proxyUrl = typeof deps.proxyUrl === "string" ? deps.proxyUrl : undefined;
+    this.retryGapMs = deps.retryGapMs === undefined ? RETRY_GAP_MS : Number(deps.retryGapMs) || 0;
   }
 
   /**
@@ -169,7 +230,7 @@ class TrailerDownloader {
    * @returns {string}
    */
   ytDlpCmd() {
-    return this.ytDlpPath || 'yt-dlp';
+    return this.ytDlpPath || "yt-dlp";
   }
 
   /**
@@ -177,7 +238,7 @@ class TrailerDownloader {
    * @returns {string}
    */
   ffmpegCmd() {
-    return this.ffmpegPath || 'ffmpeg';
+    return this.ffmpegPath || "ffmpeg";
   }
 
   /**
@@ -188,7 +249,7 @@ class TrailerDownloader {
    * @returns {string} 代理地址；直连时返回空串
    */
   resolveProxyUrl(target = PROXY_PROBE_URL) {
-    if (typeof this.proxyUrl === 'string') return this.proxyUrl;
+    if (typeof this.proxyUrl === "string") return this.proxyUrl;
     return toProxyUrl(resolveProxy(target, this.env));
   }
 
@@ -204,8 +265,8 @@ class TrailerDownloader {
     const list = Array.isArray(args) ? args.slice() : [];
     const url = this.resolveProxyUrl(target);
     if (!url) return list;
-    if (list.indexOf('--proxy') >= 0) return list;
-    return ['--proxy', url].concat(list);
+    if (list.indexOf("--proxy") >= 0) return list;
+    return ["--proxy", url].concat(list);
   }
 
   // ─────────────────── 纯函数：参数构造 / 结果解析 / 打分筛选 ───────────────────
@@ -217,16 +278,17 @@ class TrailerDownloader {
    * @returns {string[]}
    */
   buildSearchArgs(name, opts = {}) {
-    const limit = Number.isFinite(opts.limit) && opts.limit > 0 ? Math.floor(opts.limit) : SEARCH_LIMIT;
-    const suffix = opts.suffix === undefined ? SEARCH_SUFFIX : String(opts.suffix || '');
-    const term = String(name == null ? '' : name).trim();
-    const query = suffix ? term + ' ' + suffix : term;
+    const limit =
+      Number.isFinite(opts.limit) && opts.limit > 0 ? Math.floor(opts.limit) : SEARCH_LIMIT;
+    const suffix = opts.suffix === undefined ? SEARCH_SUFFIX : String(opts.suffix || "");
+    const term = String(name == null ? "" : name).trim();
+    const query = suffix ? term + " " + suffix : term;
     return [
-      'ytsearch' + limit + ':' + query,
-      '--flat-playlist',
-      '--dump-json',
-      '--no-warnings',
-      '--skip-download',
+      "ytsearch" + limit + ":" + query,
+      "--flat-playlist",
+      "--dump-json",
+      "--no-warnings",
+      "--skip-download",
     ];
   }
 
@@ -239,19 +301,22 @@ class TrailerDownloader {
    * @returns {Array<{id: string, title: string, url: string, duration: number, channel: string, verified: boolean}>}
    */
   parseSearchResults(raw) {
-    const text = String(raw == null ? '' : raw).trim();
+    const text = String(raw == null ? "" : raw).trim();
     if (!text) return [];
     const objs = [];
     for (const line of text.split(/\r?\n/)) {
       const s = line.trim();
-      if (!s || s[0] !== '{') continue;
+      if (!s || s[0] !== "{") continue;
       try {
         const o = JSON.parse(s);
-        if (o && typeof o === 'object') {
-          if (Array.isArray(o.entries)) objs.push(...o.entries.filter((e) => e && typeof e === 'object'));
+        if (o && typeof o === "object") {
+          if (Array.isArray(o.entries))
+            objs.push(...o.entries.filter((e) => e && typeof e === "object"));
           else objs.push(o);
         }
-      } catch (e) { /* 单行坏 JSON 不影响其它行 */ }
+      } catch (e) {
+        /* 单行坏 JSON 不影响其它行 */
+      }
     }
     return objs.map((it) => this.normalizeEntry(it)).filter((it) => it != null);
   }
@@ -263,21 +328,23 @@ class TrailerDownloader {
    * @returns {{id: string, title: string, url: string, duration: number, channel: string, verified: boolean}|null}
    */
   normalizeEntry(item) {
-    if (!item || typeof item !== 'object' || !item.id) return null;
+    if (!item || typeof item !== "object" || !item.id) return null;
     const id = String(item.id);
-    let url = String(item.webpage_url || item.url || '');
-    if (!/^https?:\/\//i.test(url)) url = 'https://www.youtube.com/watch?v=' + id;
+    let url = String(item.webpage_url || item.url || "");
+    if (!/^https?:\/\//i.test(url)) url = "https://www.youtube.com/watch?v=" + id;
     const duration = Number.isFinite(Number(item.duration)) ? Number(item.duration) : 0;
     return {
       id,
       title: String(item.title || item.fulltitle || id),
       url,
       duration,
-      channel: String(item.channel || item.uploader || item.playlist_uploader || ''),
+      channel: String(item.channel || item.uploader || item.playlist_uploader || ""),
       verified: item.channel_is_verified === true,
-      thumb: String(item.thumbnail
-        || (Array.isArray(item.thumbnails) && item.thumbnails[0] && item.thumbnails[0].url)
-        || ''),
+      thumb: String(
+        item.thumbnail ||
+          (Array.isArray(item.thumbnails) && item.thumbnails[0] && item.thumbnails[0].url) ||
+          "",
+      ),
     };
   }
 
@@ -292,21 +359,22 @@ class TrailerDownloader {
    */
   scoreChannel(channel, gameName, opts = {}) {
     const ch = normalizeText(channel);
-    if (!ch) return { score: 0, tier: 'unknown' };
+    if (!ch) return { score: 0, tier: "unknown" };
 
-    if (BAD_CHANNEL_HINTS.some((k) => ch.includes(k))) return { score: -40, tier: 'bad' };
+    if (BAD_CHANNEL_HINTS.some((k) => ch.includes(k))) return { score: -40, tier: "bad" };
 
     const dev = normalizeText(opts.developer);
-    if (dev && ch.includes(dev)) return { score: 45, tier: 'developer' };
+    if (dev && ch.includes(dev)) return { score: 45, tier: "developer" };
 
     // 频道名里含游戏名 → 大概率是该作/该系列的官方频道
     const tokens = nameTokens(gameName);
-    if (tokens.length && tokens.every((t) => ch.includes(t))) return { score: 40, tier: 'developer' };
+    if (tokens.length && tokens.every((t) => ch.includes(t)))
+      return { score: 40, tier: "developer" };
 
-    if (PUBLISHER_CHANNELS.some((k) => ch.includes(k))) return { score: 30, tier: 'publisher' };
-    if (PLATFORM_CHANNELS.some((k) => ch.includes(k))) return { score: 20, tier: 'platform' };
-    if (AGGREGATOR_CHANNELS.some((k) => ch.includes(k))) return { score: 5, tier: 'aggregator' };
-    return { score: 0, tier: 'unknown' };
+    if (PUBLISHER_CHANNELS.some((k) => ch.includes(k))) return { score: 30, tier: "publisher" };
+    if (PLATFORM_CHANNELS.some((k) => ch.includes(k))) return { score: 20, tier: "platform" };
+    if (AGGREGATOR_CHANNELS.some((k) => ch.includes(k))) return { score: 5, tier: "aggregator" };
+    return { score: 0, tier: "unknown" };
   }
 
   /**
@@ -315,11 +383,11 @@ class TrailerDownloader {
    * @returns {{score: number, kind: string}}
    */
   scoreTitleType(title) {
-    const t = String(title == null ? '' : title);
+    const t = String(title == null ? "" : title);
     for (const rule of TYPE_RULES) {
       if (rule.re.test(t)) return { score: rule.score, kind: rule.kind };
     }
-    return { score: 0, kind: 'none' };
+    return { score: 0, kind: "none" };
   }
 
   /**
@@ -346,40 +414,58 @@ class TrailerDownloader {
    */
   scoreCandidate(item, gameName, opts = {}) {
     const reasons = [];
-    if (!item || !item.id) return { score: -Infinity, kind: 'none', tier: 'none', reasons: ['无效条目'] };
+    if (!item || !item.id)
+      return { score: -Infinity, kind: "none", tier: "none", reasons: ["无效条目"] };
 
-    const title = String(item.title || '');
+    const title = String(item.title || "");
     const type = this.scoreTitleType(title);
     const chan = this.scoreChannel(item.channel, gameName, opts);
     const dur = this.scoreDuration(item.duration);
     let score = type.score + chan.score + dur;
-    if (type.score) reasons.push('类型 ' + type.kind + ' +' + type.score);
-    if (chan.score) reasons.push('频道 ' + chan.tier + ' ' + (chan.score > 0 ? '+' : '') + chan.score);
-    if (dur) reasons.push('时长 ' + (dur > 0 ? '+' : '') + dur);
+    if (type.score) reasons.push("类型 " + type.kind + " +" + type.score);
+    if (chan.score)
+      reasons.push("频道 " + chan.tier + " " + (chan.score > 0 ? "+" : "") + chan.score);
+    if (dur) reasons.push("时长 " + (dur > 0 ? "+" : "") + dur);
 
     // 规范《筛选标准》标识词：Official / Launch / 公式
-    if (/\bofficial\b|公式/i.test(title)) { score += 15; reasons.push('标识词 official +15'); }
+    if (/\bofficial\b|公式/i.test(title)) {
+      score += 15;
+      reasons.push("标识词 official +15");
+    }
     // 平台认证账号
-    if (item.verified === true) { score += 10; reasons.push('认证频道 +10'); }
+    if (item.verified === true) {
+      score += 10;
+      reasons.push("认证频道 +10");
+    }
 
     // 标题包含游戏名 → 强相关；完全不含 → 很可能是搜索噪声
     const tokens = nameTokens(gameName);
     const normTitle = normalizeText(title);
     if (tokens.length) {
       const hit = tokens.filter((t) => normTitle.includes(t)).length;
-      if (hit === tokens.length) { score += 25; reasons.push('标题全词匹配 +25'); }
-      else if (hit > 0) { score += 10; reasons.push('标题部分匹配 +10'); }
-      else { score -= 20; reasons.push('标题不含游戏名 -20'); }
+      if (hit === tokens.length) {
+        score += 25;
+        reasons.push("标题全词匹配 +25");
+      } else if (hit > 0) {
+        score += 10;
+        reasons.push("标题部分匹配 +10");
+      } else {
+        score -= 20;
+        reasons.push("标题不含游戏名 -20");
+      }
       // 数字序号缺失（如 "PC Building Simulator 2" 漏掉 "2"）→ 强惩罚，避免命中前作/他作预告
       const numMiss = tokens.filter((t) => /^\d+$/.test(t) && !normTitle.includes(t)).length;
       if (numMiss > 0) {
         const p = 25 * numMiss;
         score -= p;
-        reasons.push('标题缺游戏序号 -' + p);
+        reasons.push("标题缺游戏序号 -" + p);
       }
     }
 
-    if (BAD_TITLE_RE.test(title)) { score -= 50; reasons.push('非正片特征 -50'); }
+    if (BAD_TITLE_RE.test(title)) {
+      score -= 50;
+      reasons.push("非正片特征 -50");
+    }
 
     return { score, kind: type.kind, tier: chan.tier, reasons };
   }
@@ -400,7 +486,7 @@ class TrailerDownloader {
       const s = this.scoreCandidate(item, gameName, opts);
       return { item, idx, score: s.score, kind: s.kind, tier: s.tier, reasons: s.reasons };
     });
-    scored.sort((a, b) => (b.score - a.score) || (a.idx - b.idx));
+    scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
     const best = scored[0];
     if (!best || best.score < minScore) return null;
     return Object.assign({}, best.item, {
@@ -432,7 +518,7 @@ class TrailerDownloader {
         idx,
       });
     });
-    scored.sort((a, b) => (b.score - a.score) || (a.idx - b.idx));
+    scored.sort((a, b) => b.score - a.score || a.idx - b.idx);
     return scored.filter((c) => c.score >= minScore);
   }
 
@@ -444,16 +530,15 @@ class TrailerDownloader {
    * @param {{ffmpeg?: boolean}} [env] 外部依赖可用性
    * @returns {string[]}
    */
-  buildDownloadArgs(url, outPath, env = {}) {
+  buildDownloadArgs(url, outPath, env = {}, formatTier = 0) {
     const hasFfmpeg = env.ffmpeg !== false;
-    const format = hasFfmpeg
-      ? 'bestvideo[height<=' + TARGET_HEIGHT + '][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]'
-        + '/bestvideo[height<=' + TARGET_HEIGHT + '][ext=mp4]+bestaudio[ext=m4a]'
-        + '/best[height<=' + TARGET_HEIGHT + ']'
-      : 'best[height<=' + TARGET_HEIGHT + ']';
-    const args = ['-f', format];
-    if (hasFfmpeg) args.push('--merge-output-format', 'mp4');
-    args.push('--no-playlist', '--no-warnings', '--newline', '--no-part', '-o', outPath, url);
+    const tier = Math.min(Math.max(Number(formatTier) || 0, 0), FORMAT_TIERS.length - 1);
+    const format = hasFfmpeg ? FORMAT_TIERS[tier] : "best[height<=" + TARGET_HEIGHT + "]";
+    const args = ["-f", format];
+    if (hasFfmpeg) args.push("--merge-output-format", "mp4");
+    args.push("--no-playlist", "--no-warnings", "--newline", "--no-part");
+    args.push("--retries", "2", "--fragment-retries", "3", "--retry-sleep", "2");
+    args.push("-o", outPath, url);
     return args;
   }
 
@@ -463,7 +548,7 @@ class TrailerDownloader {
    * @returns {boolean}
    */
   needsTranscode(file) {
-    return /\.webm$/i.test(String(file == null ? '' : file));
+    return /\.webm$/i.test(String(file == null ? "" : file));
   }
 
   /**
@@ -473,7 +558,7 @@ class TrailerDownloader {
    * @returns {string[]}
    */
   buildTranscodeArgs(input, output) {
-    return ['-y', '-i', input, '-c:v', 'copy', '-c:a', 'aac', output];
+    return ["-y", "-i", input, "-c:v", "copy", "-c:a", "aac", output];
   }
 
   /**
@@ -484,10 +569,15 @@ class TrailerDownloader {
    */
   findDownloaded(dir, base) {
     let entries = [];
-    try { entries = this.fs.readdirSync(dir); } catch (e) { return null; }
-    const prefix = base + '.';
-    const hit = (Array.isArray(entries) ? entries : [])
-      .filter((n) => n.startsWith(prefix) && !/\.(part|ytdl|temp)$/i.test(n) && !/\.f\d+(\.\w+)?$/i.test(n));
+    try {
+      entries = this.fs.readdirSync(dir);
+    } catch (e) {
+      return null;
+    }
+    const prefix = base + ".";
+    const hit = (Array.isArray(entries) ? entries : []).filter(
+      (n) => n.startsWith(prefix) && !/\.(part|ytdl|temp)$/i.test(n) && !/\.f\d+(\.\w+)?$/i.test(n),
+    );
     if (!hit.length) return null;
     hit.sort((a, b) => (/\.mp4$/i.test(b) ? 1 : 0) - (/\.mp4$/i.test(a) ? 1 : 0));
     return hit[0];
@@ -501,12 +591,20 @@ class TrailerDownloader {
    */
   cleanupTrailerArtifacts(dir, base) {
     let entries = [];
-    try { entries = this.fs.readdirSync(dir); } catch (e) { return; }
-    const prefix = base + '.';
-    for (const n of (Array.isArray(entries) ? entries : [])) {
+    try {
+      entries = this.fs.readdirSync(dir);
+    } catch (e) {
+      return;
+    }
+    const prefix = base + ".";
+    for (const n of Array.isArray(entries) ? entries : []) {
       if (!n.startsWith(prefix)) continue;
       if (/\.f\d+(\.\w+)?$|\.(part|ytdl|temp)$/i.test(n)) {
-        try { this.fs.unlinkSync(path.join(dir, n)); } catch (e) { /* 删不掉不影响结果 */ }
+        try {
+          this.fs.unlinkSync(path.join(dir, n));
+        } catch (e) {
+          /* 删不掉不影响结果 */
+        }
       }
     }
   }
@@ -520,10 +618,12 @@ class TrailerDownloader {
    */
   buildTargetName(gameName, opts = {}) {
     const index = Number.isFinite(Number(opts.index)) ? Number(opts.index) : 0;
-    if (opts.kind === 'main') {
+    if (opts.kind === "main") {
       return this.sanitizer.buildMainVideoName(index, gameName, { versionDesc: opts.versionDesc });
     }
-    return this.sanitizer.buildLaunchTrailerName(index, gameName, { englishName: opts.englishName });
+    return this.sanitizer.buildLaunchTrailerName(index, gameName, {
+      englishName: opts.englishName,
+    });
   }
 
   /**
@@ -535,9 +635,9 @@ class TrailerDownloader {
    * @returns {string} 形如 'Warhammer 40,000_ Space Marine 2 - Launch Trailer.mp4'
    */
   buildOutputName(info, name, opts = {}) {
-    const rawTitle = String(info && info.title || '').trim();
+    const rawTitle = String((info && info.title) || "").trim();
     if (rawTitle) {
-      return this.sanitizer.sanitize(rawTitle, { space: 'keep', max: MAX_LEN - 4 }) + '.mp4';
+      return this.sanitizer.sanitize(rawTitle, { space: "keep", max: MAX_LEN - 4 }) + ".mp4";
     }
     return this.buildTargetName(name, opts);
   }
@@ -551,14 +651,14 @@ class TrailerDownloader {
    * @returns {Promise<object|null>} 最佳候选（含 score/kind/tier）；无命中返回 null
    */
   async searchTrailerCandidates(name, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
     // 本机直连 YouTube 可能被墙，检测到代理就显式传给 yt-dlp 子进程
     const args = this.withProxyArgs(this.buildSearchArgs(name, { limit: opts.limit }));
     const proxyUrl = this.resolveProxyUrl();
     if (proxyUrl) {
-      emit('log', STEP_SEARCH, '[yt-dlp] 经代理访问：' + proxyUrl, null, { level: 'info' });
+      emit("log", STEP_SEARCH, "[yt-dlp] 经代理访问：" + proxyUrl, null, { level: "info" });
     }
-    emit('trailer_search', STEP_SEARCH, '检索 “' + name + ' ' + SEARCH_SUFFIX + '”…', null, {
+    emit("trailer_search", STEP_SEARCH, "检索 “" + name + " " + SEARCH_SUFFIX + "”…", null, {
       limit: Number.isFinite(opts.limit) ? opts.limit : SEARCH_LIMIT,
       proxy: proxyUrl,
     });
@@ -568,34 +668,59 @@ class TrailerDownloader {
       r = await runCommand(this.ytDlpCmd(), args, {
         spawn: this.spawn,
         timeout: TIMEOUT_SEARCH,
-        env: Object.assign({}, process.env, { PYTHONUTF8: '1' }),
+        env: Object.assign({}, process.env, { PYTHONUTF8: "1" }),
         onLine: (line, stream) => {
-          if (stream === 'stderr') emit('log', STEP_SEARCH, '[yt-dlp] ' + line, null, { level: 'info' });
+          if (stream === "stderr")
+            emit("log", STEP_SEARCH, "[yt-dlp] " + line, null, { level: "info" });
         },
       });
     } catch (e) {
-      emit('log', STEP_SEARCH, '[yt-dlp] 检索失败：' + e.message, null, { level: 'err' });
+      emit("log", STEP_SEARCH, "[yt-dlp] 检索失败：" + e.message, null, { level: "err" });
       return null;
     }
 
     const items = this.parseSearchResults(r.stdout);
     if (!items.length) {
-      emit('trailer_search', STEP_SEARCH, '未检索到候选视频', null);
+      emit("trailer_search", STEP_SEARCH, "未检索到候选视频", null);
       return null;
     }
-    const candidates = this.rankCandidates(items, name, { developer: opts.developer, minScore: opts.minScore });
+    const candidates = this.rankCandidates(items, name, {
+      developer: opts.developer,
+      minScore: opts.minScore,
+    });
     if (!candidates.length) {
-      emit('trailer_search', STEP_SEARCH, '检索到 ' + items.length + ' 条，但均不满足官方宣传片筛选标准', null, {
-        total: items.length,
-      });
+      emit(
+        "trailer_search",
+        STEP_SEARCH,
+        "检索到 " + items.length + " 条，但均不满足官方宣传片筛选标准",
+        null,
+        {
+          total: items.length,
+        },
+      );
       return null;
     }
     const best = candidates[0];
-    emit('trailer_search', STEP_SEARCH,
-      '命中 ' + (best.channel ? best.channel + ' · ' : '') + best.title + '（评分 ' + best.score + '）', null, {
-        title: best.title, url: best.url, channel: best.channel,
-        score: best.score, kind: best.kind, tier: best.tier, total: items.length,
-      });
+    emit(
+      "trailer_search",
+      STEP_SEARCH,
+      "命中 " +
+        (best.channel ? best.channel + " · " : "") +
+        best.title +
+        "（评分 " +
+        best.score +
+        "）",
+      null,
+      {
+        title: best.title,
+        url: best.url,
+        channel: best.channel,
+        score: best.score,
+        kind: best.kind,
+        tier: best.tier,
+        total: items.length,
+      },
+    );
     return candidates;
   }
 
@@ -625,9 +750,9 @@ class TrailerDownloader {
    * }>}
    */
   async download(name, dir, env = {}, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
     if (env.ytDlp === false) {
-      return { ok: false, reason: 'yt-dlp-not-found', error: '未检测到 yt-dlp，无法下载宣传片' };
+      return { ok: false, reason: "yt-dlp-not-found", error: "未检测到 yt-dlp，无法下载宣传片" };
     }
 
     // 候选来源优先级：显式候选列表（collect.js 传入完整排序）> 单个 info > 重新检索
@@ -638,13 +763,13 @@ class TrailerDownloader {
       candidates = list || [];
     }
     if (!candidates.length) {
-      return { ok: false, reason: 'trailer-not-found', error: '未搜索到符合规范的官方宣传片' };
+      return { ok: false, reason: "trailer-not-found", error: "未搜索到符合规范的官方宣传片" };
     }
     // 去重 + 限制尝试次数（下载失败自动换下一个候选，年龄限制/网络失败不再直接判死）
     const seen = new Set();
     const list = [];
     for (const c of candidates) {
-      const url = String(c && c.url || '').trim();
+      const url = String((c && c.url) || "").trim();
       if (!url || seen.has(url)) continue;
       seen.add(url);
       list.push(c);
@@ -656,46 +781,92 @@ class TrailerDownloader {
       const info = list[i];
       // 文件名：直接用候选视频的原始标题（不再套规范重命名）；无标题退回规范命名兜底
       const targetName = this.buildOutputName(info, name, opts);
-      const base = targetName.replace(/\.[^.]+$/, '');
+      const base = targetName.replace(/\.[^.]+$/, "");
       const outPath = path.join(dir, targetName);
       const multi = list.length > 1;
-      emit('trailer_download', STEP_DOWNLOAD,
-        '下载 1080p mp4：' + targetName + (multi ? '（候选 ' + (i + 1) + '/' + list.length + '）' : ''), null, {
-          url: info.url, title: info.title, file: targetName,
-          proxy: this.resolveProxyUrl(), attempt: i + 1, total: list.length,
-        });
-      const args = this.withProxyArgs(this.buildDownloadArgs(info.url, outPath, env));
-      let r = null;
-      try {
-        r = await runCommand(this.ytDlpCmd(), args, {
-          spawn: this.spawn,
-          timeout: TIMEOUT_DOWNLOAD,
-          env: Object.assign({}, process.env, { PYTHONUTF8: '1' }),
-          onLine: (line) => emit('log', STEP_DOWNLOAD, '[yt-dlp] ' + line, null, { level: 'info' }),
-        });
-      } catch (e) {
-        last = { ok: false, reason: 'yt-dlp-failed', error: 'yt-dlp 执行失败：' + e.message };
-        if (i < list.length - 1) {
-          emit('log', STEP_DOWNLOAD, '[trailer] 候选 ' + (i + 1) + ' 下载异常，尝试下一个候选…', null, { level: 'warn' });
+      // 同候选内格式降级重试：撞上 YouTube 403 限流自动换一档格式，不直接放弃
+      let produced = null;
+      for (let tier = 0; tier < FORMAT_TIERS.length; tier += 1) {
+        const args = this.withProxyArgs(this.buildDownloadArgs(info.url, outPath, env, tier));
+        emit(
+          "trailer_download",
+          STEP_DOWNLOAD,
+          "下载 1080p mp4：" +
+            targetName +
+            (multi ? "（候选 " + (i + 1) + "/" + list.length + "）" : "") +
+            (tier > 0 ? "（格式档 " + (tier + 1) + "/" + FORMAT_TIERS.length + "）" : ""),
+          null,
+          {
+            url: info.url,
+            title: info.title,
+            file: targetName,
+            proxy: this.resolveProxyUrl(),
+            attempt: i + 1,
+            total: list.length,
+            tier: tier + 1,
+          },
+        );
+        let r = null;
+        try {
+          r = await runCommand(this.ytDlpCmd(), args, {
+            spawn: this.spawn,
+            timeout: TIMEOUT_DOWNLOAD,
+            env: Object.assign({}, process.env, { PYTHONUTF8: "1" }),
+            onLine: (line) =>
+              emit("log", STEP_DOWNLOAD, "[yt-dlp] " + line, null, { level: "info" }),
+          });
+        } catch (e) {
+          last = { ok: false, reason: "yt-dlp-failed", error: "yt-dlp 执行失败：" + e.message };
+          continue;
         }
-        continue;
-      }
 
-      const produced = this.findDownloaded(dir, base);
-      if (r.code !== 0 || !produced) {
-        // 失败时清掉该候选的残留：成品 + .fNNN/.part/.ytdl 等中间产物（403 中断会留半成品）
-        this.cleanupTrailerArtifacts(dir, base);
-        if (produced) {
-          try { this.fs.unlinkSync(path.join(dir, produced)); } catch (e) { /* 删不掉不影响结果 */ }
+        produced = this.findDownloaded(dir, base);
+        if (r.code !== 0 || !produced) {
+          // 失败时清掉该候选的残留：成品 + .fNNN/.part/.ytdl 等中间产物（403 中断会留半成品）
+          this.cleanupTrailerArtifacts(dir, base);
+          if (produced) {
+            try {
+              this.fs.unlinkSync(path.join(dir, produced));
+            } catch (e) {
+              /* 删不掉不影响结果 */
+            }
+          }
+          last = {
+            ok: false,
+            reason: r.code !== 0 ? "yt-dlp-failed" : "trailer-file-missing",
+            error: r.code !== 0 ? "yt-dlp 退出码 " + r.code : "下载完成但未找到产出文件",
+          };
+          if (tier < FORMAT_TIERS.length - 1) {
+            emit(
+              "log",
+              STEP_DOWNLOAD,
+              "[trailer] 候选 " +
+                (i + 1) +
+                " 格式档 " +
+                (tier + 1) +
+                " 失败（" +
+                last.error +
+                "），换格式重试…",
+              null,
+              { level: "warn" },
+            );
+          }
+          continue;
         }
-        last = {
-          ok: false,
-          reason: r.code !== 0 ? 'yt-dlp-failed' : 'trailer-file-missing',
-          error: r.code !== 0 ? 'yt-dlp 退出码 ' + r.code : '下载完成但未找到产出文件',
-        };
+        break;
+      }
+      if (!produced) {
         if (i < list.length - 1) {
-          emit('log', STEP_DOWNLOAD, '[trailer] 候选 ' + (i + 1) + ' 失败（' + last.error + '），尝试下一个候选…', null, { level: 'warn' });
+          emit(
+            "log",
+            STEP_DOWNLOAD,
+            "[trailer] 候选 " + (i + 1) + " 失败（" + (last && last.error) + "），尝试下一个候选…",
+            null,
+            { level: "warn" },
+          );
         }
+        // 403 多为 YouTube 限流：短暂停顿再换下一个候选，降低连续触发概率
+        if (i < list.length - 1 && this.retryGapMs > 0) await sleep(this.retryGapMs);
         continue;
       }
 
@@ -705,7 +876,7 @@ class TrailerDownloader {
         path: path.join(dir, produced),
         title: info.title,
         url: info.url,
-        channel: info.channel || '',
+        channel: info.channel || "",
         score: info.score,
         attempts: i + 1,
       };
@@ -713,15 +884,26 @@ class TrailerDownloader {
       // 素材规范：统一归一化为 H.264+AAC mp4（yt-dlp 已优先 H.264 直下，来源不合规时保底转码）
       const norm = await this.normalizeToH264(result.path, env, { emit });
       if (norm.error) {
-        last = { ok: false, reason: 'normalize-failed', error: norm.error };
+        last = { ok: false, reason: "normalize-failed", error: norm.error };
         if (i < list.length - 1) {
-          emit('log', STEP_DOWNLOAD, '[trailer] 候选 ' + (i + 1) + ' 转码失败（' + norm.error + '），尝试下一个候选…', null, { level: 'warn' });
+          emit(
+            "log",
+            STEP_DOWNLOAD,
+            "[trailer] 候选 " + (i + 1) + " 转码失败（" + norm.error + "），尝试下一个候选…",
+            null,
+            { level: "warn" },
+          );
         }
         continue;
       }
       if (norm.converted) {
-        emit('trailer_download', STEP_DOWNLOAD,
-          '已转码为 H.264/AAC（' + (norm.from || '未知') + ' → h264）', true, { converted: true, from: norm.from });
+        emit(
+          "trailer_download",
+          STEP_DOWNLOAD,
+          "已转码为 H.264/AAC（" + (norm.from || "未知") + " → h264）",
+          true,
+          { converted: true, from: norm.from },
+        );
       }
 
       // 规范《最终验证》：确认分辨率
@@ -733,7 +915,7 @@ class TrailerDownloader {
       }
       return result;
     }
-    return last || { ok: false, reason: 'yt-dlp-failed', error: '宣传片下载失败' };
+    return last || { ok: false, reason: "yt-dlp-failed", error: "宣传片下载失败" };
   }
 
   /**
@@ -743,21 +925,29 @@ class TrailerDownloader {
    * @returns {Promise<{ok: boolean, width?: number, height?: number, error?: string}>}
    */
   async probeResolution(file, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    if (!this.probe || typeof this.probe.probeSize !== 'function') {
-      return { ok: false, error: '未注入 MediaProbe，跳过分辨率校验' };
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    if (!this.probe || typeof this.probe.probeSize !== "function") {
+      return { ok: false, error: "未注入 MediaProbe，跳过分辨率校验" };
     }
     let r = null;
     try {
       r = await this.probe.probeSize(file, { emit, step: STEP_PROBE });
     } catch (e) {
-      return { ok: false, error: 'ffprobe 异常：' + e.message };
+      return { ok: false, error: "ffprobe 异常：" + e.message };
     }
-    if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'ffprobe 未返回分辨率' };
+    if (!r || !r.ok) return { ok: false, error: (r && r.error) || "ffprobe 未返回分辨率" };
     const hd = r.height >= TARGET_HEIGHT;
-    emit('trailer_probe', STEP_PROBE, '实际分辨率 ' + r.width + '×' + r.height + (hd ? '（达标）' : '（低于 1080p）'), hd ? true : null, {
-      width: r.width, height: r.height, hd,
-    });
+    emit(
+      "trailer_probe",
+      STEP_PROBE,
+      "实际分辨率 " + r.width + "×" + r.height + (hd ? "（达标）" : "（低于 1080p）"),
+      hd ? true : null,
+      {
+        width: r.width,
+        height: r.height,
+        hd,
+      },
+    );
     return { ok: true, width: r.width, height: r.height };
   }
 
@@ -766,50 +956,88 @@ class TrailerDownloader {
    * 转换写临时文件，成功后才替换，避免破坏半成品。
    */
   async normalizeToH264(file, env = {}, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const ffprobe = this.ffprobePath || env.ffprobePath || 'ffprobe';
-    const ffmpeg = this.ffmpegPath || env.ffmpegPath || 'ffmpeg';
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const ffprobe = this.ffprobePath || env.ffprobePath || "ffprobe";
+    const ffmpeg = this.ffmpegPath || env.ffmpegPath || "ffmpeg";
     let r = null;
     try {
-      r = await runCommand(ffprobe, [
-        '-v', 'error', '-show_entries', 'stream=codec_type,codec_name', '-of', 'json', file,
-      ], { spawn: this.spawn, timeout: 60000 });
+      r = await runCommand(
+        ffprobe,
+        ["-v", "error", "-show_entries", "stream=codec_type,codec_name", "-of", "json", file],
+        { spawn: this.spawn, timeout: 60000 },
+      );
     } catch (e) {
-      return { converted: false, error: 'ffprobe 异常：' + e.message };
+      return { converted: false, error: "ffprobe 异常：" + e.message };
     }
-    let vcodec = '';
-    let acodec = '';
+    let vcodec = "";
+    let acodec = "";
     try {
-      const j = JSON.parse(r.stdout || '{}');
-      for (const s of (j.streams || [])) {
-        if (s.codec_type === 'video' && !vcodec) vcodec = String(s.codec_name || '');
-        if (s.codec_type === 'audio' && !acodec) acodec = String(s.codec_name || '');
+      const j = JSON.parse(r.stdout || "{}");
+      for (const s of j.streams || []) {
+        if (s.codec_type === "video" && !vcodec) vcodec = String(s.codec_name || "");
+        if (s.codec_type === "audio" && !acodec) acodec = String(s.codec_name || "");
       }
-    } catch (e) { /* JSON 解析失败按不合规处理 */ }
+    } catch (e) {
+      /* JSON 解析失败按不合规处理 */
+    }
     if (!vcodec) return { converted: false, vcodec, acodec, skipped: true }; // 探测不出编码 → 不干预
-    if (vcodec === 'h264' && (!acodec || acodec === 'aac')) {
+    if (vcodec === "h264" && (!acodec || acodec === "aac")) {
       return { converted: false, vcodec, acodec };
     }
-    const fsm = (this.fs && typeof this.fs.existsSync === 'function') ? this.fs : fsDefault;
-    const tmp = file + '.norm.mp4';
-    emit('log', STEP_DOWNLOAD,
-      '[trailer] 转码为 H.264/AAC（' + (vcodec || '未知') + ' → h264）…', null, { level: 'info' });
+    const fsm = this.fs && typeof this.fs.existsSync === "function" ? this.fs : fsDefault;
+    const tmp = file + ".norm.mp4";
+    emit(
+      "log",
+      STEP_DOWNLOAD,
+      "[trailer] 转码为 H.264/AAC（" + (vcodec || "未知") + " → h264）…",
+      null,
+      { level: "info" },
+    );
     try {
-      r = await runCommand(ffmpeg, [
-        '-y', '-i', file, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19',
-        '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', tmp,
-      ], { spawn: this.spawn, timeout: 20 * 60 * 1000 });
+      r = await runCommand(
+        ffmpeg,
+        [
+          "-y",
+          "-i",
+          file,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "19",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "192k",
+          "-movflags",
+          "+faststart",
+          tmp,
+        ],
+        { spawn: this.spawn, timeout: 20 * 60 * 1000 },
+      );
     } catch (e) {
-      return { converted: false, error: 'ffmpeg 异常：' + e.message };
+      return { converted: false, error: "ffmpeg 异常：" + e.message };
     }
     if (r.code !== 0 || !fsm.existsSync(tmp)) {
-      return { converted: false, error: 'ffmpeg 转码失败（退出码 ' + r.code + '）' };
+      return { converted: false, error: "ffmpeg 转码失败（退出码 " + r.code + "）" };
     }
-    try { fsm.unlinkSync(file); } catch (e) { /* ignore */ }
+    try {
+      fsm.unlinkSync(file);
+    } catch (e) {
+      /* ignore */
+    }
     try {
       fsm.renameSync(tmp, file);
     } catch (e) {
-      try { fsm.copyFileSync(tmp, file); fsm.unlinkSync(tmp); } catch (e2) { /* ignore */ }
+      try {
+        fsm.copyFileSync(tmp, file);
+        fsm.unlinkSync(tmp);
+      } catch (e2) {
+        /* ignore */
+      }
     }
     return { converted: true, vcodec, acodec };
   }
@@ -823,39 +1051,46 @@ class TrailerDownloader {
    * @returns {Promise<{file: string, converted: boolean, reason?: string, error?: string}>}
    */
   async transcodeIfNeeded(file, dir, env = {}, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
     if (!this.needsTranscode(file)) return { file, converted: false };
     if (env.ffmpeg === false) {
-      emit('trailer_transcode', STEP_TRANSCODE, '未检测到 ffmpeg，保留 .webm 原文件', null, {
-        reason: 'ffmpeg-not-found',
+      emit("trailer_transcode", STEP_TRANSCODE, "未检测到 ffmpeg，保留 .webm 原文件", null, {
+        reason: "ffmpeg-not-found",
       });
-      return { file, converted: false, reason: 'ffmpeg-not-found' };
+      return { file, converted: false, reason: "ffmpeg-not-found" };
     }
     const input = path.join(dir, file);
-    const outName = file.replace(/\.webm$/i, '.mp4');
+    const outName = file.replace(/\.webm$/i, ".mp4");
     const output = path.join(dir, outName);
-    emit('trailer_transcode', STEP_TRANSCODE, 'ffmpeg 转码中…', null, { from: file, to: outName });
+    emit("trailer_transcode", STEP_TRANSCODE, "ffmpeg 转码中…", null, { from: file, to: outName });
     let r = null;
     try {
       r = await runCommand(this.ffmpegCmd(), this.buildTranscodeArgs(input, output), {
         spawn: this.spawn,
         timeout: TIMEOUT_DOWNLOAD,
-        onLine: (line) => emit('log', STEP_TRANSCODE, '[ffmpeg] ' + line, null, { level: 'info' }),
+        onLine: (line) => emit("log", STEP_TRANSCODE, "[ffmpeg] " + line, null, { level: "info" }),
       });
     } catch (e) {
-      emit('trailer_transcode', STEP_TRANSCODE, 'ffmpeg 转码失败，保留 .webm：' + e.message, null, {
-        reason: 'ffmpeg-failed',
+      emit("trailer_transcode", STEP_TRANSCODE, "ffmpeg 转码失败，保留 .webm：" + e.message, null, {
+        reason: "ffmpeg-failed",
       });
-      return { file, converted: false, reason: 'ffmpeg-failed', error: e.message };
+      return { file, converted: false, reason: "ffmpeg-failed", error: e.message };
     }
     if (r.code !== 0) {
-      emit('trailer_transcode', STEP_TRANSCODE, 'ffmpeg 退出码 ' + r.code + '，保留 .webm', null, {
-        reason: 'ffmpeg-failed',
+      emit("trailer_transcode", STEP_TRANSCODE, "ffmpeg 退出码 " + r.code + "，保留 .webm", null, {
+        reason: "ffmpeg-failed",
       });
-      return { file, converted: false, reason: 'ffmpeg-failed', error: 'ffmpeg 退出码 ' + r.code };
+      return { file, converted: false, reason: "ffmpeg-failed", error: "ffmpeg 退出码 " + r.code };
     }
-    try { this.fs.unlinkSync(input); } catch (e) { /* 删不掉原文件不影响结果 */ }
-    emit('trailer_transcode', STEP_TRANSCODE, '已转为 ' + outName, true, { file: outName, converted: true });
+    try {
+      this.fs.unlinkSync(input);
+    } catch (e) {
+      /* 删不掉原文件不影响结果 */
+    }
+    emit("trailer_transcode", STEP_TRANSCODE, "已转为 " + outName, true, {
+      file: outName,
+      converted: true,
+    });
     return { file: outName, converted: true };
   }
 
@@ -865,40 +1100,46 @@ class TrailerDownloader {
    * yt-dlp 的 Steam 提取器支持直接传商店页 URL，自动解析视频。
    */
   async downloadFromSteam(name, dir, env = {}, opts = {}) {
-    const emit = typeof opts.emit === 'function' ? opts.emit : () => {};
-    const appId = String(opts.steamAppId || '').trim();
-    if (!appId) return { ok: false, reason: 'steam-no-appid', error: '未提供 Steam appid' };
-    const url = 'https://store.steampowered.com/app/' + appId + '/';
-    emit('log', STEP_DOWNLOAD, '[steam] 搜索 Steam 商店页预告片…', null, { level: 'info', url });
-    const r = await runCommand(env.ytDlpPath, [
-      '--no-warnings',
-      '--dump-json',
-      '--playlist-end', '1',
-      url,
-    ], { timeout: 30000, env: Object.assign({}, process.env, { PYTHONUTF8: '1' }) });
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const appId = String(opts.steamAppId || "").trim();
+    if (!appId) return { ok: false, reason: "steam-no-appid", error: "未提供 Steam appid" };
+    const url = "https://store.steampowered.com/app/" + appId + "/";
+    emit("log", STEP_DOWNLOAD, "[steam] 搜索 Steam 商店页预告片…", null, { level: "info", url });
+    const r = await runCommand(
+      env.ytDlpPath,
+      ["--no-warnings", "--dump-json", "--playlist-end", "1", url],
+      { timeout: 30000, env: Object.assign({}, process.env, { PYTHONUTF8: "1" }) },
+    );
     if (r.code !== 0 || !r.stdout) {
-      return { ok: false, reason: 'steam-extract-failed', error: 'yt-dlp Steam 提取失败' };
+      return { ok: false, reason: "steam-extract-failed", error: "yt-dlp Steam 提取失败" };
     }
     // 解析 Steam 提取的 JSON（可能有多行）
-    const lines = r.stdout.split('\n').filter(Boolean);
+    const lines = r.stdout.split("\n").filter(Boolean);
     for (const line of lines) {
       try {
         const info = JSON.parse(line);
         if (info.id) {
-          emit('trailer_search', STEP_SEARCH,
-            'Steam 命中：' + (info.title || ''), null, {
-              title: info.title, url, channel: 'Steam', source: 'steam',
-            });
+          emit("trailer_search", STEP_SEARCH, "Steam 命中：" + (info.title || ""), null, {
+            title: info.title,
+            url,
+            channel: "Steam",
+            source: "steam",
+          });
           // 复用 download 方法去下载
           return this.download(name, dir, env, {
-            info: Object.assign({}, info, { channel: 'Steam', source: 'steam' }),
-            emit, index: opts.index, kind: opts.kind,
-            englishName: opts.englishName, versionDesc: opts.versionDesc,
+            info: Object.assign({}, info, { channel: "Steam", source: "steam" }),
+            emit,
+            index: opts.index,
+            kind: opts.kind,
+            englishName: opts.englishName,
+            versionDesc: opts.versionDesc,
           });
         }
-      } catch (e) { /* skip bad lines */ }
+      } catch (e) {
+        /* skip bad lines */
+      }
     }
-    return { ok: false, reason: 'steam-no-video', error: 'Steam 商店页无明显预告片' };
+    return { ok: false, reason: "steam-no-video", error: "Steam 商店页无明显预告片" };
   }
 }
 

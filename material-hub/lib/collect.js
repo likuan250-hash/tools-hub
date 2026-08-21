@@ -169,14 +169,15 @@ class CollectService {
   /**
    * 提交一次宣传片候选选择（由 server 层 /api/video/choose 转发）。
    * @param {string} requestId 候选事件携带的请求 id
-   * @param {string} url 选中的候选直链；空串表示跳过（走自动第一个）
+   * @param {string[]} urls 选中的候选直链列表（按勾选顺序）；空数组表示跳过（走自动第一个）
    * @returns {boolean} 是否存在待处理的对应请求
    */
-  chooseVideo(requestId, url) {
+  chooseVideo(requestId, urls) {
     const entry = this._videoChoices.get(requestId);
     if (!entry) return false;
     this._videoChoices.delete(requestId);
-    entry.resolve({ url: String(url || "").trim() });
+    const list = Array.isArray(urls) ? urls : [];
+    entry.resolve({ urls: list.map((u) => String(u || "").trim()).filter(Boolean) });
     return true;
   }
 
@@ -336,7 +337,7 @@ class CollectService {
    * 重找视频时候选已剔除上次落盘项；跳过/超时返回 null（沿用自动第一个）。
    * @param {Array<object>} cands 排序后的候选列表（trailer.searchTrailerCandidates 输出）
    * @param {{emit?: Function, choiceTimeoutMs?: number}} [opts]
-   * @returns {Promise<object|null>} 选中的候选；跳过/超时返回 null
+   * @returns {Promise<object[]|null>} 选中的候选列表（按勾选顺序）；跳过/超时返回 null
    */
   async runInteractiveTrailer(cands, opts = {}) {
     const emit = typeof opts.emit === "function" ? opts.emit : () => {};
@@ -361,13 +362,19 @@ class CollectService {
       emit("log", STEP_TRAILER, "[trailer] 候选选择超时，自动采用第一个", null, { level: "warn" });
       return null;
     }
-    if (!choice.url) {
+    if (!choice.urls || !choice.urls.length) {
       emit("log", STEP_TRAILER, "[trailer] 已跳过候选选择，自动采用第一个", null, {
         level: "info",
       });
       return null;
     }
-    return cands.find((c) => c.url === choice.url) || null;
+    const byUrl = new Map(cands.map((c) => [c.url, c]));
+    const picked = [];
+    for (const u of choice.urls) {
+      const hit = byUrl.get(u);
+      if (hit && !picked.includes(hit)) picked.push(hit);
+    }
+    return picked.length ? picked : null;
   }
 
   /**
@@ -606,7 +613,7 @@ class CollectService {
           opts.videoInteractive === true || (forceTrailer && opts.videoInteractive !== false);
         if (wantInteractive && trailerCands.length > 1) {
           const picked = await this.runInteractiveTrailer(trailerCands, { emit });
-          if (picked) trailerCands = [picked];
+          if (picked) trailerCands = picked;
         }
         trailerInfo = trailerCands && trailerCands.length ? trailerCands[0] : null;
         if (!trailerInfo) {

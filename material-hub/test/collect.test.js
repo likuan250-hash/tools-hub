@@ -988,12 +988,15 @@ test("交互式宣传片：video_candidates 弹出 → chooseVideo 选中 → �
   const ev = await waitEvent(events, "video_candidates");
   assert.equal(ev.detail.candidates.length, 2);
   const pickedUrl = ev.detail.candidates[1].url;
-  assert.equal(svc.chooseVideo(ev.detail.requestId, pickedUrl), true);
+  const firstUrl = ev.detail.candidates[0].url;
+  // 多选：按勾选顺序传数组，全部传给 download 依次尝试
+  assert.equal(svc.chooseVideo(ev.detail.requestId, [pickedUrl, firstUrl]), true);
   const result = await p;
   assert.equal(result.trailerOk, true);
   assert.equal(trailer.calls.download.length, 1);
-  assert.equal(trailer.calls.download[0].opts.candidates.length, 1);
+  assert.equal(trailer.calls.download[0].opts.candidates.length, 2);
   assert.equal(trailer.calls.download[0].opts.candidates[0].url, pickedUrl);
+  assert.equal(trailer.calls.download[0].opts.candidates[1].url, firstUrl);
 });
 
 test("重找视频：forceTrailer 时排除上次已落盘候选（读 .trailer.json）", async () => {

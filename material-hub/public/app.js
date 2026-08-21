@@ -8,7 +8,9 @@
  * @param {string} id 元素 id
  * @returns {HTMLElement}
  */
-function $(id) { return document.getElementById(id); }
+function $(id) {
+  return document.getElementById(id);
+}
 
 const gameName = $("gameName");
 const collectBtn = $("collectBtn");
@@ -106,7 +108,7 @@ let coverPickUrl = "";
 let coverCands = [];
 /** 交互式宣传片选择状态。 */
 let videoRequestId = "";
-let videoPickUrl = "";
+let videoPickUrls = [];
 let videoCands = [];
 
 /**
@@ -127,7 +129,15 @@ function esc(s) {
  * @returns {string} HTML 片段
  */
 function statusTag(level, text) {
-  return '<span class="st-luxe st-luxe--' + level + '" role="status" aria-label="' + esc(text) + '">' + esc(text) + "</span>";
+  return (
+    '<span class="st-luxe st-luxe--' +
+    level +
+    '" role="status" aria-label="' +
+    esc(text) +
+    '">' +
+    esc(text) +
+    "</span>"
+  );
 }
 
 /**
@@ -158,10 +168,16 @@ function renderStep(group) {
   }
   const label = LEVEL_LABEL[st.level] || LEVEL_LABEL.off;
   item.innerHTML =
-    '<span class="step-icon">' + (ICONS[st.level] || ICONS.off) + "</span>" +
+    '<span class="step-icon">' +
+    (ICONS[st.level] || ICONS.off) +
+    "</span>" +
     '<div class="step-body">' +
-      '<div class="step-name">' + esc(STEP_NAMES[group] || group) + " " + statusTag(st.level, label) + "</div>" +
-      (st.detail ? '<div class="step-detail">' + st.detail + "</div>" : "") +
+    '<div class="step-name">' +
+    esc(STEP_NAMES[group] || group) +
+    " " +
+    statusTag(st.level, label) +
+    "</div>" +
+    (st.detail ? '<div class="step-detail">' + st.detail + "</div>" : "") +
     "</div>";
 }
 
@@ -185,7 +201,8 @@ function applyStep(group, ev) {
   const cur = stepState[group] || { level: "off", detail: "" };
   const incoming = levelOf(ev.ok);
   // 终态（ok/err）不被后续「进行中」事件回退，只更新描述文本
-  const level = incoming === "info" && (cur.level === "ok" || cur.level === "err") ? cur.level : incoming;
+  const level =
+    incoming === "info" && (cur.level === "ok" || cur.level === "err") ? cur.level : incoming;
   let detail = esc(ev.msg || "");
   if (level === "ok") detail = '<span class="ok">' + detail + "</span>";
   if (level === "err") detail = '<span class="err">' + detail + "</span>";
@@ -209,8 +226,12 @@ function resetPanels() {
   coverPreview.classList.remove("missing");
   coverName.textContent = "封面待获取";
   coverDim.textContent = "";
-  Object.keys(stepEls).forEach((k) => { delete stepEls[k]; });
-  Object.keys(stepState).forEach((k) => { delete stepState[k]; });
+  Object.keys(stepEls).forEach((k) => {
+    delete stepEls[k];
+  });
+  Object.keys(stepState).forEach((k) => {
+    delete stepState[k];
+  });
   STEP_ORDER.forEach((g) => {
     stepState[g] = { level: "off", detail: "" };
     renderStep(g);
@@ -232,13 +253,16 @@ function renderDone(ev) {
   // 摘要：封面是硬指标（缺封面 = 整体失败）；封面在但宣传片缺 = 黄警，不假装全绿
   if (ev.ok === true && d.trailerOk) {
     doneSummary.className = "result-summary ok";
-    doneSummary.innerHTML = summaryIcon("ok") + " " + esc((ev.step || "素材搜集完成") + " · " + (ev.msg || ""));
+    doneSummary.innerHTML =
+      summaryIcon("ok") + " " + esc((ev.step || "素材搜集完成") + " · " + (ev.msg || ""));
   } else if (ev.ok === true) {
     doneSummary.className = "result-summary warn";
-    doneSummary.innerHTML = summaryIcon("warn") + " " + esc((ev.step || "素材搜集完成") + " · " + (ev.msg || ""));
+    doneSummary.innerHTML =
+      summaryIcon("warn") + " " + esc((ev.step || "素材搜集完成") + " · " + (ev.msg || ""));
   } else {
     doneSummary.className = "result-summary fail";
-    doneSummary.innerHTML = summaryIcon("fail") + " " + esc((ev.step || "素材搜集未完成") + " · " + (ev.msg || ""));
+    doneSummary.innerHTML =
+      summaryIcon("fail") + " " + esc((ev.step || "素材搜集未完成") + " · " + (ev.msg || ""));
   }
 
   // 封面预览（本地磁盘文件不能经 http origin 直读，按原型以占位卡呈现元数据）
@@ -247,8 +271,12 @@ function renderDone(ev) {
     coverPreview.classList.add("clickable");
     coverPreview.dataset.path = folderPath + "\\" + cover.file;
     coverName.textContent = cover.file;
-    coverDim.textContent = (cover.width || "?") + " × " + (cover.height || "?") +
-      " · " + coverSourceLabel(cover.source) +
+    coverDim.textContent =
+      (cover.width || "?") +
+      " × " +
+      (cover.height || "?") +
+      " · " +
+      coverSourceLabel(cover.source) +
       (cover.degraded ? "（降级图）" : "") +
       (cover.reused ? "（复用）" : "");
   } else {
@@ -263,35 +291,49 @@ function renderDone(ev) {
   const cards = [];
   if (trailer && trailer.file) {
     cards.push(
-      '<div class="file-card clickable" data-path="' + esc(folderPath + "\\" + trailer.file) + '">' +
-      '<div class="play"><i class="app-ico" data-ico="play"></i></div><div class="meta">' +
-      '<div class="fname">' + esc(trailer.file) + "</div>" +
-      '<div class="fsub">' + esc(trailer.title || "官方宣传片") + (trailer.converted ? " · 已转码 .webm → .mp4" : "") + "</div>" +
-      "</div></div>"
+      '<div class="file-card clickable" data-path="' +
+        esc(folderPath + "\\" + trailer.file) +
+        '">' +
+        '<div class="play"><i class="app-ico" data-ico="play"></i></div><div class="meta">' +
+        '<div class="fname">' +
+        esc(trailer.file) +
+        "</div>" +
+        '<div class="fsub">' +
+        esc(trailer.title || "官方宣传片") +
+        (trailer.converted ? " · 已转码 .webm → .mp4" : "") +
+        "</div>" +
+        "</div></div>",
     );
   } else {
     cards.push(
       '<div class="file-card"><div class="play missing"><i class="app-ico" data-ico="cross"></i></div><div class="meta">' +
-      '<div class="fname">宣传片未获取</div><div class="fsub">见「执行中」面板的失败原因与安装引导</div>' +
-      "</div></div>"
+        '<div class="fname">宣传片未获取</div><div class="fsub">见「执行中」面板的失败原因与安装引导</div>' +
+        "</div></div>",
     );
   }
   if (cover && cover.file) {
     cards.push(
-      '<div class="file-card clickable" data-path="' + esc(folderPath + "\\" + cover.file) + '">' +
-      '<div class="play cover"><i class="app-ico" data-ico="image"></i></div><div class="meta">' +
-      '<div class="fname">' + esc(cover.file) + "</div>" +
-      '<div class="fsub">' + esc(coverSourceLabel(cover.source)) +
-      (cover.degraded ? " · 降级图" : "") +
-      (cover.reused ? " · 复用" : "") +
-      " · " + esc((cover.width || "?") + " × " + (cover.height || "?")) + "</div>" +
-      "</div></div>"
+      '<div class="file-card clickable" data-path="' +
+        esc(folderPath + "\\" + cover.file) +
+        '">' +
+        '<div class="play cover"><i class="app-ico" data-ico="image"></i></div><div class="meta">' +
+        '<div class="fname">' +
+        esc(cover.file) +
+        "</div>" +
+        '<div class="fsub">' +
+        esc(coverSourceLabel(cover.source)) +
+        (cover.degraded ? " · 降级图" : "") +
+        (cover.reused ? " · 复用" : "") +
+        " · " +
+        esc((cover.width || "?") + " × " + (cover.height || "?")) +
+        "</div>" +
+        "</div></div>",
     );
   } else {
     cards.push(
       '<div class="file-card"><div class="play missing"><i class="app-ico" data-ico="cross"></i></div><div class="meta">' +
-      '<div class="fname">封面未获取</div><div class="fsub">所有封面来源（壁纸站 / 官网 / YouTube / 主视频抽帧）均获取失败</div>' +
-      "</div></div>"
+        '<div class="fname">封面未获取</div><div class="fsub">所有封面来源（壁纸站 / 官网 / YouTube / 主视频抽帧）均获取失败</div>' +
+        "</div></div>",
     );
   }
   doneFiles.innerHTML = cards.join("");
@@ -344,8 +386,8 @@ async function runCollect(name) {
     const ctype = r.headers.get("content-type") || "";
     if (!r.ok && ctype.indexOf("application/json") >= 0) {
       const d = await r.json();
-      addLog("err", d.error || ("HTTP " + r.status));
-      formError.textContent = d.error || ("请求失败：HTTP " + r.status);
+      addLog("err", d.error || "HTTP " + r.status);
+      formError.textContent = d.error || "请求失败：HTTP " + r.status;
       doneSummary.className = "result-summary fail";
       doneSummary.innerHTML = summaryIcon("fail") + " " + esc("执行失败：" + (d.error || r.status));
       $("panel-done").classList.add("show");
@@ -371,7 +413,11 @@ async function runCollect(name) {
         const line = chunk.split("\n").find((l) => l.startsWith("data: "));
         if (!line) continue;
         let ev = null;
-        try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
+        try {
+          ev = JSON.parse(line.slice(6));
+        } catch (e) {
+          continue;
+        }
         handleEvent(ev);
       }
     }
@@ -428,7 +474,12 @@ function handleEvent(ev) {
     openVideoPicker(ev);
     return;
   }
-  if (type === "cover_download" || type === "cover_extract" || type === "done" || type === "error") {
+  if (
+    type === "cover_download" ||
+    type === "cover_extract" ||
+    type === "done" ||
+    type === "error"
+  ) {
     // 流程已继续（应用所选/抽帧/结束），收起弹窗
     closeCoverPicker();
   }
@@ -458,7 +509,8 @@ function openCoverPicker(ev) {
   if (!modal || !grid) return;
   const meta = detail.meta || {};
   $("coverModalTitle").textContent = "选择封面";
-  $("coverModalSub").textContent = (meta.queryUsed ? meta.queryUsed + " · " : "") + "共 " + cands.length + " 张候选";
+  $("coverModalSub").textContent =
+    (meta.queryUsed ? meta.queryUsed + " · " : "") + "共 " + cands.length + " 张候选";
   grid.innerHTML = "";
 
   cands.forEach((c, i) => {
@@ -480,13 +532,13 @@ function openCoverPicker(ev) {
     img.src = c.url;
     const metaEl = document.createElement("span");
     metaEl.className = "cover-cand-meta";
-    metaEl.textContent = (i + 1) + ". " + (c.label || c.source || "候选");
+    metaEl.textContent = i + 1 + ". " + (c.label || c.source || "候选");
     // 缩略图加载后附上真实分辨率（naturalWidth/Height，远程图不跨域也能读）
     img.addEventListener("load", () => {
       const nw = img.naturalWidth;
       const nh = img.naturalHeight;
       if (nw && nh) {
-        metaEl.textContent = (i + 1) + ". " + (c.label || c.source || "候选") + " · " + nw + "×" + nh;
+        metaEl.textContent = i + 1 + ". " + (c.label || c.source || "候选") + " · " + nw + "×" + nh;
       }
     });
     card.appendChild(radio);
@@ -516,42 +568,60 @@ function openVideoPicker(ev) {
   const cands = Array.isArray(detail.candidates) ? detail.candidates : [];
   videoRequestId = String(detail.requestId || "");
   videoCands = cands;
-  videoPickUrl = "";
+  videoPickUrls = [];
 
   const modal = $("videoModal");
   const grid = $("videoModalGrid");
   if (!modal || !grid) return;
   $("videoModalTitle").textContent = "选择宣传片";
-  $("videoModalSub").textContent = "共 " + cands.length + " 条候选 · 点击卡片预览";
+  $("videoModalSub").textContent =
+    "共 " + cands.length + " 条候选 · 可多选，勾选后按顺序逐个尝试下载";
   grid.innerHTML = "";
 
   cands.forEach((c, i) => {
     const card = document.createElement("label");
     card.className = "cover-cand";
-    const radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = "videoPick";
-    radio.value = c.url;
-    radio.addEventListener("change", () => {
-      videoPickUrl = c.url;
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "video-pick-box";
+    box.value = c.url;
+    box.addEventListener("change", () => {
+      const idx = videoPickUrls.indexOf(c.url);
+      if (box.checked && idx === -1) videoPickUrls.push(c.url);
+      if (!box.checked && idx >= 0) videoPickUrls.splice(idx, 1);
+      card.classList.toggle("picked", box.checked);
       const ok = $("videoOkBtn");
-      if (ok) ok.disabled = false;
+      if (ok) {
+        ok.disabled = videoPickUrls.length === 0;
+        ok.textContent = videoPickUrls.length ? "下载所选 " + videoPickUrls.length + " 条" : "确定";
+      }
     });
     const img = document.createElement("img");
     img.loading = "lazy";
     img.alt = "";
     img.addEventListener("error", () => card.classList.add("broken"));
     img.src = c.thumb || "";
-    const dur = Number(c.duration) > 0
-      ? Math.floor(Number(c.duration) / 60) + ":" + String(Math.floor(Number(c.duration) % 60)).padStart(2, "0")
-      : "";
+    const dur =
+      Number(c.duration) > 0
+        ? Math.floor(Number(c.duration) / 60) +
+          ":" +
+          String(Math.floor(Number(c.duration) % 60)).padStart(2, "0")
+        : "";
     const metaEl = document.createElement("span");
     metaEl.className = "cover-cand-meta";
     metaEl.innerHTML =
-      '<div class="cand-title">' + esc((i + 1) + ". " + (c.title || "候选")) + "</div>" +
+      '<div class="cand-title">' +
+      esc(i + 1 + ". " + (c.title || "候选")) +
+      "</div>" +
       (c.channel ? "<div>" + esc(c.channel) + "</div>" : "") +
-      ((dur || c.score) ? "<div>" + (dur ? "时长 " + dur : "") + (dur && c.score ? " · " : "") + (c.score ? "评分 " + c.score : "") + "</div>" : "");
-    card.appendChild(radio);
+      (dur || c.score
+        ? "<div>" +
+          (dur ? "时长 " + dur : "") +
+          (dur && c.score ? " · " : "") +
+          (c.score ? "评分 " + c.score : "") +
+          "</div>"
+        : "");
+    card.appendChild(box);
     card.appendChild(img);
     card.appendChild(metaEl);
     grid.appendChild(card);
@@ -571,17 +641,18 @@ function closeVideoPicker() {
 
 /**
  * 提交宣传片选择（确定/自动/跳过统一走这里）。
- * @param {string} url 选中的候选直链；空串 = 跳过（自动推荐第一个）
+ * @param {string[]} urls 选中的候选直链列表；空数组 = 跳过（自动推荐第一个）
  */
-async function sendVideoChoice(url) {
+async function sendVideoChoice(urls) {
   const id = videoRequestId;
   closeVideoPicker();
   if (!id) return;
+  const list = Array.isArray(urls) ? urls : [];
   try {
     const r = await fetch("/api/video/choose", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId: id, url: url || "" }),
+      body: JSON.stringify({ requestId: id, urls: list }),
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
@@ -635,9 +706,9 @@ gameName.addEventListener("keydown", (e) => {
 $("coverOkBtn").onclick = () => sendCoverChoice(coverPickUrl);
 $("coverAutoBtn").onclick = () => sendCoverChoice(coverCands.length ? coverCands[0].url : "");
 $("coverSkipBtn").onclick = () => sendCoverChoice("");
-$("videoOkBtn").onclick = () => sendVideoChoice(videoPickUrl);
-$("videoAutoBtn").onclick = () => sendVideoChoice(videoCands.length ? videoCands[0].url : "");
-$("videoSkipBtn").onclick = () => sendVideoChoice("");
+$("videoOkBtn").onclick = () => sendVideoChoice(videoPickUrls);
+$("videoAutoBtn").onclick = () => sendVideoChoice(videoCands.length ? [videoCands[0].url] : []);
+$("videoSkipBtn").onclick = () => sendVideoChoice([]);
 
 // 产物卡片 / 封面预览点击 → 打开文件管理器并选中文件
 function revealInFolder(p) {

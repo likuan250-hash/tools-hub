@@ -17,7 +17,7 @@ const CACHE_FILE = path.join(DATA_DIR, "data-pack.json");
 function normZh(s) {
   if (!s) return "";
   let t = String(s).toLowerCase();
-  t = t.replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  t = t.replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
   t = t.replace(/\s+/g, "");
   t = t.replace(/[：:·•、，,.。!！?？()（）\[\]【】""''«»/\\|_\-—～~*+#@%&='"]/g, "");
   t = t.replace(/的/g, "");
@@ -28,20 +28,22 @@ function normZh(s) {
 /** 英文名归一化：小写、去所有非字母数字。 */
 function normEn(s) {
   if (!s) return "";
-  return String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 }
 
 /** 归一化数据包：抽出 version + 归一化后的 gameNames/appIds 索引。非法包返回 null。 */
 function normalizePack(pack) {
   if (!pack || typeof pack.version !== "number" || pack.version < 1) return null;
   const gameNames = {};
-  const rawG = (pack.gameNames && typeof pack.gameNames === "object") ? pack.gameNames : {};
+  const rawG = pack.gameNames && typeof pack.gameNames === "object" ? pack.gameNames : {};
   for (const k of Object.keys(rawG)) {
     const nk = normZh(k);
     if (nk && rawG[k]) gameNames[nk] = String(rawG[k]);
   }
   const appIds = {};
-  const rawA = (pack.appIds && typeof pack.appIds === "object") ? pack.appIds : {};
+  const rawA = pack.appIds && typeof pack.appIds === "object" ? pack.appIds : {};
   for (const k of Object.keys(rawA)) {
     const nk = normEn(k);
     if (nk && rawA[k]) appIds[nk] = String(rawA[k]);
@@ -52,14 +54,18 @@ function normalizePack(pack) {
 let BUILTIN = null;
 try {
   BUILTIN = normalizePack(require("./data-pack.json"));
-} catch (_) { BUILTIN = null; }
+} catch (_) {
+  BUILTIN = null;
+}
 
 /** 加载缓存包（不存在/损坏/非数字版本返回 null）。 */
 function loadCache() {
   try {
     if (!fs.existsSync(CACHE_FILE)) return null;
     return normalizePack(JSON.parse(fs.readFileSync(CACHE_FILE, "utf8")));
-  } catch (_) { return null; }
+  } catch (_) {
+    return null;
+  }
 }
 
 /**
@@ -79,4 +85,47 @@ function getActiveDataPackVersion() {
   return getActiveDataPack().version;
 }
 
-module.exports = { normZh, normEn, getActiveDataPack, getActiveDataPackVersion, DATA_DIR, CACHE_FILE };
+/**
+ * 本地积累回写：把运行期新解析到的「英文名 → AppID」合并进缓存数据包，
+ * 下次查询（本机任意模块：金山录入 / 素材搜集）直接离线命中，越用越全。
+ * 只写本地缓存、不动内置包；发布仍以内置包为准。失败静默（不影响主流程）。
+ * @param {string} englishName 英文名
+ * @param {string|number} appId Steam AppID
+ * @param {{zhName?: string, gameNames?: Object<string,string>}} [extra] 可选：一并补充中文名映射
+ * @returns {boolean} 是否写入成功
+ */
+function rememberAppId(englishName, appId, extra = {}) {
+  const en = String(englishName == null ? "" : englishName).trim();
+  const id = String(appId == null ? "" : appId).trim();
+  if (!en || !/^\d+$/.test(id)) return false;
+  try {
+    const cur = getActiveDataPack();
+    const next = {
+      version: Math.round((Math.floor(cur.version) + 0.001) * 1000) / 1000,
+      updatedAt: new Date().toISOString().slice(0, 10),
+      gameNames: Object.assign({}, cur.gameNames),
+      appIds: Object.assign({}, cur.appIds),
+    };
+    next.appIds[normEn(en)] = id;
+    const zh = String(extra && extra.zhName ? extra.zhName : "").trim();
+    if (zh && extra && extra.gameNames) {
+      next.gameNames[normZh(zh)] = en;
+    }
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(next, null, 2), "utf8");
+    BUILTIN = null; // 让后续 getActiveDataPack 重读缓存（缓存版本更高即生效）
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+module.exports = {
+  normZh,
+  normEn,
+  getActiveDataPack,
+  getActiveDataPackVersion,
+  rememberAppId,
+  DATA_DIR,
+  CACHE_FILE,
+};

@@ -73,8 +73,16 @@ class CollectService {
     this.fs = deps.fs || fsDefault;
     this.name = deps.name || new NameResolver({ fs: this.fs });
     this.probe = deps.probe || new MediaProbe({ fs: this.fs });
-    this.trailer = deps.trailer || new TrailerDownloader({ fs: this.fs, probe: this.probe });
     this.cover = deps.cover || new CoverFetcher({ fs: this.fs, probe: this.probe });
+    // Steam appid 反查统一复用 cover 的完整逻辑（离线映射 + 版本词剥离 + 相关性过滤），
+    // 素材搜集与封面、视频共用同一套解析，避免两处重复实现
+    this.trailer =
+      deps.trailer ||
+      new TrailerDownloader({
+        fs: this.fs,
+        probe: this.probe,
+        steamResolver: (q) => this.cover.resolveSteamAppId(q, { lookup: true }),
+      });
     this.env = deps.env || new EnvDetector({ fs: this.fs });
     this.logger = deps.logger || loggerDefault;
     /** 待处理的封面选择：requestId → {resolve}（由 /api/cover/choose 触发 resolve）。 */
@@ -616,31 +624,7 @@ class CollectService {
           if (picked) trailerCands = picked;
         }
         trailerInfo = trailerCands && trailerCands.length ? trailerCands[0] : null;
-        if (!trailerInfo) {
-          dl = { ok: false, reason: "trailer-not-found", error: "未搜索到符合规范的官方宣传片" };
-          // YouTube 没搜到 → 如果有 Steam appid，尝试从 Steam 商店页下载官方预告片
-          if (steamAppId) {
-            try {
-              emit(
-                "log",
-                STEP_TRAILER,
-                "尝试 Steam 商店页预告片（appid=" + steamAppId + "）…",
-                null,
-                { level: "info" },
-              );
-              dl = await this.trailer.downloadFromSteam(searchName, reserved.folder, envInfo, {
-                steamAppId,
-                emit,
-                index: reserved.index,
-                kind: opts.kind,
-                englishName: opts.englishName,
-                versionDesc: opts.versionDesc,
-              });
-            } catch (e) {
-              dl = { ok: false, reason: "steam-trailer-exception", error: e.message };
-            }
-          }
-        } else {
+        if (trailerInfo) {
           dl = await this.trailer.download(searchName, reserved.folder, envInfo, {
             candidates: trailerCands,
             info: trailerInfo,
@@ -650,6 +634,34 @@ class CollectService {
             englishName: opts.englishName,
             versionDesc: opts.versionDesc,
           });
+        } else {
+          dl = { ok: false, reason: "trailer-not-found", error: "未搜索到符合规范的官方宣传片" };
+        }
+        // YouTube 没搜到 / 全部候选下载失败（限流等）→ 回退 Steam 商店页官方预告片
+        // appid 为空也尝试：downloadFromSteam 内部会用游戏名反查 Steam 商店
+        if (!dl.ok) {
+          try {
+            emit(
+              "log",
+              STEP_TRAILER,
+              "尝试 Steam 商店页预告片" +
+                (steamAppId ? "（appid=" + steamAppId + "）" : "（自动反查 appid）") +
+                "…",
+              null,
+              { level: "info" },
+            );
+            dl = await this.trailer.downloadFromSteam(searchName, reserved.folder, envInfo, {
+              steamAppId,
+              emit,
+              index: reserved.index,
+              kind: opts.kind,
+              englishName: opts.englishName,
+              originalName: opts.originalName || gameName,
+              versionDesc: opts.versionDesc,
+            });
+          } catch (e) {
+            dl = { ok: false, reason: "steam-trailer-exception", error: e.message };
+          }
         }
       } catch (e) {
         dl = { ok: false, reason: "trailer-exception", error: e.message };

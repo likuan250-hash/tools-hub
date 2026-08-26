@@ -20,6 +20,20 @@ const path = require("path");
 const { FilenameSanitizer, MAX_LEN } = require("./filename");
 const { runCommand } = require("./runner");
 const { resolveProxy, toProxyUrl } = require("./http");
+let kdocsRemember = null;
+function rememberSteamAppId(en, id, zhName) {
+  try {
+    if (!kdocsRemember) {
+      const { rememberAppId } = require(
+        path.join(__dirname, "..", "..", "kdocs-tool", "lib", "datapack.js"),
+      );
+      kdocsRemember = rememberAppId;
+    }
+    kdocsRemember(en, id, { zhName: zhName || "" });
+  } catch (e) {
+    /* 本地积累失败不影响主流程 */
+  }
+}
 
 /**
  * 从宣传片标题里提取英文游戏名，作为封面检索的 fallback。
@@ -211,6 +225,8 @@ class TrailerDownloader {
     this.env = deps.env || process.env;
     this.proxyUrl = typeof deps.proxyUrl === "string" ? deps.proxyUrl : undefined;
     this.retryGapMs = deps.retryGapMs === undefined ? RETRY_GAP_MS : Number(deps.retryGapMs) || 0;
+    this.fetchFn = deps.fetchFn || ((...a) => globalThis.fetch(...a));
+    this.steamResolver = typeof deps.steamResolver === "function" ? deps.steamResolver : null;
   }
 
   /**
@@ -543,6 +559,26 @@ class TrailerDownloader {
   }
 
   /**
+   * Steam 商店页专用下载参数：HLS/DASH 源用通用 1080p 选择器（无 H.264 限制）。
+   * @param {string} url 商店页地址
+   * @param {string} outPath 输出文件路径
+   * @param {{ffmpeg?: boolean}} [env] 外部依赖可用性
+   * @returns {string[]}
+   */
+  buildSteamDownloadArgs(url, outPath, env = {}) {
+    const hasFfmpeg = env.ffmpeg !== false;
+    const format = hasFfmpeg
+      ? "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+      : "best[height<=1080]";
+    const args = ["-f", format];
+    if (hasFfmpeg) args.push("--merge-output-format", "mp4");
+    args.push("--no-playlist", "--no-warnings", "--newline", "--no-part");
+    args.push("--retries", "2", "--fragment-retries", "3", "--retry-sleep", "2");
+    args.push("-o", outPath, url);
+    return args;
+  }
+
+  /**
    * 是否需要转码（规则：.webm → .mp4）。
    * @param {string} file 文件名或路径
    * @returns {boolean}
@@ -787,7 +823,13 @@ class TrailerDownloader {
       // 同候选内格式降级重试：撞上 YouTube 403 限流自动换一档格式，不直接放弃
       let produced = null;
       for (let tier = 0; tier < FORMAT_TIERS.length; tier += 1) {
-        const args = this.withProxyArgs(this.buildDownloadArgs(info.url, outPath, env, tier));
+        // Steam 商店页走通用格式选择（HLS/DASH），YouTube 才走 H.264 降级链
+        const isSteam = String(info.url || "").indexOf("store.steampowered.com/app/") >= 0;
+        const args = this.withProxyArgs(
+          isSteam
+            ? this.buildSteamDownloadArgs(info.url, outPath, env)
+            : this.buildDownloadArgs(info.url, outPath, env, tier),
+        );
         emit(
           "trailer_download",
           STEP_DOWNLOAD,
@@ -1101,12 +1143,29 @@ class TrailerDownloader {
    */
   async downloadFromSteam(name, dir, env = {}, opts = {}) {
     const emit = typeof opts.emit === "function" ? opts.emit : () => {};
-    const appId = String(opts.steamAppId || "").trim();
-    if (!appId) return { ok: false, reason: "steam-no-appid", error: "未提供 Steam appid" };
+    let appId = String(opts.steamAppId || "").trim();
+    // appid 可能是商店搜索的误判（如解析成其它游戏）→ 先校验，无效则用游戏名重新搜索
+    if (appId && !(await this.verifySteamAppId(appId))) {
+      emit("log", STEP_DOWNLOAD, "[steam] appid=" + appId + " 无效，用游戏名重新搜索…", null, {
+        level: "warn",
+      });
+      appId = "";
+    }
+    if (!appId) {
+      // 优先用 cover 的完整反查（离线映射 + 版本词剥离 + 相关性过滤），无注入时用内置简化版
+      appId = this.steamResolver
+        ? await this.steamResolver(name)
+        : await this.resolveSteamAppId(name);
+      if (!appId) {
+        return { ok: false, reason: "steam-no-appid", error: "未找到有效的 Steam appid" };
+      }
+    }
+    // 本地积累：把本次成功解析的「英文名 → appid」写进共用离线缓存，下次免联网
+    rememberSteamAppId(name, appId, opts.originalName || "");
     const url = "https://store.steampowered.com/app/" + appId + "/";
     emit("log", STEP_DOWNLOAD, "[steam] 搜索 Steam 商店页预告片…", null, { level: "info", url });
     const r = await runCommand(
-      env.ytDlpPath,
+      this.ytDlpCmd(),
       ["--no-warnings", "--dump-json", "--playlist-end", "1", url],
       { timeout: 30000, env: Object.assign({}, process.env, { PYTHONUTF8: "1" }) },
     );
@@ -1133,6 +1192,7 @@ class TrailerDownloader {
             kind: opts.kind,
             englishName: opts.englishName,
             versionDesc: opts.versionDesc,
+            steamUrl: url,
           });
         }
       } catch (e) {
@@ -1140,6 +1200,53 @@ class TrailerDownloader {
       }
     }
     return { ok: false, reason: "steam-no-video", error: "Steam 商店页无明显预告片" };
+  }
+
+  /**
+   * 校验 Steam appid 是否真实有效（避免搜索误判拿到其它游戏/声轨）。
+   * @param {string} appId
+   * @returns {Promise<boolean>}
+   */
+  async verifySteamAppId(appId) {
+    const id = String(appId || "").trim();
+    if (!/^\d+$/.test(id)) return false;
+    try {
+      const r = await this.fetchFn(
+        "https://store.steampowered.com/api/appdetails?appids=" + id + "&l=schinese",
+        { timeout: 15000, signal: AbortSignal.timeout(15000) },
+      );
+      if (!r.ok) return false;
+      const j = await r.json();
+      const app = j && j[id];
+      return !!(app && app.success && app.data && app.data.type === "game");
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * 用游戏名反查 Steam appid（Steam 商店搜索接口，stablesearch）。
+   * @param {string} name 游戏名
+   * @returns {Promise<string>} appid 字符串；找不到返回空串
+   */
+  async resolveSteamAppId(name) {
+    const q = String(name || "").trim();
+    if (!q) return "";
+    try {
+      const r = await this.fetchFn(
+        "https://store.steampowered.com/api/storesearch/?term=" +
+          encodeURIComponent(q) +
+          "&l=schinese&cc=CN",
+        { timeout: 15000, signal: AbortSignal.timeout(15000) },
+      );
+      if (!r.ok) return "";
+      const j = await r.json();
+      const items = (j && j.items) || [];
+      const hit = items.find((it) => it && it.type === "app" && it.id);
+      return hit ? String(hit.id) : "";
+    } catch (e) {
+      return "";
+    }
   }
 }
 

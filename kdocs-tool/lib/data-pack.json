@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "updatedAt": "2026-08-07",
+  "version": 4,
+  "updatedAt": "2026-08-21",
   "gameNames": {
     "巫师3": "The Witcher 3: Wild Hunt",
     "巫师3狂猎": "The Witcher 3: Wild Hunt",
@@ -38,7 +38,13 @@
     "巫师": "The Witcher",
     "只狼影逝二度": "Sekiro: Shadows Die Twice",
     "007初露锋芒": "007: First Light",
-    "战争机器：重装上阵": "Gears of War: Reloaded"
+    "战争机器：重装上阵": "Gears of War: Reloaded",
+    "泰坦之旅2": "Titan Quest II",
+    "装机模拟器": "PC Building Simulator",
+    "心灵杀手：复刻版": "Alan Wake Remastered",
+    "漫威蜘蛛侠：迈尔斯·莫拉莱斯": "Marvel's Spider-Man: Miles Morales",
+    "战锤40K：星际战士2": "Warhammer 40,000: Space Marine 2",
+    "正当防卫4": "Just Cause 4"
   },
   "appIds": {
     "The Witcher 3: Wild Hunt": "292030",
@@ -70,6 +76,12 @@
     "The Witcher 2: Assassins of Kings": "20920",
     "The Witcher": "20900",
     "007: First Light": "3768760",
-    "Gears of War: Reloaded": "2523720"
+    "Gears of War: Reloaded": "2523720",
+    "Titan Quest II": "1154030",
+    "PC Building Simulator": "621060",
+    "Alan Wake Remastered": "108710",
+    "Marvel's Spider-Man: Miles Morales": "1817190",
+    "Warhammer 40,000: Space Marine 2": "2183900",
+    "Just Cause 4": "517630"
   }
 }

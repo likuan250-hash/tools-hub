@@ -118,7 +118,7 @@ const STEAM_SEARCH_API = "https://store.steampowered.com/api/storesearch/";
 /** Steam 应用详情 API（appid → 英文名；filters=basic 只取基础字段，响应体小很多）。 */
 const STEAM_DETAILS_API = "https://store.steampowered.com/api/appdetails";
 /** 依赖英文查询词的来源：这几个站没有中文索引，喂中文名必然 0 结果。 */
-const ENGLISH_QUERY_SOURCES = ["wallhaven", "reddit", "alphacoders"];
+const ENGLISH_QUERY_SOURCES = ["wallhaven", "reddit", "alphacoders", "4kwallpapers"];
 
 // ─────────────────────── 缺陷 4：相关性校验 ───────────────────────
 
@@ -618,6 +618,7 @@ const SOURCE_LABEL = {
   "steam-cdn-hero": "Steam 官方横幅",
   "steam-cdn-lowres": "Steam 官方图（低分辨率）",
   alphacoders: "alphacoders.com",
+  "4kwallpapers": "4kwallpapers.com",
   wallhaven: "wallhaven.cc",
   user: "用户指定 URL",
   nintendo: "Nintendo 官网",
@@ -768,6 +769,61 @@ function parseAlphacodersDirect(html) {
   const seen = new Set();
   const out = [];
   for (const m of String(html == null ? "" : html).matchAll(re)) {
+    const u = m[0];
+    if (seen.has(u)) continue;
+    seen.add(u);
+    out.push(u);
+  }
+  return out;
+}
+
+/**
+ * 从 DuckDuckGo HTML 搜索结果里提取目标站点详情页 URL（纯函数）。
+ * DDG 结果链接是 `//duckduckgo.com/l/?uddg=<urlencoded>&rut=...`，真实地址在 uddg 参数里。
+ * @param {string} html DDG 结果页 HTML
+ * @param {string} host 目标站点域名（如 '4kwallpapers.com'）
+ * @returns {string[]} 详情页 URL 列表（去重）
+ */
+function parseDuckDuckGoLinks(html, host) {
+  const text = String(html == null ? "" : html);
+  const out = [];
+  const seen = new Set();
+  const re = /uddg=([^&"']+)/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    try {
+      const u = decodeURIComponent(m[1]);
+      const h = hostOf(u);
+      if (!h || !(h === host || h.endsWith("." + host))) continue;
+      const clean = normalizeUrl(u);
+      if (!clean || seen.has(clean)) continue;
+      seen.add(clean);
+      out.push(clean);
+    } catch (e) {
+      /* 坏链接跳过 */
+    }
+  }
+  return out;
+}
+
+/**
+ * 从 4kwallpapers 详情页提取多分辨率直链（纯函数）。
+ * 页面内下载区列出全部尺寸，直链形如
+ *   /images/wallpapers/{slug}-1920x1080-{id}.jpg
+ * 只取 ≥1920×1080 的候选（1280×720 等小图直接过滤），保持页面顺序并去重。
+ * @param {string} html 详情页 HTML
+ * @returns {string[]} 达标直链列表
+ */
+function parse4kwallpapersDirect(html) {
+  const re =
+    /https?:\/\/4kwallpapers\.com\/images\/wallpapers\/[A-Za-z0-9_-]+-(\d+)x(\d+)-(\d+)\.(?:jpg|jpeg|png|webp)/gi;
+  const seen = new Set();
+  const out = [];
+  for (const m of String(html == null ? "" : html).matchAll(re)) {
+    const w = Number(m[1]);
+    const h = Number(m[2]);
+    // 封面规范要求 1920×1080 起步（1280×720 在其它源是下限，这里直链带分辨率字样可直接过滤）
+    if (!(w >= 1920 && h >= 1080)) continue;
     const u = m[0];
     if (seen.has(u)) continue;
     seen.add(u);
@@ -1486,6 +1542,16 @@ class CoverFetcher {
         return failed(e, 0);
       }
     }
+    // fetchBuffer 对传输层超时/断连返回 {ok:false,status:0}（不抛异常）：
+    // 直连探测时同样降级代理，避免 DDG 等海外站直连超时后白白失败
+    if (directUsed && this.directFirstOk !== true && resp && resp.ok === false && !resp.status) {
+      this.directFirstOk = false;
+      try {
+        resp = await call(undefined);
+      } catch (e2) {
+        return failed(e2, 0);
+      }
+    }
     // 直连探测成功 → 标记直连可用
     if (directUsed && this.directFirstOk !== false) this.directFirstOk = true;
     return resp;
@@ -1982,6 +2048,127 @@ class CoverFetcher {
   }
 
   /**
+   * 4kwallpapers.com 详情页发现（规则来源：`web_search 搜 {游戏名} key art 4kwallpapers`）。
+   * 工具内用 DuckDuckGo HTML 端点（经代理）搜 `site:4kwallpapers.com <query> key art`，
+   * 解析结果里的详情页 URL（/games/...）。
+   * @param {string} query 查询词（英文名）
+   * @param {{emit?: Function}} [opts]
+   * @returns {Promise<string[]>} 详情页 URL 列表；任何失败返回 []（绝不抛）
+   */
+  async discover4kwallpapers(query, opts = {}) {
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const q = String(query == null ? "" : query).trim();
+    if (!q) return [];
+    const url =
+      "https://html.duckduckgo.com/html/?q=" +
+      encodeURIComponent("site:4kwallpapers.com " + q + " key art");
+    emit("cover_search", STEP_SEARCH, "4kwallpapers 站内检索 " + q + "…", null, {
+      source: "4kwallpapers",
+      url,
+      query: q,
+    });
+    let html = "";
+    try {
+      const resp = await this.netFetch(url, {
+        timeout: this.timeout,
+        headers: { Accept: "text/html" },
+      });
+      if (!resp.ok) {
+        emit(
+          "log",
+          STEP_SEARCH,
+          "[cover] 4kwallpapers 检索失败：" + (resp.error || "HTTP " + resp.status),
+          null,
+          { level: "info" },
+        );
+        return [];
+      }
+      html = await resp.text();
+    } catch (e) {
+      emit(
+        "log",
+        STEP_SEARCH,
+        "[cover] 4kwallpapers 检索异常：" + (e && e.message ? e.message : String(e)),
+        null,
+        { level: "info" },
+      );
+      return [];
+    }
+    const pages = parseDuckDuckGoLinks(html, "4kwallpapers.com");
+    if (!pages.length) {
+      emit("log", STEP_SEARCH, "[cover] 4kwallpapers 未检索到详情页", null, { level: "info" });
+      return [];
+    }
+    emit("cover_search", STEP_SEARCH, "4kwallpapers 命中 " + pages.length + " 个详情页", null, {
+      source: "4kwallpapers",
+      count: pages.length,
+      query: q,
+    });
+    return pages;
+  }
+
+  /**
+   * 第 2 级：4kwallpapers.com（规则第一优先级壁纸源）。
+   * 流程：DDG 搜详情页 → 抓详情页 → 解析多分辨率直链 → 下载校验。
+   * @param {string} gameName 游戏名
+   * @param {string} outDir 目标目录
+   * @param {{emit?: Function, query?: string}} [opts]
+   * @returns {Promise<object>} tryCandidates 结果（附 queryUsed）
+   */
+  async from4kwallpapers(gameName, outDir, opts = {}) {
+    const emit = typeof opts.emit === "function" ? opts.emit : () => {};
+    const query = this.pickQuery(gameName, opts);
+    const pages = await this.discover4kwallpapers(query, opts);
+    if (!pages.length) {
+      return {
+        ok: false,
+        error: "未检索到 4kwallpapers 详情页",
+        source: "4kwallpapers",
+        queryUsed: query,
+      };
+    }
+    const urls = [];
+    const seen = new Set();
+    for (const page of pages.slice(0, 3)) {
+      try {
+        const resp = await this.netFetch(page, {
+          timeout: this.timeout,
+          headers: { Accept: "text/html" },
+        });
+        if (!resp.ok) continue;
+        const html = await resp.text();
+        for (const u of parse4kwallpapersDirect(html)) {
+          if (!seen.has(u)) {
+            seen.add(u);
+            urls.push(u);
+          }
+        }
+      } catch (e) {
+        /* 单个详情页失败不影响其它页 */
+      }
+    }
+    if (!urls.length) {
+      emit("log", STEP_SEARCH, "[cover] 4kwallpapers 详情页无达标直链", null, { level: "info" });
+      return {
+        ok: false,
+        error: "4kwallpapers 无达标直链",
+        source: "4kwallpapers",
+        queryUsed: query,
+      };
+    }
+    emit("cover_search", STEP_SEARCH, "4kwallpapers 提取 " + urls.length + " 张达标直链", null, {
+      source: "4kwallpapers",
+      count: urls.length,
+      query,
+    });
+    const r = await this.tryCandidates(urls.slice(0, MAX_CANDIDATES_PER_SOURCE), outDir, {
+      emit: opts.emit,
+      source: "4kwallpapers",
+    });
+    return Object.assign({}, r, { queryUsed: query });
+  }
+
+  /**
    * 第 3 级：wallhaven.cc 公开 JSON API（无需 key，本链路最可靠的可编程源）。
    *
    * 这一级不做本地相关性校验：wallhaven 是真正的关键词检索接口，查不中就返回 0 条
@@ -2222,15 +2409,17 @@ class CoverFetcher {
     );
 
     // 规范《封面来源优先级》表格顺序；userUrlFirst 仅在调用方显式要求时改变位次
-    // youtube（官方宣传片缩略图）提级到壁纸站之前：无 Steam 页的游戏（PS5 独占等）也优先用发行商官方图
+    // youtube（官方宣传片缩略图）降为壁纸站之后的兜底：缩略图常带「OFFICIAL TRAILER」等
+    // 字幕条，壁纸站能拿到无字高清图时优先用壁纸站，YouTube 只在其他来源都失败时兜底
     let order = [
       "steam-cdn",
-      "youtube",
+      "4kwallpapers",
       "steam-cdn-hero",
       "wallhaven",
       "reddit",
       "user",
       "alphacoders",
+      "youtube",
       "steam-cdn-lowres",
     ];
     if (opts.userUrlFirst === true) order = ["user"].concat(order.filter((s) => s !== "user"));
@@ -2280,6 +2469,8 @@ class CoverFetcher {
         try {
           if (source === "steam-cdn")
             r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: "strict" });
+          else if (source === "4kwallpapers")
+            r = await this.from4kwallpapers(name, outDir, { emit, query });
           else if (source === "steam-cdn-hero")
             r = await this.fromSteamCdn(steamAppId, outDir, { emit, tier: "hero" });
           else if (source === "steam-cdn-lowres")
@@ -2397,6 +2588,7 @@ class CoverFetcher {
 
     let order = [
       "steam-cdn",
+      "4kwallpapers",
       "youtube",
       "steam-cdn-hero",
       "wallhaven",
@@ -2498,6 +2690,20 @@ class CoverFetcher {
             let urls = [];
             if (source === "alphacoders") {
               urls = await this.discoverAlphacodersDirect(query, { emit, query });
+            } else if (source === "4kwallpapers") {
+              const pages = await this.discover4kwallpapers(query, { emit });
+              for (const page of pages.slice(0, 3)) {
+                try {
+                  const resp = await this.netFetch(page, {
+                    timeout: this.timeout,
+                    headers: { Accept: "text/html" },
+                  });
+                  if (!resp.ok) continue;
+                  urls = urls.concat(parse4kwallpapersDirect(await resp.text()));
+                } catch (e) {
+                  /* 单个详情页失败不影响其它页 */
+                }
+              }
             }
             urls.slice(0, MAX_CANDIDATES_PER_SOURCE).forEach((u) => push(u, source));
             if (candidates.length >= MAX_PICK_CANDIDATES) break;
@@ -2769,6 +2975,8 @@ module.exports = {
   STEAM_CDN_HERO,
   STEAM_CDN_LOWRES,
   parseAlphacodersDirect,
+  parseDuckDuckGoLinks,
+  parse4kwallpapersDirect,
   BING_IMAGE_SEARCH,
   BING_SIZE_FILTER,
 };

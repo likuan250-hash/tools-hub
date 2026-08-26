@@ -17,20 +17,39 @@ const indexHtml = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
 
 // ───────────────────────── 轻量 DOM stub（增强版） ─────────────────────────
 class StyleStub {
-  constructor() { this._props = {}; }
-  setProperty(k, v) { this._props[k] = v; }
-  removeProperty(k) { delete this._props[k]; }
-  getPropertyValue(k) { return this._props[k] || ""; }
+  constructor() {
+    this._props = {};
+  }
+  setProperty(k, v) {
+    this._props[k] = v;
+  }
+  removeProperty(k) {
+    delete this._props[k];
+  }
+  getPropertyValue(k) {
+    return this._props[k] || "";
+  }
 }
 class ClassListStub {
-  constructor() { this._set = new Set(); }
-  add(...c) { c.forEach((x) => this._set.add(x)); }
-  remove(...c) { c.forEach((x) => this._set.delete(x)); }
-  toggle(c, force) {
-    if (force === undefined) { this._set.has(c) ? this._set.delete(c) : this._set.add(c); }
-    else { force ? this._set.add(c) : this._set.delete(c); }
+  constructor() {
+    this._set = new Set();
   }
-  contains(c) { return this._set.has(c); }
+  add(...c) {
+    c.forEach((x) => this._set.add(x));
+  }
+  remove(...c) {
+    c.forEach((x) => this._set.delete(x));
+  }
+  toggle(c, force) {
+    if (force === undefined) {
+      this._set.has(c) ? this._set.delete(c) : this._set.add(c);
+    } else {
+      force ? this._set.add(c) : this._set.delete(c);
+    }
+  }
+  contains(c) {
+    return this._set.has(c);
+  }
 }
 class El {
   constructor(tag = "div") {
@@ -61,26 +80,57 @@ class El {
     this._sinks = {};
     const self = this;
     Object.defineProperty(this, "innerHTML", {
-      get() { return self._innerHTML; },
-      set(v) { self._innerHTML = v; if (v === "") self.children.length = 0; },
+      get() {
+        return self._innerHTML;
+      },
+      set(v) {
+        self._innerHTML = v;
+        if (v === "") self.children.length = 0;
+      },
     });
     Object.defineProperty(this, "className", {
-      get() { return Array.from(this.classList._set).join(" "); },
-      set(v) { this.classList._set.clear(); String(v).split(/\s+/).filter(Boolean).forEach((c) => this.classList._set.add(c)); },
+      get() {
+        return Array.from(this.classList._set).join(" ");
+      },
+      set(v) {
+        this.classList._set.clear();
+        String(v)
+          .split(/\s+/)
+          .filter(Boolean)
+          .forEach((c) => this.classList._set.add(c));
+      },
     });
   }
-  setAttribute(k, v) { this._attrs[k] = v; }
-  getAttribute(k) { return k in this._attrs ? this._attrs[k] : null; }
-  removeAttribute(k) { delete this._attrs[k]; }
-  addEventListener(t, cb) { (this._listeners[t] = this._listeners[t] || []).push(cb); }
+  setAttribute(k, v) {
+    this._attrs[k] = v;
+  }
+  getAttribute(k) {
+    return k in this._attrs ? this._attrs[k] : null;
+  }
+  removeAttribute(k) {
+    delete this._attrs[k];
+  }
+  addEventListener(t, cb) {
+    (this._listeners[t] = this._listeners[t] || []).push(cb);
+  }
   removeEventListener() {}
-  appendChild(c) { c.parent = this; this.children.push(c); return c; }
-  removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); return c; }
-  remove() { if (this.parent) this.parent.removeChild(this); }
+  appendChild(c) {
+    c.parent = this;
+    this.children.push(c);
+    return c;
+  }
+  removeChild(c) {
+    const i = this.children.indexOf(c);
+    if (i >= 0) this.children.splice(i, 1);
+    return c;
+  }
+  remove() {
+    if (this.parent) this.parent.removeChild(this);
+  }
   _findChild(sel) {
     const cls = sel.startsWith(".") ? sel.slice(1) : null;
     const id = sel.startsWith("#") ? sel.slice(1) : null;
-    const tag = (!cls && !id) ? sel.toLowerCase() : null;
+    const tag = !cls && !id ? sel.toLowerCase() : null;
     for (const ch of this.children) {
       if (cls && ch.classList.contains(cls)) return ch;
       if (id && ch.id === id) return ch;
@@ -94,10 +144,19 @@ class El {
     if (!this._sinks[sel]) this._sinks[sel] = new El();
     return this._sinks[sel];
   }
-  querySelectorAll() { return []; }
-  closest() { return null; }
-  getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 50, right: 100, bottom: 50 }; }
-  focus() {} scrollIntoView() {} setPointerCapture() {} releasePointerCapture() {}
+  querySelectorAll() {
+    return [];
+  }
+  closest() {
+    return null;
+  }
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 100, height: 50, right: 100, bottom: 50 };
+  }
+  focus() {}
+  scrollIntoView() {}
+  setPointerCapture() {}
+  releasePointerCapture() {}
 }
 
 function makeLocalStorage() {
@@ -120,9 +179,15 @@ function makeContext(opts = {}) {
       if (!ids[id]) ids[id] = new El();
       return ids[id];
     },
-    createElement(tag) { return new El(tag); },
-    querySelector() { return new El(); },
-    querySelectorAll() { return []; },
+    createElement(tag) {
+      return new El(tag);
+    },
+    querySelector() {
+      return new El();
+    },
+    querySelectorAll() {
+      return [];
+    },
     addEventListener() {},
   };
   const ctx = {};
@@ -166,17 +231,77 @@ function extractFunction(src, name) {
   const start = src.indexOf(sig);
   if (start < 0) throw new Error("未找到函数: " + name);
   let k = src.indexOf("{", start);
-  let depth = 0, inStr = null, inTmpl = false;
+  let depth = 0,
+    inStr = null,
+    inTmpl = false,
+    inRe = false;
   for (; k < src.length; k++) {
     const ch = src[k];
-    if (inStr) { if (ch === "\\") { k++; continue; } if (ch === inStr) inStr = null; continue; }
-    if (inTmpl) { if (ch === "\\") { k++; continue; } if (ch === "`") inTmpl = false; continue; }
-    if (ch === "'" || ch === '"') { inStr = ch; continue; }
-    if (ch === "`") { inTmpl = true; continue; }
+    if (inRe) {
+      if (ch === "\\") {
+        k++;
+        continue;
+      }
+      if (ch === "/") inRe = false;
+      continue;
+    }
+    if (inStr) {
+      if (ch === "\\") {
+        k++;
+        continue;
+      }
+      if (ch === inStr) inStr = null;
+      continue;
+    }
+    if (inTmpl) {
+      if (ch === "\\") {
+        k++;
+        continue;
+      }
+      if (ch === "`") inTmpl = false;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inStr = ch;
+      continue;
+    }
+    if (ch === "`") {
+      inTmpl = true;
+      continue;
+    }
+    // 正则字面量：/…/ 内的 {} 不能计入代码块深度（formatPost 含大量正则）
+    if (ch === "/") {
+      const prev = src[k - 1];
+      if (!/[A-Za-z0-9_$)\]}]/.test(prev || "")) {
+        inRe = true;
+        continue;
+      }
+    }
     if (ch === "{") depth++;
-    else if (ch === "}") { depth--; if (depth === 0) { k++; break; } }
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        k++;
+        break;
+      }
+    }
   }
   return src.slice(start, k);
+}
+
+// 按「顶层函数声明」边界截取函数源码：从 `function <name>(` 到下一个顶层
+// `function`/`async function` 之前。对含复杂正则/模板字符串的函数比花括号
+// 深度匹配更稳（formatPost 内含大量正则字面量）。
+function extractFunctionByNextDecl(src, name) {
+  const sig = "function " + name + "(";
+  const start = src.indexOf(sig);
+  if (start < 0) throw new Error("未找到函数: " + name);
+  const body = src.indexOf("{", start);
+  const re = /\n(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(/g;
+  re.lastIndex = body;
+  const m = re.exec(src);
+  const end = m ? m.index : src.length;
+  return src.slice(start, end);
 }
 
 function extractIconBlock(html) {
@@ -192,12 +317,46 @@ function iconBlockMd5(html) {
 
 function makeButtonEl() {
   const btn = new El("button");
-  const ico = new El("svg"); ico.classList.add("bx-ico");
-  const label = new El("span"); label.classList.add("bx-label"); label.textContent = "转存选中并生成分享";
+  const ico = new El("svg");
+  ico.classList.add("bx-ico");
+  const label = new El("span");
+  label.classList.add("bx-label");
+  label.textContent = "转存选中并生成分享";
   btn.appendChild(ico);
   btn.appendChild(label);
   return btn;
 }
+
+// 提取并执行 public/app.js 中的纯函数（formatPost / parseBatch 依赖 DOM 常量，需先建上下文）
+function runPureFn(name) {
+  const { ctx } = makeContext();
+  const fnSrc = extractFunctionByNextDecl(appSrc, name);
+  vm.runInContext("var " + name + " = (" + fnSrc + ");", ctx);
+  return ctx[name];
+}
+
+// ───────────────────────── 格式化：迅雷链接同行提取码 ─────────────────────────
+test("formatPost：迅雷链接与提取码同在一行也能带出（同行不跳过）", () => {
+  const formatPost = runPureFn("formatPost");
+  const input =
+    "《潜行者2：切尔诺贝利之心（S.T.A.L.K.E.R. 2: Heart of Chornobyl）》终极版 v2.0 官方中文+全DLC 免安装硬盘版\n" +
+    "百度/迅雷/夸克链接：[https://pan.xunlei.com/s/VOv58YerX3QLQRgSvDgKnKqVA1#](https://pan.xunlei.com/s/VOv58YerX3QLQRgSvDgKnKqVA1#) 提取码：37d7\n" +
+    "链接: https://pan.baidu.com/s/12u8z8E_upW1EqpwA2ELT3Q?pwd=k2ks 提取码: k2ks\n" +
+    "链接：https://pan.quark.cn/s/f4330f55c78b";
+  const out = formatPost(input);
+  assert.ok(out.includes("pan.xunlei.com/s/VOv58YerX3QLQRgSvDgKnKqVA1"), "迅雷链接应保留");
+  assert.ok(out.includes("pwd=37d7"), "迅雷提取码应带出：" + out);
+  assert.ok(out.includes("pwd=k2ks"), "百度提取码应带出");
+});
+
+test("parseBatch：迅雷链接与提取码同在一行也能解析出 pwd", () => {
+  const parseBatch = runPureFn("parseBatch");
+  const input =
+    "链接：[https://pan.xunlei.com/s/VOv58YerX3QLQRgSvDgKnKqVA1#](https://pan.xunlei.com/s/VOv58YerX3QLQRgSvDgKnKqVA1#) 提取码：37d7";
+  const r = parseBatch(input);
+  assert.equal(r.jobs.xunlei.pwd, "37d7");
+  assert.equal(r.jobs.xunlei.link, "https://pan.xunlei.com/s/VOv58YerX3QLQRgSvDgKnKqVA1");
+});
 
 // ───────────────────────── 1) 图标系统（ICONS / ico / hydrateIcons） ─────────────────────────
 test("图标系统：window.ico('check') 返回含 <svg class=\"app-ico\" 的字符串", () => {
@@ -223,8 +382,12 @@ test("图标系统：hydrateIcons(root) 能把 [data-ico] 元素填成 <svg>", (
 });
 test("图标系统：三模块 index.html 图标脚本块逐字节一致（md5）", () => {
   const a = iconBlockMd5(indexHtml);
-  const b = iconBlockMd5(fs.readFileSync(path.join(__dirname, "..", "..", "biliup-hub", "public", "index.html"), "utf8"));
-  const c = iconBlockMd5(fs.readFileSync(path.join(__dirname, "..", "..", "kdocs-tool", "public", "index.html"), "utf8"));
+  const b = iconBlockMd5(
+    fs.readFileSync(path.join(__dirname, "..", "..", "biliup-hub", "public", "index.html"), "utf8"),
+  );
+  const c = iconBlockMd5(
+    fs.readFileSync(path.join(__dirname, "..", "..", "kdocs-tool", "public", "index.html"), "utf8"),
+  );
   assert.strictEqual(a, b);
   assert.strictEqual(b, c);
 });
@@ -256,11 +419,15 @@ test("setExec：异步流程抛异常时 finally 必调用 setExec(btn,false)，
   vm.runInContext("var setExec = (" + extractFunction(appSrc, "setExec") + ");", ctx);
   vm.runInContext(
     "globalThis.__work = async function(btn){ setExec(btn, true); try { await Promise.reject(new Error('boom')); } finally { setExec(btn, false); } };",
-    ctx
+    ctx,
   );
   const btn = makeButtonEl();
   let thrown = null;
-  try { await ctx.__work(btn); } catch (e) { thrown = e; }
+  try {
+    await ctx.__work(btn);
+  } catch (e) {
+    thrown = e;
+  }
   assert.ok(thrown && /boom/.test(thrown.message), "异常应向上抛出（行为真实）");
   assert.ok(!btn.classList.contains("is-loading"), "finally 后不应卡在 .is-loading");
   assert.strictEqual(btn.disabled, false);
@@ -279,7 +446,10 @@ test("toast(ok)：在 #toastHost 下生成玻璃 .toast-host / .toast 子节点�
   const toastEl = host.children[0];
   assert.ok(toastEl.classList.contains("toast"), "子节点应含 .toast");
   assert.strictEqual(toastEl._sinks[".toast-msg"].textContent, "转存成功");
-  assert.ok(/<svg class="app-ico"/.test(toastEl._sinks[".toast-ico"].innerHTML), "ok 态应内联 check 图标 SVG");
+  assert.ok(
+    /<svg class="app-ico"/.test(toastEl._sinks[".toast-ico"].innerHTML),
+    "ok 态应内联 check 图标 SVG",
+  );
 });
 test("toast(err)：错误态内联 cross 图标 SVG", () => {
   const { ctx, documentStub } = makeContext({ nullToastHost: true });
@@ -288,7 +458,10 @@ test("toast(err)：错误态内联 cross 图标 SVG", () => {
   ctx.toast("保存失败", "err");
   const host = documentStub.body.children.find((c) => c.classList.contains("toast-host"));
   const toastEl = host.children[0];
-  assert.ok(/<svg class="app-ico"/.test(toastEl._sinks[".toast-ico"].innerHTML), "err 态应内联 cross 图标 SVG");
+  assert.ok(
+    /<svg class="app-ico"/.test(toastEl._sinks[".toast-ico"].innerHTML),
+    "err 态应内联 cross 图标 SVG",
+  );
 });
 
 // ───────────────────────── 4) alert() -> toast() 迁移（统一提示） ─────────────────────────
@@ -303,7 +476,10 @@ test("alert->toast：openAuth 弹窗被拦截时调用 toast(err) 而非 alert",
   vm.runInContext(appSrc, ctx); // 全量执行，得到真实 openAuth / toast
   const realToast = ctx.toast;
   const calls = [];
-  ctx.toast = (m, t) => { calls.push([m, t]); return realToast(m, t); };
+  ctx.toast = (m, t) => {
+    calls.push([m, t]);
+    return realToast(m, t);
+  };
   ctx.open = () => null; // 模拟弹窗被浏览器拦截
   ctx.openAuth("baidu");
   const hit = calls.find(([m]) => /浏览器拦截了弹窗/.test(m));
@@ -317,7 +493,10 @@ test("alert->toast：confirmDir 保存失败时 catch 内调用 toast(err) 而�
   vm.runInContext(appSrc, ctx);
   const realToast = ctx.toast;
   const calls = [];
-  ctx.toast = (m, t) => { calls.push([m, t]); return realToast(m, t); };
+  ctx.toast = (m, t) => {
+    calls.push([m, t]);
+    return realToast(m, t);
+  };
   // 真实流程：先 openDirPicker 初始化 dirCtx.stack（UI 中确认按钮仅在目录选择弹窗内可见）
   await ctx.openDirPicker("baidu");
   ctx.fetch = () => Promise.reject(new Error("network down")); // 触发 confirmDir 的 catch
@@ -329,24 +508,34 @@ test("alert->toast：confirmDir 保存失败时 catch 内调用 toast(err) 而�
 
 // ───────────────────────── 5) 按钮结构（无 emoji 残留） ─────────────────────────
 test("按钮结构：#batchBtn(.btn-exec) 含 .bx-ico(SVG) + .bx-label", () => {
-  const re = /<button class="btn-exec" id="batchBtn"[\s\S]*?<svg class="bx-ico"[\s\S]*?<span class="bx-label">/;
+  const re =
+    /<button class="btn-exec" id="batchBtn"[\s\S]*?<svg class="bx-ico"[\s\S]*?<span class="bx-label">/;
   assert.ok(re.test(indexHtml), "batchBtn 应含 bx-ico 与 bx-label");
 });
 test("按钮结构：.icon-btn(#fmtIconBtn) 含 .ib-ico + .ib-label", () => {
-  const re = /<button class="icon-btn" id="fmtIconBtn"[\s\S]*?class="ib-ico"[\s\S]*?class="ib-label">/;
+  const re =
+    /<button class="icon-btn" id="fmtIconBtn"[\s\S]*?class="ib-ico"[\s\S]*?class="ib-label">/;
   assert.ok(re.test(indexHtml), "fmtIconBtn 应含 ib-ico 与 ib-label");
 });
 test("无残留 emoji：app.js + index.html 中 Extended_Pictographic 只允许 ↩（本模块为 2 个 ↩）", () => {
   const scan = (s) => [...s.matchAll(/\p{Extended_Pictographic}/gu)].map((x) => x[0]);
-  for (const [label, src] of [["app.js", appSrc], ["index.html", indexHtml]]) {
+  for (const [label, src] of [
+    ["app.js", appSrc],
+    ["index.html", indexHtml],
+  ]) {
     const em = scan(src);
-    assert.ok(em.every((c) => c === "↩"), `${label} 中存在非 ↩ 的 emoji: [${em.join("")}]`);
+    assert.ok(
+      em.every((c) => c === "↩"),
+      `${label} 中存在非 ↩ 的 emoji: [${em.join("")}]`,
+    );
   }
 });
 
 // ───────────────────────── 6) 零回归（厚玻璃 / 焦点环 / 减弱动效） ─────────────────────────
 test("零回归：.modal.glass 厚玻璃 backdrop-filter: blur(40px) saturate(2.0)", () => {
-  assert.ok(/\.modal\.glass\s*\{[\s\S]*?backdrop-filter:\s*blur\(40px\)\s*saturate\(2\.0\)/.test(indexHtml));
+  assert.ok(
+    /\.modal\.glass\s*\{[\s\S]*?backdrop-filter:\s*blur\(40px\)\s*saturate\(2\.0\)/.test(indexHtml),
+  );
 });
 test("零回归：:focus-visible 键盘焦点环门禁存在", () => {
   assert.ok(/:focus-visible\s*\{/.test(indexHtml));
@@ -360,5 +549,7 @@ test("加载安全：public/app.js 在沙箱中真实执行不抛异常（含 st
   const { ctx } = makeContext();
   vm.runInContext(fs.readFileSync(path.join(PUBLIC, "status-luxe.js"), "utf8"), ctx);
   vm.runInContext(extractIconBlock(indexHtml), ctx);
-  assert.doesNotThrow(() => { vm.runInContext(appSrc, ctx); }, "app.js 不应抛异常");
+  assert.doesNotThrow(() => {
+    vm.runInContext(appSrc, ctx);
+  }, "app.js 不应抛异常");
 });

@@ -154,6 +154,44 @@ test("buildDownloadArgs 逐字对齐规范命令：优先 H.264/AAC（avc1+m4a�
   assert.ok(!noFf.includes("--merge-output-format"));
 });
 
+test("buildSteamDownloadArgs 用通用 1080p 选择器（HLS/DASH 可用，不锁 avc1）", () => {
+  const t = make();
+  const args = t.buildSteamDownloadArgs(
+    "https://store.steampowered.com/app/1154030/Titan_Quest_II/",
+    "dir/out.mp4",
+    { ffmpeg: true },
+  );
+  assert.equal(args[0], "-f");
+  assert.equal(args[1], "bestvideo[height<=1080]+bestaudio/best[height<=1080]");
+  assert.equal(args[args.length - 1], "https://store.steampowered.com/app/1154030/Titan_Quest_II/");
+});
+
+test("verifySteamAppId：真实游戏通过、非游戏/无效拒绝", async () => {
+  const t = make({
+    fetchFn: async (url) => ({
+      ok: true,
+      json: async () => ({ 1154030: { success: true, data: { type: "game" } } }),
+    }),
+  });
+  assert.equal(await t.verifySteamAppId("1154030"), true);
+  const bad = make({
+    fetchFn: async () => ({ ok: true, json: async () => ({ 1: { success: false } }) }),
+  });
+  assert.equal(await bad.verifySteamAppId("1"), false);
+});
+
+test("resolveSteamAppId：商店搜索命中返回 appid，无结果返回空串", async () => {
+  const t = make({
+    fetchFn: async () => ({
+      ok: true,
+      json: async () => ({ items: [{ type: "app", id: 1154030, name: "Titan Quest II" }] }),
+    }),
+  });
+  assert.equal(await t.resolveSteamAppId("Titan Quest II"), "1154030");
+  const none = make({ fetchFn: async () => ({ ok: true, json: async () => ({ items: [] }) }) });
+  assert.equal(await none.resolveSteamAppId("不存在游戏xyz"), "");
+});
+
 test("ytDlpCmd / ffmpegCmd 优先用 env 解析出的绝对路径（Bug B 根因之一）", () => {
   const t = make();
   // 未注入时才退回命令名，交由上层 env 检查报错

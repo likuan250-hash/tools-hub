@@ -433,15 +433,27 @@ async function searchFiles(dirPath, keyword) {
     .map((f) => ({
       id: String(f.fs_id),
       name: f.server_filename,
+      path: f.path,
       isdir: f.isdir === 1,
       size: f.size || 0,
       time: f.server_mtime ? f.server_mtime * 1000 : 0,
     }));
 }
 
-// 删除到回收站(软删,可恢复);async=2 异步执行
-async function trashFiles(fsIds) {
+// 删除到回收站(软删,可恢复)
+// 优先官方 OpenAPI(access_token + path/fsid 对象,同步删除,绕开网页风控 132);
+// 无 token 或缺少 path 时回退网页 cookie 通道。
+async function trashFiles(fsIds, paths) {
   if (!fsIds || !fsIds.length) throw new Error("删除失败:缺少文件 fs_id");
+  const acc = store.getAccount("baidu");
+  if (acc && acc.accessToken && Array.isArray(paths) && paths.length === fsIds.length) {
+    try {
+      return await trashViaOpenApi(fsIds, paths, acc.accessToken);
+    } catch (e) {
+      // token 失效等 → 回退网页 cookie 通道
+      if (!/errno=/.test(String(e.message))) throw e;
+    }
+  }
   const bdstoken = await getBdstoken();
   const qs = new URLSearchParams({
     opera: "delete",
@@ -466,6 +478,28 @@ async function trashFiles(fsIds) {
     }
     throw new Error("百度删除失败 errno=" + j.errno + " " + JSON.stringify(j).slice(0, 160));
   }
+  return j;
+}
+
+// 官方 OpenAPI 删除(软删进回收站;需要开放平台 OAuth access_token)
+// filelist 必须为 [{path, fsid}] 对象数组 + async=0 同步,才会立即生效
+async function trashViaOpenApi(fsIds, paths, accessToken) {
+  const qs = new URLSearchParams({
+    method: "filemanager",
+    access_token: accessToken,
+    opera: "delete",
+    async: "0",
+  });
+  const filelist = fsIds.map((id, i) => ({ path: paths[i], fsid: Number(id) }));
+  const body = new URLSearchParams({ filelist: JSON.stringify(filelist) });
+  const res = await fetch(`https://pan.baidu.com/rest/2.0/xpan/file?${qs}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+  const j = await res.json();
+  if (j.errno !== 0)
+    throw new Error("百度删除失败 errno=" + j.errno + " " + JSON.stringify(j).slice(0, 160));
   return j;
 }
 

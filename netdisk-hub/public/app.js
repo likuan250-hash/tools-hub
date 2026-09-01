@@ -1251,6 +1251,8 @@ function renderAggSearch(providers) {
         escapeHtml(it.id) +
         '" data-name="' +
         escapeHtml(it.name) +
+        '" data-path="' +
+        escapeHtml(it.path || "") +
         '">' +
         '<input type="checkbox" class="sr-check" aria-label="选择" />' +
         '<span class="sr-ico">' +
@@ -1300,6 +1302,7 @@ function renderAggSearch(providers) {
         item.getAttribute("data-provider"),
         item.getAttribute("data-id"),
         item.getAttribute("data-name"),
+        item.getAttribute("data-path") || "",
         btn,
       );
     });
@@ -1315,6 +1318,7 @@ function selectedRows() {
     sel[p].push({
       id: item.getAttribute("data-id"),
       name: item.getAttribute("data-name"),
+      path: item.getAttribute("data-path") || "",
     });
   });
   return sel;
@@ -1350,7 +1354,11 @@ async function doTrash(provider, list) {
   const r = await fetch("/api/trash", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider, fileIds: list.map((x) => x.id) }),
+    body: JSON.stringify({
+      provider,
+      fileIds: list.map((x) => x.id),
+      paths: provider === "baidu" ? list.map((x) => x.path) : undefined,
+    }),
   });
   const d = await r.json().catch(() => null);
   if (!r.ok || !d || !d.ok) throw new Error((d && d.error) || "删除失败");
@@ -1410,7 +1418,7 @@ async function batchTrash(target) {
   if (searchInput.value.trim()) runAggSearch();
 }
 
-async function deleteAggItem(provider, id, name, btn) {
+async function deleteAggItem(provider, id, name, path, btn) {
   if (
     !confirm(
       "确认将「" +
@@ -1423,7 +1431,7 @@ async function deleteAggItem(provider, id, name, btn) {
     return;
   btn.disabled = true;
   try {
-    await doTrash(provider, [{ id, name }]);
+    await doTrash(provider, [{ id, name, path }]);
     toast("已移入" + (PROVIDER_NAME[provider] || provider) + "回收站", "ok");
     if (searchInput.value.trim()) runAggSearch();
   } catch (e) {

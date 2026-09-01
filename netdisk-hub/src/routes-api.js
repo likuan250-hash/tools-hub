@@ -224,7 +224,9 @@ function registerApiRoutes(app, ctx) {
             fid = await resolveQuarkFid(cookie);
             if (!fid) {
               throw new Error(
-                "夸克转存目录(" + quark.FOLDER_NAME + ")解析失败,请确认文件夹存在或在网页选择转存目录",
+                "夸克转存目录(" +
+                  quark.FOLDER_NAME +
+                  ")解析失败,请确认文件夹存在或在网页选择转存目录",
               );
             }
           }
@@ -261,7 +263,7 @@ function registerApiRoutes(app, ctx) {
 
   // ── 聚合搜索删除:软删进各盘回收站(可恢复) ──
   app.post("/api/trash", async (req, res) => {
-    const { provider, fileIds } = req.body || {};
+    const { provider, fileIds, paths } = req.body || {};
     const map = { baidu: 1, quark: 1, xunlei: 1 };
     if (!map[provider]) return res.status(400).json({ error: "未知网盘" });
     if (!Array.isArray(fileIds) || !fileIds.length)
@@ -270,7 +272,7 @@ function registerApiRoutes(app, ctx) {
       let result;
       if (provider === "baidu") {
         if (!baidu.getCookie()) return res.status(401).json({ error: "百度未授权,请先授权" });
-        result = await baidu.trashFiles(fileIds);
+        result = await baidu.trashFiles(fileIds, Array.isArray(paths) ? paths : []);
       } else if (provider === "quark") {
         const cookie = quark.getValidCookie();
         if (!cookie) return res.status(401).json({ error: "夸克未授权,请先授权" });

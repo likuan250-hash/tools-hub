@@ -232,12 +232,26 @@ test("searchFiles：列目录第一层并按关键词过滤", async () => {
             {
               fs_id: 1,
               server_filename: "消逝的光芒2.iso",
+              path: "/消逝的光芒2.iso",
               isdir: 0,
               size: 100,
               server_mtime: 1700000000,
             },
-            { fs_id: 2, server_filename: "说明.txt", isdir: 0, size: 5, server_mtime: 1700000001 },
-            { fs_id: 3, server_filename: "游戏合集", isdir: 1, server_mtime: 1700000002 },
+            {
+              fs_id: 2,
+              server_filename: "说明.txt",
+              path: "/说明.txt",
+              isdir: 0,
+              size: 5,
+              server_mtime: 1700000001,
+            },
+            {
+              fs_id: 3,
+              server_filename: "游戏合集",
+              path: "/游戏合集",
+              isdir: 1,
+              server_mtime: 1700000002,
+            },
           ],
         },
       ];
@@ -247,6 +261,7 @@ test("searchFiles：列目录第一层并按关键词过滤", async () => {
   assert.strictEqual(r.length, 1);
   assert.strictEqual(r[0].id, "1");
   assert.strictEqual(r[0].name, "消逝的光芒2.iso");
+  assert.strictEqual(r[0].path, "/消逝的光芒2.iso");
   assert.strictEqual(r[0].isdir, false);
   assert.strictEqual(r[0].time, 1700000000 * 1000);
 });
@@ -263,4 +278,26 @@ test("trashFiles：POST /api/filemanager opera=delete 进回收站", async () =>
   assert.ok(sent.url.includes("opera=delete"));
   assert.ok(sent.url.includes("async=2"));
   assert.ok(decodeURIComponent(sent.body).includes("filelist=[1,2]"));
+});
+
+test("trashFiles：有 accessToken 时走官方 OpenAPI（path+fsid 对象、async=0）", async () => {
+  store.saveAccount("baidu", { cookie: "BDUSS=abc", accessToken: "TOKEN1" });
+  let sent = null;
+  global.fetch = makeFetch((u, opts) => {
+    if (u.includes("/rest/2.0/xpan/file")) {
+      sent = { url: String(u), body: String(opts.body) };
+      return [{ errno: 0, info: [{ errno: 0, path: "/x" }] }];
+    }
+    return [{ errno: 0, result: { bdstoken: "T" } }];
+  });
+  const j = await baidu.trashFiles(["1", "2"], ["/a", "/b"]);
+  assert.strictEqual(j.errno, 0);
+  assert.ok(sent.url.includes("method=filemanager"));
+  assert.ok(sent.url.includes("access_token=TOKEN1"));
+  assert.ok(sent.url.includes("async=0"));
+  assert.ok(
+    decodeURIComponent(sent.body).includes(
+      'filelist=[{"path":"/a","fsid":1},{"path":"/b","fsid":2}]',
+    ),
+  );
 });

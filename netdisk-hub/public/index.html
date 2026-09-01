@@ -839,7 +839,11 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
 
     /* ===== 聚合搜索弹窗 ===== */
     #searchMask .modal { max-width: 760px; }
-    #searchMask .modal-body { display: flex; flex-direction: column; gap: 12px; }
+    /* modal-body 需在 modal 的 max-height 内受约束,并把滚动留给 search-results */
+    #searchMask .modal-body {
+      display: flex; flex-direction: column; gap: 12px;
+      flex: 1 1 auto; min-height: 0; overflow: hidden;
+    }
     .search-bar { display: flex; gap: 8px; }
     .search-bar input {
       flex: 1; min-width: 0; padding: 9px 12px;
@@ -858,7 +862,10 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       border-radius: 9px; font-size: 11px; line-height: 16px; text-align: center;
       background: rgba(var(--accent-rgb), .16); color: var(--text);
     }
-    .search-results { display: flex; flex-direction: column; gap: 12px; max-height: 58vh; overflow: auto; }
+    .search-results {
+      display: flex; flex-direction: column; gap: 12px;
+      flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    }
     .sr-group { border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; background: var(--field-bg); }
     .sr-head {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;

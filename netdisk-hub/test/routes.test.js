@@ -29,12 +29,12 @@ let quarkSearchImpl = async (cookie, fid, q) => [
 ];
 let xunleiSearchImpl = async (parentId, q) => [{ id: "x1", name: "X_" + q, isdir: false, size: 1 }];
 
-let app, server, base;
+let app, server, base, ctx;
 
 before(async () => {
   app = express();
   app.use(express.json());
-  const ctx = {
+  ctx = {
     store,
     logger: { info() {}, warn() {}, error() {} },
     baidu: {
@@ -49,7 +49,7 @@ before(async () => {
       FOLDER_NAME: "netdisk_hub",
       getValidCookie: () => "ck",
       listSubfolders: async () => [{ id: "f1", name: "f" }],
-      findFolderByName: async () => ({ fid: "FOLDER1" }),
+      findFolderByName: async () => "FOLDER1",
       searchFiles: (cookie, fid, q) => quarkSearchImpl(cookie, fid, q),
       trashFiles: async (cookie, ids) => ({ ok: true, count: ids.length }),
     },
@@ -294,7 +294,7 @@ test("/api/search：单盘异常不拖累其他盘", async () => {
   assert.strictEqual(body.providers.xunlei.ok, true);
 });
 
-test("/api/search：未保存目录时回退到各盘生效转存目录", async () => {
+test("/api/search：未保存目录时解析各盘生效转存目录(fid)去搜索", async () => {
   let gotFid = null;
   let gotXid = null;
   const qf = quarkSearchImpl;
@@ -317,6 +317,31 @@ test("/api/search：未保存目录时回退到各盘生效转存目录", async 
   assert.strictEqual(body.providers.baidu.ok, true);
   assert.strictEqual(gotFid, "FOLDER1", "夸克应解析默认文件夹 fid");
   assert.strictEqual(gotXid, "FOLDER1", "迅雷应解析默认「游戏」文件夹 id");
+});
+
+test("/api/search：夸克指定目录解析失败时明确报错,不回退根目录", async () => {
+  let gotFid = "unchanged";
+  const qf = quarkSearchImpl;
+  const originalFindFolder = ctx.quark.findFolderByName;
+  const originalListSub = ctx.quark.listSubfolders;
+  // 模拟指定转存目录彻底找不到:findFolderByName 返回 null 且 listSubfolders 根目录里没有匹配名
+  ctx.quark.findFolderByName = async () => null;
+  ctx.quark.listSubfolders = async () => [{ id: "other", name: "其他" }];
+  quarkSearchImpl = async (cookie, fid, q) => {
+    gotFid = fid; // 若错误地回退根目录,这里会拿到 "0"
+    return [{ id: "q-root", name: "Q_" + q, isdir: false, size: 1 }];
+  };
+  // 清掉保存目录,触发默认目录解析;先清空进程内缓存避免前面测试的 FOLDER1 干扰
+  registerApiRoutes.resetQuarkSearchFidCache();
+  store.setDir("quark", { id: "", name: "x" });
+  const { status, body } = await get("/api/search?q=abc");
+  ctx.quark.findFolderByName = originalFindFolder;
+  ctx.quark.listSubfolders = originalListSub;
+  quarkSearchImpl = qf;
+  assert.strictEqual(status, 200);
+  assert.strictEqual(gotFid, "unchanged", "解析失败不应回退根目录去搜索");
+  assert.strictEqual(body.providers.quark.ok, false, "夸克应标记失败");
+  assert.ok(/解析失败/.test(body.providers.quark.error), "应给出解析失败提示");
 });
 
 test("POST /api/trash：未知网盘返回 400", async () => {

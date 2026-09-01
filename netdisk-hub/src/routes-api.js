@@ -4,13 +4,18 @@
 
 const progress = require("./progress");
 
+// 夸克默认目录 fid 缓存(10 分钟),避免每次搜索都解析、遇偶发接口抖动搜空
+// 放在模块级,方便测试时重置。
+let quarkSearchFid = null;
+let quarkSearchFidTs = 0;
+
 // 注册所有 API 路由到 app
 // ctx: { store, logger, baidu, quark, xunlei,
 //        doTransfer, mapLimit, extractSurl, isValidShareLink,
 //        refreshPings, pingCache, getServerState, PORT,
 //        getVersion,
 //        process, path, fs, __dirname }
-module.exports = function registerApiRoutes(app, ctx) {
+function registerApiRoutes(app, ctx) {
   const {
     store,
     logger,
@@ -159,26 +164,38 @@ module.exports = function registerApiRoutes(app, ctx) {
   });
 
   // ── 聚合搜索:并行搜三盘「各自转存目录」第一层,按关键词过滤 ──
-  // 夸克默认目录 fid 缓存(10 分钟),避免每次搜索都解析、遇偶发接口抖动搜空
-  let quarkSearchFid = null;
-  let quarkSearchFidTs = 0;
+  // 解析用户指定的夸克转存目录(QUARK_FOLDER,默认「游戏分享」)的 fid。
+  // 三重保险:① findFolderByName 重试 3 次(/file/sort 偶发抽风)
+  //          ② 仍失败则用 listSubfolders(根)按名匹配(浏览接口更稳,实测稳定返回)
+  //          ③ 实在没有才返回 null,由上层明确报错——绝不偷偷回退根目录。
   async function resolveQuarkFid(cookie) {
+    const name = quark.FOLDER_NAME;
     if (quarkSearchFid && Date.now() - quarkSearchFidTs < 10 * 60 * 1000) return quarkSearchFid;
-    let f = null;
-    for (let i = 0; i < 2 && !f; i++) {
+    let fid = null;
+    for (let i = 0; i < 3 && !fid; i++) {
       try {
-        f = await quark.findFolderByName(cookie, quark.FOLDER_NAME);
+        const r = await quark.findFolderByName(cookie, name);
+        if (r) fid = r; // findFolderByName 返回 fid 字符串,不是 {fid}
       } catch (e) {
-        f = null;
+        fid = null;
       }
-      if (!f) await new Promise((r) => setTimeout(r, 500));
+      if (!fid && i < 2) await new Promise((r) => setTimeout(r, 400));
     }
-    if (f && f.fid) {
-      quarkSearchFid = f.fid;
+    if (!fid) {
+      try {
+        const subs = await quark.listSubfolders(cookie, "0");
+        const hit = subs.find((s) => s.name === name);
+        if (hit) fid = hit.id;
+      } catch (e) {
+        /* 忽略,下面统一判断 */
+      }
+    }
+    if (fid) {
+      quarkSearchFid = fid;
       quarkSearchFidTs = Date.now();
-      return f.fid;
+      return fid;
     }
-    return quarkSearchFid || null; // 解析失败时沿用上次成功值,实在没有则报错
+    return null; // 解析失败 → 上层报错,绝不回退根目录
   }
   app.get("/api/search", async (req, res) => {
     const q = String(req.query.q || "").trim();
@@ -200,16 +217,16 @@ module.exports = function registerApiRoutes(app, ctx) {
           const cookie = quark.getValidCookie();
           if (!cookie) throw new Error("夸克未授权,请先授权");
           const d = dir("quark");
-          // 未保存目录时,解析默认转存文件夹(QUARK_FOLDER)的 fid
+          // 用户在网页保存过目录 → 用其真实 fid;否则解析 QUARK_FOLDER 指定的转存目录
+          // (默认「游戏分享」)。解析失败就明确报错——绝不回退根目录(用户要求只搜指定目录)。
           let fid = (d && d.id) || null;
           if (!fid) {
             fid = await resolveQuarkFid(cookie);
-            if (!fid)
+            if (!fid) {
               throw new Error(
-                "夸克默认转存目录(" +
-                  quark.FOLDER_NAME +
-                  ")解析失败,请确认文件夹存在或在网页选择转存目录",
+                "夸克转存目录(" + quark.FOLDER_NAME + ")解析失败,请确认文件夹存在或在网页选择转存目录",
               );
+            }
           }
           return quark.searchFiles(cookie, fid, q);
         })(),
@@ -724,4 +741,12 @@ module.exports = function registerApiRoutes(app, ctx) {
       res.status(500).json({ ok: false, error: e.message });
     }
   });
+}
+
+// 测试用：清空夸克默认目录 fid 缓存，避免测试间互相污染。
+registerApiRoutes.resetQuarkSearchFidCache = function () {
+  quarkSearchFid = null;
+  quarkSearchFidTs = 0;
 };
+
+module.exports = registerApiRoutes;

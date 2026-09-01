@@ -1140,6 +1140,157 @@ fmtFill.addEventListener("click", () => {
   closeModal(); // 填入后关闭格式化弹窗
 });
 
+// ── 聚合搜索:转存中心头部按钮 → 弹窗,并行搜三盘转存目录第一层,结果可移入回收站 ──
+const searchMaskEl = document.getElementById("searchMask");
+const searchInput = document.getElementById("searchInput");
+const searchGo = document.getElementById("searchGo");
+const searchResults = document.getElementById("searchResults");
+
+document.getElementById("searchIconBtn").addEventListener("click", () => {
+  openModal(searchMaskEl);
+  setTimeout(() => searchInput.focus(), 80);
+});
+document.getElementById("searchClose").addEventListener("click", closeModal);
+if (searchMaskEl)
+  searchMaskEl.addEventListener("click", (e) => {
+    if (e.target === searchMaskEl) closeModal();
+  });
+
+function fmtSize(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return "";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return (n >= 100 ? Math.round(n) : Math.round(n * 10) / 10) + " " + u[i];
+}
+
+async function runAggSearch() {
+  const q = searchInput.value.trim();
+  if (!q) {
+    toast("请输入搜索关键词", "err");
+    return;
+  }
+  searchResults.innerHTML = '<div class="sr-empty">搜索中…</div>';
+  searchGo.disabled = true;
+  try {
+    const r = await fetch("/api/search?q=" + encodeURIComponent(q));
+    const d = await r.json().catch(() => null);
+    if (!r.ok || !d || !d.providers) throw new Error((d && d.error) || "搜索失败");
+    renderAggSearch(d.providers);
+  } catch (e) {
+    searchResults.innerHTML = '<div class="sr-err">' + escapeHtml(e.message) + "</div>";
+  } finally {
+    searchGo.disabled = false;
+  }
+}
+
+function renderAggSearch(providers) {
+  const order = ["baidu", "quark", "xunlei"];
+  let html = "";
+  for (const p of order) {
+    const g = providers[p];
+    if (!g) continue;
+    const pname = PROVIDER_NAME[p] || p;
+    if (!g.ok) {
+      html +=
+        '<div class="sr-group"><div class="sr-head"><span>' +
+        escapeHtml(pname) +
+        '</span><span class="sr-count">不可用</span></div><div class="sr-err">' +
+        escapeHtml(g.error || "未知错误") +
+        "</div></div>";
+      continue;
+    }
+    const items = g.items || [];
+    if (!items.length) {
+      html +=
+        '<div class="sr-group"><div class="sr-head"><span>' +
+        escapeHtml(pname) +
+        '</span><span class="sr-count">0 条</span></div><div class="sr-empty">未找到匹配文件</div></div>';
+      continue;
+    }
+    let rows = "";
+    for (const it of items) {
+      const meta = it.isdir ? "文件夹" : fmtSize(it.size);
+      rows +=
+        '<div class="sr-item" data-provider="' +
+        p +
+        '" data-id="' +
+        escapeHtml(it.id) +
+        '" data-name="' +
+        escapeHtml(it.name) +
+        '">' +
+        '<span class="sr-ico">' +
+        ico(it.isdir ? "folder" : "file") +
+        "</span>" +
+        '<span class="sr-name" title="' +
+        escapeHtml(it.name) +
+        '">' +
+        escapeHtml(it.name) +
+        "</span>" +
+        (meta ? '<span class="sr-meta">' + escapeHtml(meta) + "</span>" : "") +
+        '<button class="sr-del" type="button">移入回收站</button></div>';
+    }
+    html +=
+      '<div class="sr-group"><div class="sr-head"><span>' +
+      escapeHtml(pname) +
+      '</span><span class="sr-count">' +
+      items.length +
+      " 条</span></div>" +
+      rows +
+      "</div>";
+  }
+  if (!html) html = '<div class="sr-empty">无结果</div>';
+  searchResults.innerHTML = html;
+  searchResults.querySelectorAll(".sr-del").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const item = btn.closest(".sr-item");
+      deleteAggItem(
+        item.getAttribute("data-provider"),
+        item.getAttribute("data-id"),
+        item.getAttribute("data-name"),
+        btn,
+      );
+    });
+  });
+}
+
+async function deleteAggItem(provider, id, name, btn) {
+  if (
+    !confirm(
+      "确认将「" +
+        name +
+        "」移入" +
+        (PROVIDER_NAME[provider] || provider) +
+        "回收站？\n回收站内可恢复。",
+    )
+  )
+    return;
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/trash", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, fileIds: [id] }),
+    });
+    const d = await r.json().catch(() => null);
+    if (!r.ok || !d || !d.ok) throw new Error((d && d.error) || "删除失败");
+    toast("已移入" + (PROVIDER_NAME[provider] || provider) + "回收站", "ok");
+    if (searchInput.value.trim()) runAggSearch();
+  } catch (e) {
+    btn.disabled = false;
+    toast("删除失败: " + e.message, "err");
+  }
+}
+
+searchGo.addEventListener("click", runAggSearch);
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") runAggSearch();
+});
+
 loadAccounts();
 loadTasks();
 

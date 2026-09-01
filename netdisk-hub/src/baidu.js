@@ -458,8 +458,14 @@ async function trashFiles(fsIds) {
     body: body.toString(),
   });
   const j = await res.json();
-  if (j.errno !== 0)
+  if (j.errno !== 0) {
+    if (j.errno === 132) {
+      throw new Error(
+        "百度触发安全验证：请先登录网页版 https://pan.baidu.com 手动删除任意一个文件完成滑块验证，再回来重试",
+      );
+    }
     throw new Error("百度删除失败 errno=" + j.errno + " " + JSON.stringify(j).slice(0, 160));
+  }
   return j;
 }
 

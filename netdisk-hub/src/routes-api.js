@@ -159,6 +159,27 @@ module.exports = function registerApiRoutes(app, ctx) {
   });
 
   // ── 聚合搜索:并行搜三盘「各自转存目录」第一层,按关键词过滤 ──
+  // 夸克默认目录 fid 缓存(10 分钟),避免每次搜索都解析、遇偶发接口抖动搜空
+  let quarkSearchFid = null;
+  let quarkSearchFidTs = 0;
+  async function resolveQuarkFid(cookie) {
+    if (quarkSearchFid && Date.now() - quarkSearchFidTs < 10 * 60 * 1000) return quarkSearchFid;
+    let f = null;
+    for (let i = 0; i < 2 && !f; i++) {
+      try {
+        f = await quark.findFolderByName(cookie, quark.FOLDER_NAME);
+      } catch (e) {
+        f = null;
+      }
+      if (!f) await new Promise((r) => setTimeout(r, 500));
+    }
+    if (f && f.fid) {
+      quarkSearchFid = f.fid;
+      quarkSearchFidTs = Date.now();
+      return f.fid;
+    }
+    return quarkSearchFid || null; // 解析失败时沿用上次成功值,实在没有则报错
+  }
   app.get("/api/search", async (req, res) => {
     const q = String(req.query.q || "").trim();
     if (!q) return res.status(400).json({ error: "缺少搜索关键词" });
@@ -179,13 +200,18 @@ module.exports = function registerApiRoutes(app, ctx) {
           const cookie = quark.getValidCookie();
           if (!cookie) throw new Error("夸克未授权,请先授权");
           const d = dir("quark");
-          // 未保存目录时,解析默认转存文件夹(QUARK_FOLDER)的 fid,找不到才回退根目录
+          // 未保存目录时,解析默认转存文件夹(QUARK_FOLDER)的 fid
           let fid = (d && d.id) || null;
           if (!fid) {
-            const f = await quark.findFolderByName(cookie, quark.FOLDER_NAME);
-            if (f && f.fid) fid = f.fid;
+            fid = await resolveQuarkFid(cookie);
+            if (!fid)
+              throw new Error(
+                "夸克默认转存目录(" +
+                  quark.FOLDER_NAME +
+                  ")解析失败,请确认文件夹存在或在网页选择转存目录",
+              );
           }
-          return quark.searchFiles(cookie, fid || "0", q);
+          return quark.searchFiles(cookie, fid, q);
         })(),
       ],
       [

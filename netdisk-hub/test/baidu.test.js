@@ -229,9 +229,15 @@ test("searchFiles：列目录第一层并按关键词过滤", async () => {
         {
           errno: 0,
           list: [
-            { fs_id: 1, server_filename: "消逝的光芒2.iso", isdir: 0, size: 100 },
-            { fs_id: 2, server_filename: "说明.txt", isdir: 0, size: 5 },
-            { fs_id: 3, server_filename: "游戏合集", isdir: 1 },
+            {
+              fs_id: 1,
+              server_filename: "消逝的光芒2.iso",
+              isdir: 0,
+              size: 100,
+              server_mtime: 1700000000,
+            },
+            { fs_id: 2, server_filename: "说明.txt", isdir: 0, size: 5, server_mtime: 1700000001 },
+            { fs_id: 3, server_filename: "游戏合集", isdir: 1, server_mtime: 1700000002 },
           ],
         },
       ];
@@ -242,6 +248,7 @@ test("searchFiles：列目录第一层并按关键词过滤", async () => {
   assert.strictEqual(r[0].id, "1");
   assert.strictEqual(r[0].name, "消逝的光芒2.iso");
   assert.strictEqual(r[0].isdir, false);
+  assert.strictEqual(r[0].time, 1700000000 * 1000);
 });
 
 test("trashFiles：POST /api/filemanager opera=delete 进回收站", async () => {

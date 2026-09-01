@@ -1168,6 +1168,30 @@ function fmtSize(n) {
   return (n >= 100 ? Math.round(n) : Math.round(n * 10) / 10) + " " + u[i];
 }
 
+function fmtTime(t) {
+  if (!t) return "";
+  let d;
+  if (typeof t === "string") d = new Date(t);
+  else {
+    const n = Number(t);
+    if (!n) return "";
+    d = new Date(n > 1e12 ? n : n * 1000);
+  }
+  if (isNaN(d.getTime())) return "";
+  const p = (x) => String(x).padStart(2, "0");
+  return (
+    d.getFullYear() +
+    "-" +
+    p(d.getMonth() + 1) +
+    "-" +
+    p(d.getDate()) +
+    " " +
+    p(d.getHours()) +
+    ":" +
+    p(d.getMinutes())
+  );
+}
+
 async function runAggSearch() {
   const q = searchInput.value.trim();
   if (!q) {
@@ -1175,6 +1199,8 @@ async function runAggSearch() {
     return;
   }
   searchResults.innerHTML = '<div class="sr-empty">搜索中…</div>';
+  const actions = document.getElementById("searchActions");
+  if (actions) actions.style.display = "none";
   searchGo.disabled = true;
   try {
     const r = await fetch("/api/search?q=" + encodeURIComponent(q));
@@ -1191,6 +1217,7 @@ async function runAggSearch() {
 function renderAggSearch(providers) {
   const order = ["baidu", "quark", "xunlei"];
   let html = "";
+  let hasItems = false;
   for (const p of order) {
     const g = providers[p];
     if (!g) continue;
@@ -1215,6 +1242,8 @@ function renderAggSearch(providers) {
     let rows = "";
     for (const it of items) {
       const meta = it.isdir ? "文件夹" : fmtSize(it.size);
+      const time = fmtTime(it.time);
+      hasItems = true;
       rows +=
         '<div class="sr-item" data-provider="' +
         p +
@@ -1223,6 +1252,7 @@ function renderAggSearch(providers) {
         '" data-name="' +
         escapeHtml(it.name) +
         '">' +
+        '<input type="checkbox" class="sr-check" aria-label="选择" />' +
         '<span class="sr-ico">' +
         ico(it.isdir ? "folder" : "file") +
         "</span>" +
@@ -1231,13 +1261,16 @@ function renderAggSearch(providers) {
         '">' +
         escapeHtml(it.name) +
         "</span>" +
+        (time ? '<span class="sr-meta">' + escapeHtml(time) + "</span>" : "") +
         (meta ? '<span class="sr-meta">' + escapeHtml(meta) + "</span>" : "") +
         '<button class="sr-del" type="button">移入回收站</button></div>';
     }
     html +=
-      '<div class="sr-group"><div class="sr-head"><span>' +
+      '<div class="sr-group"><div class="sr-head"><span><label class="sr-all"><input type="checkbox" data-all="' +
+      p +
+      '" aria-label="全选" /> 全选</label></span><span class="sr-count">' +
       escapeHtml(pname) +
-      '</span><span class="sr-count">' +
+      " · " +
       items.length +
       " 条</span></div>" +
       rows +
@@ -1245,6 +1278,21 @@ function renderAggSearch(providers) {
   }
   if (!html) html = '<div class="sr-empty">无结果</div>';
   searchResults.innerHTML = html;
+  renderSearchActions();
+  const actions = document.getElementById("searchActions");
+  actions.style.display = hasItems ? "flex" : "none";
+  searchResults.querySelectorAll("[data-all]").forEach((all) => {
+    all.addEventListener("change", () => {
+      const p = all.getAttribute("data-all");
+      searchResults
+        .querySelectorAll('.sr-item[data-provider="' + p + '"] .sr-check')
+        .forEach((c) => (c.checked = all.checked));
+      updateSearchActions();
+    });
+  });
+  searchResults.querySelectorAll(".sr-check").forEach((c) => {
+    c.addEventListener("change", updateSearchActions);
+  });
   searchResults.querySelectorAll(".sr-del").forEach((btn) => {
     btn.addEventListener("click", () => {
       const item = btn.closest(".sr-item");
@@ -1256,6 +1304,110 @@ function renderAggSearch(providers) {
       );
     });
   });
+  updateSearchActions();
+}
+
+function selectedRows() {
+  const sel = { baidu: [], quark: [], xunlei: [] };
+  searchResults.querySelectorAll(".sr-item .sr-check:checked").forEach((c) => {
+    const item = c.closest(".sr-item");
+    const p = item.getAttribute("data-provider");
+    sel[p].push({
+      id: item.getAttribute("data-id"),
+      name: item.getAttribute("data-name"),
+    });
+  });
+  return sel;
+}
+
+function renderSearchActions() {
+  const box = document.getElementById("searchActions");
+  if (!box) return;
+  box.innerHTML =
+    '<button class="btn ghost" data-batch="baidu">百度 移入回收站<span class="sr-count-badge">0</span></button>' +
+    '<button class="btn ghost" data-batch="quark">夸克 移入回收站<span class="sr-count-badge">0</span></button>' +
+    '<button class="btn ghost" data-batch="xunlei">迅雷 移入回收站<span class="sr-count-badge">0</span></button>' +
+    '<button class="auth-btn" data-batch="all">全部移入回收站<span class="sr-count-badge">0</span></button>';
+  box.querySelectorAll("[data-batch]").forEach((btn) => {
+    btn.addEventListener("click", () => batchTrash(btn.getAttribute("data-batch")));
+  });
+}
+
+function updateSearchActions() {
+  const sel = selectedRows();
+  const box = document.getElementById("searchActions");
+  if (!box) return;
+  box.querySelectorAll("[data-batch]").forEach((btn) => {
+    const p = btn.getAttribute("data-batch");
+    const n = p === "all" ? sel.baidu.length + sel.quark.length + sel.xunlei.length : sel[p].length;
+    const badge = btn.querySelector(".sr-count-badge");
+    if (badge) badge.textContent = String(n);
+    btn.disabled = n === 0;
+  });
+}
+
+async function doTrash(provider, list) {
+  const r = await fetch("/api/trash", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, fileIds: list.map((x) => x.id) }),
+  });
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d || !d.ok) throw new Error((d && d.error) || "删除失败");
+}
+
+async function batchTrash(target) {
+  const sel = selectedRows();
+  if (target !== "all") {
+    const list = sel[target] || [];
+    if (!list.length) return;
+    if (
+      !confirm(
+        "确认将" +
+          (PROVIDER_NAME[target] || target) +
+          "选中的 " +
+          list.length +
+          " 个文件移入回收站？\n回收站内可恢复。",
+      )
+    )
+      return;
+    try {
+      await doTrash(target, list);
+      toast("已移入" + (PROVIDER_NAME[target] || target) + "回收站", "ok");
+    } catch (e) {
+      toast("删除失败: " + e.message, "err");
+      return;
+    }
+  } else {
+    const all = [];
+    for (const p of ["baidu", "quark", "xunlei"])
+      for (const it of sel[p]) all.push({ provider: p, ...it });
+    if (!all.length) return;
+    const per = ["baidu", "quark", "xunlei"]
+      .filter((p) => sel[p].length)
+      .map((p) => (PROVIDER_NAME[p] || p) + " " + sel[p].length + " 个")
+      .join("、");
+    if (
+      !confirm(
+        "确认将选中的 " +
+          all.length +
+          " 个文件（" +
+          per +
+          "）移入对应网盘回收站？\n回收站内可恢复。",
+      )
+    )
+      return;
+    try {
+      for (const p of ["baidu", "quark", "xunlei"]) {
+        if (sel[p].length) await doTrash(p, sel[p]);
+      }
+      toast("已全部移入回收站", "ok");
+    } catch (e) {
+      toast("删除失败: " + e.message, "err");
+      return;
+    }
+  }
+  if (searchInput.value.trim()) runAggSearch();
 }
 
 async function deleteAggItem(provider, id, name, btn) {
@@ -1271,13 +1423,7 @@ async function deleteAggItem(provider, id, name, btn) {
     return;
   btn.disabled = true;
   try {
-    const r = await fetch("/api/trash", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, fileIds: [id] }),
-    });
-    const d = await r.json().catch(() => null);
-    if (!r.ok || !d || !d.ok) throw new Error((d && d.error) || "删除失败");
+    await doTrash(provider, [{ id, name }]);
     toast("已移入" + (PROVIDER_NAME[provider] || provider) + "回收站", "ok");
     if (searchInput.value.trim()) runAggSearch();
   } catch (e) {

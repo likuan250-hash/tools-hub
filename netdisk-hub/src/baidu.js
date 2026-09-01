@@ -417,6 +417,7 @@ async function listDir(dirPath) {
     server_filename: f.server_filename,
     isdir: f.isdir,
     path: f.path,
+    server_mtime: f.server_mtime,
   }));
 }
 
@@ -434,6 +435,7 @@ async function searchFiles(dirPath, keyword) {
       name: f.server_filename,
       isdir: f.isdir === 1,
       size: f.size || 0,
+      time: f.server_mtime ? f.server_mtime * 1000 : 0,
     }));
 }
 

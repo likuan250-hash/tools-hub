@@ -169,7 +169,13 @@ test("searchFiles：列目录第一层并按关键词过滤", async () => {
       return [
         {
           files: [
-            { id: "x1", name: "消逝的光芒2.iso", kind: "drive#file", size: 100 },
+            {
+              id: "x1",
+              name: "消逝的光芒2.iso",
+              kind: "drive#file",
+              size: 100,
+              modified_time: "2025-08-07T16:02:48.017+08:00",
+            },
             { id: "x2", name: "说明.txt", kind: "drive#file", size: 5 },
             { id: "x3", name: "游戏合集", kind: "drive#folder", size: 0 },
           ],
@@ -181,6 +187,7 @@ test("searchFiles：列目录第一层并按关键词过滤", async () => {
   assert.strictEqual(r.length, 1);
   assert.strictEqual(r[0].id, "x1");
   assert.strictEqual(r[0].isdir, false);
+  assert.strictEqual(r[0].time, "2025-08-07T16:02:48.017+08:00");
 });
 
 test("trashFiles：POST /files:batchDelete 进回收站", async () => {

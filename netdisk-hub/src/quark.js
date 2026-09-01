@@ -196,6 +196,8 @@ async function listFolder(cookie, fid) {
     file_name: x.file_name,
     dir: !!x.dir,
     size: x.size || 0,
+    pdir_fid: x.pdir_fid || "",
+    time: x.updated_at || x.l_updated_at || 0,
   }));
 }
 
@@ -205,10 +207,16 @@ async function searchFiles(cookie, fid, keyword) {
     .trim()
     .toLowerCase();
   if (!kw) return [];
-  const list = await listFolder(cookie, fid || "0");
+  const target = fid || "0";
+  let list = await listFolder(cookie, target);
+  // 夸克偶发返回错误目录内容(如根目录):校验首项 pdir_fid,不符则延迟重试一次
+  if (list.length && list[0].pdir_fid && list[0].pdir_fid !== target) {
+    await sleep(600);
+    list = await listFolder(cookie, target);
+  }
   return list
     .filter((x) => x.file_name.toLowerCase().includes(kw))
-    .map((x) => ({ id: x.fid, name: x.file_name, isdir: x.dir, size: x.size }));
+    .map((x) => ({ id: x.fid, name: x.file_name, isdir: x.dir, size: x.size, time: x.time }));
 }
 
 // 删除到回收站(软删,可恢复);action_type 2 = 删除

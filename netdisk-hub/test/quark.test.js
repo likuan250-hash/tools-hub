@@ -263,9 +263,15 @@ test("searchFiles：按关键词过滤第一层并保留 size/dir", async () => 
           code: 0,
           data: {
             list: [
-              { fid: "f1", file_name: "消逝的光芒2.iso", dir: false, size: 100 },
-              { fid: "f2", file_name: "说明.txt", dir: false, size: 5 },
-              { fid: "f3", file_name: "游戏合集", dir: true, size: 0 },
+              {
+                fid: "f1",
+                file_name: "消逝的光芒2.iso",
+                dir: false,
+                size: 100,
+                updated_at: 1700000000000,
+              },
+              { fid: "f2", file_name: "说明.txt", dir: false, size: 5, updated_at: 1700000000001 },
+              { fid: "f3", file_name: "游戏合集", dir: true, size: 0, updated_at: 1700000000002 },
             ],
           },
         },
@@ -276,6 +282,45 @@ test("searchFiles：按关键词过滤第一层并保留 size/dir", async () => 
   assert.strictEqual(r.length, 1);
   assert.strictEqual(r[0].id, "f1");
   assert.strictEqual(r[0].size, 100);
+  assert.strictEqual(r[0].time, 1700000000000);
+});
+
+test("searchFiles：目录内容异常(pdir_fid 不符)时延迟重试一次", async () => {
+  let calls = 0;
+  global.fetch = makeFetch((u) => {
+    if (u.includes("/file/sort")) {
+      calls++;
+      if (calls === 1)
+        return [
+          {
+            code: 0,
+            data: { list: [{ fid: "x", file_name: "根目录项", dir: true, pdir_fid: "0" }] },
+          },
+        ];
+      return [
+        {
+          code: 0,
+          data: {
+            list: [
+              {
+                fid: "f1",
+                file_name: "合金装备",
+                dir: false,
+                size: 1,
+                pdir_fid: "F1",
+                updated_at: 1700000000000,
+              },
+            ],
+          },
+        },
+      ];
+    }
+    return [{ code: 0 }];
+  });
+  const r = await quark.searchFiles("cookie", "F1", "合金");
+  assert.strictEqual(calls, 2, "应重试一次");
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].id, "f1");
 });
 
 test("trashFiles：POST /file/delete action_type=2 软删", async () => {

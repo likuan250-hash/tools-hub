@@ -851,6 +851,13 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
     .search-bar input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .18); }
     .search-bar .auth-btn { flex-shrink: 0; white-space: nowrap; }
     .search-tip { color: var(--text-dim); font-size: 12px; line-height: 1.6; }
+    .search-actions { display: none; flex-wrap: wrap; gap: 8px; }
+    .search-actions .btn, .search-actions .auth-btn { font-size: 12px; padding: 7px 12px; }
+    .search-actions .sr-count-badge {
+      display: inline-block; min-width: 18px; margin-left: 5px; padding: 0 5px;
+      border-radius: 9px; font-size: 11px; line-height: 16px; text-align: center;
+      background: rgba(var(--accent-rgb), .16); color: var(--text);
+    }
     .search-results { display: flex; flex-direction: column; gap: 12px; max-height: 58vh; overflow: auto; }
     .sr-group { border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; background: var(--field-bg); }
     .sr-head {
@@ -865,6 +872,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       font-size: 13px; color: var(--text);
     }
     .sr-item:last-child { border-bottom: 0; }
+    .sr-item .sr-check { flex-shrink: 0; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
     .sr-item .sr-ico { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-dim); display: block; }
     .sr-item .sr-ico .app-ico { width: 16px; height: 16px; }
     .sr-item .sr-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1118,6 +1126,7 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
           <button class="auth-btn" id="searchGo" type="button"><i class="app-ico" data-ico="search"></i> 搜索</button>
         </div>
         <div class="search-tip">搜索结果仅展示各盘转存目录第一层；删除为移入各盘回收站，可恢复。</div>
+        <div class="search-actions" id="searchActions"></div>
         <div class="search-results" id="searchResults"></div>
       </div>
     </div>

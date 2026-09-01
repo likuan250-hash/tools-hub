@@ -256,7 +256,14 @@ async function listFiles(parentId) {
       throw new Error("列目录失败(" + r.status + "): " + (r.text || "").slice(0, 200));
     const files = (r.json && r.json.files) || [];
     all = all.concat(
-      files.map((f) => ({ id: f.id, name: f.name, size: f.size, kind: f.kind, type: f.type })),
+      files.map((f) => ({
+        id: f.id,
+        name: f.name,
+        size: f.size,
+        kind: f.kind,
+        type: f.type,
+        time: f.modified_time || f.created_time || "",
+      })),
     );
     pageToken = (r.json && (r.json.next_page_token || r.json.nextPageToken)) || "";
   } while (pageToken && ++pages < 200); // 200 页上限防止异常死循环
@@ -277,6 +284,7 @@ async function searchFiles(parentId, keyword) {
       name: f.name,
       isdir: /folder/i.test(f.kind || ""),
       size: f.size || 0,
+      time: f.time,
     }));
 }
 

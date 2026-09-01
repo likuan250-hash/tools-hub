@@ -27,6 +27,7 @@ let doTransferImpl = async () => ({
 let quarkSearchImpl = async (cookie, fid, q) => [
   { id: "q1", name: "Q_" + q, isdir: false, size: 1 },
 ];
+let xunleiSearchImpl = async (parentId, q) => [{ id: "x1", name: "X_" + q, isdir: false, size: 1 }];
 
 let app, server, base;
 
@@ -48,13 +49,15 @@ before(async () => {
       FOLDER_NAME: "netdisk_hub",
       getValidCookie: () => "ck",
       listSubfolders: async () => [{ id: "f1", name: "f" }],
+      findFolderByName: async () => ({ fid: "FOLDER1" }),
       searchFiles: (cookie, fid, q) => quarkSearchImpl(cookie, fid, q),
       trashFiles: async (cookie, ids) => ({ ok: true, count: ids.length }),
     },
     xunlei: {
       isConnected: () => true,
       listSubfolders: async () => [{ id: "g1", name: "游戏" }],
-      searchFiles: async (parentId, q) => [{ id: "x1", name: "X_" + q, isdir: false, size: 1 }],
+      findFolder: async () => ({ id: "FOLDER1", name: "游戏" }),
+      searchFiles: (parentId, q) => xunleiSearchImpl(parentId, q),
       trashFiles: async (ids) => ({ ok: true, count: ids.length }),
     },
     doTransfer: (body) => doTransferImpl(body),
@@ -289,6 +292,31 @@ test("/api/search：单盘异常不拖累其他盘", async () => {
   assert.strictEqual(body.providers.quark.ok, false);
   assert.strictEqual(body.providers.baidu.ok, true);
   assert.strictEqual(body.providers.xunlei.ok, true);
+});
+
+test("/api/search：未保存目录时回退到各盘生效转存目录", async () => {
+  let gotFid = null;
+  let gotXid = null;
+  const qf = quarkSearchImpl;
+  const xf = xunleiSearchImpl;
+  // 清掉先前测试保存的目录(空 id 视为未保存),触发默认目录解析
+  store.setDir("quark", { id: "", name: "x" });
+  store.setDir("xunlei", { id: "", name: "x" });
+  quarkSearchImpl = async (cookie, fid) => {
+    gotFid = fid;
+    return [];
+  };
+  xunleiSearchImpl = async (parentId) => {
+    gotXid = parentId;
+    return [];
+  };
+  const { status, body } = await get("/api/search?q=abc");
+  quarkSearchImpl = qf;
+  xunleiSearchImpl = xf;
+  assert.strictEqual(status, 200);
+  assert.strictEqual(body.providers.baidu.ok, true);
+  assert.strictEqual(gotFid, "FOLDER1", "夸克应解析默认文件夹 fid");
+  assert.strictEqual(gotXid, "FOLDER1", "迅雷应解析默认「游戏」文件夹 id");
 });
 
 test("POST /api/trash：未知网盘返回 400", async () => {

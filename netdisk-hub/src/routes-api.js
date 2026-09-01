@@ -169,7 +169,8 @@ module.exports = function registerApiRoutes(app, ctx) {
         (async () => {
           if (!baidu.getCookie()) throw new Error("百度未授权,请先授权");
           const d = dir("baidu");
-          return baidu.searchFiles((d && d.id) || "/", q);
+          // 未在网页保存过目录时,用生效默认转存目录(env BAIDU_APP_DIR)
+          return baidu.searchFiles((d && d.id) || baidu.getConfig().appDir || "/", q);
         })(),
       ],
       [
@@ -178,7 +179,13 @@ module.exports = function registerApiRoutes(app, ctx) {
           const cookie = quark.getValidCookie();
           if (!cookie) throw new Error("夸克未授权,请先授权");
           const d = dir("quark");
-          return quark.searchFiles(cookie, (d && d.id) || "0", q);
+          // 未保存目录时,解析默认转存文件夹(QUARK_FOLDER)的 fid,找不到才回退根目录
+          let fid = (d && d.id) || null;
+          if (!fid) {
+            const f = await quark.findFolderByName(cookie, quark.FOLDER_NAME);
+            if (f && f.fid) fid = f.fid;
+          }
+          return quark.searchFiles(cookie, fid || "0", q);
         })(),
       ],
       [
@@ -186,7 +193,13 @@ module.exports = function registerApiRoutes(app, ctx) {
         (async () => {
           if (!xunlei.isConnected()) throw new Error("迅雷未授权,请先授权");
           const d = dir("xunlei");
-          return xunlei.searchFiles((d && d.id) || "", q);
+          // 未保存目录时,解析默认「游戏」文件夹,找不到才回退根目录
+          let id = (d && d.id) || null;
+          if (!id) {
+            const f = await xunlei.findFolder("游戏", "");
+            if (f && f.id) id = f.id;
+          }
+          return xunlei.searchFiles(id || "", q);
         })(),
       ],
     ];

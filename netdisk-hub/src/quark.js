@@ -400,6 +400,7 @@ module.exports = {
   pollTask,
   ensureFolder,
   listFolder,
+  findFolderByName,
   searchFiles,
   trashFiles,
   listSubfolders,

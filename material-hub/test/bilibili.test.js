@@ -1,0 +1,219 @@
+// test/bilibili.test.js —— BiliDownloader 单测
+// 覆盖：buildFormat 格式选择 / buildBiliDownloadArgs 参数构造（含 cookie 可选）/
+//       downloadUrl 成功流程（贴链接→下载→finalize 保画质→探针）/ 缺链接报错。
+// 注入 spawn + fs + probe 替身，不执行真实 yt-dlp/ffmpeg、不访问网络；
+// 仅 success 用例在 os.tmpdir() 建一个真实临时目录（用完即删）以验证 finalize 的 existsSync 分支。
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { EventEmitter } = require("node:events");
+const { BiliDownloader, buildFormat } = require("../lib/bilibili");
+
+/** 构造 spawn 替身返回的假子进程。 */
+function makeChild(opts = {}) {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.kill = () => {};
+  setImmediate(() => {
+    if (opts.stdout) child.stdout.emit("data", opts.stdout);
+    if (opts.stderr) child.stderr.emit("data", opts.stderr);
+    child.emit("close", opts.code == null ? 0 : opts.code);
+  });
+  return child;
+}
+
+/** 构造 spawn 替身（按 cmd 区分 yt-dlp / ffprobe）。 */
+function fakeSpawn(plan) {
+  return (cmd, args) => {
+    const opts = typeof plan === "function" ? plan(cmd, args) : plan;
+    return makeChild(opts || {});
+  };
+}
+
+/** 构造 fs 替身（readdirSync 返回给定列表）。 */
+function fakeFs(entries) {
+  return {
+    unlinked: [],
+    readdirSync() {
+      return entries || [];
+    },
+    unlinkSync(p) {
+      this.unlinked.push(p);
+    },
+  };
+}
+
+/** 构造 MediaProbe 替身。 */
+function fakeProbe(res) {
+  return {
+    calls: [],
+    async probeSize(file, opts) {
+      this.calls.push({ file, opts });
+      if (!res) return { ok: false, error: "no-result" };
+      return res;
+    },
+  };
+}
+
+// ───────────────────────── 纯函数：格式选择 ─────────────────────────
+
+test("buildFormat：best 拉满 = bv*+ba/b + 合流 mp4", () => {
+  const a = buildFormat("best", true);
+  assert.equal(a.format, "bv*+ba/b");
+  assert.deepEqual(a.extra, ["--merge-output-format", "mp4"]);
+  const b = buildFormat(null, true);
+  assert.equal(b.format, "bv*+ba/b");
+  assert.deepEqual(b.extra, ["--merge-output-format", "mp4"]);
+});
+
+test("buildFormat：数字限定高度 + 无 ffmpeg 时不带合流参数", () => {
+  const a = buildFormat(1080, true);
+  assert.ok(a.format.includes("height<=1080"));
+  assert.ok(a.format.includes("bestvideo"));
+  assert.deepEqual(a.extra, ["--merge-output-format", "mp4"]);
+
+  const b = buildFormat("720", false);
+  assert.ok(b.format.includes("height<=720"));
+  assert.deepEqual(b.extra, []); // 无 ffmpeg 无法合流
+});
+
+// ───────────────────────── 参数构造 ─────────────────────────
+
+test("buildBiliDownloadArgs：含 -f / -o / url，无 cookie 时不带 --cookies", () => {
+  const d = new BiliDownloader({ cookieFile: "/no/such/cookies.txt" });
+  const args = d.buildBiliDownloadArgs(
+    "https://www.bilibili.com/video/BV1xx",
+    "out/bili_1.%(ext)s",
+    { ffmpeg: true },
+    { quality: "best" },
+  );
+  assert.equal(args[0], "-f");
+  assert.equal(args[1], "bv*+ba/b");
+  assert.ok(args.includes("--merge-output-format"));
+  assert.ok(args.includes("--no-part"));
+  assert.ok(args.includes("--retries"));
+  assert.equal(args[args.indexOf("-o") + 1], "out/bili_1.%(ext)s");
+  assert.equal(args[args.length - 1], "https://www.bilibili.com/video/BV1xx");
+  assert.ok(!args.includes("--cookies"));
+});
+
+test("buildBiliDownloadArgs：cookie 文件存在时带 --cookies", () => {
+  const cookie = path.join(os.tmpdir(), "bili-test-cookie-" + Date.now() + ".txt");
+  fs.writeFileSync(cookie, "# Netscape cookie\n", "utf8");
+  try {
+    const d = new BiliDownloader({ cookieFile: cookie });
+    const args = d.buildBiliDownloadArgs("https://b23.tv/abc", "out/x.%(ext)s", {}, {});
+    const i = args.indexOf("--cookies");
+    assert.ok(i >= 0, "应带 --cookies");
+    assert.equal(args[i + 1], cookie);
+  } finally {
+    fs.unlinkSync(cookie);
+  }
+});
+
+// ───────────────────────── 下载流程 ─────────────────────────
+
+test("downloadUrl：缺链接直接报错（不启动子进程）", async () => {
+  const calls = [];
+  const d = new BiliDownloader({
+    spawn: fakeSpawn(() => {
+      throw new Error("不应被调用");
+    }),
+    fs: fakeFs([]),
+    cookieFile: "/no/such/cookies.txt",
+  });
+  const r = await d.downloadUrl("", "out", { ytDlp: true, ffmpeg: true }, { emit: () => {} });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "empty-url");
+});
+
+test("downloadUrl：贴链接成功下载并保留 mp4 画质 + 探针分辨率", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-test-"));
+  t.after(() => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {}
+  });
+  // 预置成品文件（模拟 yt-dlp 已落盘），finalize 因已是 mp4 而原样保留
+  fs.writeFileSync(path.join(dir, "test_clip.mp4"), "fake-mp4");
+
+  const events = [];
+  const d = new BiliDownloader({
+    spawn: fakeSpawn((cmd, args) => {
+      // yt-dlp 调用：直接成功（文件已预置）；ffprobe 不会被调用（已是 mp4）
+      return { code: 0 };
+    }),
+    fs: fakeFs(["test_clip.mp4"]),
+    probe: fakeProbe({ ok: true, width: 1920, height: 1080 }),
+    cookieFile: "/no/such/cookies.txt",
+  });
+
+  const r = await d.downloadUrl(
+    "https://www.bilibili.com/video/BV1xx",
+    dir,
+    { ytDlp: true, ffmpeg: true },
+    {
+      emit: (type, step, msg, ok, detail) => events.push({ type, step, msg, ok, detail }),
+      quality: "best",
+      fileName: "test_clip",
+    },
+  );
+
+  assert.equal(r.ok, true);
+  assert.equal(r.file, "test_clip.mp4");
+  assert.equal(r.width, 1920);
+  assert.equal(r.height, 1080);
+  assert.equal(r.fromBili, true);
+  // 成功事件已发出
+  assert.ok(events.some((e) => e.type === "bili_done"));
+  // 未触发重编码（已是 mp4）
+  assert.ok(!events.some((e) => e.msg && e.msg.includes("重编码")));
+});
+
+test("downloadUrl：yt-dlp 失败（退出码非 0）返回错误且不残留", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-test-"));
+  t.after(() => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {}
+  });
+  const d = new BiliDownloader({
+    spawn: fakeSpawn(() => ({ code: 1, stderr: "ERROR: Some error" })),
+    fs: fakeFs([]),
+    cookieFile: "/no/such/cookies.txt",
+  });
+  const r = await d.downloadUrl(
+    "https://www.bilibili.com/video/BV1xx",
+    dir,
+    { ytDlp: true, ffmpeg: true },
+    { emit: () => {}, fileName: "fail_clip" },
+  );
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "yt-dlp-failed");
+});
+
+test("downloadUrl：403/大会员限制给出可操作的中文报错", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-test-"));
+  t.after(() => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {}
+  });
+  const d = new BiliDownloader({
+    spawn: fakeSpawn(() => ({ code: 1, stderr: "ERROR: 403 Forbidden, need login or 大会员" })),
+    fs: fakeFs([]),
+    cookieFile: "/no/such/cookies.txt",
+  });
+  const r = await d.downloadUrl(
+    "https://www.bilibili.com/video/BV1xx",
+    dir,
+    { ytDlp: true, ffmpeg: true },
+    { emit: () => {}, fileName: "auth_clip" },
+  );
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "bili-auth");
+  assert.ok(/cookie/i.test(r.error));
+});

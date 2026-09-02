@@ -41,6 +41,13 @@
         <input id="coverUrl" class="cover-url-input" placeholder="或指定封面图片 URL…" autocomplete="off" spellcheck="false" />
         <input id="biliCollectUrl" class="cover-url-input" placeholder="或贴 B站视频链接（与封面链接同给则下载进该文件夹）" autocomplete="off" spellcheck="false" />
       </div>
+      <div class="bili-bar">
+        <button class="btn" id="biliParseBtn" type="button"><i class="app-ico" data-ico="refresh"></i> 解析 B站画质</button>
+        <select id="biliQualitySel" class="bili-quality" disabled aria-label="B站画质选择">
+          <option value="">粘贴 B站链接后点「解析 B站画质」</option>
+        </select>
+        <span class="bili-hint" id="biliLoginHint"></span>
+      </div>
     </div>
     <button class="btn" id="collectBtn" type="button">开始搜集</button>
     <div class="force-options" id="forceOptions">

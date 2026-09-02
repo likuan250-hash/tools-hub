@@ -7,6 +7,8 @@ const path = require("path");
 const logger = require("./lib/logger");
 const { CollectService, DEFAULT_OUTPUT_DIR } = require("./lib/collect");
 const { PREVIEW_TMP_DIR } = require("./lib/cover");
+const { EnvDetector } = require("./lib/env");
+const { BiliDownloader, isBiliUrl } = require("./lib/bilibili");
 
 const app = express();
 const PORT = process.env.MATERIAL_PORT || 3700;
@@ -100,7 +102,7 @@ app.post("/api/collect", (req, res) => {
   const forceCover = body.forceCover === true;
   const coverUrl = typeof body.coverUrl === "string" ? body.coverUrl.trim() : "";
   const biliUrl = typeof body.biliUrl === "string" ? body.biliUrl.trim() : "";
-  const biliQuality = typeof body.biliQuality === "string" ? body.biliQuality : "best";
+  const biliQuality = typeof body.biliQuality === "string" ? body.biliQuality : "1080";
   if (!name) {
     return res.status(400).json({ error: "缺少 name（游戏名）" });
   }
@@ -161,6 +163,31 @@ app.post("/api/collect", (req, res) => {
       });
     })
     .finally(finish);
+});
+
+// ── B站画质解析：给链接 → 返回可用档位列表（登录态复用 biliup-hub，未登录提示 412）──
+app.post("/api/bili/formats", async (req, res) => {
+  const body = req.body || {};
+  const url = typeof body.url === "string" ? body.url.trim() : "";
+  if (!url || !isBiliUrl(url)) {
+    return res.status(400).json({ ok: false, reason: "invalid-url", error: "请粘贴有效的 B站视频链接" });
+  }
+  try {
+    const env = new EnvDetector().detect();
+    const bili = new BiliDownloader();
+    if (typeof bili.setBinaries === "function") {
+      bili.setBinaries({
+        ytDlpPath: env.ytDlpPath,
+        ffmpegPath: env.ffmpegPath,
+        ffprobePath: env.ffprobePath,
+      });
+    }
+    const r = await bili.listFormats(url, { ytDlp: env.ytDlp !== false }, {});
+    res.json(r);
+  } catch (e) {
+    logger.error("[bili/formats] 异常:", e && e.message);
+    res.json({ ok: false, reason: "internal-error", error: "解析画质异常：" + (e && e.message) });
+  }
 });
 
 // ── 交互式封面选择：前端弹窗勾选后提交，resolve collect.js 中挂起的 waitCoverChoice ──

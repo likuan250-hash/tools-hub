@@ -198,3 +198,30 @@ jobs:
           done
           echo "❌ Release $TAG 未发布（electron-builder 发布阶段可能静默失败）。请到 Actions 重跑本次 workflow。"
           exit 1
+
+      # ── 上传离线数据包 data-pack.json ──
+      # kdocs-tool 启动时静默拉取 releases/latest/download/data-pack.json（中文名 → AppID 映射），
+      # 拉取失败会静默回退内置数据，所以"漏传"不会报错、很难察觉。
+      # 背景：该文件此前由本地 release.sh 用 `gh release upload` 单传，走 SSH 手动发版时会整段跳过
+      # （v2.8.14 / v2.8.15 均因此缺失）。收进 CI 后，任何发版路径都会带上它。
+      # 源文件已入库（kdocs-tool/lib/data-pack.json，约 3.5KB），CI checkout 自带。
+      # 仅在 tag 构建时执行：workflow_dispatch 打的是分支名，没有对应 Release。
+      - name: Upload data-pack asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          SRC="kdocs-tool/lib/data-pack.json"
+          echo "上传 data-pack 资产到 Release $TAG ..."
+          for i in 1 2 3 4 5; do
+            if gh release upload "$TAG" --repo likuan250-hash/tools-hub "$SRC" --clobber; then
+              echo "✅ data-pack.json 已上传（Release 资产完整）"
+              exit 0
+            fi
+            echo "  尝试 $i 失败，10s 后重试…"
+            sleep 10
+          done
+          echo "❌ data-pack.json 上传失败（Release 完整性门禁，请到 Actions 重跑）"
+          exit 1

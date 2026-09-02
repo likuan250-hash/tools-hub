@@ -392,12 +392,13 @@ class CollectService {
    * 执行一次素材搜集。
    * @param {{
    *   name: string, outDir?: string, coverUrl?: string,
-   *   biliUrl?: string, biliQuality?: string|number,
+   *   biliUrl?: string, biliQuality?: string|number, biliFormatId?: string,
    *   englishName?: string, developer?: string, versionDesc?: string,
    *   kind?: string, force?: boolean, forceTrailer?: boolean, forceCover?: boolean
    * }} opts 入参；forceTrailer/forceCover 针对单类强制重下，force=true 等价于两者都 true。
    *   组合收集：同时给 biliUrl + coverUrl 时，按规则建【游戏NNN】文件夹，B站视频下进该文件夹
-   *   （跳过 YouTube/Steam 检索），封面直接用用户链接（不自动检索）；biliQuality 默认 best（拉满）。
+   *   （跳过 YouTube/Steam 检索），封面直接用用户链接（不自动检索）；biliQuality 默认 best（拉满），
+   *   biliFormatId 为画质下拉指定的 yt-dlp format_id（有则精确锁定该档位）。
    * }} opts 入参；force=true 时忽略复用文件夹里的既有产物强制重下
    * @param {{onEvent?: (ev: object) => void}} [handlers] 事件回调（SSE 发送器）
    * @returns {Promise<{
@@ -619,6 +620,7 @@ class CollectService {
         const dl = await this.bili.downloadUrl(opts.biliUrl, reserved.folder, envInfo, {
           emit,
           quality: opts.biliQuality,
+          formatId: opts.biliFormatId,
           fileName: "视频_" + String(reserved.index).padStart(3, "0"),
         });
         if (dl.ok) {

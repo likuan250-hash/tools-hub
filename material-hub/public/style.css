@@ -718,6 +718,31 @@ h1 .en { font-size: 13px; color: var(--text-dim); font-weight: 600; margin-left:
   flex-wrap: wrap;
 }
 .url-row > .cover-url-input { flex: 1 1 200px; min-width: 160px; }
+.bili-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.bili-quality {
+  flex: 0 1 260px;
+  min-width: 180px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--text);
+  border: 1px solid var(--field-border);
+  border-radius: var(--field-radius);
+  background: var(--field-bg);
+  outline: none;
+}
+.bili-quality:disabled { opacity: .55; cursor: not-allowed; }
+.bili-quality:not(:disabled) { border-color: var(--apple-accent); }
+.bili-hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.bili-hint.ok { color: #2ebd85; }
+.bili-hint.err { color: #e5484d; }
+.bili-bar .btn { height: 32px; padding: 0 14px; font-size: 13px; }
 .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
 

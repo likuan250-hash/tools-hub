@@ -1,6 +1,6 @@
 ﻿{
   "name": "kdocs-tool",
-  "version": "2.8.15",
+  "version": "2.8.16",
   "description": "金山文档多维表自动录入工具",
   "main": "index.js",
   "scripts": {

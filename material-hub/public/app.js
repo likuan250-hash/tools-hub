@@ -19,6 +19,11 @@ const forceTrailerCb = $("forceTrailer");
 const forceCoverCb = $("forceCover");
 const coverUrlInput = $("coverUrl");
 const biliCollectUrl = $("biliCollectUrl");
+const biliParseBtn = $("biliParseBtn");
+const biliQualitySel = $("biliQualitySel");
+const biliLoginHint = $("biliLoginHint");
+/** 解析按钮静态 HTML（含图标），加载态后原样恢复。 */
+const BILI_PARSE_HTML = biliParseBtn ? biliParseBtn.innerHTML : "";
 const autoSteps = $("autoSteps");
 const autoLog = $("autoLog");
 const doneSummary = $("doneSummary");
@@ -386,7 +391,8 @@ async function runCollect(name) {
         forceCover: forceCoverCb.checked,
         coverUrl: coverUrlInput.value.trim(),
         biliUrl: biliCollectUrl.value.trim(),
-        biliQuality: "best",
+        biliQuality: "1080",
+        biliFormatId: biliQualitySel && !biliQualitySel.disabled ? biliQualitySel.value || undefined : undefined,
       }),
     });
     const ctype = r.headers.get("content-type") || "";
@@ -441,6 +447,8 @@ async function runCollect(name) {
     forceCoverCb.checked = false;
     coverUrlInput.value = "";
     biliCollectUrl.value = "";
+    resetBiliQuality();
+    setBiliHint("", "");
   }
 }
 
@@ -693,7 +701,92 @@ async function sendCoverChoice(url) {
   }
 }
 
+// ── B站画质解析：链接 → 档位下拉（默认最高），登录态复用「B站自动投稿」 ──
+function resetBiliQuality() {
+  if (!biliQualitySel) return;
+  biliQualitySel.innerHTML =
+    '<option value="">粘贴 B站链接后点「解析 B站画质」</option>';
+  biliQualitySel.disabled = true;
+}
+function setBiliHint(txt, cls) {
+  if (!biliLoginHint) return;
+  biliLoginHint.textContent = txt || "";
+  biliLoginHint.className = "bili-hint" + (cls ? " " + cls : "");
+}
+async function parseBiliFormats() {
+  if (!biliParseBtn || !biliQualitySel) return;
+  const url = biliCollectUrl.value.trim();
+  if (!url) {
+    setBiliHint("先粘贴 B站视频链接，再解析画质", "err");
+    biliCollectUrl.focus();
+    return;
+  }
+  biliParseBtn.disabled = true;
+  biliParseBtn.textContent = "解析中…";
+  setBiliHint("", "");
+  try {
+    const r = await fetch("/api/bili/formats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const d = await r.json().catch(() => null);
+    if (!d || !d.ok) {
+      const msg = (d && d.error) || "解析失败";
+      if (d && d.reason === "bili-auth") {
+        setBiliHint("B站拒绝了未登录请求（HTTP 412），请到「B站自动投稿」完成扫码登录后重试", "err");
+      } else {
+        setBiliHint(msg, "err");
+      }
+      resetBiliQuality();
+      return;
+    }
+    if (!d.formats || !d.formats.length) {
+      setBiliHint("未解析到可用画质档位" + (d.title ? "：" + String(d.title).slice(0, 60) : ""), "err");
+      resetBiliQuality();
+      return;
+    }
+    const defaultId = d.defaultId || (d.formats[0] && d.formats[0].id) || "";
+    biliQualitySel.innerHTML = d.formats
+      .map(
+        (f) =>
+          '<option value="' +
+          esc(f.id) +
+          '"' +
+          (f.id === defaultId ? " selected" : "") +
+          ">" +
+          esc(f.label) +
+          "</option>",
+      )
+      .join("");
+    biliQualitySel.disabled = false;
+    const logged = !!(d.login && d.login.ok);
+    const loginTxt = logged
+      ? "已复用「B站自动投稿」登录（" + esc(d.login.uname || "") + "）"
+      : "未检测到 B站登录态：请到「B站自动投稿」扫码登录后解析，否则会被 HTTP 412 拦截";
+    setBiliHint(
+      loginTxt +
+        (d.title ? " · " + esc(String(d.title).slice(0, 60)) : "") +
+        (defaultId ? " · 默认 1080P H.264" : ""),
+      logged ? "ok" : "err",
+    );
+  } catch (e) {
+    setBiliHint("解析失败：" + e.message, "err");
+    resetBiliQuality();
+  } finally {
+    biliParseBtn.disabled = false;
+    biliParseBtn.innerHTML = BILI_PARSE_HTML;
+    if (typeof window.hydrateIcons === "function") window.hydrateIcons(biliParseBtn);
+  }
+}
+
 // ── 事件绑定 ──
+biliParseBtn.onclick = parseBiliFormats;
+biliCollectUrl.addEventListener("input", () => {
+  resetBiliQuality();
+  setBiliHint("", "");
+});
+
 collectBtn.onclick = () => {
   if (running) return;
   const name = gameName.value.trim();

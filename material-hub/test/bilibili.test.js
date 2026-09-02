@@ -69,14 +69,16 @@ test("buildFormat：best 拉满 = bv*+ba/b + 合流 mp4", () => {
   assert.deepEqual(b.extra, ["--merge-output-format", "mp4"]);
 });
 
-test("buildFormat：数字限定高度 + 无 ffmpeg 时不带合流参数", () => {
+test("buildFormat：数字限定高度时优先同档 H.264，无 ffmpeg 不带合流参数", () => {
   const a = buildFormat(1080, true);
-  assert.ok(a.format.includes("height<=1080"));
-  assert.ok(a.format.includes("bestvideo"));
+  assert.ok(a.format.includes("height=1080"));
+  assert.ok(a.format.includes("vcodec~='^(avc1|h264)'"), "应优先精确高度的 H.264");
+  assert.ok(a.format.includes("height<=1080"), "应保留 ≤1080 的降级链");
+  assert.ok(!a.format.includes("bestvideo"));
   assert.deepEqual(a.extra, ["--merge-output-format", "mp4"]);
 
   const b = buildFormat("720", false);
-  assert.ok(b.format.includes("height<=720"));
+  assert.ok(b.format.includes("height=720"));
   assert.deepEqual(b.extra, []); // 无 ffmpeg 无法合流
 });
 
@@ -216,4 +218,72 @@ test("downloadUrl：403/大会员限制给出可操作的中文报错", async (t
   assert.equal(r.ok, false);
   assert.equal(r.reason, "bili-auth");
   assert.ok(/cookie/i.test(r.error));
+});
+
+// ───────────────────────── 画质解析（dump-json）─────────────────────────
+
+test("listFormats：解析可用档位并按 分辨率+帧率 排序、同档取码率最高", async () => {
+  const json = JSON.stringify({
+    title: "测试视频",
+    uploader: "UP主",
+    duration: 120,
+    formats: [
+      { format_id: "30280", vcodec: "av01.0.08M.08", width: 1920, height: 1080, fps: 30, tbr: 5000 },
+      { format_id: "80", vcodec: "avc1.640032", width: 1920, height: 1080, fps: 60, tbr: 4000 },
+      { format_id: "30120", vcodec: "av01.0.09M.10", width: 1920, height: 1080, fps: 60, tbr: 6500 },
+      { format_id: "120", vcodec: "hvc1.1.6.L153", width: 3840, height: 2160, fps: 60, tbr: 12000 },
+      { format_id: "30216", vcodec: "none", width: 0, height: 0, fps: 0 }, // 纯音频，跳过
+    ],
+  });
+  const d = new BiliDownloader({
+    spawn: fakeSpawn(() => ({ code: 0, stdout: json + "\n" })),
+    cookieFile: "/no/such/cookies.txt",
+  });
+  const r = await d.listFormats("https://www.bilibili.com/video/BV1xx", { ytDlp: true }, {});
+  assert.equal(r.ok, true);
+  assert.equal(r.title, "测试视频");
+  assert.equal(r.login.ok, false, "无登录态时 login.ok 应为 false（不联网）");
+  assert.ok(r.formats.length >= 4, "同分辨率不同编码应分别列档");
+  // 排序：4K 60fps 最前
+  assert.ok(r.formats[0].label.startsWith("4K"));
+  assert.equal(r.formats[0].id, "120");
+  // 1080P60 的 H.264（80）与 AV1（30120）应分别成档
+  const h264 = r.formats.find((f) => f.height === 1080 && f.fps === 60 && f.codec === "H.264");
+  const av1 = r.formats.find((f) => f.height === 1080 && f.fps === 60 && f.codec === "AV1");
+  assert.ok(h264 && av1, "1080P60 应同时有 H.264 与 AV1 两档可选");
+  assert.equal(h264.id, "80");
+  assert.equal(av1.id, "30120");
+  assert.ok(av1.label.includes("将自动转码"), "非 H.264 档应标注将自动转码");
+  // 默认档：1080P H.264（id 80），不是最高的 4K
+  assert.equal(r.defaultId, "80");
+});
+
+test("listFormats：yt-dlp 412（未登录）给出 bili-auth 提示", async () => {
+  const d = new BiliDownloader({
+    spawn: fakeSpawn(() => ({ code: 1, stderr: "ERROR: HTTP Error 412: Precondition Failed" })),
+    cookieFile: "/no/such/cookies.txt",
+  });
+  const r = await d.listFormats("https://www.bilibili.com/video/BV1xx", { ytDlp: true }, {});
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "bili-auth");
+  assert.ok(/412/.test(r.error));
+});
+
+// ───────────────────────── AV1→H.264 重编码 ─────────────────────────
+
+test("reencodeH264：ffmpeg 成功且产出文件时返回 true", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bili-re-"));
+  t.after(() => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {}
+  });
+  const outPath = path.join(dir, "out.mp4");
+  fs.writeFileSync(outPath, "fake"); // 模拟 ffmpeg 已产出
+  const d = new BiliDownloader({
+    spawn: fakeSpawn(() => ({ code: 0 })),
+    cookieFile: "/no/such/cookies.txt",
+  });
+  const ok = await d.reencodeH264(path.join(dir, "in.mp4"), outPath, "ffmpeg");
+  assert.equal(ok, true);
 });

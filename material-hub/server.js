@@ -7,9 +7,6 @@ const path = require("path");
 const logger = require("./lib/logger");
 const { CollectService, DEFAULT_OUTPUT_DIR } = require("./lib/collect");
 const { PREVIEW_TMP_DIR } = require("./lib/cover");
-const { BiliDownloader } = require("./lib/bilibili");
-const { MediaProbe } = require("./lib/probe");
-const { EnvDetector } = require("./lib/env");
 
 const app = express();
 const PORT = process.env.MATERIAL_PORT || 3700;
@@ -24,24 +21,6 @@ function getOutputDir() {
 function getCollectService() {
   if (!app.locals.collectService) app.locals.collectService = new CollectService();
   return app.locals.collectService;
-}
-
-/** B站下载器单例：复用 EnvDetector 解析二进制路径 + MediaProbe 做分辨率校验（与 CollectService 同构）。 */
-const biliEnv = new EnvDetector({ fs: require("fs") });
-function getBiliDownloader() {
-  if (!app.locals.biliDownloader) {
-    const probe = new MediaProbe({ fs: require("fs") });
-    const info = biliEnv.detect();
-    probe.setBinaries({ ffmpegPath: info.ffmpegPath, ffprobePath: info.ffprobePath });
-    const d = new BiliDownloader({ probe });
-    d.setBinaries({
-      ytDlpPath: info.ytDlpPath,
-      ffmpegPath: info.ffmpegPath,
-      ffprobePath: info.ffprobePath,
-    });
-    app.locals.biliDownloader = d;
-  }
-  return app.locals.biliDownloader;
 }
 
 app.use(express.json({ limit: "1mb" }));
@@ -212,92 +191,6 @@ app.post("/api/video/choose", (req, res) => {
     return res.status(409).json({ error: "无待处理的宣传片选择（可能已超时或已处理）" });
   }
   res.json({ ok: true });
-});
-
-// ── B站视频下载（SSE 流式：贴链接 → 拉满画质下载 → 转 mp4 → 分辨率校验）──
-app.post("/api/bili/download", (req, res) => {
-  const body = req.body || {};
-  const url = typeof body.url === "string" ? body.url.trim() : "";
-  const quality = typeof body.quality === "string" ? body.quality.trim() : "best";
-  const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
-  if (!url) {
-    return res.status(400).json({ error: "缺少 url（B站链接）" });
-  }
-
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  const send = (obj) => {
-    try {
-      res.write("data: " + JSON.stringify(obj) + "\n\n");
-      if (typeof res.flush === "function") res.flush();
-    } catch {
-      /* 客户端已断开 */
-    }
-  };
-  const heartbeat = setInterval(() => {
-    try {
-      res.write(": hb\n\n");
-      if (typeof res.flush === "function") res.flush();
-    } catch {
-      /* ignore */
-    }
-  }, 3000);
-  const finish = () => {
-    clearInterval(heartbeat);
-    try {
-      res.end();
-    } catch {
-      /* 已结束 */
-    }
-  };
-  req.on("close", () => clearInterval(heartbeat));
-
-  const outDir = path.join(getOutputDir(), "B站");
-  const dl = getBiliDownloader();
-  const envInfo = biliEnv.detect();
-  logger.info("[bili] 开始下载：" + url + " → " + outDir);
-  dl.downloadUrl(
-    url,
-    outDir,
-    { ytDlp: envInfo.ytDlp, ffmpeg: envInfo.ffmpeg },
-    {
-      // 多参 → 对象适配器：downloadUrl 用 (type, step, msg, ok, detail) 约定，
-      // 收口成单个 JSON 对象再交给 send（否则 SSE 只会写出裸字符串）。
-      emit: (type, step, msg, ok, detail) => {
-        const ev = { type, step, msg, ok: ok === undefined ? null : ok };
-        if (detail !== undefined) ev.detail = detail;
-        send(ev);
-      },
-      quality,
-      fileName,
-    },
-  )
-    .then((r) => {
-      if (!r.ok) {
-        send({
-          type: "bili_error",
-          step: "B站下载",
-          msg: r.error || "下载失败",
-          ok: false,
-          detail: { reason: r.reason },
-        });
-      }
-    })
-    .catch((e) => {
-      logger.error("[bili] 流程异常:", e && e.message);
-      send({
-        type: "bili_error",
-        step: "B站下载",
-        msg: "流程异常：" + (e && e.message ? e.message : String(e)),
-        ok: false,
-        detail: { reason: "internal-error" },
-      });
-    })
-    .finally(finish);
 });
 
 // ── 兜底错误中间件（避免未捕获异常冒泡导致进程退出被看门狗误判）──

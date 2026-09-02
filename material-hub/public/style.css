@@ -710,6 +710,14 @@ h1 .en { font-size: 13px; color: var(--text-dim); font-weight: 600; margin-left:
 
 .field { margin-bottom: 16px; }
 .field:last-child { margin-bottom: 0; }
+/* 组合收集表单：游戏名独占一行（.fx-comic），封面URL + B站链接并排等宽排在下方 */
+.url-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.url-row > .cover-url-input { flex: 1 1 200px; min-width: 160px; }
 .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
 

@@ -146,6 +146,7 @@ function fakeCover(over = {}) {
   return {
     calls,
     async resolveEnglishTitle(gameName, opts) {
+      (calls.resolveEnglish = calls.resolveEnglish || []).push({ gameName, opts });
       const eng = opts && opts.englishTitle ? opts.englishTitle : over.englishTitle || "";
       return { title: eng, source: eng ? "opts" : "none" };
     },
@@ -1255,3 +1256,35 @@ test("环境三件套也注入 bili 下载器（组合收集依赖）", async ()
   });
 });
 
+
+test("同时给 biliUrl + coverUrl 时跳过英文名解析（不联网搜集）", async () => {
+  const cover = fakeCover();
+  const bili = fakeBili();
+  const { result } = await runCollect(
+    { bili, cover },
+    {
+      biliUrl: "https://www.bilibili.com/video/BV1abc",
+      coverUrl: "https://example.com/cover.jpg",
+    },
+  );
+  assert.equal(
+    (cover.calls.resolveEnglish || []).length,
+    0,
+    "两链接都给时应跳过 cover.resolveEnglishTitle（避免联网搜 Steam/YouTube/离线库）",
+  );
+  assert.equal(bili.calls.downloadUrl.length, 1, "B站视频仍下载到素材文件夹");
+  assert.equal((cover.calls.applyCandidate || []).length, 1, "封面走用户指定 URL");
+  assert.equal(result.coverOk, true);
+  assert.equal(result.trailerOk, true);
+  assert.equal(result.success, true);
+});
+
+test("只给 coverUrl 不给 biliUrl 时仍走英文名解析（cover 检索需要）", async () => {
+  const cover = fakeCover();
+  await runCollect({ cover }, { coverUrl: "https://example.com/cover.jpg" });
+  assert.equal(
+    (cover.calls.resolveEnglish || []).length,
+    1,
+    "只给封面链接时仍需要英文名（保持原有行为）",
+  );
+});

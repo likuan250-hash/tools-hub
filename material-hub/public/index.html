@@ -24,21 +24,22 @@
       </div>
     </header>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2><i class="app-ico" data-ico="search"></i> 游戏素材自动搜集</h2>
-      </div>
+<section class="panel">
+    <div class="panel-head">
+      <h2><i class="app-ico" data-ico="search"></i> 游戏素材自动搜集</h2>
+    </div>
 
-    <div class="field">
-      <div class="field-head">
-        <label for="gameName">游戏名称</label>
-      </div>
+<div class="field">
       <div class="fx-comic">
         <div class="box">
           <input id="gameName" type="text" placeholder="例如：战神4 / Elden Ring / 黑神话：悟空" autocomplete="off" spellcheck="false" />
           <div class="lines"></div>
         </div>
         <div class="sfx">ドン!!</div>
+      </div>
+      <div class="url-row">
+        <input id="coverUrl" class="cover-url-input" placeholder="或指定封面图片 URL…" autocomplete="off" spellcheck="false" />
+        <input id="biliCollectUrl" class="cover-url-input" placeholder="或贴 B站视频链接（与封面链接同给则下载进该文件夹）" autocomplete="off" spellcheck="false" />
       </div>
     </div>
     <button class="btn" id="collectBtn" type="button">开始搜集</button>
@@ -53,8 +54,6 @@
         <span class="sw" aria-hidden="true"></span>
         <span class="sw-label">重找封面</span>
       </label>
-      <input id="coverUrl" class="cover-url-input" placeholder="或指定封面图片 URL…" autocomplete="off" spellcheck="false" />
-      <input id="biliCollectUrl" class="cover-url-input" placeholder="或贴 B站视频链接（与封面链接同给则下载进该文件夹）" autocomplete="off" spellcheck="false" />
     </div>
     <div class="rule-hint">
       规则 · 文件夹 <code>【游戏NNN】游戏名</code> · 封面 ≥1920×1080（壁纸站 → 官网 → YouTube → 主视频抽帧兜底）·
@@ -86,48 +85,6 @@
         <div class="done-files" id="doneFiles"></div>
       </div>
       <div class="path-line" id="pathLine"></div>
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-head">
-      <h2><i class="app-ico" data-ico="download"></i> B站视频下载</h2>
-    </div>
-    <div class="rule-hint">
-      规则 · 粘贴 B站视频 / 合集 / 空间链接 → 拉满画质下载为 mp4 · 落盘 <code>E:\素材\B站\</code>
-    </div>
-    <div class="field">
-      <div class="field-head">
-        <label for="biliUrl">B站链接（BV / AV / EP / SS / 合集 / 空间）</label>
-      </div>
-      <input id="biliUrl" type="text" placeholder="https://www.bilibili.com/video/BV1xx… 或 b23.tv/xxx" autocomplete="off" spellcheck="false" />
-    </div>
-    <div class="force-options" id="biliOpts">
-      <label class="sw-label" for="biliQuality">画质</label>
-      <select id="biliQuality" class="cover-url-input">
-        <option value="best">拉满（最高画质）</option>
-        <option value="1080">1080p</option>
-        <option value="720">720p</option>
-      </select>
-    </div>
-    <button class="btn" id="biliBtn" type="button">下载</button>
-    <div class="form-error" id="biliFormError" role="alert"></div>
-
-    <!-- 执行中 -->
-    <div class="state-panel" id="bili-panel-running" hidden>
-      <div class="auto-result">
-        <div class="exec-title">下载进度</div>
-        <details class="log-card" open>
-          <summary>运行日志 <span class="chev"><i class="app-ico" data-ico="chevron"></i></span></summary>
-          <div class="log-area" id="biliLog"></div>
-        </details>
-      </div>
-    </div>
-
-    <!-- 完成 -->
-    <div class="state-panel" id="bili-panel-done" hidden>
-      <div class="result-summary" id="biliDoneSummary">尚未下载</div>
-      <div class="path-line" id="biliPathLine"></div>
     </div>
   </section>
 

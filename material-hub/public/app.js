@@ -27,16 +27,6 @@ const coverName = $("coverName");
 const coverDim = $("coverDim");
 const doneFiles = $("doneFiles");
 const pathLine = $("pathLine");
-// ── B站视频下载面板引用 ──
-const biliUrl = $("biliUrl");
-const biliBtn = $("biliBtn");
-const biliFormError = $("biliFormError");
-const biliQuality = $("biliQuality");
-const biliLog = $("biliLog");
-const biliDoneSummary = $("biliDoneSummary");
-const biliPathLine = $("biliPathLine");
-const biliPanelRunning = $("bili-panel-running");
-const biliPanelDone = $("bili-panel-done");
 /** 步骤时间线固定三段（与设计 §3.2 的事件分组一一对应）。 */
 const STEP_ORDER = ["scan", "cover", "trailer"];
 const STEP_NAMES = {
@@ -703,132 +693,6 @@ async function sendCoverChoice(url) {
   }
 }
 
-// ── B站视频下载（SSE 流式）──
-let biliRunning = false;
-
-/**
- * 追加一行 B站下载日志（独立日志区，不污染素材搜集日志）。
- * @param {string} level info|ok|err
- * @param {string} msg
- */
-function biliAddLog(level, msg) {
-  const div = document.createElement("div");
-  div.className = "line " + level;
-  div.textContent = msg;
-  biliLog.appendChild(div);
-  biliLog.scrollTop = biliLog.scrollHeight;
-}
-
-/**
- * 执行一次 B站下载（SSE 全程流式渲染）。
- * @param {string} url B站链接
- */
-async function runBiliDownload(url) {
-  if (biliRunning) return;
-  biliRunning = true;
-  biliBtn.disabled = true;
-  biliBtn.textContent = "下载中…";
-  biliFormError.textContent = "";
-  biliLog.innerHTML = "";
-  biliPanelRunning.hidden = false;
-  biliPanelDone.hidden = true;
-  biliDoneSummary.className = "result-summary";
-  biliDoneSummary.textContent = "下载中…";
-  biliAddLog("info", "开始下载：" + url);
-
-  try {
-    const r = await fetch("/api/bili/download", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: url, quality: biliQuality.value }),
-    });
-    const ctype = r.headers.get("content-type") || "";
-    if (!r.ok && ctype.indexOf("application/json") >= 0) {
-      const d = await r.json();
-      biliFormError.textContent = d.error || "请求失败：HTTP " + r.status;
-      biliDoneSummary.className = "result-summary fail";
-      biliDoneSummary.innerHTML = summaryIcon("fail") + " " + esc("执行失败：" + (d.error || r.status));
-      biliPanelDone.hidden = false;
-      biliAddLog("err", d.error || "HTTP " + r.status);
-      return;
-    }
-    if (!r.body) {
-      biliAddLog("err", "服务端未返回流式响应");
-      return;
-    }
-    const reader = r.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf("\n\n")) >= 0) {
-        const chunk = buf.slice(0, idx);
-        buf = buf.slice(idx + 2);
-        const line = chunk.split("\n").find((l) => l.startsWith("data: "));
-        if (!line) continue;
-        let ev = null;
-        try {
-          ev = JSON.parse(line.slice(6));
-        } catch (e) {
-          continue;
-        }
-        handleBiliEvent(ev);
-      }
-    }
-  } catch (e) {
-    biliFormError.textContent = "请求失败：" + e.message;
-    biliDoneSummary.className = "result-summary fail";
-    biliDoneSummary.innerHTML = summaryIcon("fail") + " " + esc("执行异常：" + e.message);
-    biliPanelDone.hidden = false;
-    biliAddLog("err", "请求失败：" + e.message);
-  } finally {
-    biliRunning = false;
-    biliBtn.disabled = false;
-    biliBtn.textContent = "下载";
-  }
-}
-
-/**
- * 处理单条 B站下载 SSE 事件。
- * @param {object} ev {type, step, msg, ok, detail?}
- */
-function handleBiliEvent(ev) {
-  if (!ev || typeof ev !== "object") return;
-  const type = String(ev.type || "");
-  if (type === "log") {
-    const lvl = (ev.detail && ev.detail.level) || "info";
-    biliAddLog(lvl === "err" ? "err" : lvl === "ok" ? "ok" : "info", ev.msg || "");
-    return;
-  }
-  if (type === "bili_download") {
-    biliAddLog("info", (ev.step || "B站") + " — " + (ev.msg || ""));
-    return;
-  }
-  if (type === "bili_done") {
-    biliAddLog("ok", "下载完成：" + ((ev.detail && ev.detail.file) || ""));
-    biliDoneSummary.className = "result-summary ok";
-    biliDoneSummary.innerHTML =
-      summaryIcon("ok") + " " + esc("下载完成：" + ((ev.detail && ev.detail.file) || ""));
-    const p = ev.detail && ev.detail.path;
-    biliPathLine.textContent = p || "";
-    biliPathLine.dataset.path = p || "";
-    biliPathLine.style.cursor = p ? "pointer" : "default";
-    biliPanelDone.hidden = false;
-    return;
-  }
-  if (type === "bili_error") {
-    biliAddLog("err", ev.msg || "下载失败");
-    biliDoneSummary.className = "result-summary fail";
-    biliDoneSummary.innerHTML = summaryIcon("fail") + " " + esc("下载失败：" + (ev.msg || ""));
-    biliPanelDone.hidden = false;
-    return;
-  }
-  biliAddLog(ev.ok === true ? "ok" : "info", "[" + (ev.step || "B站") + "] " + (ev.msg || ""));
-}
-
 // ── 事件绑定 ──
 collectBtn.onclick = () => {
   if (running) return;
@@ -845,22 +709,6 @@ collectBtn.onclick = () => {
 gameName.addEventListener("keydown", (e) => {
   if (e.key === "Enter") collectBtn.click();
 });
-
-biliBtn.onclick = () => {
-  if (biliRunning) return;
-  const url = biliUrl.value.trim();
-  if (!url) {
-    biliFormError.textContent = "请先粘贴 B站链接";
-    biliUrl.focus();
-    return;
-  }
-  biliFormError.textContent = "";
-  runBiliDownload(url);
-};
-biliUrl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") biliBtn.click();
-});
-biliPathLine.addEventListener("click", () => revealInFolder(biliPathLine.dataset.path));
 
 $("coverOkBtn").onclick = () => sendCoverChoice(coverPickUrl);
 $("coverAutoBtn").onclick = () => sendCoverChoice(coverCands.length ? coverCands[0].url : "");

@@ -548,33 +548,48 @@ class CollectService {
     // ── 1.5 英文名：第一步就定下来，后续视频和封面统一用它检索 ──
     //      先读 trailer sidecar（如果有的话），供英文名提取用
     this.reusedTrailerMeta = this.readTrailerMeta(reserved.folder);
+    //      组合收集：用户同时给了 B站视频链接 + 封面链接 → 视频/封面都来自用户，不需要联网搜集，
+    //      自然也不需要反查英文名（避免拉 Steam/YouTube/离线库做一次无意义的英文名解析）。
     //      优先级：用户给的 > 原名就是拉丁文 > trailer sidecar 里的标题 > Steam 反查 > YouTube 搜索
     let searchName = gameName;
-    const english = await this.cover.resolveEnglishTitle(gameName, {
-      englishTitle:
-        opts.englishName ||
-        (this.reusedTrailerMeta
-          ? trailerExtractEnglishName(this.reusedTrailerMeta.title || "")
-          : ""),
-      emit,
-      lookup: true,
-      ytDlpPath: envInfo.ytDlpPath,
-    });
-    if (english.title) {
-      searchName = english.title;
+    let english = null;
+    const skipEnglishResolve =
+      isBiliUrl(opts.biliUrl || "") && !!String(opts.coverUrl || "").trim();
+    if (skipEnglishResolve) {
       emit(
         "log",
         STEP_SCAN,
-        "[collect] 英文名定稿：" + searchName + "（来源：" + (english.source || "none") + "）",
+        "[collect] 已给齐 B站视频链接 + 封面链接，跳过英文名解析（不联网搜集）",
         null,
         { level: "info" },
       );
     } else {
-      emit("log", STEP_SCAN, "[collect] 英文名获取失败，使用原名检索：" + gameName, null, {
-        level: "warn",
+      english = await this.cover.resolveEnglishTitle(gameName, {
+        englishTitle:
+          opts.englishName ||
+          (this.reusedTrailerMeta
+            ? trailerExtractEnglishName(this.reusedTrailerMeta.title || "")
+            : ""),
+        emit,
+        lookup: true,
+        ytDlpPath: envInfo.ytDlpPath,
       });
+      if (english.title) {
+        searchName = english.title;
+        emit(
+          "log",
+          STEP_SCAN,
+          "[collect] 英文名定稿：" + searchName + "（来源：" + (english.source || "none") + "）",
+          null,
+          { level: "info" },
+        );
+      } else {
+        emit("log", STEP_SCAN, "[collect] 英文名获取失败，使用原名检索：" + gameName, null, {
+          level: "warn",
+        });
+      }
     }
-    const steamAppId = english.steamAppId || "";
+    const steamAppId = (english && english.steamAppId) || "";
 
     // ── 2. trailer：先下视频（YouTube 优先，Steam 兜底）──
     //      ① 第 6 级封面来源要用宣传片的 videoId 取缩略图；

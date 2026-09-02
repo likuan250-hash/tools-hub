@@ -657,6 +657,17 @@ function setupAutoUpdater() {
   // 默认不自动下载，等用户点击"检测更新"再开始
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
+  // 关闭差分下载：本地缓存（installer.exe/blockmap）跨版本错配时差分必失败，
+  // electron-updater 会回退全量重下，表现为「下两遍、第二遍很慢」。只下完整包一次最稳。
+  autoUpdater.disableDifferentialDownload = true;
+  // 把 electron-updater 内部日志写入 tools-hub.log，便于日后排查更新问题
+  const updaterLog = (...args) => log("[updater]", ...args);
+  autoUpdater.logger = {
+    info: updaterLog,
+    warn: updaterLog,
+    error: updaterLog,
+    debug: updaterLog,
+  };
 
   autoUpdater.on("checking-for-update", () => sendUpdate("checking"));
   autoUpdater.on("update-available", (info) => {

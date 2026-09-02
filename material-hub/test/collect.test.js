@@ -214,6 +214,35 @@ function fakeProbe(over = {}) {
   };
 }
 
+/**
+ * 构造 BiliDownloader 替身（组合收集：用户给 B站链接时直接下视频）。
+ * @param {{result?: object, throws?: Error}} [over]
+ * @returns {object}
+ */
+function fakeBili(over = {}) {
+  const calls = { setBinaries: [], downloadUrl: [] };
+  return {
+    calls,
+    setBinaries(p) {
+      calls.setBinaries.push(p);
+    },
+    async downloadUrl(url, outDir, env, opts) {
+      calls.downloadUrl.push({ url, outDir, env, opts });
+      if (over.throws) throw over.throws;
+      return (
+        over.result || {
+          ok: true,
+          file: "视频_268.mp4",
+          path: path.join(outDir, "视频_268.mp4"),
+          title: "B站视频标题",
+          width: 1920,
+          height: 1080,
+        }
+      );
+    },
+  };
+}
+
 /** 静默 logger 替身。 */
 function fakeLogger() {
   const lines = [];
@@ -255,6 +284,7 @@ async function runCollect(deps = {}, opts = {}) {
     name: deps.name || fakeName(),
     cover: deps.cover || fakeCover(),
     trailer: deps.trailer || fakeTrailer(),
+    bili: deps.bili || fakeBili(),
     probe: deps.probe || fakeProbe(),
     env: deps.env || fakeEnv(),
     logger: deps.logger || fakeLogger(),
@@ -1141,3 +1171,87 @@ test("用户指定封面 URL（user 源）降级 → 保留，不触发抽帧覆
   assert.equal(probe.calls.extractFrame.length, 0, "用户指定封面不触发抽帧");
   assert.equal(ofType(events, "cover_extract").length, 0);
 });
+
+// ───────────────────────── 组合收集：B站链接 + 封面链接 ─────────────────────────
+
+test("组合收集：给 biliUrl 时直接下 B站视频，跳过 YouTube/Steam 检索", async () => {
+  const bili = fakeBili();
+  const trailer = fakeTrailer();
+  const cover = fakeCover();
+  const { result, events } = await runCollect(
+    { bili, trailer, cover },
+    { biliUrl: "https://www.bilibili.com/video/BV1xx", coverUrl: "https://x.example/cover.jpg" },
+  );
+
+  // 不再走 YouTube 候选检索 / 下载
+  assert.equal(trailer.calls.searchCandidates.length, 0, "不应搜索 YouTube 宣传片候选");
+  assert.equal(trailer.calls.download.length, 0, "不应下载 YouTube 宣传片");
+
+  // B站下载被调用，且下进该素材文件夹
+  assert.equal(bili.calls.downloadUrl.length, 1);
+  assert.equal(bili.calls.downloadUrl[0].url, "https://www.bilibili.com/video/BV1xx");
+  assert.equal(bili.calls.downloadUrl[0].outDir, FOLDER);
+
+  // 视频落盘，整体判成功（封面由用户链接提供）
+  assert.equal(result.trailerOk, true);
+  assert.equal(result.coverOk, true);
+  assert.equal(result.trailer.fromBili, true);
+  assert.equal(result.trailer.file, "视频_268.mp4");
+  assert.equal(result.success, true);
+
+  // 封面走用户链接（非 fetchCover 检索）
+  assert.equal(cover.calls.length, 0);
+  assert.equal(cover.calls.applyCandidate.length, 1);
+  assert.equal(cover.calls.applyCandidate[0].url, "https://x.example/cover.jpg");
+});
+
+test("组合收集：biliUrl 下载失败 → trailerOk=false，封面仍继续 → partial", async () => {
+  const bili = fakeBili({
+    result: { ok: false, reason: "bili-auth", error: "下载被拒（未登录 / 大会员限制）" },
+  });
+  const trailer = fakeTrailer();
+  const cover = fakeCover();
+  const { result, events } = await runCollect(
+    { bili, trailer, cover },
+    { biliUrl: "https://www.bilibili.com/video/BV1xx", coverUrl: "https://x.example/cover.jpg" },
+  );
+
+  assert.equal(bili.calls.downloadUrl.length, 1);
+  assert.equal(trailer.calls.searchCandidates.length, 0, "B站失败时不再回退 YouTube");
+  assert.equal(result.trailerOk, false);
+  assert.equal(result.coverOk, true);
+  assert.equal(result.success, false);
+  assert.equal(result.partial, true);
+
+  const err = ofType(events, "error").find((e) => e.detail && e.detail.group === "trailer");
+  assert.ok(err);
+  assert.equal(err.detail.reason, "bili-auth");
+
+  const done = ofType(events, "done")[0];
+  assert.equal(done.step, STEP_DONE_PARTIAL);
+  assert.ok(done.msg.includes("仅封面落盘"));
+});
+
+test("非 B站链接不触发 B站下载：退回正常 YouTube 流程", async () => {
+  const bili = fakeBili();
+  const trailer = fakeTrailer();
+  const { result } = await runCollect(
+    { bili, trailer },
+    { biliUrl: "https://www.youtube.com/watch?v=abc" },
+  );
+
+  assert.equal(bili.calls.downloadUrl.length, 0, "非 B站链接不应触发 B站下载");
+  assert.equal(trailer.calls.download.length, 1, "非 B站链接仍走 YouTube 下载");
+  assert.equal(result.trailerOk, true);
+});
+
+test("环境三件套也注入 bili 下载器（组合收集依赖）", async () => {
+  const bili = fakeBili();
+  await runCollect({ bili });
+  assert.deepEqual(bili.calls.setBinaries[0], {
+    ytDlpPath: "E:\\bin\\yt-dlp.exe",
+    ffmpegPath: "E:\\bin\\ffmpeg.exe",
+    ffprobePath: "E:\\bin\\ffprobe.exe",
+  });
+});
+

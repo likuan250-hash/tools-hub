@@ -41,6 +41,7 @@ const { MediaProbe } = require("./probe");
 const { EnvDetector, YT_DLP_GUIDANCE } = require("./env");
 const { meetsMinSize, MIN_WIDTH, MIN_HEIGHT } = require("./imagesize");
 const loggerDefault = require("./logger");
+const { BiliDownloader, isBiliUrl } = require("./bilibili");
 
 /** 步骤名常量（SSE 事件 step 字段，前端直接展示）。 */
 const STEP_SCAN = "扫描编号并准备文件夹";
@@ -83,6 +84,8 @@ class CollectService {
         probe: this.probe,
         steamResolver: (q) => this.cover.resolveSteamAppId(q, { lookup: true }),
       });
+    // 组合收集：用户给 B站链接时直接下 B站视频；默认自建实例（server 不强制注入）
+    this.bili = deps.bili || new BiliDownloader({ fs: this.fs, probe: this.probe });
     this.env = deps.env || new EnvDetector({ fs: this.fs });
     this.logger = deps.logger || loggerDefault;
     /** 待处理的封面选择：requestId → {resolve}（由 /api/cover/choose 触发 resolve）。 */
@@ -389,9 +392,12 @@ class CollectService {
    * 执行一次素材搜集。
    * @param {{
    *   name: string, outDir?: string, coverUrl?: string,
+   *   biliUrl?: string, biliQuality?: string|number,
    *   englishName?: string, developer?: string, versionDesc?: string,
    *   kind?: string, force?: boolean, forceTrailer?: boolean, forceCover?: boolean
-   * }} opts 入参；forceTrailer/forceCover 针对单类强制重下，force=true 等价于两者都 true
+   * }} opts 入参；forceTrailer/forceCover 针对单类强制重下，force=true 等价于两者都 true。
+   *   组合收集：同时给 biliUrl + coverUrl 时，按规则建【游戏NNN】文件夹，B站视频下进该文件夹
+   *   （跳过 YouTube/Steam 检索），封面直接用用户链接（不自动检索）；biliQuality 默认 best（拉满）。
    * }} opts 入参；force=true 时忽略复用文件夹里的既有产物强制重下
    * @param {{onEvent?: (ev: object) => void}} [handlers] 事件回调（SSE 发送器）
    * @returns {Promise<{
@@ -457,6 +463,13 @@ class CollectService {
     this.probe.setBinaries({ ffmpegPath: envInfo.ffmpegPath, ffprobePath: envInfo.ffprobePath });
     if (typeof this.trailer.setBinaries === "function") {
       this.trailer.setBinaries({
+        ytDlpPath: envInfo.ytDlpPath,
+        ffmpegPath: envInfo.ffmpegPath,
+        ffprobePath: envInfo.ffprobePath,
+      });
+    }
+    if (typeof this.bili.setBinaries === "function") {
+      this.bili.setBinaries({
         ytDlpPath: envInfo.ytDlpPath,
         ffmpegPath: envInfo.ffmpegPath,
         ffprobePath: envInfo.ffprobePath,
@@ -585,6 +598,41 @@ class CollectService {
         file: existingVideo.file,
         reused: true,
       });
+    } else if (opts.biliUrl && isBiliUrl(opts.biliUrl)) {
+      // 组合收集：用户给了 B站链接 → 直接下 B站视频，跳过 YouTube/Steam 官方宣传片检索
+      try {
+        const dl = await this.bili.downloadUrl(opts.biliUrl, reserved.folder, envInfo, {
+          emit,
+          quality: opts.biliQuality,
+          fileName: "视频_" + String(reserved.index).padStart(3, "0"),
+        });
+        if (dl.ok) {
+          videoPath = dl.path;
+          result.trailerOk = true;
+          result.trailer = {
+            file: dl.file,
+            path: dl.path,
+            title: dl.title || "",
+            width: dl.width,
+            height: dl.height,
+            fromBili: true,
+          };
+          emit("trailer_download", STEP_TRAILER, "B站视频已落盘：" + dl.file, true, {
+            file: dl.file,
+            fromBili: true,
+          });
+        } else {
+          emit("error", STEP_TRAILER, dl.error || "B站视频下载失败", false, {
+            reason: dl.reason || "bili-failed",
+            group: "trailer",
+          });
+        }
+      } catch (e) {
+        emit("error", STEP_TRAILER, "B站视频下载异常：" + e.message, false, {
+          reason: "bili-exception",
+          group: "trailer",
+        });
+      }
     } else if (!envInfo.ytDlp) {
       emit("error", STEP_TRAILER, "未检测到 yt-dlp，无法下载宣传片", false, {
         reason: "yt-dlp-not-found",

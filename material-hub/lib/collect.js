@@ -617,11 +617,31 @@ class CollectService {
     } else if (opts.biliUrl && isBiliUrl(opts.biliUrl)) {
       // 组合收集：用户给了 B站链接 → 直接下 B站视频，跳过 YouTube/Steam 官方宣传片检索
       try {
+        // 文件名优先用 B站原标题（达芬奇/素材库里一眼可辨）；标题解析失败退回 视频_NNN
+        let biliFileBase = "视频_" + String(reserved.index).padStart(3, "0");
+        if (typeof this.bili.listFormats === "function") {
+          try {
+            const meta = await this.bili.listFormats(
+              opts.biliUrl,
+              { ytDlp: envInfo.ytDlp !== false },
+              { emit },
+            );
+            const t = meta && meta.ok && meta.title ? String(meta.title).trim() : "";
+            if (t) {
+              biliFileBase = t;
+              emit("log", STEP_TRAILER, "B站原标题（用作文件名）：" + t, null, {
+                level: "info",
+              });
+            }
+          } catch (e) {
+            /* 标题解析失败走编号兜底，不阻断下载 */
+          }
+        }
         const dl = await this.bili.downloadUrl(opts.biliUrl, reserved.folder, envInfo, {
           emit,
           quality: opts.biliQuality,
           formatId: opts.biliFormatId,
-          fileName: "视频_" + String(reserved.index).padStart(3, "0"),
+          fileName: biliFileBase,
         });
         if (dl.ok) {
           videoPath = dl.path;

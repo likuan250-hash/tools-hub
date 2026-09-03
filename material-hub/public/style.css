@@ -741,6 +741,7 @@ h1 .en { font-size: 13px; color: var(--text-dim); font-weight: 600; margin-left:
 .bili-quality:not(:disabled) { border-color: var(--apple-accent); }
 .bili-hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
 .bili-hint.ok { color: #2ebd85; }
+.bili-hint.warn { color: #e0a030; }
 .bili-hint.err { color: #e5484d; }
 .bili-bar .btn { height: 32px; padding: 0 14px; font-size: 13px; }
 .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }

@@ -123,7 +123,9 @@ class BiliDownloader extends TrailerDownloader {
     const { format, extra } = buildFormat(opts.quality, hasFfmpeg, opts.formatId);
     const args = ["-f", format];
     if (extra.length) args.push(...extra);
-    args.push("--no-warnings", "--newline", "--no-part");
+    // --no-playlist：B站 多P(分集)视为播放列表，不加则会把整集全拉下来且同名互相覆盖；
+    // 只下链接对应的那一个 P（URL 带 ?p=N 即指定分集，不带默认 P1）。
+    args.push("--no-warnings", "--newline", "--no-part", "--no-playlist");
     args.push("--retries", "3", "--fragment-retries", "3", "--retry-sleep", "2");
     // 登录 cookie：B站 对未登录请求直接 412（连页面都拿不到），因此这是必需项而非可选项。
     const cookieFile = this.resolveCookie();
@@ -258,7 +260,12 @@ class BiliDownloader extends TrailerDownloader {
       title: j.title || "",
       uploader: (j.uploader || j.channel || "").toString(),
       duration: Number(j.duration) || 0,
-      login: { ok: !!login.ok, uname: login.uname || "" },
+      login: {
+        ok: !!login.ok,
+        uname: login.uname || "",
+        source: login.source || null,
+        reason: login.reason || null,
+      },
       formats,
       defaultId: defaultFmt ? defaultFmt.id : "",
     };

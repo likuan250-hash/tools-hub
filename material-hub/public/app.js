@@ -19,11 +19,10 @@ const forceTrailerCb = $("forceTrailer");
 const forceCoverCb = $("forceCover");
 const coverUrlInput = $("coverUrl");
 const biliCollectUrl = $("biliCollectUrl");
-const biliParseBtn = $("biliParseBtn");
 const biliQualitySel = $("biliQualitySel");
 const biliLoginHint = $("biliLoginHint");
-/** 解析按钮静态 HTML（含图标），加载态后原样恢复。 */
-const BILI_PARSE_HTML = biliParseBtn ? biliParseBtn.innerHTML : "";
+/** 自动解析互斥锁（无手动按钮，防抖触发时避免重复请求）。 */
+let biliParsing = false;
 const autoSteps = $("autoSteps");
 const autoLog = $("autoLog");
 const doneSummary = $("doneSummary");
@@ -714,15 +713,13 @@ function setBiliHint(txt, cls) {
   biliLoginHint.className = "bili-hint" + (cls ? " " + cls : "");
 }
 async function parseBiliFormats() {
-  if (!biliParseBtn || !biliQualitySel) return;
+  if (!biliQualitySel) return;
+  if (biliParsing) return;
   const url = biliCollectUrl.value.trim();
   if (!url) {
-    setBiliHint("先粘贴 B站视频链接，再解析画质", "err");
-    biliCollectUrl.focus();
     return;
   }
-  biliParseBtn.disabled = true;
-  biliParseBtn.textContent = "解析中…";
+  biliParsing = true;
   setBiliHint("", "");
   try {
     const r = await fetch("/api/bili/formats", {
@@ -760,31 +757,56 @@ async function parseBiliFormats() {
       )
       .join("");
     biliQualitySel.disabled = false;
-    const logged = !!(d.login && d.login.ok);
-    const loginTxt = logged
-      ? "已复用「B站自动投稿」登录（" + esc(d.login.uname || "") + "）"
-      : "未检测到 B站登录态：请到「B站自动投稿」扫码登录后解析，否则会被 HTTP 412 拦截";
+    const lg = d.login || {};
+    const logged = !!lg.ok;
+    let loginTxt;
+    let loginCls;
+    if (logged) {
+      loginTxt = "已复用「B站自动投稿」登录（" + esc(lg.uname || "") + "）";
+      loginCls = "ok";
+    } else if (lg.source) {
+      // 已找到 cookie 但在线校验未通过：区分「登录态已失效」与「仅网络校验失败」
+      loginTxt =
+        lg.reason === "not-logged"
+          ? "「B站自动投稿」登录态已失效，请到该工具重新扫码登录后再解析"
+          : "已找到「B站自动投稿」登录态，在线校验未通过（网络/代理），下载仍会携带 cookie";
+      loginCls = lg.reason === "not-logged" ? "err" : "warn";
+    } else {
+      loginTxt =
+        "未检测到 B站登录态，请到「B站自动投稿」扫码登录后解析，否则会被 HTTP 412 拦截";
+      loginCls = "err";
+    }
     setBiliHint(
       loginTxt +
         (d.title ? " · " + esc(String(d.title).slice(0, 60)) : "") +
         (defaultId ? " · 默认 1080P H.264" : ""),
-      logged ? "ok" : "err",
+      loginCls,
     );
   } catch (e) {
     setBiliHint("解析失败：" + e.message, "err");
     resetBiliQuality();
   } finally {
-    biliParseBtn.disabled = false;
-    biliParseBtn.innerHTML = BILI_PARSE_HTML;
-    if (typeof window.hydrateIcons === "function") window.hydrateIcons(biliParseBtn);
+    biliParsing = false;
   }
 }
 
 // ── 事件绑定 ──
-biliParseBtn.onclick = parseBiliFormats;
+/** 贴入 B站链接后自动解析（防抖 700ms，避免每敲一个字符就解析）。 */
+let biliAutoParseTimer = null;
+function isBiliLike(url) {
+  return /(bilibili\.com\/video\/|b23\.tv\/|BV[0-9A-Za-z]{10}|av\d{4,})/i.test(
+    String(url || "").trim(),
+  );
+}
 biliCollectUrl.addEventListener("input", () => {
   resetBiliQuality();
   setBiliHint("", "");
+  clearTimeout(biliAutoParseTimer);
+  if (!running && isBiliLike(biliCollectUrl.value)) {
+    biliAutoParseTimer = setTimeout(() => {
+      if (!running && !biliParsing) parseBiliFormats();
+    }, 700);
+  }
 });
 
 collectBtn.onclick = () => {

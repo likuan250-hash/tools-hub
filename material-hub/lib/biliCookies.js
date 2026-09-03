@@ -120,16 +120,21 @@ function resolveCookieFile(opts = {}) {
  */
 async function getLoginInfo(opts = {}) {
   if (!opts.force && _login && Date.now() - _login.at < CACHE_TTL) {
-    return { ok: _login.ok, uname: _login.uname, source: _login.source };
+    return {
+      ok: _login.ok,
+      uname: _login.uname,
+      source: _login.source,
+      reason: _login.reason || null,
+    };
   }
   const resolved = resolveCookieFile(opts);
   if (!resolved) {
-    _login = { ok: false, uname: "", source: null, at: Date.now() };
-    return { ok: false, uname: "", source: null, error: "未找到 B站登录态" };
+    _login = { ok: false, uname: "", source: null, reason: "no-cookie", at: Date.now() };
+    return { ok: false, uname: "", source: null, reason: "no-cookie", error: "未找到 B站登录态" };
   }
   try {
-    const header = fs
-      .readFileSync(resolved.file, "utf8")
+  const header = fs
+    .readFileSync(resolved.file, "utf8")
       .split("\n")
       .filter((l) => l && !l.startsWith("#"))
       .map((l) => {
@@ -138,23 +143,49 @@ async function getLoginInfo(opts = {}) {
       })
       .filter(Boolean)
       .join("; ");
-    const r = await fetchJson(NAV_URL, {
-      timeout: 10000,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Referer: "https://www.bilibili.com/",
-        Cookie: header,
-      },
-    });
+    const headers = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Referer: "https://www.bilibili.com/",
+      Cookie: header,
+    };
+    // 先按 http.js 的代理策略探测；失败再直连重试一次（B站 国内直连通常更稳，
+    // 避免代理对 api.bilibili.com 偶发握手/超时导致「登录态校验失败」误报）
+    let r = null;
+    try {
+      r = await fetchJson(NAV_URL, { timeout: 10000, headers });
+    } catch (e) {
+      try {
+        const res = await fetch(NAV_URL, {
+          headers,
+          signal: AbortSignal.timeout(10000),
+        });
+        r = { json: await res.json().catch(() => null) };
+      } catch (e2) {
+        throw e2;
+      }
+    }
     const data = (r.json && r.json.data) || {};
     const ok = r.json && r.json.code === 0 && data.isLogin === true;
-    _login = { ok: !!ok, uname: data.uname || "", source: resolved.source, at: Date.now() };
-    return { ok: !!ok, uname: data.uname || "", source: resolved.source };
+    const reason = ok ? null : "not-logged";
+    _login = { ok: !!ok, uname: data.uname || "", source: resolved.source, reason, at: Date.now() };
+    return { ok: !!ok, uname: data.uname || "", source: resolved.source, reason };
   } catch (e) {
     // 网络异常不应阻断下载流程：登录态未知时按"未登录"处理，由上层决定是否提示
-    _login = { ok: false, uname: "", source: resolved.source, at: Date.now() };
-    return { ok: false, uname: "", source: resolved.source, error: e.message };
+    _login = {
+      ok: false,
+      uname: "",
+      source: resolved.source,
+      reason: "nav-failed",
+      at: Date.now(),
+    };
+    return {
+      ok: false,
+      uname: "",
+      source: resolved.source,
+      reason: "nav-failed",
+      error: e.message,
+    };
   }
 }
 

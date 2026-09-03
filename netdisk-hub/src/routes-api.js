@@ -38,6 +38,15 @@ function registerApiRoutes(app, ctx) {
   } = ctx;
 
   // ── 账号状态 ─────────────────────────────────────────
+  // 判断探测失败是否源于登录态失效（网络/代理类错误不算，重登录救不了网络）
+  function isAuthBroken(detail) {
+    const d = String(detail || "");
+    if (!d) return false;
+    if (/net_error|ECONN|ENOTFOUND|ETIMEDOUT|timeout|fetch failed|Failed to fetch|网络/i.test(d))
+      return false;
+    return /no_session|_errno|errno|401|403|captcha|token|未授权|invalid|sign/i.test(d);
+  }
+
   app.get("/api/accounts", (req, res) => {
     const baiduAcc = store.getAccount("baidu");
     const quarkAcc = store.getAccount("quark");
@@ -68,6 +77,8 @@ function registerApiRoutes(app, ctx) {
         ? baidu.getLastCheckError()
         : ""
       : "no_cookie_saved";
+    const qDetail = quark.getLastCheckError ? quark.getLastCheckError() : "";
+    const xDetail = xunlei.getLastCheckError ? xunlei.getLastCheckError() : "";
     const bDir = store.getDir("baidu");
     const qDir = store.getDir("quark");
     const xDir = store.getDir("xunlei");
@@ -83,6 +94,8 @@ function registerApiRoutes(app, ctx) {
         hasToken: !!(baiduAcc && baiduAcc.accessToken),
         hasCookie: hasBaiduCookie,
         detail: bDetail,
+        authBroken:
+          hasBaiduCookie && pingCache.baidu === false && isAuthBroken(bDetail),
         expiresAt: bExp && bExp.ts,
         expiresAtEstimated: bExp ? bExp.estimated : false,
         dir: {
@@ -94,6 +107,9 @@ function registerApiRoutes(app, ctx) {
       quark: {
         connected: hasQuarkCred,
         pingOK: pingCache.quark,
+        detail: qDetail,
+        authBroken:
+          hasQuarkCred && pingCache.quark === false && isAuthBroken(qDetail),
         expiresAt: qExp && qExp.ts,
         expiresAtEstimated: qExp ? qExp.estimated : false,
         dir: {
@@ -105,6 +121,9 @@ function registerApiRoutes(app, ctx) {
       xunlei: {
         connected: hasXunleiCred,
         pingOK: pingCache.xunlei,
+        detail: xDetail,
+        authBroken:
+          hasXunleiCred && pingCache.xunlei === false && isAuthBroken(xDetail),
         expiresAt: xExp && xExp.ts,
         expiresAtEstimated: xExp ? xExp.estimated : false,
         dir: {

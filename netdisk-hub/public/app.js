@@ -127,13 +127,20 @@ async function loadAccounts() {
     cards.innerHTML = defs
       .map(({ key, name, a }) => {
         const connected = !!(a && a.connected);
-        // 已登录但实时联网探测未通过: 区分「登录态真失效」与「仅网络探测不通」
+        // 已登录但实时联网探测未通过: 区分「登录态真失效(authBroken)」与「仅网络探测不通」
+        const dead = !!(a && a.authBroken);
+        /** 探测失败原因的可读化（去掉 baidu_errno_/quark_errno_/xunlei_error_ 等前缀）。 */
+        function cleanDetail(d) {
+          return String(d || "")
+            .replace(/^(baidu_errno_|quark_errno_|xunlei_error_|no_session_cookie)/, "")
+            .trim();
+        }
         let warn = "";
         if (connected && a.pingOK === false && a.detail) {
           const d = a.detail;
-          if (d.startsWith("baidu_errno")) {
-            // 真·登录态失效(接口返回错误): 橙色提醒 + 下方仍提供「重新授权」按钮
-            warn = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.85;color:var(--warn,#e0a030)">百度返回错误 ${d.slice(12)}(登录态可能失效,可重新授权)</div>`;
+          if (dead) {
+            // 真·登录态失效: 橙色提醒 + 下方提供「重新授权」按钮
+            warn = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.85;color:var(--warn,#e0a030)">登录态失效(${cleanDetail(d) || "会话无效"})，请重新授权</div>`;
           } else {
             // 网络/代理探测不通: 仅为参考,不影响实际转存,降级为灰色中性备注
             const reason = d.startsWith("net_error")
@@ -148,11 +155,11 @@ async function loadAccounts() {
           const d = a.detail;
           let msg;
           if (d === "no_cookie_saved" || d === "no_session_cookie")
-            msg = "百度登录态未保存(请重新点授权并完成扫码)";
+            msg = name + "登录态未保存(请点授权并完成扫码/登录)";
           else if (d.startsWith("net_error"))
-            msg = "服务器无法连接百度(网络/代理问题: " + d.slice(10) + ")";
-          else if (d.startsWith("baidu_errno"))
-            msg = "百度返回错误 " + d.slice(12) + "(登录态可能被作废,请重新授权)";
+            msg = "服务器无法连接" + name + "(网络/代理问题: " + d.slice(10) + ")";
+          else if (/_errno|errno|401|403|token|invalid|sign/i.test(d))
+            msg = name + "会话已失效(" + cleanDetail(d) + ")，请重新授权";
           else msg = d;
           diag = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.75;color:var(--err)">诊断: ${msg}</div>`;
         }
@@ -173,11 +180,9 @@ async function loadAccounts() {
           ttlHTML =
             '<div><span class="ttl ttl-none"><span class="p"></span>登录态有效期未知</span></div>';
         }
-        // 未连接必须授权; 已连接但「登录态真失效(baidu_errno)」才提示重新授权。
+        // 未连接必须授权; 已连接但「登录态真失效(authBroken)」才提示重新授权。
         // 仅网络探测不通(net_error)不算故障,不弹重授权(重授权救不了网络,反而误导)。
-        const reallyBad =
-          connected && a.pingOK === false && a.detail && a.detail.startsWith("baidu_errno");
-        const showAuth = !connected || reallyBad;
+        const showAuth = !connected || dead;
         const authBtnText = connected
           ? ico("refresh") + " 重新授权" + name
           : ico("link") + " 授权" + name;
@@ -198,7 +203,7 @@ async function loadAccounts() {
         }
         return `<div class="card">
         <div class="name">${name}</div>
-        <div class="status">${statusHTML(reallyBad ? "err" : connected ? "ok" : "off", reallyBad ? "登录态失效" : connected ? "已连接" : "未连接")}</div>
+        <div class="status">${statusHTML(dead ? "err" : connected ? "ok" : "off", dead ? "登录态失效" : connected ? "已连接" : "未连接")}</div>
         ${ttlHTML}
         ${warn}${diag}
         ${dirRow}

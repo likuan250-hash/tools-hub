@@ -134,8 +134,9 @@ let pingTs = 0;
 async function refreshPings() {
   if (pingRefreshing) return;
   const now = Date.now();
-  // 5 分钟内不重复探测(迅雷探测会拉起浏览器预热 token,代价高)
-  if (pingCache.baidu !== undefined && now - pingTs < 5 * 60 * 1000) return;
+  // 60s 内不重复探测:太长会让「登录态已失效」延迟显示(曾 5 分钟,断线后卡片仍绿 5 分钟)。
+  // 迅雷探测可能拉起浏览器预热 token(代价高),60s 阈值在准确性与代价间取平衡。
+  if (pingCache.baidu !== undefined && now - pingTs < 60 * 1000) return;
   pingRefreshing = true;
   try {
     await Promise.all(['baidu', 'quark', 'xunlei'].map(async (k) => {

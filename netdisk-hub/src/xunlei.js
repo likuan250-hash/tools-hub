@@ -456,14 +456,23 @@ function setAuthForTest(auth) {
   if (!tokenCache.expires_at) tokenCache.expires_at = Date.now() + 10 * 365 * 24 * 60 * 60 * 1000;
 }
 
+let lastCheckError = "";
 async function pingSession() {
   // 纯探测: 不修改已保存的登录态(避免「探测失败」反向把 connected 写成 false 导致误判未连接)
   try {
     const files = await listFiles("");
-    return Array.isArray(files);
+    const ok = Array.isArray(files);
+    lastCheckError = ok ? "" : "xunlei_empty_list";
+    return ok;
   } catch (e) {
+    lastCheckError = "xunlei_error:" + ((e && e.message) || "unknown").slice(0, 140);
     return false;
   }
+}
+
+// 返回最近一次 pingSession 的失败原因(供前端诊断展示)
+function getLastCheckError() {
+  return lastCheckError;
 }
 
 // 编排:取分享 → 找/用目标目录 → 转存(指定 parent_id) → 轮询 → 生成分享。
@@ -596,6 +605,7 @@ module.exports = {
   createShare,
   transfer,
   probeListRoot,
+  getLastCheckError,
   loadTokensFromProfile: loadTokensFromProfileGuarded,
   setAuthForTest,
 };

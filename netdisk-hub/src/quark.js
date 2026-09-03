@@ -382,18 +382,30 @@ async function transfer({
 }
 
 // 轻量存活检查:列根目录,code===0 即 cookie 有效
+let lastCheckError = "";
 async function checkSession() {
   const cookie = getValidCookie();
-  if (!cookie) return false;
+  if (!cookie) {
+    lastCheckError = "no_session_cookie";
+    return false;
+  }
   try {
     const j = await quarkFetch(`${BASE}/file/sort?${qp()}`, {
       headers: headers(cookie),
       signal: AbortSignal.timeout(6000),
     });
-    return j.code === 0;
+    const ok = j.code === 0;
+    lastCheckError = ok ? "" : "quark_errno_" + (j.code == null ? "unknown" : j.code);
+    return ok;
   } catch (e) {
+    lastCheckError = "net_error:" + (e.name || e.message || "unknown");
     return false;
   }
+}
+
+// 返回最近一次 checkSession 的失败原因(供前端诊断展示)
+function getLastCheckError() {
+  return lastCheckError;
 }
 
 module.exports = {
@@ -402,6 +414,7 @@ module.exports = {
   mapExpiredType,
   getValidCookie,
   checkSession,
+  getLastCheckError,
   getStoken,
   getDetail,
   saveShare,

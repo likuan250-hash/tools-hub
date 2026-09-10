@@ -5,7 +5,8 @@
 //
 // 关键:BDUSS 是 HttpOnly 登录态 Cookie,document.cookie 读不到,
 // 必须用 context.cookies() 轮询。BAIDUID 是匿名标识,不能作为登录判据,只认 BDUSS。
-const { chromium } = require('playwright');
+// 浏览器统一走 browser.js：优先系统 Edge，缺 Edge 回退内置 Chromium（安装包不再内置内核）
+const { launchBrowser } = require('./browser');
 const store = require('./store');
 const { verifyCookie } = require('./baidu');
 
@@ -35,7 +36,7 @@ async function startLogin() {
   setState('waiting', '请在弹出的百度网盘窗口中登录(扫码或账号密码)');
   let browser;
   try {
-    browser = await chromium.launch({ headless: false });
+    browser = (await launchBrowser({ headless: false })).browser;
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto('https://pan.baidu.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });

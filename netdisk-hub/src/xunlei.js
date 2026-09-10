@@ -21,14 +21,10 @@ const store = require("./store");
 const fs = require("fs");
 const path = require("path");
 
-// Playwright 仅在需要启动真实浏览器（读 token / 重新登录）时才加载，
-// 避免「仅调用解析函数」时也强制依赖 playwright 模块，提升启动速度，
-// 并让解析函数的单元测试可在无浏览器环境下运行。
-let _playwright = null;
-function getChromium() {
-  if (!_playwright) _playwright = require("playwright");
-  return _playwright.chromium;
-}
+// 浏览器统一走 browser.js（优先系统 Edge，缺 Edge 回退内置 Chromium）：
+// 1) 安装包不再内置 700MB 的 Chromium 内核；2) playwright 仅在真正要起浏览器时才 require，
+// 纯解析函数的单测无需浏览器环境也能跑。
+const { launchPersistentContext } = require("./browser");
 
 // 登录态目录：同 store.js，优先 NETDISK_DATA_DIR(升级不丢)，否则回退安装目录 data/。
 const STORAGE_DIR = path.join(
@@ -71,27 +67,29 @@ async function loadTokensFromProfile() {
   // 用 headless:true + 窗口外置参数,确保 Windows 上也不闪现黑框。
   // persistent context 在部分 Chromium 版本下仍会创建可见窗口,
   // 移出屏幕(-10000,-10000) + 1x1 尺寸 + start-minimized 可彻底隐藏。
-  const context = await getChromium().launchPersistentContext(STORAGE_DIR, {
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-software-rasterizer",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-background-timer-throttling",
-      "--disable-renderer-backgrounding",
-      "--disable-backgrounding-occluded-windows",
-      "--disable-features=CalculateWindowOcclusion",
-      "--window-position=-10000,-10000",
-      "--window-size=1,1",
-      "--start-minimized",
-      "--hide-scrollbars",
-      "--mute-audio",
-      "--disable-notifications",
-    ],
-  });
+  const context = (
+    await launchPersistentContext(STORAGE_DIR, {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-features=CalculateWindowOcclusion",
+        "--window-position=-10000,-10000",
+        "--window-size=1,1",
+        "--start-minimized",
+        "--hide-scrollbars",
+        "--mute-audio",
+        "--disable-notifications",
+      ],
+    })
+  ).context;
   try {
     const page = await context.newPage();
     await page

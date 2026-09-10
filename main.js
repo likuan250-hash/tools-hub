@@ -653,13 +653,40 @@ function sendUpdate(state, extra = {}) {
   }
 }
 
+// 差量更新的「基准自愈」：
+// electron-updater 会把缓存目录里的 current.blockmap 当作「当前已安装版本」的旧块映射参与差分合并，
+// 并与同一个缓存目录里的 installer.exe（本次安装用的安装包）配对使用。
+// 一旦两者不是同一版本（例如上一次走的是整包更新、或跨版本升级），差分合并必然失败，
+// updater 会回退成整包重下 —— 表现就是「下两遍、第二遍很慢」。
+// 这里在启动时删掉可能过期的 blockmap，让 updater 从「当前版本对应的 Release」重新拉一份
+// （约 400KB，代价可忽略），基准就始终对齐，增量更新得以稳定生效。
+function repairUpdaterBaseline() {
+  if (!app.isPackaged) return; // 开发态没有 app-update.yml / 更新缓存
+  try {
+    const ymlPath = path.join(process.resourcesPath, "app-update.yml");
+    const yml = fs.readFileSync(ymlPath, "utf8");
+    const m = yml.match(/updaterCacheDirName:\s*(.+)/);
+    const name = m && m[1].trim();
+    if (!name) return;
+    const cacheDir = path.join(process.env.LOCALAPPDATA || app.getPath("cache"), name);
+    const blockmap = path.join(cacheDir, "current.blockmap");
+    if (fs.existsSync(blockmap)) {
+      fs.unlinkSync(blockmap);
+      log("更新缓存基准已重置（删除过期 current.blockmap），下次更新走增量下载");
+    }
+  } catch (e) {
+    log("更新缓存基准重置失败（忽略）:", e && e.message ? e.message : e);
+  }
+}
+
 function setupAutoUpdater() {
   // 默认不自动下载，等用户点击"检测更新"再开始
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  // 关闭差分下载：本地缓存（installer.exe/blockmap）跨版本错配时差分必失败，
-  // electron-updater 会回退全量重下，表现为「下两遍、第二遍很慢」。只下完整包一次最稳。
-  autoUpdater.disableDifferentialDownload = true;
+  // 恢复差量（增量）更新：这才是默认行为，每次只需下载变化部分。
+  // 之前因「缓存基准错配 → 差分失败 → 回退整包重下」临时关闭，现由 repairUpdaterBaseline() 根治。
+  autoUpdater.disableDifferentialDownload = false;
+  repairUpdaterBaseline();
   // 把 electron-updater 内部日志写入 tools-hub.log，便于日后排查更新问题
   const updaterLog = (...args) => log("[updater]", ...args);
   autoUpdater.logger = {

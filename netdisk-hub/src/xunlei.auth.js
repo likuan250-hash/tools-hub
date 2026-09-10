@@ -4,7 +4,8 @@
 //
 // 关键点:迅雷 web 端的鉴权就是浏览器 cookie —— 没有独立的 Bearer token 体系。
 // 因此登录只需确认「出现了登录态 cookie」即可,无需拦截 token。
-const { chromium } = require('playwright');
+// 浏览器统一走 browser.js：优先系统 Edge，缺 Edge 回退内置 Chromium（安装包不再内置内核）
+const { launchPersistentContext } = require('./browser');
 const path = require('path');
 const store = require('./store');
 
@@ -38,7 +39,7 @@ async function startLogin() {
   let context;
   try {
     // 用持久化 context:登录后 cookie 自动写入 data/xunlei_profile,后续 headless 复用
-    context = await chromium.launchPersistentContext(STORAGE_DIR, { headless: false });
+    context = (await launchPersistentContext(STORAGE_DIR, { headless: false })).context;
     const page = await context.newPage();
     await page.goto('https://pan.xunlei.com/', { waitUntil: 'domcontentloaded' });
 

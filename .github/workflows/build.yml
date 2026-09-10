@@ -133,12 +133,6 @@ jobs:
         working-directory: netdisk-hub
         run: node ../scripts/verify-gameboy-skin-sync.js
 
-      - name: Install Playwright Chromium (bundled into node_modules)
-        working-directory: netdisk-hub
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: "0"
-        run: npx playwright install chromium
-
       - name: Prepare bundled Node runtime
         run: |
           $nodeDir = "resources/node"

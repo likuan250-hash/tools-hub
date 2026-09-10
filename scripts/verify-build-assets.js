@@ -506,11 +506,10 @@ function checkExtraResources(resourcesDir) {
     "视频信息探测依赖",
   );
 
-  // Playwright 浏览器（netdisk xunlei/迅雷转存功能强依赖）：CI 的「Install Playwright
-  // Chromium」把它装到 netdisk-hub/node_modules/playwright-core/.local-browsers 下，
-  // 再由 package.json 里**独立的 extraResources 条目**显式打进包（主条目 filter 会把它当
-  // npm 暂存文法 <.x>-<8位> 误排除，不能走主条目）。这里直接断言它真的进了包——
-  // 否则用户装完跑 xunlei 会报「Executable doesn't exist at .../.local-browsers/...」。
+  // Playwright 浏览器内核：**不应再打进包**。
+  // 网盘登录已改为优先使用系统自带 Edge（netdisk-hub/src/browser.js），
+  // 内置 Chromium 内核（未压缩约 700MB）是安装包原先最大的一块，移除后安装包约 370MB → 约 120MB。
+  // 这里反向断言：一旦有人把 .local-browsers 又打回包里，提示体积会异常膨胀。
   const lbDir = path.join(
     resourcesDir,
     "netdisk-hub",
@@ -518,31 +517,17 @@ function checkExtraResources(resourcesDir) {
     "playwright-core",
     ".local-browsers",
   );
-  if (!fs.existsSync(lbDir)) {
-    fail(
-      "extraResources 缺失 Playwright 浏览器目录 netdisk-hub/node_modules/playwright-core/.local-browsers —— " +
-        "netdisk xunlei 功能将报「Executable doesn't exist」，请确认 package.json 含独立的 .local-browsers extraResources 条目",
-    );
-  } else {
-    // headless shell 优先（新版 Playwright 默认用它跑 headless），找不到再认完整 chromium
+  if (fs.existsSync(lbDir)) {
     const pwHit =
       findFileRecursive(lbDir, "chrome-headless-shell.exe") ||
       findFileRecursive(lbDir, "chrome.exe");
-    if (!pwHit) {
-      fail(
-        "在 .local-browsers/ 下未找到 chrome-headless-shell.exe / chrome.exe —— " +
-          "Playwright 浏览器未随包落盘，netdisk xunlei 不可用",
-      );
-    } else {
-      const pwSize = fs.statSync(pwHit).size;
-      if (isSaneBinarySize(pwSize)) {
-        pass(`extraResources 含 Playwright 浏览器（netdisk xunlei 依赖，${formatBytes(pwSize)}）`);
-      } else {
-        fail(
-          `Playwright 浏览器体积异常（${formatBytes(pwSize)} < 1MB）—— 安装不完整，netdisk xunlei 不可用`,
-        );
-      }
-    }
+    fail(
+      "extraResources 又打进了 Playwright 浏览器内核（" +
+        (pwHit ? formatBytes(fs.statSync(pwHit).size) : "目录存在") +
+        "）—— 网盘登录已改用系统 Edge，内核不应随包分发；请检查 package.json extraResources 是否又加了 .local-browsers 条目",
+    );
+  } else {
+    pass("extraResources 未包含 Playwright 浏览器内核（网盘登录改用系统 Edge，安装包已瘦身）");
   }
 
   // 产物层兜底：filter 写对了也可能哪天被人改回去，这里直接扫落盘结果。

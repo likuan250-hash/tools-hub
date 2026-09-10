@@ -542,6 +542,7 @@ body {
 }
 .fx-comic input[type="text"] {
   width: 100%;
+  height: 32px;          /* 与同页其它字段（封面 URL / B站链接）统一高度，修「主输入框比别人矮一截」 */
   padding: 0;
   font-size: 15px;
   font-weight: 700;

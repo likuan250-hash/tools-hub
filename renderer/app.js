@@ -82,6 +82,15 @@
       document.documentElement.setAttribute("data-theme", t);
       document.documentElement.removeAttribute("data-skin");
     }
+    // 掌机皮肤隐藏了「调整顺序」按钮：切进来时先退出排序模式，
+    // 否则会卡在「排序中却没有退出入口、插卡拖拽也被禁用」的死状态。
+    if (t === "gameboy") {
+      try {
+        if (sortMode) toggleSortMode();
+      } catch (e) {
+        /* 首屏 applyTheme 早于 sortMode 初始化（TDZ）：此时本就不在排序模式，忽略 */
+      }
+    }
     try {
       localStorage.setItem("th-theme", t);
     } catch (e) {}

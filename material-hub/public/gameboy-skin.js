@@ -20,6 +20,7 @@
   var ledDot = null;
   var dragging = null;
   var ghost = null;
+  var inserting = false; // 插卡动画锁：动画期间忽略新的拖拽/重复触发
 
   function buildDevice() {
     var landing = document.getElementById("landing");
@@ -74,6 +75,7 @@
   }
 
   function startDrag(card, x, y) {
+    if (inserting) return;
     dragging = { card: card, key: card.dataset.key || "", name: cardLabel(card) };
     card.classList.add("dragging");
     ghost = document.createElement("div");
@@ -117,6 +119,8 @@
 
   /** 插卡动画：卡带滑入插槽 → 屏幕显示 LOADING + 点阵 → 打开工具。 */
   function insertAndOpen(card, key, name) {
+    if (inserting) return;
+    inserting = true;
     if (slotEl) {
       var r = slotEl.getBoundingClientRect();
       ghost.style.left = r.left + r.width / 2 + "px";
@@ -147,6 +151,7 @@
       ghost = null;
       dragging = null;
       resetScreen();
+      inserting = false;
     }, 900);
   }
 
@@ -173,6 +178,9 @@
   function resetScreen() {
     if (screenTitle) screenTitle.textContent = "TOOLS HUB";
     if (screenSub) screenSub.textContent = "DRAG A CARTRIDGE TO INSERT";
+    // 动画用的点阵进度条用完即清，避免屏幕常驻一条满格进度
+    var grid = device && device.querySelector(".gb-screen-grid");
+    if (grid) grid.remove();
     syncScreen();
   }
 
@@ -295,10 +303,19 @@
 
   function boot() {
     if (!isSkinOn()) return;
+    exitSortModeIfNeeded();
     buildDevice();
     bindCards();
     syncScreen();
     scan(document);
+  }
+
+  /** 掌机皮肤隐藏了「调整顺序」按钮：若从其他皮肤带着排序态切过来，这里补一次退出。
+   *  （正常走皮肤菜单时 renderer/app.js 已处理；本兜底覆盖直接改 data-skin 的路径） */
+  function exitSortModeIfNeeded() {
+    var host = document.getElementById("toolCards");
+    var btn = document.getElementById("sortBtn");
+    if (host && host.classList.contains("sorting") && btn) btn.click();
   }
 
   boot();

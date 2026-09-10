@@ -786,7 +786,8 @@ ipcMain.handle("reveal-in-folder", (_e, p) => {
 // ── 主题单一真源：webview 内嵌页主动拉取 / 渲染进程通知当前主题 ──
 ipcMain.handle("get-theme", () => currentTheme);
 ipcMain.handle("set-theme", (_e, t) => {
-  if (t === "light" || t === "dark" || t === "cosmic" || t === "comic") currentTheme = t;
+  if (t === "light" || t === "dark" || t === "cosmic" || t === "comic" || t === "gameboy")
+    currentTheme = t;
 });
 // ── 资源优化：入口页打开/切换工具标签时，按需拉起对应子服务（空闲停止后可自动重启）──
 ipcMain.handle("tool-open", (_e, key) => {

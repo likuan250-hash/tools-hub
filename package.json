@@ -1,6 +1,6 @@
 {
   "name": "tools-hub",
-  "version": "2.8.19",
+  "version": "2.8.20",
   "description": "工具统一桌面应用：集成 kdocs-tool 与 netdisk-hub，单启动器、单安装包",
   "main": "main.js",
   "private": true,
@@ -17,7 +17,9 @@
     "sync-cosmic-skin": "node scripts/sync-cosmic-skin.js",
     "verify:comic-skin": "node scripts/verify-comic-skin-sync.js",
     "sync-comic-skin": "node scripts/sync-comic-skin.js",
-    "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && npm --prefix material-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js test/verify-build-assets.test.js test/prepare-biliup-bin.test.js test/extra-resources-filter.test.js && node scripts/verify-comic-skin-sync.js",
+    "verify:gameboy-skin": "node scripts/verify-gameboy-skin-sync.js",
+    "sync-gameboy-skin": "node scripts/sync-gameboy-skin.js",
+    "test": "npm --prefix kdocs-tool test && npm --prefix netdisk-hub test && npm --prefix biliup-hub test && npm --prefix material-hub test && node --test renderer/test/drag-geometry.test.js test/host-utils.test.js test/verify-build-assets.test.js test/prepare-biliup-bin.test.js test/extra-resources-filter.test.js && node scripts/verify-comic-skin-sync.js && node scripts/verify-gameboy-skin-sync.js",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.js\"",
     "prepare": "simple-git-hooks"

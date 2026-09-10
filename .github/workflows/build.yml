@@ -129,6 +129,10 @@ jobs:
         working-directory: netdisk-hub
         run: node ../scripts/verify-cosmic-skin-sync.js
 
+      - name: Verify gameboy-skin sync (六处副本逐字节一致)
+        working-directory: netdisk-hub
+        run: node ../scripts/verify-gameboy-skin-sync.js
+
       - name: Install Playwright Chromium (bundled into node_modules)
         working-directory: netdisk-hub
         env:

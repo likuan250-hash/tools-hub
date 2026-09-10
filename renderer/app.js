@@ -67,7 +67,7 @@
   const quitConfirm = document.getElementById("quitConfirm");
 
   // ── 皮肤（暗色 / 亮色 / 宇宙 / 漫画；主进程单一真源）──
-  const SKIN_ICONS = { dark: "🌙", light: "☀️", cosmic: "✦", comic: "★" };
+  const SKIN_ICONS = { dark: "🌙", light: "☀️", cosmic: "✦", comic: "★", gameboy: "▣" };
   function applyTheme(t) {
     if (t === "cosmic") {
       document.documentElement.setAttribute("data-theme", "dark");
@@ -75,6 +75,9 @@
     } else if (t === "comic") {
       document.documentElement.setAttribute("data-theme", "light");
       document.documentElement.setAttribute("data-skin", "comic");
+    } else if (t === "gameboy") {
+      document.documentElement.setAttribute("data-theme", "light");
+      document.documentElement.setAttribute("data-skin", "gameboy");
     } else {
       document.documentElement.setAttribute("data-theme", t);
       document.documentElement.removeAttribute("data-skin");

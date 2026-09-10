@@ -12,6 +12,9 @@ function applyTheme(t) {
     } else if (t === "comic") {
       document.documentElement.setAttribute("data-theme", "light");
       document.documentElement.setAttribute("data-skin", "comic");
+    } else if (t === "gameboy") {
+      document.documentElement.setAttribute("data-theme", "light");
+      document.documentElement.setAttribute("data-skin", "gameboy");
     } else {
       document.documentElement.setAttribute("data-theme", t);
       document.documentElement.removeAttribute("data-skin");

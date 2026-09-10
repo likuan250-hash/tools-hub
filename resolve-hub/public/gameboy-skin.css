@@ -1,0 +1,681 @@
+/* shared/gameboy-skin/gameboy-skin.css —— 掌机风皮肤（第五主题）
+ * 设计语言（与静态预览 .tmp/skin-preview/gameboy.html 同源）：
+ *   大红底 + 网点/扫描线；白底面板 + 3px 黑描边 + 6px 硬投影；黄色实体键按钮；
+ *   点阵屏（黑底荧光绿）用于日志/弹窗；卡带卡片 + 插卡交互；像素字体 Ark Pixel。
+ * 生效条件 html[data-skin="gameboy"]，全部规则作用域内，绝不影响其他皮肤。
+ * 单一真源：shared/gameboy-skin/ → npm run sync-gameboy-skin 同步到六处前端。
+ */
+@font-face {
+  font-family: "ArkPixelGB";
+  src: url("ark-pixel-16px-zh_cn.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "ArkPixelGB";
+  src: url("ark-pixel-16px-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+2000-206F;
+  font-display: swap;
+}
+
+html[data-skin="gameboy"] {
+  --gb-red: #ff2e2e;
+  --gb-red-deep: #d81f1f;
+  --gb-ink: #111111;
+  --gb-paper: #ffffff;
+  --gb-yellow: #ffe600;
+  --gb-violet: #b78dff;
+  --gb-pink: #ff7bd5;
+  --gb-body: #c9c5bd;
+  --gb-screen: #0b0f0b;
+  --gb-green: #9dff5e;
+  --gb-line: 3px solid var(--gb-ink);
+  --gb-shadow: 6px 6px 0 var(--gb-ink);
+  --gb-shadow-sm: 4px 4px 0 var(--gb-ink);
+
+  /* 通用 token 覆盖（六端共用变量名，改这里即全站生效） */
+  --bg: #ff2e2e;
+  --bg-1: #ff2e2e; --bg-2: #ffffff; --bg-3: #f1eee7;
+  --fg: #111111; --fg-2: #333333; --muted: #5c5c5c;
+  --text: #111111; --text-dim: #4a4a4a;
+  --surface: #ffffff; --surface-2: #f7f5ef;
+  --field-bg: #ffffff; --solid-bg: #ffffff;
+  --glass-bg: #ffffff; --glass-border: #111111;
+  --border: #111111; --border-soft: #111111;
+  --field-border: #111111;
+  --select-bg: #ffffff; --select-border: #111111;
+  --accent: #ffe600; --accent-2: #b78dff; --accent-3: #ff7bd5;
+  --apple-accent: #ffe600;
+  --accent-hover: #fff04d; --accent-active: #e6cf00;
+  --accent-rgb: 255, 230, 0; --accent2-rgb: 183, 141, 255;
+  --ok: #37c25f; --warn: #f5a623; --err: #ff4d4d;
+  --ok-rgb: 55, 194, 95; --err-rgb: 255, 77, 77;
+  --success: var(--ok); --danger: var(--err);
+  --hist-meta: #4a4a4a;
+  --switch-off: #dcd8cd; --switch-thumb: #111111;
+  --modal-mask: rgba(40, 0, 0, .42);
+  --shadow-card: 6px 6px 0 #111111;
+  --shadow-modal: 8px 8px 0 #111111;
+  --field-inset: none;
+  --panel: #ffffff; --line: #111111; --log-bg: #0b0f0b;
+  --mac-font: "ArkPixelGB", "Microsoft YaHei", system-ui, sans-serif;
+  --mono-font: "ArkPixelGB", Consolas, "Courier New", monospace;
+  --glass-modal-bg: #ffffff;
+  --glass-modal-border: #111111;
+  --glass-modal-divider: #111111;
+  --glass-mask-bg: rgba(40, 0, 0, .42);
+
+  /* 状态组件（.st-luxe）：实色贴纸 + 黑边，去掉玻璃辉光 */
+  --st-ok-bg: #9dff5e; --st-ok-solid: #9dff5e; --st-ok-border: #111111; --st-ok-text: #0d3a12; --st-ok-glow: none;
+  --st-info-bg: #ffe600; --st-info-solid: #ffe600; --st-info-border: #111111; --st-info-text: #4a3b00; --st-info-glow: none;
+  --st-warn-bg: #ffc861; --st-warn-solid: #ffc861; --st-warn-border: #111111; --st-warn-text: #4a3200; --st-warn-glow: none;
+  --st-err-bg: #ff6b6b; --st-err-solid: #ff6b6b; --st-err-border: #111111; --st-err-text: #ffffff; --st-err-glow: none;
+  --st-off-bg: #e2ded4; --st-off-solid: #e2ded4; --st-off-border: #111111; --st-off-text: #444444; --st-off-glow: none;
+}
+
+/* ===== 背景：大红 + 网点 + 横向扫描线 ===== */
+html[data-skin="gameboy"] body {
+  background-color: var(--gb-red) !important;
+  background-image:
+    radial-gradient(rgba(0, 0, 0, .16) 1.6px, transparent 1.8px),
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, .055) 0 1px, transparent 1px 22px) !important;
+  background-size: 22px 22px, 100% 22px !important;
+  background-attachment: fixed !important;
+  color: var(--gb-ink);
+  font-family: var(--mac-font) !important;
+}
+html[data-skin="gameboy"] ::selection { background: var(--gb-yellow); color: var(--gb-ink); }
+html[data-skin="gameboy"] * { border-radius: 0 !important; }
+html[data-skin="gameboy"] :focus-visible { outline: 3px solid var(--gb-yellow) !important; outline-offset: 2px; }
+
+/* 滚动条：方角粗轨 */
+html[data-skin="gameboy"] ::-webkit-scrollbar { width: 12px; height: 12px; }
+html[data-skin="gameboy"] ::-webkit-scrollbar-track { background: #f1eee7; border-left: 2px solid var(--gb-ink); }
+html[data-skin="gameboy"] ::-webkit-scrollbar-thumb { background: var(--gb-ink); border: 2px solid var(--gb-ink); }
+html[data-skin="gameboy"] ::-webkit-scrollbar-thumb:hover { background: var(--gb-red); }
+
+/* ===== 排版：像素大标题 + 贴纸副标题 ===== */
+html[data-skin="gameboy"] h1,
+html[data-skin="gameboy"] .title,
+html[data-skin="gameboy"] .landing-title {
+  color: var(--gb-ink) !important;
+  font-weight: 400 !important;
+  letter-spacing: 1px;
+  -webkit-text-stroke: 0 !important;
+  text-shadow: 4px 4px 0 rgba(0, 0, 0, .22) !important;
+}
+html[data-skin="gameboy"] h1 .en,
+html[data-skin="gameboy"] .title .en {
+  color: var(--gb-ink) !important;
+  background: var(--gb-yellow);
+  border: 2px solid var(--gb-ink);
+  padding: 2px 8px;
+  font-size: 12px !important;
+  letter-spacing: 2px;
+  display: inline-block;
+  transform: rotate(-1deg);
+  text-shadow: none !important;
+}
+html[data-skin="gameboy"] .sub,
+html[data-skin="gameboy"] .landing-sub,
+html[data-skin="gameboy"] .hint,
+html[data-skin="gameboy"] .modal-hint { color: #2b2b2b !important; }
+html[data-skin="gameboy"] h2,
+html[data-skin="gameboy"] .panel-head h2,
+html[data-skin="gameboy"] .exec-title {
+  color: var(--gb-ink) !important;
+  font-weight: 400 !important;
+  letter-spacing: 1px;
+  text-shadow: none !important;
+}
+html[data-skin="gameboy"] .exec-title,
+html[data-skin="gameboy"] .rule-hint,
+html[data-skin="gameboy"] .landing-title {
+  display: inline-block;
+}
+html[data-skin="gameboy"] .exec-title {
+  background: var(--gb-ink);
+  color: var(--gb-yellow) !important;
+  padding: 3px 10px;
+}
+html[data-skin="gameboy"] kbd,
+html[data-skin="gameboy"] code {
+  background: var(--gb-ink) !important;
+  color: var(--gb-green) !important;
+  border: 2px solid var(--gb-ink);
+  padding: 1px 5px;
+  font-family: var(--mono-font) !important;
+}
+html[data-skin="gameboy"] a { color: #0b3fa8 !important; }
+
+/* ===== 通用容器：白底 + 粗描边 + 硬投影 ===== */
+/* 注意：内容型容器统一加 :not(:empty)，否则空占位块（batch-preview 等）会被
+   描边+硬投影画成横条，看起来像多余的黑杠 */
+html[data-skin="gameboy"] .panel,
+html[data-skin="gameboy"] .auto-result,
+html[data-skin="gameboy"] .result-summary:not(:empty),
+html[data-skin="gameboy"] .task:not(:empty),
+html[data-skin="gameboy"] .file-card:not(:empty),
+html[data-skin="gameboy"] .cover-preview:not(:empty),
+html[data-skin="gameboy"] .batch-preview:not(:empty),
+html[data-skin="gameboy"] .batch-result:not(:empty),
+html[data-skin="gameboy"] .sr-group:not(:empty),
+html[data-skin="gameboy"] .cb-card,
+html[data-skin="gameboy"] .fmt-body {
+  background: var(--gb-paper) !important;
+  border: var(--gb-line) !important;
+  box-shadow: var(--gb-shadow) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .task + .task { margin-top: 12px; }
+
+/* ===== 字段 / 输入 ===== */
+html[data-skin="gameboy"] input,
+html[data-skin="gameboy"] textarea,
+html[data-skin="gameboy"] select,
+html[data-skin="gameboy"] .cover-url-input,
+html[data-skin="gameboy"] .field input,
+html[data-skin="gameboy"] .search-bar input {
+  background: var(--gb-paper) !important;
+  color: var(--gb-ink) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: inset 3px 3px 0 rgba(0, 0, 0, .10) !important;
+  font-family: var(--mac-font) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-skin="gameboy"] input:focus,
+html[data-skin="gameboy"] textarea:focus,
+html[data-skin="gameboy"] select:focus {
+  background: #fffbe6 !important;
+  box-shadow: inset 3px 3px 0 rgba(0, 0, 0, .10), 0 0 0 3px var(--gb-yellow) !important;
+}
+html[data-skin="gameboy"] label,
+html[data-skin="gameboy"] .field-head label { color: var(--gb-ink) !important; letter-spacing: 1px; }
+html[data-skin="gameboy"] .clear-input {
+  background: var(--gb-paper) !important; color: var(--gb-ink) !important;
+  border: 2px solid var(--gb-ink) !important; box-shadow: 3px 3px 0 var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .clear-input:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--gb-ink) !important; }
+html[data-skin="gameboy"] input::placeholder,
+html[data-skin="gameboy"] textarea::placeholder { color: #7b7b7b !important; opacity: 1; }
+
+/* 开关：网盘式(input 作轨道) + 素材式(.force-switch .sw) 两套结构都要覆盖
+   注意 .switch span 是文字标签，绝不能被当成轨道上色（会变黑块） */
+html[data-skin="gameboy"] .switch input,
+html[data-skin="gameboy"] .force-switch .sw {
+  border: 2px solid var(--gb-ink) !important;
+  background: #dcd8cd !important;
+  box-shadow: 2px 2px 0 var(--gb-ink);
+}
+html[data-skin="gameboy"] .switch input::after {
+  background: var(--gb-ink) !important;
+  border-radius: 2px !important;
+}
+html[data-skin="gameboy"] .force-switch input:checked + .sw,
+html[data-skin="gameboy"] .switch input:checked {
+  background: var(--gb-green) !important;
+  border-color: var(--gb-ink) !important;
+  box-shadow: 2px 2px 0 var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .force-switch .sw::after {
+  background: var(--gb-ink) !important;
+  box-shadow: none !important;
+}
+html[data-skin="gameboy"] .switch span { color: var(--gb-ink) !important; }
+
+/* 品牌 logo / 游戏名输入框外壳（漫画框在此皮肤下改为方角硬边框） */
+html[data-skin="gameboy"] .logo {
+  background: var(--gb-yellow) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: 3px 3px 0 var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .logo .app-ico { color: var(--gb-ink) !important; }
+html[data-skin="gameboy"] .fx-comic .box {
+  background: var(--gb-paper) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: inset 3px 3px 0 rgba(0, 0, 0, .10) !important;
+}
+html[data-skin="gameboy"] .fx-comic .sfx,
+html[data-skin="gameboy"] .fx-comic .lines { display: none !important; }
+
+/* ===== 按钮：黄色实体键（按下位移 + 投影收缩）===== */
+html[data-skin="gameboy"] .btn,
+html[data-skin="gameboy"] .btn-exec,
+html[data-skin="gameboy"] .auth-btn,
+html[data-skin="gameboy"] .icon-btn,
+html[data-skin="gameboy"] .sort-toggle,
+html[data-skin="gameboy"] .update-btn,
+html[data-skin="gameboy"] .dir-btn,
+html[data-skin="gameboy"] .card-open,
+html[data-skin="gameboy"] .modal-close,
+html[data-skin="gameboy"] .sr-del,
+html[data-skin="gameboy"] .tab {
+  background: var(--gb-yellow) !important;
+  color: var(--gb-ink) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: var(--gb-shadow-sm) !important;
+  font-family: var(--mac-font) !important;
+  font-weight: 400 !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  transition: transform .06s ease, box-shadow .06s ease, background .12s ease;
+}
+html[data-skin="gameboy"] .btn:hover:not(:disabled),
+html[data-skin="gameboy"] .btn-exec:hover:not(:disabled),
+html[data-skin="gameboy"] .icon-btn:hover,
+html[data-skin="gameboy"] .card-open:hover,
+html[data-skin="gameboy"] .tab:hover { background: #fff04d !important; }
+html[data-skin="gameboy"] .btn:active,
+html[data-skin="gameboy"] .btn-exec:active,
+html[data-skin="gameboy"] .icon-btn:active,
+html[data-skin="gameboy"] .auth-btn:active,
+html[data-skin="gameboy"] .sort-toggle:active,
+html[data-skin="gameboy"] .card-open:active,
+html[data-skin="gameboy"] .tab:active {
+  transform: translate(3px, 3px) !important;
+  box-shadow: 1px 1px 0 var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .btn.ghost,
+html[data-skin="gameboy"] .icon-btn.ghost,
+html[data-skin="gameboy"] .modal-close,
+html[data-skin="gameboy"] .sr-del {
+  background: var(--gb-paper) !important;
+}
+html[data-skin="gameboy"] .sr-del { color: #c62828 !important; }
+html[data-skin="gameboy"] .tab.active,
+html[data-skin="gameboy"] .tab.on {
+  background: var(--gb-ink) !important;
+  color: var(--gb-yellow) !important;
+  transform: translate(2px, 2px) !important;
+  box-shadow: 1px 1px 0 var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .btn:disabled,
+html[data-skin="gameboy"] .btn-exec:disabled,
+html[data-skin="gameboy"] .icon-btn:disabled {
+  background: #e6e2d8 !important;
+  color: #6d6d6d !important;
+  box-shadow: 2px 2px 0 #a9a49a !important;
+  border-color: #6d6d6d !important;
+  transform: none !important;
+}
+html[data-skin="gameboy"] .btn-exec .bx-spin {
+  border-color: rgba(0, 0, 0, .25) !important;
+  border-top-color: var(--gb-ink) !important;
+}
+
+/* ===== 状态：实色贴纸 ===== */
+html[data-skin="gameboy"] .st-luxe,
+html[data-skin="gameboy"] .pill,
+html[data-skin="gameboy"] .chip,
+html[data-skin="gameboy"] .tag,
+html[data-skin="gameboy"] .badge {
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: 3px 3px 0 var(--gb-ink) !important;
+  padding: 1px 8px !important;
+  font-family: var(--mac-font) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-skin="gameboy"] .pill.ok,
+html[data-skin="gameboy"] .st-luxe--ok { background: var(--gb-green) !important; color: #0d3a12 !important; }
+html[data-skin="gameboy"] .pill.warn,
+html[data-skin="gameboy"] .st-luxe--warn { background: #ffc861 !important; color: #4a3200 !important; }
+html[data-skin="gameboy"] .pill.err,
+html[data-skin="gameboy"] .st-luxe--err { background: #ff6b6b !important; color: #fff !important; }
+html[data-skin="gameboy"] .st-luxe--info { background: var(--gb-yellow) !important; color: #4a3b00 !important; }
+html[data-skin="gameboy"] .st-luxe--off { background: #e2ded4 !important; color: #444 !important; }
+html[data-skin="gameboy"] .pill.tag { background: var(--gb-violet) !important; }
+
+/* ===== 标签栏 / 列表 / 任务 ===== */
+html[data-skin="gameboy"] .tabs { border-bottom: var(--gb-line); }
+html[data-skin="gameboy"] .tabs .tab { margin-right: 6px; }
+html[data-skin="gameboy"] .task .top b,
+html[data-skin="gameboy"] .file-card .name,
+html[data-skin="gameboy"] .sr-item .sr-name { color: var(--gb-ink) !important; }
+html[data-skin="gameboy"] .sr-head {
+  background: var(--gb-yellow) !important;
+  border-bottom: var(--gb-line) !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .sr-item { border-bottom: 2px solid #e2ded4 !important; }
+html[data-skin="gameboy"] .sr-meta { color: #4a4a4a !important; }
+html[data-skin="gameboy"] .search-actions .btn,
+html[data-skin="gameboy"] .search-actions .auth-btn { font-size: 12px; }
+
+/* ===== 进度：点阵屏 ===== */
+/* 执行进度容器 = 白底面板；内部进度条 = 点阵屏空槽（分段常显，实进度由 .gb-track 表达） */
+html[data-skin="gameboy"] .exec-progress {
+  background: var(--gb-paper) !important;
+  border: var(--gb-line) !important;
+  box-shadow: var(--gb-shadow-sm) !important;
+}
+html[data-skin="gameboy"] .exec-bar,
+html[data-skin="gameboy"] .bili-exec-bar,
+html[data-skin="gameboy"] .step-indeterminate {
+  height: 18px !important;
+  padding: 0 !important;
+  background-color: var(--gb-screen) !important;
+  background-image: repeating-linear-gradient(
+    90deg,
+    #23301f 0 8px,
+    transparent 8px 12px
+  ) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: none !important;
+}
+/* 注入的点阵轨道（.gb-track，由 gameboy-skin.js 挂到 .step-body 内） */
+html[data-skin="gameboy"] .gb-track {
+  display: grid;
+  grid-template-columns: repeat(32, 1fr);
+  gap: 3px;
+  margin-top: 8px;
+  padding: 6px;
+  background: var(--gb-screen);
+  border: 2px solid var(--gb-ink);
+  box-shadow: 3px 3px 0 var(--gb-ink);
+}
+html[data-skin="gameboy"] .gb-track i { display: block; height: 14px; background: #23301f; }
+html[data-skin="gameboy"] .gb-track i.on { background: var(--gb-green); box-shadow: 0 0 6px rgba(157, 255, 94, .55); }
+html[data-skin="gameboy"] .gb-track i.head { background: var(--gb-yellow); }
+/* 切回其他皮肤时，注入的点阵轨道/影子一律隐藏（兜底，避免残留裸元素） */
+.gb-track, .gb-ghost { display: none !important; }
+html[data-skin="gameboy"] .gb-track { display: grid !important; }
+
+/* ===== 日志 / 执行面板 ===== */
+html[data-skin="gameboy"] .log-card,
+html[data-skin="gameboy"] details.log-card > summary {
+  background: var(--gb-paper) !important;
+  border: 2px solid var(--gb-ink) !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .log-area {
+  background: var(--gb-screen) !important;
+  color: var(--gb-green) !important;
+  border-top: 2px solid var(--gb-ink);
+  font-family: var(--mono-font) !important;
+  font-size: 12px;
+}
+html[data-skin="gameboy"] .log-area .err { color: #ff8f8f !important; }
+html[data-skin="gameboy"] .log-area .warn { color: var(--gb-yellow) !important; }
+html[data-skin="gameboy"] .log-area .ok { color: var(--gb-green) !important; }
+html[data-skin="gameboy"] .step-item {
+  background: var(--gb-paper) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: var(--gb-shadow-sm) !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .step-item.info { background: #fffbe6 !important; }
+html[data-skin="gameboy"] .step-detail { color: #4a4a4a !important; }
+/* 各页原有的「彩虹呼吸条」在本皮肤下让位给点阵轨道，避免两种进度语言打架 */
+html[data-skin="gameboy"] .step-item .step-body::after,
+html[data-skin="gameboy"] .step-item .step-body::before { display: none !important; }
+html[data-skin="gameboy"] .result-summary.ok { background: var(--gb-green) !important; color: #0d3a12 !important; }
+html[data-skin="gameboy"] .result-summary.fail { background: #ff6b6b !important; color: #fff !important; }
+
+/* ===== 弹窗 / Toast：机身屏幕 ===== */
+html[data-skin="gameboy"] .modal-mask,
+html[data-skin="gameboy"] .modal-overlay {
+  background: rgba(40, 0, 0, .46) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-skin="gameboy"] .modal,
+html[data-skin="gameboy"] .modal.glass {
+  background: var(--gb-body) !important;
+  border: var(--gb-line) !important;
+  box-shadow: var(--gb-shadow) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .modal-head,
+html[data-skin="gameboy"] .modal-title {
+  color: var(--gb-ink) !important;
+  border-bottom: 2px solid var(--gb-ink);
+  padding-bottom: 8px;
+  text-shadow: none !important;
+}
+html[data-skin="gameboy"] .modal-body {
+  background: var(--gb-screen) !important;
+  color: var(--gb-green) !important;
+  border: 2px solid var(--gb-ink);
+  margin-top: 10px;
+  font-family: var(--mono-font) !important;
+}
+html[data-skin="gameboy"] .modal-body .hint,
+html[data-skin="gameboy"] .modal-body .modal-hint,
+html[data-skin="gameboy"] .modal-body label { color: var(--gb-green) !important; }
+html[data-skin="gameboy"] .modal-body input,
+html[data-skin="gameboy"] .modal-body textarea,
+html[data-skin="gameboy"] .modal-body select { background: #12210f !important; color: var(--gb-green) !important; border-color: var(--gb-green) !important; box-shadow: none !important; }
+html[data-skin="gameboy"] .modal-foot { border-top: 2px solid var(--gb-ink); padding-top: 10px; }
+/* 关闭按钮：方形实体键 + 黑色 ✕（默认那枚蓝色圆形图标在本皮肤下会让整体出戏） */
+html[data-skin="gameboy"] .modal-close {
+  width: 26px !important; height: 26px !important;
+  display: inline-flex !important; align-items: center; justify-content: center;
+}
+html[data-skin="gameboy"] .modal-close svg,
+html[data-skin="gameboy"] .modal-close .close-ico { display: none !important; }
+html[data-skin="gameboy"] .modal-close::after {
+  content: "✕";
+  font-size: 14px;
+  line-height: 1;
+  color: var(--gb-ink);
+  font-family: var(--mac-font);
+}
+html[data-skin="gameboy"] .toast {
+  background: var(--gb-paper) !important;
+  color: var(--gb-ink) !important;
+  border: var(--gb-line) !important;
+  box-shadow: var(--gb-shadow-sm) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  font-family: var(--mac-font) !important;
+}
+
+/* ===== 皮肤菜单 ===== */
+/* 顶栏（入口页）：白底 + 黑色下边线，与面板同一套语言 */
+html[data-skin="gameboy"] .topbar {
+  background: var(--gb-paper) !important;
+  border-bottom: var(--gb-line) !important;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, .18) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .topbar .logo { background: var(--gb-yellow) !important; border: 2px solid var(--gb-ink); }
+html[data-skin="gameboy"] .topbar .title { color: var(--gb-ink) !important; text-shadow: 2px 2px 0 rgba(0, 0, 0, .18) !important; }
+html[data-skin="gameboy"] .update-status { color: #3a3a3a !important; }
+html[data-skin="gameboy"] .update-btn { color: var(--gb-ink) !important; }
+html[data-skin="gameboy"] .win-ctl .win-dot {
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: 2px 2px 0 var(--gb-ink);
+}
+html[data-skin="gameboy"] .win-ctl .win-dot:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--gb-ink); }
+/* 顶部标签栏 */
+html[data-skin="gameboy"] .tabs {
+  background: var(--gb-paper) !important;
+  border-bottom: var(--gb-line) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-skin="gameboy"] .tabs .tab { margin: 6px 6px 6px 0; }
+
+html[data-skin="gameboy"] .skin-drop {
+  background: var(--gb-paper) !important;
+  border: var(--gb-line) !important;
+  box-shadow: var(--gb-shadow-sm) !important;
+}
+html[data-skin="gameboy"] .skin-drop button { color: var(--gb-ink) !important; font-family: var(--mac-font); }
+html[data-skin="gameboy"] .skin-drop button:hover { background: var(--gb-yellow) !important; }
+
+/* ===== 入口页布局：左卡带 / 右掌机 ===== */
+html[data-skin="gameboy"] .landing {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: 26px;
+  align-items: start;
+}
+html[data-skin="gameboy"] .landing-head,
+html[data-skin="gameboy"] #toolCards,
+html[data-skin="gameboy"] #sortHint { grid-column: 1; }
+html[data-skin="gameboy"] .gb-device { grid-column: 2; grid-row: 1 / span 3; }
+@media (max-width: 1080px) {
+  html[data-skin="gameboy"] .landing { grid-template-columns: minmax(0, 1fr); }
+  html[data-skin="gameboy"] .gb-device { grid-column: 1; grid-row: auto; }
+}
+html[data-skin="gameboy"] .sort-toggle { display: none !important; }   /* 排序拖拽与插卡冲突：本皮肤隐藏 */
+html[data-skin="gameboy"] #toolCards { grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)) !important; }
+
+/* 卡带卡片 */
+html[data-skin="gameboy"] .card {
+  position: relative;
+  background: var(--gb-paper) !important;
+  border: var(--gb-line) !important;
+  box-shadow: var(--gb-shadow) !important;
+  padding: 22px 14px 14px !important;
+  overflow: visible !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-skin="gameboy"] .card::before {           /* 卡带顶部凹槽 */
+  content: "";
+  opacity: 1 !important;
+  position: absolute; top: -3px; left: 50%; transform: translateX(-50%);
+  width: 84px; height: 12px;
+  background: var(--gb-body);
+  border: var(--gb-line); border-top: 0;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, .22);
+}
+html[data-skin="gameboy"] .card .grip { display: none !important; }
+html[data-skin="gameboy"] .card-icon { display: none !important; }
+html[data-skin="gameboy"] .card-body { gap: 8px !important; }
+html[data-skin="gameboy"] .card-title {
+  background: var(--gb-yellow);
+  border: 2px solid var(--gb-ink);
+  padding: 6px 10px;
+  width: 100%;
+  font-size: 17px !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .card:nth-child(3n + 2) .card-title { background: var(--gb-violet); }
+html[data-skin="gameboy"] .card:nth-child(3n) .card-title { background: var(--gb-pink); }
+html[data-skin="gameboy"] .card-desc { color: #3a3a3a !important; }
+html[data-skin="gameboy"] .card-meta { color: #4a4a4a !important; }
+html[data-skin="gameboy"] .card:hover { transform: translate(-2px, -2px); box-shadow: 9px 9px 0 var(--gb-ink) !important; }
+html[data-skin="gameboy"] .card:active { transform: translate(2px, 2px); box-shadow: 3px 3px 0 var(--gb-ink) !important; }
+html[data-skin="gameboy"] .card.dragging { opacity: .35; }
+
+/* 入口总状态：卡带插槽（复用 .agg .dball 结构） */
+html[data-skin="gameboy"] .agg {
+  background: var(--gb-paper);
+  border: 2px solid var(--gb-ink);
+  box-shadow: var(--gb-shadow-sm);
+  padding: 6px 10px;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .agg .dball {
+  width: 14px !important; height: 18px !important;
+  border: 2px solid var(--gb-ink) !important;
+  background: #ded9cf !important;
+  box-shadow: none !important;
+}
+html[data-skin="gameboy"] .agg .dball.on { background: var(--gb-green) !important; }
+
+/* ===== Game Boy 机身（由 gameboy-skin.js 注入，仅入口页）===== */
+html[data-skin="gameboy"] .gb-device {
+  background: var(--gb-body) !important;
+  border: var(--gb-line);
+  box-shadow: var(--gb-shadow);
+  padding: 18px 18px 20px;
+  position: relative;
+}
+/* 该元素只由掌机皮肤注入；其余皮肤一律隐藏（兜底，避免切皮肤后残留裸元素） */
+.gb-device { display: none !important; }
+html[data-skin="gameboy"] .gb-device { display: block !important; }
+html[data-skin="gameboy"] .gb-device::after {
+  content: "";
+  position: absolute; right: 18px; bottom: 16px; width: 78px; height: 8px;
+  background: repeating-linear-gradient(90deg, var(--gb-ink) 0 3px, transparent 3px 9px);
+  opacity: .45;
+}
+html[data-skin="gameboy"] .gb-screen-frame {
+  background: #8f8b83;
+  border: 2px solid var(--gb-ink);
+  padding: 12px 12px 16px;
+}
+html[data-skin="gameboy"] .gb-screen-top {
+  font-size: 10px; letter-spacing: 1px; text-align: center;
+  color: var(--gb-ink); margin-bottom: 8px;
+}
+html[data-skin="gameboy"] .gb-screen {
+  background: var(--gb-screen);
+  border: 2px solid var(--gb-ink);
+  min-height: 126px;
+  padding: 14px 12px;
+  position: relative;
+  overflow: hidden;
+}
+html[data-skin="gameboy"] .gb-screen-title { color: var(--gb-green); font-size: 20px; letter-spacing: 2px; }
+html[data-skin="gameboy"] .gb-screen-msg { color: var(--gb-yellow); font-size: 13px; margin-top: 8px; }
+html[data-skin="gameboy"] .gb-screen-sub { color: var(--gb-green); font-size: 11px; margin-top: 6px; opacity: .85; }
+html[data-skin="gameboy"] .gb-led { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--gb-ink); margin-top: 8px; }
+html[data-skin="gameboy"] .gb-led i {
+  width: 9px; height: 9px; border: 1px solid var(--gb-ink); background: #ff3b30;
+  animation: gbBlink 1.4s steps(1, end) infinite;
+}
+html[data-skin="gameboy"] .gb-led i.off { background: #b9b4aa; animation: none; }
+@keyframes gbBlink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: .25; } }
+
+/* 插卡口 */
+html[data-skin="gameboy"] .gb-slot {
+  margin: 14px 0 0;
+  height: 30px;
+  border: 2px solid var(--gb-ink);
+  background: #b3aea4;
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, .28);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; letter-spacing: 2px; color: #4a4a4a;
+  position: relative;
+  transition: background .12s ease;
+}
+html[data-skin="gameboy"] .gb-slot.hot { background: var(--gb-yellow); color: var(--gb-ink); }
+html[data-skin="gameboy"] .gb-controls { display: flex; align-items: center; gap: 18px; margin-top: 16px; }
+html[data-skin="gameboy"] .gb-cross { width: 46px; height: 46px; position: relative; }
+html[data-skin="gameboy"] .gb-cross::before,
+html[data-skin="gameboy"] .gb-cross::after { content: ""; position: absolute; background: var(--gb-ink); }
+html[data-skin="gameboy"] .gb-cross::before { left: 16px; top: 0; width: 14px; height: 46px; }
+html[data-skin="gameboy"] .gb-cross::after { left: 0; top: 16px; width: 46px; height: 14px; }
+html[data-skin="gameboy"] .gb-ab { margin-left: auto; display: flex; gap: 12px; }
+html[data-skin="gameboy"] .gb-ab span {
+  width: 34px; height: 34px; border: 2px solid var(--gb-ink); background: #c22b7a;
+  color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center;
+}
+html[data-skin="gameboy"] .gb-ab span.b { background: #a02c6a; }
+
+/* 拖拽中的卡带影子 + 插入动画 */
+html[data-skin="gameboy"] .gb-ghost {
+  display: block !important;
+  position: fixed; z-index: 9999; pointer-events: none;
+  width: 168px; padding: 10px 12px;
+  background: var(--gb-paper);
+  border: var(--gb-line);
+  box-shadow: var(--gb-shadow);
+  color: var(--gb-ink);
+  font-family: var(--mac-font);
+  font-size: 13px;
+  transform: translate(-50%, -50%) rotate(-6deg);
+  transition: none;
+}
+html[data-skin="gameboy"] .gb-ghost .gb-ghost-label {
+  border: 2px solid var(--gb-ink); background: var(--gb-yellow);
+  padding: 4px 8px; text-align: center;
+}
+html[data-skin="gameboy"] .gb-ghost.inserting {
+  transition: left .42s cubic-bezier(.3, 1.2, .4, 1), top .42s cubic-bezier(.3, 1.2, .4, 1),
+              transform .42s ease, opacity .3s ease .3s;
+  transform: translate(-50%, -50%) rotate(0deg) scale(.72);
+  opacity: 0;
+}

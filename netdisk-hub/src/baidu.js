@@ -396,29 +396,41 @@ async function ensureDir(destPath) {
 
 // 列出指定目录下的文件/文件夹(返回 [{fs_id, server_filename, isdir, path}])
 // 用于转存后解析"我盘内"的真实 fs_id(/share/set 必须用目标盘 fs_id,而非分享源 fs_id)
-async function listDir(dirPath) {
+// 单页上限 1000 条：搜索传 all:true 翻页取全量，避免大目录里靠后的条目搜不到。
+async function listDir(dirPath, opts = {}) {
+  const wantAll = opts.all === true;
   const bdstoken = await getBdstoken();
-  const lp = new URLSearchParams({
-    order: "time",
-    desc: "1",
-    showempty: "0",
-    web: "1",
-    page: "1",
-    num: "1000",
-    dir: dirPath,
-    bdstoken,
-  });
-  const fl = await fetch(`${PAN}/api/list?${lp}`, { headers: reqHeaders() });
-  const flj = await fl.json();
-  if (flj.errno !== 0)
-    throw new Error("列目录失败 errno=" + flj.errno + " " + JSON.stringify(flj).slice(0, 120));
-  return (flj.list || []).map((f) => ({
-    fs_id: f.fs_id,
-    server_filename: f.server_filename,
-    isdir: f.isdir,
-    path: f.path,
-    server_mtime: f.server_mtime,
-  }));
+  const PAGE_SIZE = 1000;
+  const MAX_PAGES = wantAll ? 20 : 1; // 20×1000=20000 条上限，防接口异常时死循环
+  const out = [];
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const lp = new URLSearchParams({
+      order: "time",
+      desc: "1",
+      showempty: "0",
+      web: "1",
+      page: String(page),
+      num: String(PAGE_SIZE),
+      dir: dirPath,
+      bdstoken,
+    });
+    const fl = await fetch(`${PAN}/api/list?${lp}`, { headers: reqHeaders() });
+    const flj = await fl.json();
+    if (flj.errno !== 0)
+      throw new Error("列目录失败 errno=" + flj.errno + " " + JSON.stringify(flj).slice(0, 120));
+    const list = flj.list || [];
+    out.push(
+      ...list.map((f) => ({
+        fs_id: f.fs_id,
+        server_filename: f.server_filename,
+        isdir: f.isdir,
+        path: f.path,
+        server_mtime: f.server_mtime,
+      })),
+    );
+    if (!wantAll || list.length < PAGE_SIZE) break;
+  }
+  return out;
 }
 
 // 聚合搜索:列出指定目录第一层,按关键词过滤(不递归)
@@ -427,7 +439,7 @@ async function searchFiles(dirPath, keyword) {
     .trim()
     .toLowerCase();
   if (!kw) return [];
-  const list = await listDir(dirPath || "/");
+  const list = await listDir(dirPath || "/", { all: true });
   return list
     .filter((f) => f.server_filename.toLowerCase().includes(kw))
     .map((f) => ({

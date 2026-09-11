@@ -336,3 +336,39 @@ test("trashFiles：POST /file/delete action_type=2 软删", async () => {
   assert.strictEqual(sent.action_type, 2);
   assert.deepStrictEqual(sent.filelist, ["f1", "f2"]);
 });
+
+test("searchFiles：目录超过单页 200 条时翻页取全量（否则靠后的条目搜不到）", async () => {
+  let calls = 0;
+  global.fetch = makeFetch((u) => {
+    if (u.includes("/file/sort")) {
+      calls += 1;
+      const page = new URL(u).searchParams.get("_page");
+      if (page === "1") {
+        // 第一页 200 条（全是干扰项），其中不含目标
+        const list = Array.from({ length: 200 }, (_, i) => ({
+          fid: "p1_" + i,
+          file_name: "别的游戏" + i,
+          dir: true,
+          pdir_fid: "F1",
+        }));
+        return [{ code: 0, data: { list } }];
+      }
+      // 第二页才出现目标
+      return [
+        {
+          code: 0,
+          data: {
+            list: [
+              { fid: "hit", file_name: "使命召唤21：黑色行动6", dir: true, pdir_fid: "F1" },
+            ],
+          },
+        },
+      ];
+    }
+    return [{ code: 0 }];
+  });
+  const r = await quark.searchFiles("cookie", "F1", "使命召唤");
+  assert.strictEqual(calls, 2, "应翻到第二页");
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].id, "hit");
+});

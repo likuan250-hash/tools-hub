@@ -301,3 +301,42 @@ test("trashFiles：有 accessToken 时走官方 OpenAPI（path+fsid 对象、asy
     ),
   );
 });
+
+test("searchFiles：目录超过单页 1000 条时翻页取全量", async () => {
+  store.saveAccount("baidu", { cookie: "BDUSS=abc" });
+  let listCalls = 0;
+  global.fetch = makeFetch((u) => {
+    if (u.includes("/api/list")) {
+      listCalls += 1;
+      const page = new URL(u).searchParams.get("page");
+      if (page === "1") {
+        const list = Array.from({ length: 1000 }, (_, i) => ({
+          fs_id: i,
+          server_filename: "干扰项" + i,
+          isdir: 1,
+          path: "/干扰项" + i,
+        }));
+        return [{ errno: 0, list }];
+      }
+      return [
+        {
+          errno: 0,
+          list: [
+            {
+              fs_id: 999999,
+              server_filename: "使命召唤21：黑色行动6",
+              isdir: 1,
+              path: "/使命召唤21：黑色行动6",
+              server_mtime: 1700000000,
+            },
+          ],
+        },
+      ];
+    }
+    return [{ errno: 0, result: { bdstoken: "T" } }];
+  });
+  const r = await baidu.searchFiles("/游戏", "使命召唤");
+  assert.strictEqual(listCalls, 2, "应翻到第二页");
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].id, "999999");
+});

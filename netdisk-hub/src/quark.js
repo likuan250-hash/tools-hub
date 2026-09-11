@@ -180,25 +180,38 @@ async function findFolderByName(cookie, name) {
   return f ? f.fid : null;
 }
 
-// ── 列出某文件夹内容(用于取出刚转存文件的 fid) ───────────
-async function listFolder(cookie, fid) {
-  const params = qp({
-    pdir_fid: fid,
-    _page: "1",
-    _size: "200",
-    _fetch_total: "1",
-    _sort: "file_type:asc,updated_at:desc",
-  });
-  const j = await quarkFetch(`${BASE}/file/sort?${params}`, { headers: headers(cookie) });
-  if (j.code !== 0) throw new Error("列出文件夹失败: " + (j.message || JSON.stringify(j)));
-  return ((j.data && j.data.list) || []).map((x) => ({
-    fid: x.fid,
-    file_name: x.file_name,
-    dir: !!x.dir,
-    size: x.size || 0,
-    pdir_fid: x.pdir_fid || "",
-    time: x.updated_at || x.l_updated_at || 0,
-  }));
+// ── 列出某文件夹内容 ───────────
+// 单页上限 200 条：转存场景只需首页（刚转存的文件在 updated_at:desc 的第一页），
+// 搜索场景必须传 all:true 翻页取全量 —— 否则 400+ 个游戏的大文件夹里，靠后的条目永远搜不到。
+async function listFolder(cookie, fid, opts = {}) {
+  const wantAll = opts.all === true;
+  const PAGE_SIZE = 200;
+  const MAX_PAGES = wantAll ? 25 : 1; // 25×200=5000 条上限，防接口异常时死循环
+  const out = [];
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const params = qp({
+      pdir_fid: fid,
+      _page: String(page),
+      _size: String(PAGE_SIZE),
+      _fetch_total: "1",
+      _sort: "file_type:asc,updated_at:desc",
+    });
+    const j = await quarkFetch(`${BASE}/file/sort?${params}`, { headers: headers(cookie) });
+    if (j.code !== 0) throw new Error("列出文件夹失败: " + (j.message || JSON.stringify(j)));
+    const list = (j.data && j.data.list) || [];
+    out.push(
+      ...list.map((x) => ({
+        fid: x.fid,
+        file_name: x.file_name,
+        dir: !!x.dir,
+        size: x.size || 0,
+        pdir_fid: x.pdir_fid || "",
+        time: x.updated_at || x.l_updated_at || 0,
+      })),
+    );
+    if (!wantAll || list.length < PAGE_SIZE) break;
+  }
+  return out;
 }
 
 // 聚合搜索:列出指定文件夹第一层,按关键词过滤(不递归)
@@ -208,11 +221,11 @@ async function searchFiles(cookie, fid, keyword) {
     .toLowerCase();
   if (!kw) return [];
   const target = fid || "0";
-  let list = await listFolder(cookie, target);
+  let list = await listFolder(cookie, target, { all: true });
   // 夸克偶发返回错误目录内容(如根目录):校验首项 pdir_fid,不符则延迟重试一次
   if (list.length && list[0].pdir_fid && list[0].pdir_fid !== target) {
     await sleep(600);
-    list = await listFolder(cookie, target);
+    list = await listFolder(cookie, target, { all: true });
   }
   return list
     .filter((x) => x.file_name.toLowerCase().includes(kw))

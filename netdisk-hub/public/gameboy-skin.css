@@ -135,14 +135,16 @@ html[data-skin="gameboy"] .landing-title {
   display: inline-block;
 }
 html[data-skin="gameboy"] .exec-title {
-  background: var(--gb-ink);
-  color: var(--gb-yellow) !important;
+  background: var(--gb-yellow);
+  color: var(--gb-ink) !important;
+  border: 2px solid var(--gb-ink);
   padding: 3px 10px;
 }
 html[data-skin="gameboy"] kbd,
 html[data-skin="gameboy"] code {
-  background: var(--gb-ink) !important;
-  color: var(--gb-green) !important;
+  /* 不再用黑底：浅灰贴纸 + 黑字（黑只留作描边/文字/投影） */
+  background: #f1eee7 !important;
+  color: var(--gb-ink) !important;
   border: 2px solid var(--gb-ink);
   padding: 1px 5px;
   font-family: var(--mono-font) !important;
@@ -308,12 +310,18 @@ html[data-skin="gameboy"] .sr-del {
   background: var(--gb-paper) !important;
 }
 html[data-skin="gameboy"] .sr-del { color: #c62828 !important; }
+/* 标签栏：未选中 = 白键面，选中 = 黄键面按下（不再用黑底当选中态） */
+html[data-skin="gameboy"] .tab,
+html[data-skin="gameboy"] .history-tab {
+  background: var(--gb-paper) !important;
+  color: var(--gb-ink) !important;
+}
 html[data-skin="gameboy"] .tab.active,
 html[data-skin="gameboy"] .tab.on,
 html[data-skin="gameboy"] .history-tab.active,
 html[data-skin="gameboy"] .history-tab.on {
-  background: var(--gb-ink) !important;
-  color: var(--gb-yellow) !important;
+  background: var(--gb-yellow) !important;
+  color: var(--gb-ink) !important;
   transform: translate(2px, 2px) !important;
   box-shadow: 1px 1px 0 var(--gb-ink) !important;
 }
@@ -482,9 +490,15 @@ html[data-skin="gameboy"] .modal-body .modal-hint,
 html[data-skin="gameboy"] .modal-body label,
 html[data-skin="gameboy"] .modal-body .search-tip,
 html[data-skin="gameboy"] .modal-body .meta { color: var(--gb-ink) !important; }
+/* 弹窗内的输入框与页面同语言：白底黑字（原先是深绿"终端"底，和整体不搭） */
 html[data-skin="gameboy"] .modal-body input,
 html[data-skin="gameboy"] .modal-body textarea,
-html[data-skin="gameboy"] .modal-body select { background: #12210f !important; color: var(--gb-green) !important; border-color: var(--gb-green) !important; box-shadow: none !important; }
+html[data-skin="gameboy"] .modal-body select {
+  background: var(--gb-paper) !important;
+  color: var(--gb-ink) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: inset 3px 3px 0 rgba(0, 0, 0, .10) !important;
+}
 html[data-skin="gameboy"] .modal-foot { border-top: 2px solid var(--gb-ink); padding-top: 10px; }
 /* 关闭按钮：方形实体键 + 黑色 ✕（默认那枚蓝色圆形图标在本皮肤下会让整体出戏） */
 html[data-skin="gameboy"] .modal-close {
@@ -511,9 +525,9 @@ html[data-skin="gameboy"] .toast {
 }
 
 /* ===== 皮肤菜单 ===== */
-/* 顶栏（入口页）：白底 + 黑色下边线，与面板同一套语言 */
+/* 顶栏 + 标签栏（入口页）：与 .gb-device 同一块「机身上盖」——灰壳 + 黑边 + 硬投影 */
 html[data-skin="gameboy"] .topbar {
-  background: var(--gb-paper) !important;
+  background: var(--gb-body) !important;
   border-bottom: var(--gb-line) !important;
   box-shadow: 0 6px 0 rgba(0, 0, 0, .18) !important;
   -webkit-backdrop-filter: none !important;
@@ -521,8 +535,11 @@ html[data-skin="gameboy"] .topbar {
   color: var(--gb-ink) !important;
 }
 html[data-skin="gameboy"] .topbar .logo { background: var(--gb-yellow) !important; border: 2px solid var(--gb-ink); }
-html[data-skin="gameboy"] .topbar .title { color: var(--gb-ink) !important; text-shadow: 2px 2px 0 rgba(0, 0, 0, .18) !important; }
-html[data-skin="gameboy"] .update-status { color: #3a3a3a !important; }
+html[data-skin="gameboy"] .topbar .title {
+  color: var(--gb-ink) !important;
+  text-shadow: 2px 2px 0 rgba(255, 255, 255, .55) !important;   /* 机壳丝印：亮描边而非暗投影 */
+}
+html[data-skin="gameboy"] .update-status { color: var(--gb-ink) !important; }
 /* 顶栏两颗实体键统一 32px 高（原版本 29 vs 36 不齐），投影收窄避免被 .app 裁切 */
 html[data-skin="gameboy"] .update-btn,
 html[data-skin="gameboy"] .skin-menu > .icon-btn {
@@ -535,16 +552,29 @@ html[data-skin="gameboy"] .skin-menu > .icon-btn {
   box-shadow: 3px 3px 0 var(--gb-ink) !important;
 }
 html[data-skin="gameboy"] .update-btn { color: var(--gb-ink) !important; }
+/* 窗口三键：换成机身键面配色（黄/绿/红），符号常显，不再用 macOS 圆点语言 */
 html[data-skin="gameboy"] .win-ctl .win-dot {
-  width: 24px !important;
-  height: 24px !important;
+  width: 26px !important;
+  height: 26px !important;
   border: 2px solid var(--gb-ink) !important;
   box-shadow: 2px 2px 0 var(--gb-ink) !important;
+  color: var(--gb-ink) !important;
 }
+/* 符号常显且放大加粗，关闭键的 × 用黑字（白 × 在 #ff2e2e 上只有 3.7:1，看不清） */
+html[data-skin="gameboy"] .win-ctl .win-dot::before {
+  font-family: var(--mac-font) !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .win-min { background: var(--gb-yellow) !important; }
+html[data-skin="gameboy"] .win-max { background: var(--gb-green) !important; }
+html[data-skin="gameboy"] .win-close { background: var(--gb-red) !important; }
+html[data-skin="gameboy"] .win-ctl .win-close::before { color: var(--gb-ink) !important; }
 html[data-skin="gameboy"] .win-ctl .win-dot:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--gb-ink); }
 /* 顶部标签栏 */
 html[data-skin="gameboy"] .tabs {
-  background: var(--gb-paper) !important;
+  background: var(--gb-body) !important;
   border-bottom: var(--gb-line) !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
@@ -622,21 +652,43 @@ html[data-skin="gameboy"] .card:hover { transform: translate(-2px, -2px); box-sh
 html[data-skin="gameboy"] .card:active { transform: translate(2px, 2px); box-shadow: 3px 3px 0 var(--gb-ink) !important; }
 html[data-skin="gameboy"] .card.dragging { opacity: .35; }
 
-/* 入口总状态：卡带插槽（复用 .agg .dball 结构） */
+/* 入口总状态：白底贴纸 + 5 个卡槽格（复用 .agg .dball 结构，5 格 = 5 个模块，可点开）。
+   刻意不用黑底：黑只做描边/文字/投影 */
 html[data-skin="gameboy"] .agg {
-  background: var(--gb-paper);
-  border: 2px solid var(--gb-ink);
-  box-shadow: var(--gb-shadow-sm);
-  padding: 6px 10px;
+  background: var(--gb-paper) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: var(--gb-shadow-sm) !important;
+  padding: 4px 8px;
+  gap: 8px !important;
   color: var(--gb-ink) !important;
 }
 html[data-skin="gameboy"] .agg .dball {
-  width: 14px !important; height: 18px !important;
-  border: 2px solid var(--gb-ink) !important;
-  background: #ded9cf !important;
+  width: auto !important; height: auto !important;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  border: 0 !important;
+  background: transparent !important;
   box-shadow: none !important;
 }
-html[data-skin="gameboy"] .agg .dball.on { background: var(--gb-green) !important; }
+html[data-skin="gameboy"] .agg .dball .card-dot {
+  display: block !important;
+  width: 14px; height: 16px;
+  background: #ded9cf !important;
+  border: 2px solid var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .agg .dball.on .card-dot {
+  background: var(--gb-green) !important;
+}
+html[data-skin="gameboy"] .agg .dball .card-name {
+  display: block !important;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .agg .dball.off .card-name { color: #6d6d6d !important; }
 
 /* ===== Game Boy 机身（由 gameboy-skin.js 注入，仅入口页）===== */
 html[data-skin="gameboy"] .gb-device {

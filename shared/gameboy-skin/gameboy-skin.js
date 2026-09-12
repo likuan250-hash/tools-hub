@@ -243,6 +243,15 @@
     return el.classList.contains("info") || !!el.querySelector(".st-luxe--info");
   }
 
+  /** 完成态：各页类名不统一（ok / done / 内嵌 .st-luxe--ok 胶囊） */
+  function isDoneStep(el) {
+    return (
+      el.classList.contains("done") ||
+      el.classList.contains("ok") ||
+      !!el.querySelector(".st-luxe--ok")
+    );
+  }
+
   function ensureTrack(el) {
     var body = el.querySelector(".step-body");
     if (!body || body.querySelector(".gb-track")) return null;
@@ -253,7 +262,18 @@
     return t;
   }
 
-  /** 点阵扫描：亮格从左扫到右再扫回（与静态预览同款节奏），步骤结束即自停。 */
+  /** 静态落格：done = 全亮，未开始 = 全灭（避免"跑完停在半路"的假进度） */
+  function paint(el, state) {
+    var track = el.querySelector(".gb-track");
+    if (!track) return;
+    var cells = track.children;
+    var cls = state === "done" ? "on" : "";
+    for (var i = 0; i < cells.length; i += 1) {
+      if (cells[i].className !== cls) cells[i].className = cls;
+    }
+  }
+
+  /** 点阵扫描：亮格从左扫到右再扫回（与静态预览同款节奏），步骤结束即自停并落定格。 */
   function drive(el) {
     if (el.dataset.gbRun) return;
     el.dataset.gbRun = "1";
@@ -261,6 +281,7 @@
     function frame(now) {
       if (!el.isConnected || !isRunningStep(el)) {
         el.dataset.gbRun = "";
+        if (el.isConnected) paint(el, isDoneStep(el) ? "done" : "idle");
         return;
       }
       var track = el.querySelector(".gb-track");
@@ -291,13 +312,14 @@
     var els = (root || document).querySelectorAll(PROG);
     for (var i = 0; i < els.length; i += 1) {
       var el = els[i];
-      if (!isRunningStep(el)) continue;
-      ensureTrack(el);
-      drive(el);
+      ensureTrack(el);                                 // 每步都先有条，未开始也能看到空槽
+      if (isRunningStep(el)) drive(el);
+      else paint(el, isDoneStep(el) ? "done" : "idle");
     }
-    if (root && root.nodeType === 1 && root.matches && root.matches(PROG) && isRunningStep(root)) {
+    if (root && root.nodeType === 1 && root.matches && root.matches(PROG)) {
       ensureTrack(root);
-      drive(root);
+      if (isRunningStep(root)) drive(root);
+      else paint(root, isDoneStep(root) ? "done" : "idle");
     }
   }
 

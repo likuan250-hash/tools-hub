@@ -56,7 +56,7 @@ html[data-skin="gameboy"] {
   --shadow-card: 6px 6px 0 #111111;
   --shadow-modal: 8px 8px 0 #111111;
   --field-inset: none;
-  --panel: #ffffff; --line: #111111; --log-bg: #0b0f0b;
+  --panel: #ffffff; --line: #111111; --log-bg: #f7f5ef;   /* 日志底：浅纸，不再用黑底 */
   --mac-font: "ArkPixelGB", "Microsoft YaHei", system-ui, sans-serif;
   --mono-font: "ArkPixelGB", Consolas, "Courier New", monospace;
   --glass-modal-bg: #ffffff;
@@ -430,16 +430,28 @@ html[data-skin="gameboy"] details.log-card > summary {
   border: 2px solid var(--gb-ink) !important;
   color: var(--gb-ink) !important;
 }
-html[data-skin="gameboy"] .log-area {
-  background: var(--gb-screen) !important;
-  color: var(--gb-green) !important;
+/* 日志区：浅纸底 + 黑字（黑只做描边/文字）。行内等级色按浅底重新取值保证 ≥4.5:1 */
+html[data-skin="gameboy"] .log-area,
+html[data-skin="gameboy"] .log-area pre,
+html[data-skin="gameboy"] pre {
+  background: #f7f5ef !important;
+  color: #1f1f1f !important;
   border-top: 2px solid var(--gb-ink);
   font-family: var(--mono-font) !important;
   font-size: 12px;
 }
-html[data-skin="gameboy"] .log-area .err { color: #ff8f8f !important; }
-html[data-skin="gameboy"] .log-area .warn { color: var(--gb-yellow) !important; }
-html[data-skin="gameboy"] .log-area .ok { color: var(--gb-green) !important; }
+html[data-skin="gameboy"] .log-area .err,
+html[data-skin="gameboy"] .log-area .line.err,
+html[data-skin="gameboy"] .log-area .lvl-err { color: #c62828 !important; }
+html[data-skin="gameboy"] .log-area .warn,
+html[data-skin="gameboy"] .log-area .line.warn,
+html[data-skin="gameboy"] .log-area .lvl-warn { color: #8a5a00 !important; }
+html[data-skin="gameboy"] .log-area .ok,
+html[data-skin="gameboy"] .log-area .line.ok,
+html[data-skin="gameboy"] .log-area .lvl-ok { color: #1c7c36 !important; }
+html[data-skin="gameboy"] .log-area .line,
+html[data-skin="gameboy"] .log-area .lvl-info { color: #333333 !important; }
+html[data-skin="gameboy"] .log-area .line.stage { color: #5b3a86 !important; }
 html[data-skin="gameboy"] .step-item {
   background: var(--gb-paper) !important;
   border: 2px solid var(--gb-ink) !important;
@@ -784,4 +796,133 @@ html[data-skin="gameboy"] .gb-ghost.inserting {
               transform .42s ease, opacity .3s ease .3s;
   transform: translate(-50%, -50%) rotate(0deg) scale(.72);
   opacity: 0;
+}
+
+/* ===== 外来样式收口：五端共有的霓虹渐变 / 圆形 spinner / 状态点 / 通栏标题 =====
+   这些规则只作用于掌机皮肤；其他皮肤（暗色/亮色/宇宙/漫画）一律不受影响。
+   背景：入口页 5 张卡片的状态点、网盘/金山/素材/B站/达芬奇的执行面板都复用了同一套
+   组件（.st-luxe 胶囊、.bx-spin 转圈、.exec-bar 呼吸条），此前只覆盖了容器，
+   漏了这些"零件"，导致蓝色方块点、方块转圈、彩虹扫光混进掌机语言。 */
+
+/* 1) 彩虹呼吸条：B站 .bili-exec-bar、达芬奇 .exec-bar（网盘/金山/素材的 .step-body::after 上面已关） */
+html[data-skin="gameboy"] .bili-exec-bar::after,
+html[data-skin="gameboy"] .exec-bar::after,
+html[data-skin="gameboy"] .step-indeterminate::after,
+html[data-skin="gameboy"] .bili-exec-progress::after {
+  display: none !important;
+  content: none !important;
+  animation: none !important;
+}
+/* 进度只保留"每步下面一条点阵轨道"（用户既定规则：别的地方不需要进度条）；
+   B站日志卡片上的整条进度条、达芬奇步骤里的自带头部条都在此让位，顺带去掉黑底横带 */
+html[data-skin="gameboy"] .bili-exec-progress,
+html[data-skin="gameboy"] .bili-exec-bar,
+html[data-skin="gameboy"] .exec-bar,
+html[data-skin="gameboy"] .step-indeterminate {
+  display: none !important;
+}
+
+/* 2) 分段控件（B站"立即发布/定时发布"）：选中=黄键面按下，未选中=白键面，去掉黄→紫渐变 */
+html[data-skin="gameboy"] .seg-item,
+html[data-skin="gameboy"] .pv-tabs button {
+  background: var(--gb-paper) !important;
+  color: var(--gb-ink) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: 3px 3px 0 var(--gb-ink) !important;
+  font-family: var(--mac-font) !important;
+  transform: none !important;
+}
+html[data-skin="gameboy"] .seg-input:checked + .seg-item,
+html[data-skin="gameboy"] .pv-tabs button.active {
+  background: var(--gb-yellow) !important;
+  color: var(--gb-ink) !important;
+  border-color: var(--gb-ink) !important;
+  box-shadow: 1px 1px 0 var(--gb-ink) !important;
+  transform: translate(2px, 2px) !important;
+}
+html[data-skin="gameboy"] .seg-item:hover,
+html[data-skin="gameboy"] .pv-tabs button:hover { background: #fff04d !important; }
+
+/* 3) 执行中的实体键：浅黄键面 + 深灰字（原来是黄底灰字 3.4:1，像坏了） */
+html[data-skin="gameboy"] button.btn-exec:disabled,
+html[data-skin="gameboy"] .btn-exec[disabled] {
+  background: #fff2a8 !important;
+  color: #4f4f4f !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: 2px 2px 0 #a9a49a !important;
+  opacity: 1 !important;
+}
+
+/* 4) 转圈：圆环被"全局去圆角"抹成方块 → 改成点阵方块闪烁（保留加载语义） */
+html[data-skin="gameboy"] .btn-exec .bx-spin,
+html[data-skin="gameboy"] .spinner {
+  width: 10px !important;
+  height: 10px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--gb-ink) !important;
+  box-shadow: none !important;
+  vertical-align: 0;
+  animation: gb-blink .9s steps(2, end) infinite !important;
+}
+@keyframes gb-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: .18; }
+}
+
+/* 5) 状态胶囊的前导点：原本取共用调色板（蓝/绿/橙/红）且被抹成方块 → 换成掌机配色方块 */
+html[data-skin="gameboy"] .st-luxe__sweep { display: none !important; }
+html[data-skin="gameboy"] .st-luxe__dot {
+  width: 8px !important;
+  height: 8px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .st-luxe__dot--ok { background: #1c7c36 !important; animation: none !important; }
+html[data-skin="gameboy"] .st-luxe__dot--info {
+  background: var(--gb-ink) !important;
+  animation: gb-blink 1s steps(2, end) infinite !important;
+}
+html[data-skin="gameboy"] .st-luxe__dot--off { background: #7a7a7a !important; animation: none !important; }
+html[data-skin="gameboy"] .st-luxe__dot--warn { background: #8a5a00 !important; transform: none !important; animation: none !important; }
+html[data-skin="gameboy"] .st-luxe__dot--err { background: #c62828 !important; animation: none !important; }
+
+/* 6) 步骤图标：黄/绿底配白字只有 1.4~2.3:1 → 统一成"实色方块 + 黑字" */
+html[data-skin="gameboy"] .step-icon {
+  width: 22px !important;
+  height: 22px !important;
+  background: var(--gb-paper) !important;
+  color: var(--gb-ink) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+html[data-skin="gameboy"] .step-item.info .step-icon,
+html[data-skin="gameboy"] .step-item:has(.st-luxe--info) .step-icon {
+  background: var(--gb-yellow) !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .step-item.ok .step-icon,
+html[data-skin="gameboy"] .step-item.done .step-icon,
+html[data-skin="gameboy"] .step-item:has(.st-luxe--ok) .step-icon {
+  background: var(--gb-green) !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .step-item.err .step-icon,
+html[data-skin="gameboy"] .step-item:has(.st-luxe--err) .step-icon {
+  background: #ff8a8a !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .step-item:has(.st-luxe--warn) .step-icon {
+  background: #ffc861 !important;
+  color: var(--gb-ink) !important;
+}
+
+/* 7) "执行进度"标题：父容器是 flex 列，inline-block 失效变成通栏黄条 → 收成贴合文字的标签 */
+html[data-skin="gameboy"] .exec-title {
+  width: fit-content !important;
+  max-width: 100%;
+  align-self: flex-start;
 }

@@ -272,7 +272,8 @@ function computeLoginTtl() {
 
 app.get('/api/account', async (req, res) => {
   try {
-    const info = await account.getAccount();
+    // fresh=1：跳过 5 分钟缓存，页面每次启动时取一次最新（粉丝/硬币）
+    const info = await account.getAccount({ force: req.query && req.query.fresh === '1' });
     if (info && info.isLogin) info.loginTtl = computeLoginTtl();
     res.json(info);
   } catch (e) {

@@ -49,6 +49,58 @@ test('account.fetchAccount: nav 抛错 → isLogin:false（不抛异常）', asy
   assert.strictEqual(info.isLogin, false);
 });
 
+// ── 粉丝 / 硬币：nav 不带粉丝，需按 mid 再查一次 relation/stat ──
+test('account.fetchAccount: 带粉丝与硬币（money 来自 nav，fans/following 来自 relation/stat）', async () => {
+  const p = writeCookieFile({ SESSDATA: 'abc', bili_jct: 'xyz' });
+  const calls = [];
+  const fetchFn = async (url) => {
+    calls.push(url);
+    if (url === account.NAV_URL) {
+      return { json: async () => ({ code: 0, data: { isLogin: true, uname: '测试用户', face: 'http://face', mid: 123, money: 456 } }) };
+    }
+    return { json: async () => ({ code: 0, data: { mid: 123, follower: 12577, following: 77 } }) };
+  };
+  const info = await account.fetchAccount({ cookiesPath: p, deps: { fetchFn } });
+  assert.strictEqual(info.isLogin, true);
+  assert.strictEqual(info.money, 456, '硬币数应取自 nav.data.money');
+  assert.strictEqual(info.fans, 12577, '粉丝数应取自 relation/stat');
+  assert.strictEqual(info.following, 77);
+  assert.ok(calls.some((u) => String(u).startsWith(account.STAT_URL)), '应请求 relation/stat');
+});
+
+test('account.fetchAccount: relation/stat 失败 → 仍视为已登录，只是没有粉丝数', async () => {
+  const p = writeCookieFile({ SESSDATA: 'abc', bili_jct: 'xyz' });
+  const fetchFn = async (url) => {
+    if (url === account.NAV_URL) {
+      return { json: async () => ({ code: 0, data: { isLogin: true, uname: '测试用户', mid: 123, money: 9 } }) };
+    }
+    throw new Error('stat down');
+  };
+  const info = await account.fetchAccount({ cookiesPath: p, deps: { fetchFn } });
+  assert.strictEqual(info.isLogin, true);
+  assert.strictEqual(info.money, 9);
+  assert.strictEqual(info.fans, undefined);
+});
+
+test('account.getAccount: force=true 跳过 5 分钟缓存（页面启动取最新粉丝数）', async () => {
+  const p = writeCookieFile({ SESSDATA: 'abc', bili_jct: 'xyz' });
+  account.invalidate();
+  let fans = 100;
+  const fetchFn = async (url) => {
+    if (url === account.NAV_URL) {
+      return { json: async () => ({ code: 0, data: { isLogin: true, uname: 'u', mid: 1, money: 2 } }) };
+    }
+    return { json: async () => ({ code: 0, data: { follower: fans, following: 1 } }) };
+  };
+  const first = await account.getAccount({ cookiesPath: p, deps: { fetchFn } });
+  assert.strictEqual(first.fans, 100);
+  fans = 200; // 缓存期内数据变化
+  const cached = await account.getAccount({ cookiesPath: p, deps: { fetchFn } });
+  assert.strictEqual(cached.fans, 100, '不传 force 应命中缓存');
+  const fresh = await account.getAccount({ cookiesPath: p, force: true, deps: { fetchFn } });
+  assert.strictEqual(fresh.fans, 200, 'force 应拿最新值');
+});
+
 // ── 补充断言（QA 严过关）：验证「退出登录」链路中 account.invalidate() 使 5 分钟缓存真正失效。
 // 这是 logout 后 /api/account 能立即反映未登录态（前端恢复二维码入口）的关键。 ──
 test('account.invalidate: 使已登录缓存失效（logout 后重新查询返回未登录）', async () => {

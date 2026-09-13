@@ -718,21 +718,40 @@
       line.appendChild(img);
       line.appendChild(name);
       box.appendChild(line);
-      // 登录态剩余天数徽章（醒目）：正常绿 / 临期橙 / 失效红，点击唤起扫码
+      // 账号数据行：粉丝 / 硬币 / 登录剩余天数（三者同一行，等高等距对齐）
+      const data = document.createElement("div");
+      data.className = "acct-data";
+      const stats = document.createElement("div");
+      stats.className = "acct-stats";
+      [
+        ["粉丝", info.fans],
+        ["硬币", info.money],
+      ].forEach(([k, v]) => {
+        if (typeof v !== "number" || v < 0) return;
+        const s = document.createElement("span");
+        s.className = "acct-stat";
+        s.innerHTML = '<i class="k"></i><b class="v"></b>';
+        s.querySelector(".k").textContent = k;
+        s.querySelector(".v").textContent = v.toLocaleString("en-US"); // 具体数值，不用「万」
+        s.title = k + " " + v.toLocaleString("en-US");
+        stats.appendChild(s);
+      });
+      if (stats.children.length) data.appendChild(stats);
+      // 登录态剩余天数：单独一行，宽度与上面「粉丝+硬币」整行等宽（左右两端对齐）
       const ttl = info.loginTtl;
       if (ttl) {
         const badge = document.createElement("span");
         let cls = "ttl-ok";
-        let text = "登录态正常";
+        let text = "登录正常";
         if (ttl.days != null) {
           if (ttl.days <= 0) {
             cls = "ttl-dead";
-            text = "登录态即将失效，请重新扫码";
+            text = "登录已失效";
           } else if (ttl.status === "warn") {
             cls = "ttl-warn";
-            text = "登录态剩余 " + ttl.days + " 天，请提前重新扫码";
+            text = "登录剩余 " + ttl.days + " 天";
           } else {
-            text = "登录态剩余 " + ttl.days + " 天";
+            text = "登录剩余 " + ttl.days + " 天";
           }
         }
         badge.className = "login-ttl " + cls;
@@ -742,8 +761,9 @@
           e.stopPropagation();
           openLogin();
         });
-        box.appendChild(badge);
+        data.appendChild(badge);
       }
+      if (data.children.length) box.appendChild(data);
       buildAccountMenu(info); // 构建二级菜单（个人中心 / 退出登录）
     } else {
       const btn = document.createElement("button");
@@ -848,7 +868,8 @@
 
   async function refreshAccount() {
     try {
-      const resp = await fetch("/api/account");
+      // fresh=1：每次打开 B站投稿页都强制取一次最新（粉丝/硬币/昵称）
+      const resp = await fetch("/api/account?fresh=1");
       const info = await resp.json();
       renderAccount(info);
     } catch (e) {

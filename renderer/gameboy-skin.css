@@ -926,3 +926,31 @@ html[data-skin="gameboy"] .exec-title {
   max-width: 100%;
   align-self: flex-start;
 }
+
+/* 8) 账号数据贴纸（B站投稿页顶栏"粉丝/硬币"）：黄键面 + 黑边，和机身按键同一套语言 */
+html[data-skin="gameboy"] .acct-stats { gap: 6px !important; }
+html[data-skin="gameboy"] .acct-stat {
+  background: var(--gb-yellow) !important;
+  color: var(--gb-ink) !important;
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: 2px 2px 0 var(--gb-ink) !important;
+  font-family: var(--mac-font) !important;
+}
+html[data-skin="gameboy"] .acct-stat .k { color: var(--gb-ink) !important; }
+/* 登录剩余天数（单独一行）：尺寸与上面贴纸一致，按状态给实色键面（黑字黑边，不用玻璃辉光） */
+html[data-skin="gameboy"] .login-ttl {
+  border: 2px solid var(--gb-ink) !important;
+  box-shadow: 2px 2px 0 var(--gb-ink) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  font-family: var(--mac-font) !important;
+  color: var(--gb-ink) !important;
+}
+html[data-skin="gameboy"] .ttl-ok { background: var(--gb-green) !important; }
+html[data-skin="gameboy"] .ttl-warn { background: #ffc861 !important; }
+html[data-skin="gameboy"] .ttl-dead { background: #ff8a8a !important; }
+html[data-skin="gameboy"] .login-ttl .dot {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: var(--gb-ink) !important;
+}

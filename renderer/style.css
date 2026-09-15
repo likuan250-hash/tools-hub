@@ -36,7 +36,9 @@ body {
   -webkit-app-region: drag; /* 自定义标题栏：此区域可拖动窗口 */
 }
 .top-left { display: inline-flex; align-items: center; gap: 8px; }
-.logo { font-size: 22px; }
+.logo { font-size: 22px; display: inline-flex; align-items: center; justify-content: center; }
+/* 顶栏应用图标（新图标位图，替代原先的 🧰 emoji） */
+.logo .logo-img { width: 26px; height: 26px; display: block; object-fit: contain; }
 .title { font-size: 16px; font-weight: 600; letter-spacing: .5px; }
 .version {
   font-size: 12px; color: var(--text-dim);

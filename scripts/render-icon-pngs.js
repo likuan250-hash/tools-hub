@@ -31,7 +31,12 @@ async function main() {
         const c = document.getElementById('c');
         c.width = s; c.height = s;
         const ctx = c.getContext('2d');
-        ctx.drawImage(img, 0, 0, s, s);
+        // 保比例居中缩放（源图非正方形时不能拉伸，否则图标会被压扁）；
+        // 0.96：与系统里常规软件图标实占一致，避免留白过多显得"图标小"
+        const r = Math.min(s / img.naturalWidth, s / img.naturalHeight) * 0.96;
+        const w = img.naturalWidth * r;
+        const h = img.naturalHeight * r;
+        ctx.drawImage(img, (s - w) / 2, (s - h) / 2, w, h);
         return c.toDataURL('image/png');
       }, { dataUrl, s });
       const buf = Buffer.from(dataUrlPng.split(',')[1], 'base64');

@@ -546,7 +546,8 @@ html[data-skin="gameboy"] .topbar {
   backdrop-filter: none !important;
   color: var(--gb-ink) !important;
 }
-html[data-skin="gameboy"] .topbar .logo { background: var(--gb-yellow) !important; border: 2px solid var(--gb-ink); }
+/* 顶栏应用图标：白纸底衬托彩色图标（黄底会和图标里的黄撞色） */
+html[data-skin="gameboy"] .topbar .logo { background: var(--gb-paper) !important; border: 2px solid var(--gb-ink); }
 html[data-skin="gameboy"] .topbar .title {
   color: var(--gb-ink) !important;
   text-shadow: 2px 2px 0 rgba(255, 255, 255, .55) !important;   /* 机壳丝印：亮描边而非暗投影 */

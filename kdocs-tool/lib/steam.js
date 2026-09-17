@@ -11,6 +11,24 @@ const { rememberAppId } = require("./datapack");
 const { fetchTextProxy, fetchJsonProxy } = require("./proxyHttp");
 
 /**
+ * Steam 专用取 JSON：**先直连、失败再走宿主代理**。
+ * 实测本机 Steam 商店/CND 直连时通、时不通（代理对部分节点 TLS 失败），
+ * 单押一边都会整段失败；两段都试、各自短超时，才能稳定拿到数据。
+ */
+async function getJsonSteam(url, timeout, fetchImpl) {
+  if (typeof fetchImpl === "function") return fetchImpl(url, { timeout }); // 单测注入：直接用
+  try {
+    const direct = await fetchJsonProxy(url, { timeout, env: {} }); // env={} → 强制直连
+    if (direct) return direct;
+  } catch (e) { /* 落代理 */ }
+  try {
+    return await fetchJsonProxy(url, { timeout });
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * 搜索 Steam AppID（代理感知：走 fetchJsonProxy，无代理时退化为直连，行为与历史一致）。
  * 按候选查询词（原名 → 剥英文版本词 → 剥中文副标题）逐级尝试；结果内按名称相似度择优，
  * 避免 storesearch 把模糊首条当答案导致错配 AppID。单请求 10s 超时防卡死；
@@ -44,14 +62,22 @@ async function searchSteamAppId(gameName, fetchImpl) {
   // 剥英文版本词（Game of the Year / Remastered / Definitive ...）得到基础英文名，提升精确匹配率
   push(String(gameName).replace(EDITION_RE_G, "").replace(/\s+/g, " ").trim());
   for (const term of variants) {
-    const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&l=english&cc=CN`;
-    let j = null;
-    try {
-      j = await getJson(url, { timeout: 10000 });
-    } catch {
-      j = null;
+    // 语言随查询词走：中文名必须 l=schinese（l=english 配中文 term 实测 total=0，这是查不到 AppID 的根因）；
+    // 再补 cc=US：国区不上架的游戏（如艾尔登法环）用 cc=CN 搜是 total=0，必须落国际区目录。
+    const cjk = /[\u3400-\u9fff]/.test(term);
+    const langs = cjk ? ["l=schinese&cc=CN", "l=schinese&cc=US"] : ["l=english&cc=CN", "l=english&cc=US"];
+    let items = [];
+    for (const lang of langs) {
+      const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&${lang}`;
+      let j = null;
+      try {
+        j = await getJsonSteam(url, 8000, fetchImpl);
+      } catch {
+        j = null;
+      }
+      items = (j && Array.isArray(j.items) && j.items) || [];
+      if (items.length) break;
     }
-    const items = (j && Array.isArray(j.items) && j.items) || [];
     if (!items.length) continue;
     const q = norm(term);
     let best = null,
@@ -187,13 +213,15 @@ function downloadCover(gameName, appid, coverDir) {
   const fas = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}`;
   const aka = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}`;
   const candidates = [
-    `${fas}/library_600x900_2x.jpg`, // 规范文档 §1.2 指定的官方直链（竖版 600x900@2x），首选
-    `${cdn}/library_600x900_2x.jpg`, // cloudflare 同款竖版，fallback
-    `${cdn}/header.jpg`, // 横版 header，最后兜底（比例不佳）
-    `${fas}/header.jpg`,
+    `${cdn}/library_600x900_2x.jpg`, // cloudflare 竖版 600x900@2x（直连可达，实测 200）
+    `${aka}/library_600x900_2x.jpg`, // akamai 同款竖版（直连 200）
+    `${cdn}/header.jpg`, // 横版 header 兜底（比例不佳）
     `${aka}/header.jpg`,
-    `${fas}/library_hero.jpg`, // 新游戏/未上架仅有 hero 横版大图时兜底（如 007 First Light 3768760）
-    `${cdn}/library_hero.jpg`,
+    `${cdn}/library_hero.jpg`, // 新游戏仅有 hero 横版大图时兜底
+    `${aka}/library_hero.jpg`,
+    `${fas}/library_600x900_2x.jpg`, // fastly：本机直连 reset / 代理 TLS 失败，降到最后
+    `${fas}/header.jpg`,
+    `${fas}/library_hero.jpg`,
   ];
   return (async () => {
     let lastErr;
@@ -229,15 +257,16 @@ function parseSteamAppDetails(data) {
  */
 async function getSteamAppDetails(appid) {
   if (!appid) return null;
-  const url = `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`;
+  // 主源：国际站（本机需代理，直连超时）；兜底：Steam 中国站（仅覆盖中国区目录，但直连可达）
+  const urls = [
+    `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`,
+    `https://store.steamchina.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`,
+  ];
   let j = null;
-  // 瞬错（代理 TLS 握手 / 超时）常见：失败自动重试 1 次再放弃，避免一次抽风就把大小/描述全丢
-  for (let attempt = 0; attempt < 2 && !j; attempt += 1) {
-    try {
-      j = await fetchJsonProxy(url, { timeout: 10000 });
-    } catch {
-      j = null;
-    }
+  for (const url of urls) {
+    // 每个源都"直连 → 代理"各试一次，避免单边抽风就把大小/描述全丢
+    j = await getJsonSteam(url, url.includes("steamchina") ? 6000 : 10000);
+    if (j) break;
   }
   if (!j) return null;
   const entry = j[String(appid)];

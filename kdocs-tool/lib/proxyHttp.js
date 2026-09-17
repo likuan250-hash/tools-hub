@@ -30,6 +30,21 @@ const NO_PROXY_ENV_KEYS = ["NO_PROXY", "no_proxy"];
 const PROBE_TIMEOUT = 2500;
 /** 自动探测的本地常见代理端口（按出现频率排序；.proxy 显式配置优先）。 */
 const LOCAL_PROXY_PORTS = [7990, 7890, 7897, 10809, 10808, 1080, 8888, 2080];
+/** 永不当代理用的端口（50416 = Codex/sandbox-cli 的本机代理，借它出网会把宿主连接冲掉）。 */
+const PROXY_PORT_BLOCKLIST = [50416];
+/**
+ * 强制直连的域名后缀（实测这些站直连可达，走代理反而更慢/更易失败）：
+ * 金山文档全系、flysheep6、Steam 中国站与 Steam 静态 CDN。
+ */
+const DIRECT_HOSTS = [
+  "kdocs.cn",
+  "wps.cn",
+  "qwps.cn",
+  "flysheep6.com",
+  "steamchina.com",
+  "steamstatic.com",
+  "steamcontent.com",
+];
 /** 自动探测的验证目标（须在墙外，能过 CONNECT 即说明代理可用）。 */
 const PROBE_TARGET = "www.google.com";
 /** 环境变量开关：设置后禁用本地代理自动探测（高级用户强制直连）。 */
@@ -150,6 +165,10 @@ function parseNoProxy(raw) {
 function shouldBypassProxy(hostname, noProxy) {
   const host = String(hostname == null ? "" : hostname).trim().toLowerCase().replace(/\.$/, "");
   if (!host) return false;
+  // 直连白名单优先于一切代理配置
+  for (const suffix of DIRECT_HOSTS) {
+    if (host === suffix || host.endsWith("." + suffix)) return true;
+  }
   const list = parseNoProxy(noProxy);
   if (!list.length) return false;
   if (list.indexOf("*") >= 0) return true;
@@ -177,8 +196,12 @@ function resolveProxy(target, env) {
   try { u = typeof target === "string" ? new URL(target) : target; } catch (e) { return null; }
   if (!u || !u.protocol || !u.hostname) return null;
   if (shouldBypassProxy(u.hostname, firstEnv(source, NO_PROXY_ENV_KEYS))) return null;
+  const blocked = (p) => !!p && PROXY_PORT_BLOCKLIST.indexOf(Number(p.port)) >= 0;
   const raw = pickProxyEnv(source, u.protocol);
-  if (raw) return parseProxyUrl(raw);
+  if (raw) {
+    const p = parseProxyUrl(raw);
+    if (!blocked(p)) return p; // 端口在黑名单（如 50416）→ 忽略该代理，改直连
+  }
   if (source === process.env) {
     try {
       const base = path.join(__dirname, ".."); // kdocs-tool/lib -> kdocs-tool
@@ -186,11 +209,14 @@ function resolveProxy(target, env) {
         const cfgPath = path.join(base, name);
         if (fs.existsSync(cfgPath)) {
           const cfg = fs.readFileSync(cfgPath, "utf8").split("\n")[0].trim();
-          if (cfg) return parseProxyUrl(cfg);
+          if (cfg) {
+            const p = parseProxyUrl(cfg);
+            if (!blocked(p)) return p;
+          }
         }
       }
     } catch (e) { /* 文件不存在或不可读，静默跳过 */ }
-    if (autoProxyCache && autoProxyCache !== "none") return autoProxyCache;
+    if (autoProxyCache && autoProxyCache !== "none" && !blocked(autoProxyCache)) return autoProxyCache;
   }
   return null;
 }

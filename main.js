@@ -440,10 +440,31 @@ function startChild(cfg) {
     "NO_PROXY",
     "no_proxy",
   ];
+  // 50416 = Codex/sandbox-cli 的本机代理：透传给子进程会把宿主自身的连接冲掉（金山写入就是被它搞挂的）
+  const BLOCKED_PROXY_PORTS = [50416];
+  const isBlockedProxyValue = (v) => {
+    try {
+      const u = new URL(String(v).indexOf("://") >= 0 ? String(v) : "http://" + String(v));
+      return BLOCKED_PROXY_PORTS.indexOf(Number(u.port)) >= 0;
+    } catch (e) {
+      return false;
+    }
+  };
+  // 子进程默认直连白名单：实测这些站直连可达，走代理只会更慢/更易失败
+  const CHILD_DIRECT_HOSTS =
+    "kdocs.cn,wps.cn,qwps.cn,flysheep6.com,steamchina.com,steamstatic.com,steamcontent.com,localhost,127.0.0.1";
   const proxyEnv = {};
   for (const k of PROXY_ENV_KEYS) {
-    if (process.env[k]) proxyEnv[k] = process.env[k];
+    const v = process.env[k];
+    if (!v) continue;
+    if (!/no_proxy/i.test(k) && isBlockedProxyValue(v)) {
+      log(`忽略沙箱代理 ${k}=${v}（端口在黑名单，子进程改走直连）`);
+      continue;
+    }
+    proxyEnv[k] = v;
   }
+  proxyEnv.NO_PROXY = [CHILD_DIRECT_HOSTS, process.env.NO_PROXY || process.env.no_proxy || ""].filter(Boolean).join(",");
+  proxyEnv.no_proxy = proxyEnv.NO_PROXY;
   const childEnv = Object.assign({}, cfg.env, dataEnv, proxyEnv, { BOOT_TOKEN: BOOT_TOKEN });
   // #6 注入资源目录，供 fork 子进程解析打包内置的 biliup.exe（子进程无 process.resourcesPath）。
   if (RES) childEnv.TOOLSHUB_RESOURCES_DIR = RES;

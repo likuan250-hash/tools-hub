@@ -25,6 +25,18 @@ const DEFAULT_TIMEOUT = 120 * 1000;
 const PROBE_TIMEOUT = 2500;
 /** 自动探测的本地常见代理端口（按出现频率排序；用户可在 .proxy 显式指定覆盖）。 */
 const LOCAL_PROXY_PORTS = [7990, 7890, 7897, 10809, 10808, 1080, 8888, 2080];
+/** 永不当代理用的端口（50416 = Codex/sandbox-cli 本机代理，借它出网会把宿主连接冲掉）。 */
+const PROXY_PORT_BLOCKLIST = [50416];
+/** 强制直连的域名后缀（实测直连可达；金山/flysheep6/Steam 中国站与 CDN）。 */
+const DIRECT_HOSTS = [
+  "kdocs.cn",
+  "wps.cn",
+  "qwps.cn",
+  "flysheep6.com",
+  "steamchina.com",
+  "steamstatic.com",
+  "steamcontent.com",
+];
 /** 自动探测的验证目标（须在墙外，能过 CONNECT 即说明代理可用）。 */
 const PROBE_TARGET = "www.google.com";
 /** 环境变量开关：设置后禁用本地代理自动探测（高级用户强制直连）。 */
@@ -235,6 +247,10 @@ function shouldBypassProxy(hostname, noProxy) {
     .toLowerCase()
     .replace(/\.$/, "");
   if (!host) return false;
+  // 直连白名单优先：这些站实测直连可达，走代理只会更慢/更易失败
+  for (const suffix of DIRECT_HOSTS) {
+    if (host === suffix || host.endsWith("." + suffix)) return true;
+  }
   const list = parseNoProxy(noProxy);
   if (!list.length) return false;
   if (list.indexOf("*") >= 0) return true;
@@ -271,7 +287,11 @@ function resolveProxy(target, env) {
   if (!u || !u.protocol || !u.hostname) return null;
   if (shouldBypassProxy(u.hostname, firstEnv(source, NO_PROXY_ENV_KEYS))) return null;
   const url = pickProxyEnv(source, u.protocol);
-  if (url) return parseProxyUrl(url);
+  if (url) {
+    const p = parseProxyUrl(url);
+    if (p && PROXY_PORT_BLOCKLIST.indexOf(Number(p.port)) >= 0) return null; // 黑名单端口（50416 沙箱代理）→ 直连
+    return p;
+  }
   // 仅真实环境（source===process.env）参与文件配置与自动探测，
   // 测试注入 env={} 时不受本机 .proxy / 端口影响。
   if (source !== process.env) return null;
@@ -284,7 +304,11 @@ function resolveProxy(target, env) {
       const cfgPath = pathMod.join(base, name);
       if (fsDefault.existsSync(cfgPath)) {
         const cfg = fsDefault.readFileSync(cfgPath, "utf8").split("\n")[0].trim();
-        if (cfg) return parseProxyUrl(cfg);
+        if (cfg) {
+          const p = parseProxyUrl(cfg);
+          if (p && PROXY_PORT_BLOCKLIST.indexOf(Number(p.port)) >= 0) return null;
+          return p;
+        }
       }
     }
   } catch (e) {

@@ -15,6 +15,29 @@ const KDOCS_CLI = fs.existsSync(LOCAL_CLI) ? LOCAL_CLI : "kdocs-cli";
 // 直接塞 --args 会触发 ENAMETOOLONG。超过阈值改用 --file 从临时 JSON 读入，彻底规避。
 const ARGS_LENGTH_LIMIT = 30000;
 
+/**
+ * kdocs-cli 只跟金山文档（kdocs.cn / wps.cn）通信 —— 一律直连，不吃宿主代理。
+ * 宿主代理（含 50416 这类沙箱代理）一旦被 CLI 继承，金山写入就会被"冲掉"连不上。
+ */
+function cliEnv() {
+  const env = Object.assign({}, process.env);
+  for (const k of [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "npm_config_proxy",
+    "npm_config_https_proxy",
+  ]) {
+    delete env[k];
+  }
+  env.NO_PROXY = "*";
+  env.no_proxy = "*";
+  return env;
+}
+
 /** 调用 kdocs-cli 的 API 工具（非阻塞，30s 超时） */
 function callMcporter(functionName, jsonParams) {
   const fullParams = { file_id: FILE_ID, ...jsonParams };
@@ -31,7 +54,7 @@ function callMcporter(functionName, jsonParams) {
   }
   return new Promise((resolve, reject) => {
     let settled = false;
-    const child = spawn(KDOCS_CLI, cliArgs, { windowsHide: true });
+    const child = spawn(KDOCS_CLI, cliArgs, { windowsHide: true, env: cliEnv() });
     let stdout = "";
     let stderr = "";
     if (child.stdout) child.stdout.setEncoding("utf-8").on("data", (d) => (stdout += d));
@@ -65,7 +88,7 @@ function callMcporter(functionName, jsonParams) {
 /** 检测 kdocs-cli 是否已配置（验证 token 有效性） */
 function checkKdocsReady() {
   return new Promise((resolve) => {
-    const child = spawn(KDOCS_CLI, ["auth", "status"], { windowsHide: true });
+    const child = spawn(KDOCS_CLI, ["auth", "status"], { windowsHide: true, env: cliEnv() });
     let stdout = "";
     if (child.stdout) child.stdout.setEncoding("utf-8").on("data", (d) => (stdout += d));
     let settled = false;

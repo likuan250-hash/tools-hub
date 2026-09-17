@@ -10,6 +10,44 @@ const { lookupAppIdOffline } = require("./gameappid");
 const { rememberAppId } = require("./datapack");
 const { fetchTextProxy, fetchJsonProxy } = require("./proxyHttp");
 
+/** 查询词里"有意义的词"：≥2 字符、非纯序号/结构词。用于阻止 "the 2nd" 这类词命中无关游戏。 */
+const QUERY_STOPWORDS = new Set([
+  "the", "of", "and", "a", "an", "to", "in", "on", "for", "with",
+  "part", "chapter", "episode", "vol", "volume", "book", "act", "version", "ver",
+  "edition", "remastered", "remaster", "definitive", "complete", "deluxe", "ultimate", "final", "cut", "hd", "goty",
+]);
+
+/** 提取有意义 token：拉丁按词切、CJK 整串保留（中文名本身就是有效 token）。 */
+function meaningfulTokens(s) {
+  const raw = String(s == null ? "" : s).toLowerCase();
+  const out = [];
+  const cjk = raw.match(/[\u3400-\u9fff]{2,}/g) || [];
+  cjk.forEach((c) => out.push(c));
+  raw
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .forEach((t) => {
+      if (QUERY_STOPWORDS.has(t)) return;
+      if (/^\d+(st|nd|rd|th)?$/.test(t)) return;
+      if (t.length >= 3) out.push(t);
+    });
+  return out;
+}
+
+/** 查询词是否"有信息量"（否则直接放弃，不发请求） */
+function hasMeaningfulQuery(s) {
+  return meaningfulTokens(s).length > 0;
+}
+
+/** 候选名与查询词是否共享有意义 token（防止只看子串导致 the 2nd → Gunlocked 这类误配） */
+function sharesMeaningfulToken(term, candidate) {
+  const q = meaningfulTokens(term);
+  if (!q.length) return false;
+  const c = meaningfulTokens(candidate);
+  if (!c.length) return false;
+  return q.some((t) => c.some((u) => u === t || u.includes(t) || t.includes(u)));
+}
+
 /**
  * Steam 专用取 JSON：**先直连、失败再走宿主代理**。
  * 实测本机 Steam 商店/CND 直连时通、时不通（代理对部分节点 TLS 失败），
@@ -62,6 +100,8 @@ async function searchSteamAppId(gameName, fetchImpl) {
   // 剥英文版本词（Game of the Year / Remastered / Definitive ...）得到基础英文名，提升精确匹配率
   push(String(gameName).replace(EDITION_RE_G, "").replace(/\s+/g, " ").trim());
   for (const term of variants) {
+    // 纯序号/结构词（the 2nd、Chapter II…）不是游戏名，搜下去只会命中无关作品
+    if (!hasMeaningfulQuery(term)) continue;
     // 语言随查询词走：中文名必须 l=schinese（l=english 配中文 term 实测 total=0，这是查不到 AppID 的根因）；
     // 再补 cc=US：国区不上架的游戏（如艾尔登法环）用 cc=CN 搜是 total=0，必须落国际区目录。
     const cjk = /[\u3400-\u9fff]/.test(term);
@@ -90,6 +130,9 @@ async function searchSteamAppId(gameName, fetchImpl) {
         else if (nm.includes(q) || q.includes(nm)) score = 2;
         // 续作编号必须对上：查询带数字而候选缺号（如 PC Building Simulator 2 → PC Building Simulator）不算命中
         if (score >= 2 && !iterationMatches(term, it && it.name)) score = 0;
+        // 拉丁查询词必须与候选名共享"有意义的词"（纯序号词会把无关游戏顶上来）；
+        // 中文名对英文候选（Steam 常这么返回）不适用这条，交给上面的 norm 包含判定。
+        if (score > 0 && !/[\u3400-\u9fff]/.test(term) && !sharesMeaningfulToken(term, it && it.name)) score = 0;
       }
       if (score > bestScore) {
         bestScore = score;
@@ -204,7 +247,7 @@ function tryDownload(url, fp) {
 }
 
 /** 下载 Steam 封面到指定目录（多源 fallback：首选 fastly 竖版 library_600x900_2x，规范文档 §1.2 指定直链） */
-function downloadCover(gameName, appid, coverDir) {
+function downloadCover(gameName, appid, coverDir, opts = {}) {
   coverDir = coverDir || DEFAULT_COVER_DIR;
   if (!fs.existsSync(coverDir)) fs.mkdirSync(coverDir, { recursive: true });
   const safe = gameName.replace(/[\\/:*?"<>|]/g, "_");
@@ -213,6 +256,8 @@ function downloadCover(gameName, appid, coverDir) {
   const fas = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}`;
   const aka = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}`;
   const candidates = [
+    // ① appdetails 返回的官方图直链最优（新游戏是带 hash 的 store_item_assets 路径，猜不出来）
+    opts.imageUrl || "",
     `${cdn}/library_600x900_2x.jpg`, // cloudflare 竖版 600x900@2x（直连可达，实测 200）
     `${aka}/library_600x900_2x.jpg`, // akamai 同款竖版（直连 200）
     `${cdn}/header.jpg`, // 横版 header 兜底（比例不佳）
@@ -226,6 +271,7 @@ function downloadCover(gameName, appid, coverDir) {
   return (async () => {
     let lastErr;
     for (const url of candidates) {
+      if (!url) continue;
       try {
         return await tryDownload(url, fp);
       } catch (e) {
@@ -248,7 +294,9 @@ function parseSteamAppDetails(data) {
     : [];
   const type = data.type || "";
   const size = parseSteamSizeFromRequirements(data.pc_requirements);
-  return { shortDescription: sd, genres, type, size };
+  // 官方图直链（新游戏封面走带 hash 的 store_item_assets 路径，旧的 /steam/apps/<id>/xxx.jpg 会 404）
+  const headerImage = data.header_image || data.capsule_image || "";
+  return { shortDescription: sd, genres, type, size, headerImage };
 }
 
 /**

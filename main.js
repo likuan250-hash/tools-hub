@@ -452,7 +452,7 @@ function startChild(cfg) {
   };
   // 子进程默认直连白名单：实测这些站直连可达，走代理只会更慢/更易失败
   const CHILD_DIRECT_HOSTS =
-    "kdocs.cn,wps.cn,qwps.cn,flysheep6.com,steamchina.com,steamstatic.com,steamcontent.com,localhost,127.0.0.1";
+    "kdocs.cn,wps.cn,qwps.cn,flysheep6.com,steamchina.com,steamstatic.com,steamcontent.com,eccdnx.com,localhost,127.0.0.1";
   const proxyEnv = {};
   for (const k of PROXY_ENV_KEYS) {
     const v = process.env[k];

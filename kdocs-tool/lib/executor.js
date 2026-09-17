@@ -201,11 +201,13 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   // 3.1 Steam 官方 store 描述（仅 appid 命中时尝试；失败不致命）
   let steamDesc = "";
   let steamSize = "";
+  let steamHeaderImage = "";
   if (appid) {
     try {
       const det = await deps.getSteamAppDetails(appid);
       steamDesc = (det && det.shortDescription) || "";
       steamSize = (det && det.size) || "";
+      steamHeaderImage = (det && det.headerImage) || "";
     } catch (_) { /* Steam 详情失败不致命 */ }
   }
   // 3.2 选择介绍主源 + 溯源（provenance）——中文优先：Steam 描述须为中文才采用；
@@ -242,7 +244,8 @@ async function autoExecute(parsed, manualAppId, coverDir, opts = {}) {
   if (!coverPath && appid) {
     doing({ name: "下载 Steam 封面" });
     try {
-      coverPath = await deps.downloadCover(parsed.gameName, appid, coverDir);
+      // 优先用 appdetails 给的官方图直链（新游戏封面路径带 hash，旧 CDN 规律路径会 404）
+      coverPath = await deps.downloadCover(parsed.gameName, appid, coverDir, { imageUrl: steamHeaderImage });
       const s = deps.fs.statSync(coverPath);
       ok({ name: "封面下载（Steam 官方）", path: coverPath, size: (s.size / 1024).toFixed(0) + "KB" });
     } catch (e) { coverAttemptFailed = true; warn({ name: "封面下载（Steam 官方）", reason: e.message }); }

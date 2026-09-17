@@ -1,6 +1,29 @@
 ﻿// ── 输入文本解析 ──
 const { cleanGameName, parseSteamAppIdFromText } = require("./nameutil");
 
+/** 不是游戏名的"伪英文名"词：序号/版本/结构词（the 2nd / Part 2 / Chapter II …） */
+const EN_STOPWORDS = new Set([
+  "the", "of", "and", "a", "an", "to", "in", "on", "for", "with",
+  "part", "chapter", "episode", "vol", "volume", "book", "act",
+  "edition", "remastered", "remaster", "definitive", "complete", "deluxe", "ultimate",
+  "final", "cut", "hd", "goty", "game", "year", "version", "ver",
+  "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x",
+]);
+
+/**
+ * 英文名必须含"有意义的词"（≥3 字母且不是序号/结构词）。
+ * 「空之轨迹 the 2nd」里的 "the 2nd" 被误当英文名 → 拿它搜 Steam 会命中无关游戏，
+ * 拿到错误 AppID（线上记录的 4225908 就是这么来的）。
+ */
+function isMeaningfulEnglishName(s) {
+  const toks = String(s == null ? "" : s)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  if (!toks.length) return false;
+  return toks.some((t) => !EN_STOPWORDS.has(t) && !/^\d+(st|nd|rd|th)?$/.test(t) && t.length >= 3);
+}
+
 function parseInput(text) {
   const lines = text.trim().split("\n").map(l => l.trim()).filter(l => l);
   if (!lines.length) return null;
@@ -24,7 +47,7 @@ function parseInput(text) {
   let gameName = firstLine, englishName = "";
   // 先提取英文原名（括号内）
   const m = firstLine.match(/[（(]([^）)]+)[）)]/);
-  if (m) { englishName = m[1]; }
+  if (m && isMeaningfulEnglishName(m[1])) { englishName = m[1]; }
   if (!englishName) {
     // 无括号时取「中文名后内嵌的英文名」（如「战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 …」）。
     // 直接命中 Steam 搜索，避免整条标题走 Bangumi/维基/百度模糊反查而错配 AppID（如 40K 系列拿到 Darktide）。
@@ -40,7 +63,8 @@ function parseInput(text) {
     }
     if (best) {
       // 剥版本尾巴（v14.0 / v1.2.3），与中文名里的版本号处理保持一致
-      englishName = best.replace(/\s*v?\d+(?:\.\d+){1,3}\s*$/i, "").trim();
+      const cleaned = best.replace(/\s*v?\d+(?:\.\d+){1,3}\s*$/i, "").trim();
+      if (isMeaningfulEnglishName(cleaned)) englishName = cleaned;
     }
   }
   // 游戏名：取括号前中文名；若无中文则用英文名；并去掉 Build/版本/补丁/免安装等长尾
@@ -82,4 +106,4 @@ function parseInput(text) {
   return { gameName, englishName, baiduUrl: baidu, quarkUrl: quark, xunleiUrl: xunlei, appid, tags, raw: firstLine, size, coverUrl };
 }
 
-module.exports = { parseInput };
+module.exports = { parseInput, isMeaningfulEnglishName };

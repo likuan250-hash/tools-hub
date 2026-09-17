@@ -3,7 +3,7 @@ const https = require("https");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { DEFAULT_COVER_DIR } = require("./config");
+const { DEFAULT_COVER_DIR, WORK_DIR } = require("./config");
 const { cleanGameName, stripSubtitle, parseSteamAppIdFromText } = require("./nameutil");
 const { lookupEnglishNameOffline } = require("./gamemap");
 const { lookupAppIdOffline } = require("./gameappid");
@@ -46,6 +46,35 @@ function sharesMeaningfulToken(term, candidate) {
   const c = meaningfulTokens(candidate);
   if (!c.length) return false;
   return q.some((t) => c.some((u) => u === t || u.includes(t) || t.includes(u)));
+}
+
+// ── 详情缓存：appid → { shortDescription, size, headerImage, genres, type } ──
+// Steam 接口在本机时通时不通；成功一次就落盘，之后离线也能出介绍/大小/封面直链。
+const DETAILS_CACHE_FILE = path.join(
+  process.env.KDOCS_DATA_DIR || path.join(WORK_DIR, "..", "cache"),
+  "steam-details.json"
+);
+function readDetailsCache(appid) {
+  try {
+    const all = JSON.parse(fs.readFileSync(DETAILS_CACHE_FILE, "utf8"));
+    const v = all && all[appid];
+    return v && v.shortDescription !== undefined ? v : null;
+  } catch (e) {
+    return null;
+  }
+}
+function writeDetailsCache(appid, data) {
+  try {
+    let all = {};
+    try {
+      all = JSON.parse(fs.readFileSync(DETAILS_CACHE_FILE, "utf8")) || {};
+    } catch (e) {
+      all = {};
+    }
+    all[appid] = Object.assign({}, data, { cachedAt: new Date().toISOString().slice(0, 10) });
+    fs.mkdirSync(path.dirname(DETAILS_CACHE_FILE), { recursive: true });
+    fs.writeFileSync(DETAILS_CACHE_FILE, JSON.stringify(all, null, 1), "utf8");
+  } catch (e) { /* 缓存写失败不影响主流程 */ }
 }
 
 /**
@@ -278,6 +307,16 @@ function downloadCover(gameName, appid, coverDir, opts = {}) {
         lastErr = e;
       }
     }
+    // Steam 官方源全挂（接口/CDN 不可达）→ Bing 图片兜底，优先 Steam 自家域名的图
+    try {
+      for (const u of await bingCoverUrls(gameName)) {
+        try {
+          return await tryDownload(u, fp);
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+    } catch (e) { /* 搜索失败忽略，走下面的统一报错 */ }
     throw new Error("所有 Steam 封面源均失败：" + (lastErr && lastErr.message));
   })();
 }
@@ -305,21 +344,48 @@ function parseSteamAppDetails(data) {
  */
 async function getSteamAppDetails(appid) {
   if (!appid) return null;
-  // 主源：国际站（本机需代理，直连超时）；兜底：Steam 中国站（仅覆盖中国区目录，但直连可达）
+  // 本地详情缓存：Steam 接口时通时不通，成功过一次就落盘，后续（含离线）直接用缓存
+  const cached = readDetailsCache(String(appid));
+  if (cached) return cached;
+  // 国内优先：中国站直连可达、命中即用；未覆盖（非国区目录）再退回国际站。
+  // 注意：中国站只覆盖国区上架目录（CS2/Dota 有，黑神话/法环 等无），所以必须保留国际站兜底。
   const urls = [
-    `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`,
     `https://store.steamchina.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`,
+    `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`,
   ];
-  let j = null;
   for (const url of urls) {
     // 每个源都"直连 → 代理"各试一次，避免单边抽风就把大小/描述全丢
-    j = await getJsonSteam(url, url.includes("steamchina") ? 6000 : 10000);
-    if (j) break;
+    const j = await getJsonSteam(url, url.includes("steamchina") ? 8000 : 10000);
+    const entry = j && j[String(appid)];
+    // 中国站对非国区游戏会返回 {success:false}（HTTP 200）→ 必须继续试国际站，不能 break
+    if (entry && entry.success && entry.data) {
+      const parsed = parseSteamAppDetails(entry.data);
+      writeDetailsCache(String(appid), parsed);
+      return parsed;
+    }
   }
-  if (!j) return null;
-  const entry = j[String(appid)];
-  if (entry && entry.success && entry.data) return parseSteamAppDetails(entry.data);
-  return null; // 应用下架/无数据：返回 null，交由 bl 兜底
+  return null; // 两站都无数据：返回 null，交由其他兜底
+}
+
+/**
+ * Bing 图片搜索兜底（Steam 接口/官方 CDN 不可达时用）。
+ * 只取图片直链，优先 Steam 自家域名（说明是官方封面图），最多 4 张。
+ */
+async function bingCoverUrls(gameName) {
+  const q = encodeURIComponent(String(gameName || "").trim() + " steam 封面 cover");
+  const html = await fetchTextProxy("https://cn.bing.com/images/search?q=" + q, { timeout: 8000, env: {} });
+  if (!html) return [];
+  const urls = [];
+  const re = /https?:\\?\/\\?\/[^"'\\\s]+?\.(?:jpg|jpeg|png)/gi;
+  const raw = html.replace(/&quot;|\\u002f/gi, (m) => (m === "&quot;" ? '"' : "/")).replace(/\\\//g, "/");
+  const all = raw.match(re) || [];
+  for (const u of all) {
+    const clean = u.replace(/[",]+$/, "");
+    if (!urls.includes(clean)) urls.push(clean);
+    if (urls.length >= 12) break;
+  }
+  const steamFirst = urls.filter((u) => /steamstatic|eccdnx|steampowered|steamcdn/i.test(u));
+  return (steamFirst.length ? steamFirst : urls).slice(0, 4);
 }
 
 /** 从任意图片 URL 下载封面（非 Steam 游戏：用户提供的官方封面链接兜底） */

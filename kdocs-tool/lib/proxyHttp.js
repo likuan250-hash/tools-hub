@@ -45,6 +45,7 @@ const DIRECT_HOSTS = [
   "steamstatic.com",
   "steamcontent.com",
   "eccdnx.com",
+  "bing.com",
 ];
 /** 自动探测的验证目标（须在墙外，能过 CONNECT 即说明代理可用）。 */
 const PROBE_TARGET = "www.google.com";

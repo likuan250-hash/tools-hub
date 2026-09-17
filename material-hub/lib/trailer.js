@@ -1210,18 +1210,22 @@ class TrailerDownloader {
   async verifySteamAppId(appId) {
     const id = String(appId || "").trim();
     if (!/^\d+$/.test(id)) return false;
-    try {
-      const r = await this.fetchFn(
-        "https://store.steampowered.com/api/appdetails?appids=" + id + "&l=schinese",
-        { timeout: 15000, signal: AbortSignal.timeout(15000) },
-      );
-      if (!r.ok) return false;
-      const j = await r.json();
-      const app = j && j[id];
-      return !!(app && app.success && app.data && app.data.type === "game");
-    } catch (e) {
-      return false;
+    // 国内优先，未覆盖再退国际站
+    for (const host of ["store.steamchina.com", "store.steampowered.com"]) {
+      try {
+        const r = await this.fetchFn(
+          "https://" + host + "/api/appdetails?appids=" + id + "&l=schinese",
+          { timeout: 15000, signal: AbortSignal.timeout(15000) },
+        );
+        if (!r.ok) continue;
+        const j = await r.json();
+        const app = j && j[id];
+        if (app && app.success && app.data && app.data.type === "game") return true;
+      } catch (e) {
+        /* 该源失败：试下一个 */
+      }
     }
+    return false;
   }
 
   /**

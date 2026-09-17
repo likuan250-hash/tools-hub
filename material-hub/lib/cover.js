@@ -1819,19 +1819,25 @@ class CoverFetcher {
     const id = String(appId == null ? "" : appId).trim();
     if (!/^\d+$/.test(id)) return "";
     if (this.steamOfficialImageCache.has(id)) return this.steamOfficialImageCache.get(id);
-    const url =
-      "https://store.steampowered.com/api/appdetails?appids=" + id + "&l=english&filters=basic";
-    emit("cover_search", STEP_SEARCH, "Steam 官方 API 解析官方图（appid=" + id + "）…", null, {
-      source: "steam-cdn",
-      url,
-    });
     let img = "";
-    try {
-      const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
-      const data = res.ok && res.json && res.json[id] && res.json[id].data;
-      if (data) img = String(data.header_image || "").trim();
-    } catch (e) {
-      /* 官方 API 失败静默降级，不影响后续固定路径 */
+    // 国内优先（store.steamchina.com 直连稳定，覆盖国区目录），未覆盖再退国际站
+    const urls = [
+      "https://store.steamchina.com/api/appdetails?appids=" + id + "&l=english&filters=basic",
+      "https://store.steampowered.com/api/appdetails?appids=" + id + "&l=english&filters=basic",
+    ];
+    for (const url of urls) {
+      emit("cover_search", STEP_SEARCH, "Steam 官方 API 解析官方图（appid=" + id + "）…", null, {
+        source: "steam-cdn",
+        url,
+      });
+      try {
+        const res = await this.httpJson(url, { timeout: SEARCH_TIMEOUT });
+        const data = res.ok && res.json && res.json[id] && res.json[id].data;
+        if (data) img = String(data.header_image || "").trim();
+        if (img) break;
+      } catch (e) {
+        /* 该源失败：继续下一个源，最后静默降级到固定路径 */
+      }
     }
     this.steamOfficialImageCache.set(id, img);
     if (img)

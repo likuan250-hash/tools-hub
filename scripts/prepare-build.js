@@ -83,6 +83,77 @@ function inlineSharedStyles() {
 }
 inlineSharedStyles();
 
+// ── 内置夸克官方 Skill（xfer-hub 跨盘转存的下载/上传执行端）──
+// xfer-hub 不自己逆向夸克，改为 spawn 官方 quark-drive.cjs（1.0.20，含分片下载与断点续传）。
+// 该 Skill 平时装在用户的 ~/.workbuddy/skills/quarkclouddrive，不在本仓库里，
+// 直接用它做 extraResources 的 from 会在 CI 上 ENOENT。这里先复制到 resources/quarkclouddrive，
+// 由 package.json 的 extraResources 取用（resources/* 下已有 node/ bin/ 先例）。
+function bundleQuarkSkill() {
+  const dest = path.join(ROOT, "resources", "quarkclouddrive");
+  // 候选源：环境变量 > 用户级 skills（~/.workbuddy/skills）> 若干历史落点
+  // 注意：这台机器上项目工作区是 E:\workbuddy，skills 装在 E:\workbuddy\.workbuddy\skills，
+  // 而仓库在 E:\Codex\tools-hub —— 两者不同盘不同根，不能靠 ../ 相对推。
+  const home = process.env.USERPROFILE || process.env.HOME || "";
+  const candidates = [
+    process.env.QUARK_SKILL_SRC,
+    home ? path.join(home, ".workbuddy", "skills", "quarkclouddrive") : null,
+    "E:\\workbuddy\\.workbuddy\\skills\\quarkclouddrive",
+    path.join(ROOT, "..", "workbuddy", ".workbuddy", "skills", "quarkclouddrive"),
+    path.join(ROOT, "..", ".workbuddy", "skills", "quarkclouddrive"),
+  ].filter(Boolean);
+
+  let src = null;
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, "scripts", "quark-drive.cjs"))) {
+      src = c;
+      break;
+    }
+  }
+
+  if (!src) {
+    // 找不到不该让构建失败：xfer-hub 仍可跑百度侧；夸克侧在运行时会提示「未找到 Skill」。
+    // 但如果走的是正式 dist（非 --dir 调试），强烈建议预先安装。
+    console.log("[prepare-build] 未找到夸克官方 Skill，跳过内置（xfer-hub 的夸克能力将不可用）");
+    console.log("[prepare-build] 可设置 QUARK_SKILL_SRC 指向 quarkclouddrive 目录");
+    return;
+  }
+
+  // 只复制运行必需：scripts/（quark-drive.cjs + hash-worker.cjs）、references/、SKILL.md
+  // 安全：必须排除 scripts/.quarkclouddrive —— 那是 Skill 存放登录凭证/状态的地方，
+  //       一旦打进安装包就等于把本机夸克账号发给每个下载者。
+  const wanted = ["scripts", "references"];
+  const DENY = /(^|[\\/])\.quarkclouddrive([\\/]|$)|\.log([\\/]|$)|credentials/i;
+  fs.mkdirSync(dest, { recursive: true });
+  let copied = 0;
+
+  // 先清掉上一次复制可能留下的敏感残留（existsSync 过滤，避免删除类命令踩沙箱）
+  const stale = path.join(dest, "scripts", ".quarkclouddrive");
+  if (fs.existsSync(stale)) {
+    try {
+      fs.rmSync(stale, { recursive: true, force: true });
+      console.log("[prepare-build] 已清理上次残留的 .quarkclouddrive");
+    } catch (_) {
+      console.log("[prepare-build] 警告：无法清理 .quarkclouddrive，请手工检查", stale);
+    }
+  }
+
+  for (const sub of wanted) {
+    const from = path.join(src, sub);
+    if (!fs.existsSync(from)) continue;
+    fs.cpSync(from, path.join(dest, sub), {
+      recursive: true,
+      filter: (s) => !DENY.test(s),
+    });
+    copied++;
+  }
+  const skillMd = path.join(src, "SKILL.md");
+  if (fs.existsSync(skillMd)) {
+    fs.copyFileSync(skillMd, path.join(dest, "SKILL.md"));
+  }
+  console.log("[prepare-build] 已内置夸克官方 Skill:", src, "->", dest, `(${copied} 个子目录)`);
+}
+bundleQuarkSkill();
+
 // ── 内置 material-hub 外部二进制（yt-dlp.exe）──
 // 素材搜集模块的宣传片下载强依赖 yt-dlp；用户机器不保证装过、更不保证在 PATH。
 // 这里在打包前确保 material-hub/bin/yt-dlp.exe 就位，由 extraResources 一并进安装包。

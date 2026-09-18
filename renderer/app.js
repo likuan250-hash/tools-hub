@@ -175,6 +175,13 @@
       url: "http://localhost:3800",
       icon: '<svg viewBox="0 0 24 24" fill="#22d3ee" stroke="#000" stroke-width="1.6"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 8h5M2 16h5M17 8h5M17 16h5"/></svg>',
     },
+    xfer: {
+      key: "xfer",
+      name: "网盘跨盘转存",
+      desc: "贴分享链接 → 自动下载到本地 → 自动上传到目标网盘",
+      url: "http://localhost:3900",
+      icon: '<svg viewBox="0 0 24 24" fill="#f59e0b" stroke="#000" stroke-width="1.6"><circle cx="6" cy="12" r="3.2"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M9 10.6l6-3.4M9 13.4l6 3.4" fill="none" stroke="#fff" stroke-width="1.6"/></svg>',
+    },
   };
 
   let serviceStatus = {};
@@ -659,7 +666,7 @@
   }
 
   // ── 服务状态 ──
-  // 入口聚合状态：五个模块，漫画皮肤下为 P5 社群卡（在线点亮/离线灰暗，点击直达工具，
+  // 入口聚合状态：六个模块，漫画皮肤下为 P5 社群卡（在线点亮/离线灰暗，点击直达工具，
   // 全在线时播放 ALL-OUT ATTACK 特效），其他皮肤退化为彩色圆点
   const AGG_MODULES = [
     ["kdocs", "金山文档录入", 1],
@@ -667,9 +674,10 @@
     ["biliup", "B站自动投稿", 3],
     ["material", "素材搜集", 4],
     ["resolve", "达芬奇剪辑", 5],
+    ["xfer", "网盘跨盘转存", 6],
   ];
-  const AGG_SHORT = ["金山", "网盘", "投稿", "素材", "剪辑"];
-  const AGG_ICONS = ["✧", "◈", "✦", "◉", "◆"];
+  const AGG_SHORT = ["金山", "网盘", "投稿", "素材", "剪辑", "转存"];
+  const AGG_ICONS = ["✧", "◈", "✦", "◉", "◆", "⇄"];
   let aggAoaPlayed = false;
   let aggAllOnline = false;
   let aggAoaTimer = null;

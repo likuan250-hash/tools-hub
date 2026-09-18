@@ -6,6 +6,8 @@ dist/
 # 构建期准备的运行时资源（含 node.exe 与 bl/bailian 私有依赖），不进 git
 resources/node/
 resources/bin/node_modules/
+# 构建期从 ~/.workbuddy/skills 复制进来的夸克官方 Skill（体积大且非本仓库源码），不进 git
+resources/quarkclouddrive/
 # prune-bailian.js 的 npm 兜底逻辑在构建时生成的副产物，不进 git
 # （只忽略这一个文件；resources/bin/bl.cmd 是必要文件，必须保持被 git 跟踪）
 resources/bin/package.json
@@ -28,3 +30,7 @@ kdocs-tool/cache/
 # Python 缓存（resolve-auto 等脚本目录）
 __pycache__/
 *.pyc
+# 本地临时探测目录（会话调试残留，含临时 node_modules；约定只写 E 盘，不进 git）
+.tmp/
+# 内置 biliup.exe（11MB 外部二进制，CI 与 prepare:biliup-bin 会拉取，不进 git）
+biliup-hub/bin/biliup.exe

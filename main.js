@@ -27,6 +27,7 @@ const NETDISK_DIR = path.join(RES, "netdisk-hub");
 const BILIUP_DIR = path.join(RES, "biliup-hub");
 const MATERIAL_DIR = path.join(RES, "material-hub");
 const RESOLVE_DIR = path.join(RES, "resolve-hub");
+const XFER_DIR = path.join(RES, "xfer-hub");
 
 // Node 运行时：打包后自带 resources/node/node.exe；开发时回退系统 PATH 的 node
 const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
@@ -160,6 +161,38 @@ const CHILDREN = {
             "ffprobe.exe",
           )
         : "ffprobe",
+    }),
+    proc: null,
+    running: false,
+    attempts: 0,
+    startedAt: 0,
+    lastError: null,
+  },
+  xfer: {
+    key: "xfer",
+    name: "网盘跨盘转存",
+    script: path.join(XFER_DIR, "server.js"),
+    cwd: XFER_DIR,
+    url: "http://localhost:3900",
+    env: Object.assign({}, process.env, {
+      TOOLSHUB_VERSION: app.getVersion(),
+      XFER_PORT: "3900",
+      // 只读复用 netdisk-hub 已保存的登录态（百度/夸克授权），不另起一套登录
+      NETDISK_DIR: NETDISK_DIR,
+      NETDISK_DATA_DIR: path.join(app.getPath("userData"), "netdisk-hub", "data"),
+      // 夸克官方 Skill（quark-drive.cjs）：打包后在 resources/quarkclouddrive；
+      // 开发时回退到本机安装位置（这台机器在 E:\workbuddy\.workbuddy\skills）。
+      QUARK_SKILL_DIR: fs.existsSync(
+        path.join(RES, "quarkclouddrive", "scripts", "quark-drive.cjs"),
+      )
+        ? path.join(RES, "quarkclouddrive")
+        : [
+            process.env.QUARK_SKILL_DIR,
+            path.join(process.env.USERPROFILE || "", ".workbuddy", "skills", "quarkclouddrive"),
+            "E:\\workbuddy\\.workbuddy\\skills\\quarkclouddrive",
+          ].find((p) => p && fs.existsSync(path.join(p, "scripts", "quark-drive.cjs"))) || "",
+      // 中转落地目录（用户 E 盘为机械盘，专门扛这种反复读写）
+      XFER_TMP_DIR: process.env.TOOLSHUB_XFER_DIR || "E:\\网盘中转",
     }),
     proc: null,
     running: false,
@@ -463,7 +496,9 @@ function startChild(cfg) {
     }
     proxyEnv[k] = v;
   }
-  proxyEnv.NO_PROXY = [CHILD_DIRECT_HOSTS, process.env.NO_PROXY || process.env.no_proxy || ""].filter(Boolean).join(",");
+  proxyEnv.NO_PROXY = [CHILD_DIRECT_HOSTS, process.env.NO_PROXY || process.env.no_proxy || ""]
+    .filter(Boolean)
+    .join(",");
   proxyEnv.no_proxy = proxyEnv.NO_PROXY;
   const childEnv = Object.assign({}, cfg.env, dataEnv, proxyEnv, { BOOT_TOKEN: BOOT_TOKEN });
   // #6 注入资源目录，供 fork 子进程解析打包内置的 biliup.exe（子进程无 process.resourcesPath）。

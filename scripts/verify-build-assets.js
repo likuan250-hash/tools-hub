@@ -49,8 +49,8 @@ const MIN_BINARY_BYTES = 1024 * 1024;
 /** extraResources 里绝不允许被整体排除的目录（排掉即等于运行时缺依赖）。 */
 const PROTECTED_DIRS = ["bin", "node_modules"];
 
-/** 走 extraResources 进包、因而需要防 npm 暂存残留的四个子模块。 */
-const SUBMODULES = ["kdocs-tool", "netdisk-hub", "biliup-hub", "material-hub"];
+/** 走 extraResources 进包、因而需要防 npm 暂存残留的子模块。 */
+const SUBMODULES = ["kdocs-tool", "netdisk-hub", "biliup-hub", "material-hub", "xfer-hub"];
 
 /**
  * npm 暂存目录排除规则（必须与 package.json build.extraResources 各条 filter 完全一致）。
@@ -488,6 +488,28 @@ function checkExtraResources(resourcesDir) {
   assertResourceFile(resourcesDir, "kdocs-tool/index.js", "金山文档模块路由主体");
   assertResourceFile(resourcesDir, "netdisk-hub/server.js", "网盘模块入口");
   assertResourceFile(resourcesDir, "biliup-hub/server.js", "B站投稿模块入口");
+  assertResourceFile(resourcesDir, "resolve-hub/server.js", "达芬奇剪辑模块入口");
+  assertResourceFile(resourcesDir, "xfer-hub/server.js", "网盘跨盘转存模块入口");
+
+  // 夸克跨盘转存依赖官方 Skill（xfer-hub 不自己逆向，改为 spawn quark-drive.cjs）。
+  // 缺了它 → 夸克侧下载/上传全部不可用，属于「点了必失败」的包，必须拦在发布前。
+  assertResourceFile(
+    resourcesDir,
+    "quarkclouddrive/scripts/quark-drive.cjs",
+    "夸克官方 Skill CLI（跨盘转存下载/上传执行端）",
+  );
+  // 反例断言：凭证目录绝不能进包（含登录态）。
+  {
+    const leak = [
+      "quarkclouddrive/scripts/.quarkclouddrive",
+      "quarkclouddrive/scripts/credentials.json",
+    ].find((p) => fs.existsSync(path.join(resourcesDir, p)));
+    if (leak) {
+      fail(`打包产物含夸克登录凭证目录 ${leak} —— 会随安装包泄露账号，必须排除`);
+    } else {
+      pass("打包产物不含夸克凭证目录（.quarkclouddrive / credentials）");
+    }
+  }
 
   // 外部二进制：本次事故的正主，存在性 + 体积双重断言
   assertResourceBinary(resourcesDir, "material-hub/bin/yt-dlp.exe", "宣传片下载依赖");

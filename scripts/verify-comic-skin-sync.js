@@ -1,4 +1,4 @@
-// scripts/verify-comic-skin-sync.js —— 门禁：六处 comic-skin 副本必须与 shared/ 真源逐字节一致。
+// scripts/verify-comic-skin-sync.js —— 门禁：七处 comic-skin 副本必须与 shared/ 真源逐字节一致。
 // 与 verify-cosmic-skin-sync.js 同构，供 CI / npm test 防「手改单份副本」漂移。
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +11,7 @@ const COPIES = [
   'biliup-hub/public',
   'material-hub/public',
   'resolve-hub/public',
+  'xfer-hub/public',
 ];
 const FILES = ['comic-skin.css', 'comic-skin.js'];
 
@@ -30,4 +31,4 @@ if (bad) {
   console.error(`comic-skin 同步门禁未通过：${bad} 处不一致。`);
   process.exit(1);
 }
-console.log('comic-skin 六处副本与真源一致。');
+console.log('comic-skin 七处副本与真源一致。');

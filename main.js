@@ -180,6 +180,8 @@ const CHILDREN = {
       // 只读复用 netdisk-hub 已保存的登录态（百度/夸克授权），不另起一套登录
       NETDISK_DIR: NETDISK_DIR,
       NETDISK_DATA_DIR: path.join(app.getPath("userData"), "netdisk-hub", "data"),
+      // xfer-hub 自己的偏好（目标目录等）+ 夸克 Skill 运行时目录，独立存放不污染 netdisk
+      XFER_DATA_DIR: path.join(app.getPath("userData"), "xfer-hub"),
       // 夸克官方 Skill（quark-drive.cjs）：打包后在 resources/quarkclouddrive；
       // 开发时回退到本机安装位置（这台机器在 E:\workbuddy\.workbuddy\skills）。
       QUARK_SKILL_DIR: fs.existsSync(

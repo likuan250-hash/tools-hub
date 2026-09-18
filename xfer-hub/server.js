@@ -12,6 +12,7 @@ const creds = require("./src/creds");
 const xfer = require("./src/xfer");
 const qb = require("./src/quark-bridge");
 const bd = require("./src/baidu-official");
+const prefs = require("./src/prefs");
 
 const PORT = Number(process.env.XFER_PORT || process.env.PORT || 3900);
 const VERSION = process.env.TOOLSHUB_VERSION || readVersion();
@@ -104,7 +105,7 @@ const routes = {
     }
   },
 
-  // 列来源网盘/目标网盘的目录，供用户选目标目录
+  // 列出来源网盘/目标网盘的目录，供用户选目标目录
   "GET /api/dirs": async (req, res) => {
     const u = new URL(req.url, "http://x");
     const provider = u.searchParams.get("provider") || "baidu";
@@ -138,6 +139,31 @@ const routes = {
     }
   },
 
+  // 当前目标目录设置（两家一起给，含 userSet 标记）
+  "GET /api/target-dir": (req, res) => {
+    try {
+      json(res, 200, { ok: true, dirs: prefs.allTargetDirs(), defaults: prefs.DEFAULTS });
+    } catch (e) {
+      json(res, 500, { error: e.message });
+    }
+  },
+
+  // 保存目标目录（全局记住，与 netdisk-hub 的「选择目录」语义一致）
+  "POST /api/target-dir": async (req, res) => {
+    try {
+      const body = await readBody(req);
+      const provider = body.provider === "baidu" ? "baidu" : "quark";
+      const cur = prefs.setTargetDir(provider, {
+        path: body.path,
+        name: body.name,
+        id: body.id,
+      });
+      json(res, 200, { ok: true, dir: cur, dirs: prefs.allTargetDirs() });
+    } catch (e) {
+      json(res, 500, { ok: false, error: e.message });
+    }
+  },
+
   // 解析链接（不下载，只预览会转存什么）
   "POST /api/parse": async (req, res) => {
     try {
@@ -166,7 +192,8 @@ const routes = {
       const t = xfer.start({
         link: body.link,
         dstProvider: body.dstProvider || "quark",
-        dstPath: body.dstPath,
+        // 前端没显式传就取用户保存过的（再没有才用内置默认）
+        dstPath: body.dstPath || prefs.getTargetDir(body.dstProvider || "quark").path,
         keepLocal: !!body.keepLocal,
       });
       json(res, 200, t);
@@ -220,6 +247,22 @@ function serveStatic(req, res, pathname) {
   });
 }
 
+// ── 共享样式：从仓库 shared/ 提供 tokens.css 与 macos-motion.css ──
+// 与 kdocs-tool / netdisk-hub 同一套做法：皮肤 CSS 只在渲染层定义，
+// 子页面必须自己 <link> 进来；这里把仓库 shared/ 暴露成 /tokens.css。
+// 打包后 shared/ 在 resources/app.asar 里（package.json 的 files 含 "shared/**/*"）。
+function serveShared(req, res, pathname) {
+  const name = path.basename(pathname); // 只取文件名，杜绝 ../ 穿越
+  if (name !== "tokens.css" && name !== "macos-motion.css") {
+    return send(res, 404, "not found", "text/plain; charset=utf-8");
+  }
+  const file = path.join(__dirname, "..", "shared", name);
+  fs.readFile(file, (err, data) => {
+    if (err) return send(res, 404, "not found", "text/plain; charset=utf-8");
+    send(res, 200, data, "text/css; charset=utf-8");
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
   const key = `${req.method} ${u.pathname}`;
@@ -234,7 +277,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "GET") return serveStatic(req, res, u.pathname);
+  if (req.method === "GET") {
+    // 共享样式（tokens.css / macos-motion.css）优先于静态目录解析
+    if (u.pathname === "/tokens.css" || u.pathname === "/macos-motion.css") {
+      return serveShared(req, res, u.pathname);
+    }
+    return serveStatic(req, res, u.pathname);
+  }
   send(res, 405, "method not allowed", "text/plain");
 });
 

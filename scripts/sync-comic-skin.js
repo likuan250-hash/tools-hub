@@ -1,7 +1,7 @@
 // scripts/sync-comic-skin.js
 //
 // 单一来源工作流工具：把「真源」shared/comic-skin 的两份文件
-// （comic-skin.css / comic-skin.js）复制到六处前端副本
+// （comic-skin.css / comic-skin.js）复制到七处前端副本
 // （renderer / netdisk-hub/public / kdocs-tool/public / biliup-hub/public / material-hub/public / resolve-hub/public）。
 //
 // 设计原则（对应 verify-comic-skin-sync.js 的门禁）：
@@ -21,6 +21,7 @@ const COPIES = [
   { name: 'biliup-hub', dir: 'biliup-hub/public' },
   { name: 'material-hub', dir: 'material-hub/public' },
   { name: 'resolve-hub', dir: 'resolve-hub/public' },
+  { name: 'xfer-hub', dir: 'xfer-hub/public' },
 ];
 const FILES = ['comic-skin.css', 'comic-skin.js'];
 
@@ -56,4 +57,4 @@ for (const f of FILES) {
 }
 
 if (divergence) process.exit(1);
-console.log(changedAny ? '\ncomic-skin 已以 shared/ 为真源同步到六处前端副本。' : '\ncomic-skin 六处前端副本已与真源一致，无需同步。');
+console.log(changedAny ? '\ncomic-skin 已以 shared/ 为真源同步到七处前端副本。' : '\ncomic-skin 七处前端副本已与真源一致，无需同步。');

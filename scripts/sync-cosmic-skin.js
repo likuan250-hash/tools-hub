@@ -23,6 +23,7 @@ const COPIES = [
   { name: 'biliup-hub', dir: 'biliup-hub/public' },
   { name: 'material-hub', dir: 'material-hub/public' },
   { name: 'resolve-hub', dir: 'resolve-hub/public' },
+  { name: 'xfer-hub', dir: 'xfer-hub/public' },
 ];
 const FILES = ['cosmic-skin.css', 'cosmic-skin.js', 'ark-pixel-16px-latin.woff2', 'ark-pixel-16px-zh_cn.woff2', 'OFL-ark-pixel.txt'];
 
@@ -62,4 +63,4 @@ for (const f of FILES) {
 }
 
 if (divergence) process.exit(1);
-console.log(changedAny ? '\ncosmic-skin 已以 shared/ 为真源同步到六处前端副本。' : '\ncosmic-skin 六处前端副本已与真源一致，无需同步。');
+console.log(changedAny ? '\ncosmic-skin 已以 shared/ 为真源同步到七处前端副本。' : '\ncosmic-skin 七处前端副本已与真源一致，无需同步。');

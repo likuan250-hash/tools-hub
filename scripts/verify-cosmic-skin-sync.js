@@ -1,4 +1,4 @@
-// scripts/verify-cosmic-skin-sync.js —— CI 门禁：五处 cosmic-skin 副本必须与真源逐字节一致。
+// scripts/verify-cosmic-skin-sync.js —— CI 门禁：六处 cosmic-skin 副本必须与真源逐字节一致。
 const fs = require('fs');
 const path = require('path');
 
@@ -19,4 +19,4 @@ for (const f of FILES) {
   }
 }
 if (fail) process.exit(1);
-console.log('cosmic-skin 六处副本与真源逐字节一致。');
+console.log('cosmic-skin 七处副本与真源逐字节一致。');

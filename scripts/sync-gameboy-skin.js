@@ -1,7 +1,7 @@
 // scripts/sync-gameboy-skin.js
 //
 // 单一来源工作流工具：把「真源」shared/gameboy-skin 的文件
-// （gameboy-skin.css / gameboy-skin.js / 像素字体）复制到六处前端副本
+// （gameboy-skin.css / gameboy-skin.js / 像素字体）复制到七处前端副本
 // （renderer / netdisk-hub/public / kdocs-tool/public / biliup-hub/public / material-hub/public / resolve-hub/public）。
 //
 // 设计原则（与 comic/cosmic 同步脚本一致，对应 verify-gameboy-skin-sync.js 门禁）：
@@ -20,6 +20,7 @@ const COPIES = [
   { name: 'biliup-hub', dir: 'biliup-hub/public' },
   { name: 'material-hub', dir: 'material-hub/public' },
   { name: 'resolve-hub', dir: 'resolve-hub/public' },
+  { name: 'xfer-hub', dir: 'xfer-hub/public' },
 ];
 const FILES = [
   'gameboy-skin.css',
@@ -63,6 +64,6 @@ for (const f of FILES) {
 if (divergence) process.exit(1);
 console.log(
   changedAny
-    ? '\ngameboy-skin 已以 shared/ 为真源同步到六处前端副本。'
-    : '\ngameboy-skin 六处前端副本已与真源一致，无需同步。',
+    ? '\ngameboy-skin 已以 shared/ 为真源同步到七处前端副本。'
+    : '\ngameboy-skin 七处前端副本已与真源一致，无需同步。',
 );

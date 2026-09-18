@@ -1,0 +1,1101 @@
+/* shared/comic-skin/comic-skin.css —— 漫画风皮肤（第四主题，独立于明暗）
+ * 设计定稿（2026-08-14）：
+ *   底色米白 #fff7e8；白底 + 粗黑描边 + 硬阴影 = 核心三件套；
+ *   大标题爆炸贴纸、小标题迷你贴纸 + 漫画徽章图标；
+ *   弹窗遮罩半透明黑 + 斜线纹；角落拟声词常驻摆动；动效全开（不降级 reduced-motion）。
+ * 生效条件 html[data-skin="comic"]，与 cosmic 同机制（shared 单一真源 + 同步到六处前端）。
+ */
+html[data-skin="comic"] {
+  --bg: #fff7e8;
+  --bg-1: #fff7e8; --bg-2: #fbeed2; --bg-3: #f6e3c2;
+  --fg: #1a1a1a; --fg-2: #4a3a66; --muted: #8a6fbb;
+  --text: #1a1a1a; --text-dim: #4a3a66;
+  --surface: #ffffff; --surface-2: #fdf3dd;
+  --field-bg: #ffffff; --solid-bg: #ffffff;
+  --glass-bg: #ffffff; --glass-border: #000000;
+  --border: #000000; --border-soft: rgba(0, 0, 0, .45);
+  --field-border: #000000;
+  --select-bg: #ffffff; --select-border: #000000;
+  --accent: #a78bfa; --accent-2: #f472b6; --accent-3: #fbbf24;
+  --apple-accent: #a78bfa;
+  --accent-hover: #b9a1ff; --accent-active: #8f6fe8;
+  --accent-rgb: 167, 139, 250; --accent2-rgb: 244, 114, 182;
+  --ok: #34d399; --warn: #fbbf24; --err: #ef4444;
+  --ok-rgb: 52, 211, 153; --err-rgb: 239, 68, 68;
+  --success: var(--ok); --danger: var(--err);
+  --hist-meta: #4a3a66;
+  --switch-off: #e6e0d0; --switch-thumb: #000000;
+  --modal-mask: rgba(20, 10, 40, .42);
+  --shadow-card: 6px 6px 0 rgba(0, 0, 0, .9);
+  --shadow-modal: 8px 8px 0 rgba(0, 0, 0, .85);
+  --field-inset: none;
+  /* 达芬奇剪辑页兼容变量 */
+  --panel: #ffffff;
+  --line: #000000;
+  --log-bg: #ffffff;
+}
+
+/* ===== 背景：米白 + 网点 + 速度线 ===== */
+html[data-skin="comic"] body {
+  background: #fff7e8;
+  color: var(--text);
+  font-family: "Microsoft YaHei", system-ui, sans-serif;
+}
+html[data-skin="comic"] body::before {
+  content: "";
+  position: fixed; top: -90px; right: -90px; width: 460px; height: 460px;
+  background: radial-gradient(circle, rgba(0, 0, 0, .16) 2.2px, transparent 2.6px);
+  background-size: 14px 14px;
+  pointer-events: none; z-index: 0;
+}
+
+/* ===== 大标题：爆炸贴纸 ===== */
+html[data-skin="comic"] h1,
+html[data-skin="comic"] .title,
+html[data-skin="comic"] .landing-title {
+  position: relative;
+  display: inline-block;
+  padding: 8px 26px 10px;
+  color: #111 !important;
+  font-weight: 900 !important;
+  letter-spacing: 1px;
+  -webkit-text-stroke: 0 !important;
+  text-shadow: none !important;
+  transform: rotate(-1deg);
+  z-index: 1;
+}
+html[data-skin="comic"] h1::before,
+html[data-skin="comic"] .title::before,
+html[data-skin="comic"] .landing-title::before {
+  content: "";
+  position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(135deg, #ffe9a8, #fbbf24);
+  clip-path: polygon(3% 12%, 14% 0, 28% 8%, 42% 2%, 58% 9%, 72% 0, 87% 10%, 100% 5%,
+                     96% 26%, 100% 42%, 94% 58%, 100% 74%, 95% 90%, 80% 100%, 66% 90%,
+                     50% 98%, 34% 90%, 18% 100%, 6% 88%, 0 70%, 6% 52%, 0 32%, 5% 16%);
+  filter: drop-shadow(3.5px 3.5px 0 #000);
+}
+html[data-skin="comic"] h1,
+html[data-skin="comic"] .title,
+html[data-skin="comic"] .landing-title {
+  animation: comicTitleWiggle 4s ease-in-out infinite;
+}
+@keyframes comicTitleWiggle {
+  0%, 100% { transform: rotate(-1.2deg); }
+  50% { transform: rotate(0.8deg) translateY(-1px); }
+}
+html[data-skin="comic"] h1 .en,
+html[data-skin="comic"] .title .en {
+  color: #6b4db8 !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  margin-left: 8px;
+}
+html[data-skin="comic"] .sub {
+  color: #4a3a66 !important;
+  font-weight: 800;
+}
+
+/* ===== 小标题：迷你贴纸 + 漫画徽章图标 ===== */
+html[data-skin="comic"] .panel-head h2,
+html[data-skin="comic"] .card h2,
+html[data-skin="comic"] h2 {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 20px 6px;
+  color: #111 !important;
+  font-weight: 900 !important;
+  letter-spacing: .2px;
+  -webkit-text-stroke: 0 !important;
+  text-shadow: none !important;
+  transform: rotate(-1deg);
+  z-index: 1;
+}
+html[data-skin="comic"] .panel-head h2::before,
+html[data-skin="comic"] .card h2::before,
+html[data-skin="comic"] h2::before {
+  content: "";
+  position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(135deg, #ffe9a8, #fbbf24);
+  clip-path: polygon(4% 18%, 12% 2%, 30% 12%, 45% 4%, 62% 13%, 78% 2%, 92% 12%, 100% 6%,
+                     97% 34%, 100% 58%, 94% 78%, 82% 100%, 66% 88%, 50% 98%, 34% 88%, 16% 100%,
+                     4% 86%, 0 62%, 5% 40%, 0 22%);
+  filter: drop-shadow(2.5px 2.5px 0 #000);
+}
+html[data-skin="comic"] .panel-head h2 .app-ico,
+html[data-skin="comic"] .card h2 .app-ico,
+html[data-skin="comic"] .panel-head h2 .h2-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 30px; height: 30px;
+  padding: 4px;
+  background: #fff;
+  border: 2.5px solid #000;
+  border-radius: 8px;
+  box-shadow: 2.5px 2.5px 0 #000;
+  box-sizing: border-box;
+  color: #6b4db8;
+}
+html[data-skin="comic"] .app-ico { stroke-width: 2.2; }
+/* 全站 SVG 图标漫画化：加粗描边 + 硬阴影 */
+html[data-skin="comic"] .app-ico,
+html[data-skin="comic"] .ib-ico,
+html[data-skin="comic"] .bx-ico,
+html[data-skin="comic"] svg.ib-ico {
+  stroke-width: 2.4;
+  filter: drop-shadow(1.5px 1.5px 0 rgba(0, 0, 0, .45));
+}
+html[data-skin="comic"] .card-icon svg,
+html[data-skin="comic"] .h2-ico svg,
+html[data-skin="comic"] .step-icon .app-ico {
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, .5));
+}
+
+/* ===== 面板 / 卡片 / 弹窗 / 日志：白底黑边硬阴影 ===== */
+html[data-skin="comic"] .panel,
+html[data-skin="comic"] .card,
+html[data-skin="comic"] .modal,
+html[data-skin="comic"] .modal.glass,
+html[data-skin="comic"] .log-card,
+html[data-skin="comic"] .chip,
+html[data-skin="comic"] .toast,
+html[data-skin="comic"] .result-card,
+html[data-skin="comic"] .file-card,
+html[data-skin="comic"] .history-item,
+html[data-skin="comic"] .step-item,
+html[data-skin="comic"] .cover-preview,
+html[data-skin="comic"] .cover-modal-panel,
+html[data-skin="comic"] .skin-drop,
+html[data-skin="comic"] .acct-menu,
+html[data-skin="comic"] .drop,
+html[data-skin="comic"] .result-summary,
+html[data-skin="comic"] .sl-panel {
+  background: #fff !important;
+  border: 3px solid #000 !important;
+  border-radius: 14px !important;
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, .9) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-skin="comic"] .modal,
+html[data-skin="comic"] .modal.glass {
+  border-radius: 16px !important;
+  box-shadow: 8px 8px 0 rgba(0, 0, 0, .85) !important;
+}
+html[data-skin="comic"] .modal-mask,
+html[data-skin="comic"] .modal-overlay,
+html[data-skin="comic"] .cover-modal {
+  background:
+    repeating-linear-gradient(45deg, rgba(20, 10, 40, .08) 0 14px, transparent 14px 28px),
+    rgba(20, 10, 40, .42) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-skin="comic"] .modal .modal-head,
+html[data-skin="comic"] .modal.glass .modal-head,
+html[data-skin="comic"] .log-card > summary {
+  background: #fff3d6 !important;
+  border-bottom: 2px solid #000 !important;
+  color: #111 !important;
+}
+/* 网盘任务卡：并入白底黑边硬阴影 */
+html[data-skin="comic"] .task,
+html[data-skin="comic"] .task-card,
+html[data-skin="comic"] .task-row {
+  background: #fff !important;
+  border: 2px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .85) !important;
+}
+
+/* ===== 输入控件：白底黑边硬阴影 ===== */
+html[data-skin="comic"] input[type="text"],
+html[data-skin="comic"] input[type="password"],
+html[data-skin="comic"] input[type="number"],
+html[data-skin="comic"] input[type="datetime-local"],
+html[data-skin="comic"] select,
+html[data-skin="comic"] textarea {
+  background: #fff !important;
+  color: #111 !important;
+  border: 3px solid #000 !important;
+  border-radius: 10px !important;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .85) !important;
+  font-weight: 700;
+}
+html[data-skin="comic"] input:focus,
+html[data-skin="comic"] select:focus,
+html[data-skin="comic"] textarea:focus {
+  border-color: #fbbf24 !important;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .85), 0 0 0 3px rgba(251, 191, 36, .35) !important;
+  outline: none;
+}
+html[data-skin="comic"] input::placeholder,
+html[data-skin="comic"] textarea::placeholder { color: #9a9aa2 !important; opacity: 1; }
+/* 素材页漫画对话框输入框豁免：全局白底黑边不能套进漫画框内部 */
+html[data-skin="comic"] .fx-comic input[type="text"],
+html[data-skin="comic"] .comic-input input,
+html[data-skin="comic"] .comic-input textarea {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+html[data-skin="comic"] select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+html[data-skin="comic"] label { color: #4a3a66 !important; font-weight: 800; }
+html[data-skin="comic"] input[type="checkbox"],
+html[data-skin="comic"] input[type="radio"] { accent-color: #fbbf24; }
+
+/* ===== 按钮：紫粉金 + 黑边硬阴影 + 按下下沉 ===== */
+html[data-skin="comic"] .btn,
+html[data-skin="comic"] .auth-btn,
+html[data-skin="comic"] .btn-exec,
+html[data-skin="comic"] .btn-primary,
+html[data-skin="comic"] .card-open,
+html[data-skin="comic"] .update-btn,
+html[data-skin="comic"] .theme-btn,
+html[data-skin="comic"] .sort-toggle,
+html[data-skin="comic"] .icon-btn,
+html[data-skin="comic"] .btn-ghost,
+html[data-skin="comic"] .clear-input,
+html[data-skin="comic"] .tab,
+html[data-skin="comic"] .history-tab {
+  border: 3px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0 #000 !important;
+  font-weight: 900 !important;
+  color: #111 !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  transition: transform .12s, box-shadow .12s, filter .12s, background .12s;
+}
+html[data-skin="comic"] .btn,
+html[data-skin="comic"] .auth-btn,
+html[data-skin="comic"] .btn-exec,
+html[data-skin="comic"] .btn-primary,
+html[data-skin="comic"] .card-open,
+html[data-skin="comic"] .update-btn {
+  color: #fff !important;
+  background: linear-gradient(135deg, #a78bfa, #f472b6) !important;
+  box-shadow: 5px 5px 0 #000 !important;
+}
+html[data-skin="comic"] .btn:hover,
+html[data-skin="comic"] .auth-btn:hover,
+html[data-skin="comic"] .btn-exec:hover,
+html[data-skin="comic"] .card-open:hover,
+html[data-skin="comic"] .update-btn:hover { transform: translateY(-2px); filter: brightness(1.05); }
+html[data-skin="comic"] .btn:active,
+html[data-skin="comic"] .auth-btn:active,
+html[data-skin="comic"] .btn-exec:active,
+html[data-skin="comic"] .card-open:active,
+html[data-skin="comic"] .icon-btn:active,
+html[data-skin="comic"] .sort-toggle:active { transform: translate(4px, 4px); box-shadow: 1px 1px 0 #000 !important; }
+html[data-skin="comic"] .btn:disabled,
+html[data-skin="comic"] .auth-btn:disabled,
+html[data-skin="comic"] .btn-exec:disabled { opacity: .45; cursor: not-allowed; transform: none !important; }
+html[data-skin="comic"] .btn.ghost,
+html[data-skin="comic"] .btn-ghost,
+html[data-skin="comic"] .icon-btn,
+html[data-skin="comic"] .theme-btn,
+html[data-skin="comic"] .sort-toggle,
+html[data-skin="comic"] .tab,
+html[data-skin="comic"] .history-tab,
+html[data-skin="comic"] .clear-input { background: #fff !important; color: #111 !important; }
+/* 达芬奇剪辑页：.primary 按钮 / 无 class 的清空按钮 / 卡片小标题 */
+html[data-skin="comic"] button.primary,
+html[data-skin="comic"] #browseBtn,
+html[data-skin="comic"] #startBtn,
+html[data-skin="comic"] #finishBtn {
+  border: 3px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0 #000 !important;
+  background: linear-gradient(135deg, #a78bfa, #f472b6) !important;
+  color: #fff !important;
+  box-shadow: 5px 5px 0 #000 !important;
+  font-weight: 900;
+}
+html[data-skin="comic"] #clearBtn {
+  border: 3px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0 #000 !important;
+  background: #fff !important;
+  color: #111 !important;
+  font-weight: 900;
+}
+html[data-skin="comic"] button.primary:active,
+html[data-skin="comic"] #browseBtn:active,
+html[data-skin="comic"] #startBtn:active,
+html[data-skin="comic"] #finishBtn:active,
+html[data-skin="comic"] #clearBtn:active { transform: translate(4px, 4px); box-shadow: 1px 1px 0 #000 !important; }
+html[data-skin="comic"] button.primary:disabled,
+html[data-skin="comic"] #browseBtn:disabled,
+html[data-skin="comic"] #startBtn:disabled,
+html[data-skin="comic"] #finishBtn:disabled,
+html[data-skin="comic"] #clearBtn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+html[data-skin="comic"] .card h3 {
+  color: #111;
+  font-weight: 900;
+  text-shadow: 2px 2px 0 #ffe9a8;
+}
+/* 待发布清单：tab 选中金黄黑字；编辑/顶替黑字小按钮；删除保持红字 */
+html[data-skin="comic"] .pv-tabs button.active {
+  background: linear-gradient(135deg, #ffe9a8, #fbbf24) !important;
+  color: #111 !important;
+  border-color: #000 !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  font-weight: 900;
+}
+html[data-skin="comic"] .pv-edit,
+html[data-skin="comic"] .pv-replace {
+  background: #fff !important;
+  color: #111 !important;
+  border: 2px solid #000 !important;
+  border-radius: 8px !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  font-weight: 800;
+}
+html[data-skin="comic"] .pv-edit:hover,
+html[data-skin="comic"] .pv-replace:hover { color: #111 !important; }
+html[data-skin="comic"] .pv-sync:hover,
+html[data-skin="comic"] .pv-act:hover { color: #111 !important; }
+html[data-skin="comic"] .pv-del {
+  background: transparent !important;
+  color: #b3122c !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-weight: 800;
+}
+/* 分段控件 / 标签页选中态：金黄 */
+html[data-skin="comic"] .seg-item {
+  background: #fff !important;
+  color: #4a3a66 !important;
+  border: 3px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 3px 3px 0 #000 !important;
+  font-weight: 900;
+}
+html[data-skin="comic"] .seg-input:checked + .seg-item,
+html[data-skin="comic"] .tab.on,
+html[data-skin="comic"] .tab.active,
+html[data-skin="comic"] .history-tab.active {
+  background: linear-gradient(135deg, #ffe9a8, #fbbf24) !important;
+  color: #111 !important;
+  -webkit-text-stroke: 0 !important;
+  text-shadow: none;
+  transform: rotate(-1deg) scale(1.05);
+  font-weight: 900 !important;
+  box-shadow: 3px 3px 0 #000 !important;
+}
+
+/* ===== 开关：外描边方案（box-shadow 不占盒模型，滑块不变形） ===== */
+html[data-skin="comic"] .switch input,
+html[data-skin="comic"] .sw input,
+html[data-skin="comic"] .force-switch .sw {
+  background: #eee !important;
+  border-color: #000 !important;
+  box-shadow: 0 0 0 2px #000, 2px 2px 0 #000 !important;
+}
+html[data-skin="comic"] .switch input:checked,
+html[data-skin="comic"] .force-switch input:checked + .sw {
+  background: #fbbf24 !important;
+  box-shadow: 0 0 0 2px #000, 2px 2px 0 #000, 0 0 0 5px rgba(251, 191, 36, .28) !important;
+}
+html[data-skin="comic"] .force-switch .sw::after {
+  background: #fff !important;
+  border: 2px solid #000;
+}
+
+/* ===== 状态胶囊 / 徽章通用漫画化 ===== */
+html[data-skin="comic"] .st-luxe,
+html[data-skin="comic"] .status-capsule,
+html[data-skin="comic"] .capsule,
+html[data-skin="comic"] .status-badge,
+html[data-skin="comic"] .state-badge,
+html[data-skin="comic"] .task-status,
+html[data-skin="comic"] #statusCapsule {
+  background: #fff !important;
+  border: 2px solid #000 !important;
+  border-radius: 999px !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  color: #4a3a66 !important;
+  font-weight: 900 !important;
+}
+html[data-skin="comic"] .st-luxe--ok { color: #0b8a4d !important; background: #eafff1 !important; }
+html[data-skin="comic"] .st-luxe--err { color: #b3122c !important; background: #ffe9ec !important; }
+html[data-skin="comic"] .st-luxe--warn { color: #8a5a00 !important; background: #fff7e0 !important; }
+html[data-skin="comic"] .st-luxe--info { color: #6b4db8 !important; background: #f3ecff !important; }
+html[data-skin="comic"] .st-luxe--off { color: #8a8a8a !important; background: #f0f0f0 !important; }
+html[data-skin="comic"] .dot { box-shadow: 0 0 0 1.5px #000; }
+/* 投稿状态胶囊：紧凑自适应宽度（原 flex:1 撑出长白框） */
+html[data-skin="comic"] #statusCapsule {
+  display: inline-flex !important;
+  width: auto !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  white-space: nowrap;
+  justify-content: flex-start;
+}
+/* 投稿日志内进度条：去掉，不协调 */
+html[data-skin="comic"] .bili-exec-progress { display: none !important; }
+/* 主页顶栏聚合状态 / 更新状态：漫画胶囊 */
+html[data-skin="comic"] .agg {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  background: #fff !important;
+  border: 2px solid #000 !important;
+  border-radius: 999px !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  color: #4a3a66 !important;
+  font-weight: 800 !important;
+  font-size: 12px !important;
+  padding: 4px 12px !important;
+  line-height: 1.4;
+}
+/* 入口聚合状态：漫画皮肤下渲染为 P5 社群卡（五个模块，在线点亮/离线灰暗，点击直达工具，
+   全在线时播放 ALL-OUT ATTACK 特效） */
+html[data-skin="comic"] .agg {
+  display: inline-flex !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  position: relative !important;
+  flex-wrap: wrap !important;
+  max-width: 330px !important;
+}
+html[data-skin="comic"] .agg::before {
+  content: "";
+  position: absolute;
+  top: 4px; left: 0; right: 0; bottom: 4px;
+  background: rgba(230, 0, 18, .42);
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+}
+html[data-skin="comic"] .agg .dball {
+  position: relative;
+  width: 46px;
+  height: 66px;
+  border-radius: 0 !important;
+  background: linear-gradient(160deg, #f2f2f2 0 84%, #d9d9d9 84%), #eee;
+  clip-path: polygon(0 0, 100% 0, 100% 86%, 86% 100%, 0 100%);
+  color: #111;
+  overflow: hidden;
+  cursor: pointer;
+  border: none;
+  display: block;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .45);
+}
+html[data-skin="comic"] .agg .dball.on {
+  background: linear-gradient(160deg, #fff 0 84%, #f0f0f0 84%), #fff;
+  box-shadow:
+    0 0 0 2px #d9a400,
+    0 0 0 4px #e60012,
+    0 0 16px rgba(217, 164, 0, .65),
+    0 3px 8px rgba(0, 0, 0, .45);
+}
+html[data-skin="comic"] .agg .dball.off {
+  filter: grayscale(1) brightness(.62);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .35);
+}
+html[data-skin="comic"] .agg .card-head {
+  display: block;
+  height: 17px;
+  line-height: 17px;
+  padding: 0 5px;
+  background: #e60012;
+  color: #fff;
+  font-weight: 900;
+  font-size: 8px;
+  letter-spacing: .5px;
+  font-family: "Arial Black", "Microsoft YaHei", sans-serif;
+}
+html[data-skin="comic"] .agg .card-head b { font-size: 10px; }
+html[data-skin="comic"] .agg .card-dot {
+  position: absolute;
+  left: 5px;
+  top: 21px;
+  width: 5px;
+  height: 5px;
+  background: #e60012;
+  transform: rotate(45deg);
+}
+html[data-skin="comic"] .agg .dball.off .card-dot { background: #777; }
+html[data-skin="comic"] .agg .card-pic {
+  display: grid;
+  place-items: center;
+  height: 30px;
+  margin-top: 2px;
+  background: linear-gradient(135deg, rgba(230, 0, 18, .85) 0 24%, transparent 24% 100%), #1a1a1c;
+  color: #fff;
+  font-size: 16px;
+}
+html[data-skin="comic"] .agg .dball.on .card-pic {
+  background: linear-gradient(135deg, rgba(230, 0, 18, .9) 0 24%, transparent 24% 100%), #241f16;
+}
+html[data-skin="comic"] .agg .dball.on .card-ico {
+  color: #ffd76a;
+  display: inline-block;
+  transform-origin: center;
+  line-height: 1;
+  animation: aoaGoldBreathe 2s ease-in-out infinite;
+}
+html[data-skin="comic"] .agg .dball.off .card-pic {
+  background: linear-gradient(135deg, rgba(120, 120, 120, .7) 0 24%, transparent 24% 100%), #1a1a1c;
+}
+html[data-skin="comic"] .agg .card-name {
+  display: block;
+  padding: 4px 0 0;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.25;
+  color: #111;
+  text-align: center;
+}
+/* 在线：中心图标金色发光 + 呼吸 */
+@keyframes aoaGoldBreathe {
+  0%, 100% { text-shadow: 0 0 1px rgba(245, 180, 0, .4), 0 0 5px rgba(245, 180, 0, .25); }
+  50% { text-shadow: 0 0 12px rgba(245, 180, 0, 1), 0 0 26px rgba(245, 180, 0, .9); }
+}
+/* 全部在线：ALL-OUT ATTACK 特效（依次点亮 → 横幅+红闪 → 定格3S → 回归常规） */
+html[data-skin="comic"] .agg .aoa-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 430px;
+  display: block !important;
+  z-index: 4;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+}
+html[data-skin="comic"] .agg .aoa-banner span {
+  display: inline-block;
+  font-family: "Arial Black", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #fff;
+  background: #e60012;
+  border-top: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  padding: 3px 14px;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, .85);
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  white-space: nowrap;
+}
+html[data-skin="comic"] .agg.agg-aoa .dball {
+  animation: aoaPop .32s cubic-bezier(.2, 1.5, .4, 1) both;
+}
+html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(2) { animation-delay: .16s; }
+html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(3) { animation-delay: .3s; }
+html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(4) { animation-delay: .44s; }
+html[data-skin="comic"] .agg.agg-aoa .dball:nth-of-type(5) { animation-delay: .58s; }
+@keyframes aoaPop {
+  0% { transform: scale(.82); opacity: .35; }
+  65% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+html[data-skin="comic"] .agg.agg-aoa .aoa-banner {
+  animation: aoaBanner 5s ease both;
+}
+@keyframes aoaBanner {
+  0%, 24% { opacity: 0; transform: translate(-54%, -50%) rotate(-7deg) scale(.72); }
+  34% { opacity: 1; transform: translate(-50%, -50%) rotate(-3deg) scale(1); }
+  88% { opacity: 1; transform: translate(-50%, -50%) rotate(-3deg) scale(1); }
+  100% { opacity: 0; transform: translate(-42%, -50%) rotate(-1deg) scale(1.06); }
+}
+html[data-skin="comic"] .agg.agg-aoa::before {
+  animation: aoaFlash 5s linear both;
+}
+@keyframes aoaFlash {
+  0%, 24% { opacity: 0; }
+  26% { opacity: 1; }
+  32% { opacity: .5; }
+  88% { opacity: 0; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-skin="comic"] .agg.agg-aoa .dball,
+  html[data-skin="comic"] .agg.agg-aoa .aoa-banner,
+  html[data-skin="comic"] .agg.agg-aoa::before {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}
+/* 更新状态：纯文字无底框（空内容时也不出现空白框） */
+html[data-skin="comic"] .update-status {
+  display: inline !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  color: #4a3a66 !important;
+}
+html[data-skin="comic"] .update-status.ok { color: #0b8a4d !important; }
+html[data-skin="comic"] .update-status.bad { color: #b3122c !important; }
+html[data-skin="comic"] .chip {
+  border: 2px solid #000 !important;
+  box-shadow: 2.5px 2.5px 0 #000 !important;
+  border-radius: 999px !important;
+  font-weight: 900;
+}
+html[data-skin="comic"] .chip .dot { box-shadow: 0 0 0 2px #000; }
+html[data-skin="comic"] .tag {
+  display: inline-block; background: #ffe9a8 !important; color: #111 !important;
+  border: 2px solid #000 !important; border-radius: 8px !important;
+  box-shadow: 2px 2px 0 #000 !important; transform: rotate(2deg);
+  font-weight: 900;
+}
+
+/* ===== 日志 / 进度条 ===== */
+html[data-skin="comic"] .log-area,
+html[data-skin="comic"] .log-card .body {
+  color: #333 !important;
+  background: #fff !important;
+}
+html[data-skin="comic"] .log-area .line { color: #555; }
+html[data-skin="comic"] .log-area .line.ok { color: #0b8a4d; }
+html[data-skin="comic"] .log-area .line.err { color: #d6354d; }
+html[data-skin="comic"] .exec-bar,
+html[data-skin="comic"] .step-indeterminate,
+html[data-skin="comic"] .step-item .exec-bar,
+html[data-skin="comic"] .bili-exec-bar {
+  height: 10px;
+  border: 2px solid #000;
+  background: #f3eefe !important;
+  border-radius: 999px;
+  overflow: hidden;
+}
+/* 独立大进度条（达芬奇总状态条 / B站独立条）不再需要：进度条只出现在执行进度每一步下面 */
+html[data-skin="comic"] .exec-bar,
+html[data-skin="comic"] .step-indeterminate,
+html[data-skin="comic"] .bili-exec-bar { display: none !important; }
+html[data-skin="comic"] .exec-bar::after,
+html[data-skin="comic"] .step-indeterminate::after,
+html[data-skin="comic"] .bili-exec-bar::after {
+  background: repeating-linear-gradient(90deg, #a78bfa 0 10px, #fbbf24 10px 20px, #22d3ee 20px 30px) !important;
+  box-shadow: none !important;
+}
+
+/* ===== 漫画进度条三变体（comic-skin.js 随机分配 cp-a / cp-b / cp-c） ===== */
+/* A · 锯齿能量条：紫粉金渐变 + 黑白斜纹 + 上下锯齿 + 硬阴影 */
+html[data-skin="comic"] .cp-a:not(.step-item)::after {
+  background:
+    repeating-linear-gradient(105deg, rgba(255, 255, 255, .6) 0 8px, transparent 8px 16px),
+    linear-gradient(90deg, #a78bfa, #f472b6, #fbbf24, #a78bfa) !important;
+  background-size: auto, 300% 100%;
+  box-shadow: none !important;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, .55));
+  clip-path: polygon(0 22%, 6% 8%, 12% 26%, 20% 4%, 30% 24%, 40% 6%, 52% 28%, 64% 8%,
+                     76% 26%, 88% 6%, 100% 22%, 100% 78%, 88% 94%, 76% 74%, 64% 92%,
+                     52% 72%, 40% 94%, 30% 76%, 20% 96%, 12% 74%, 6% 92%, 0 78%);
+}
+/* B · 分格能量槽 + 星星滑块 */
+html[data-skin="comic"] .cp-b:not(.step-item) {
+  overflow: visible !important;
+  background: #fff !important;
+}
+html[data-skin="comic"] .cp-b:not(.step-item)::after {
+  content: "★";
+  width: auto !important;
+  height: auto !important;
+  top: 50% !important;
+  bottom: auto !important;
+  left: 2%;
+  transform: translateY(-50%);
+  background: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  clip-path: none !important;
+  border-radius: 0 !important;
+  font-size: 19px;
+  line-height: 1;
+  color: #fbbf24;
+  -webkit-text-stroke: 1.5px #000;
+  text-shadow: 2px 2px 0 #000;
+  animation: cpStar 1.4s ease-in-out infinite alternate;
+  z-index: 2;
+}
+/* JS 驱动模式：禁用伪元素星星（改由 comic-skin.js 注入 .cp-star span 精确同步） */
+html[data-skin="comic"] .cp-js:not(.step-item)::after,
+html[data-skin="comic"] .cp-js .step-body::after { content: none !important; }
+html[data-skin="comic"] .cp-star {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  font-size: 19px;
+  line-height: 1;
+  color: #fbbf24;
+  -webkit-text-stroke: 1.5px #000;
+  text-shadow: 2px 2px 0 #000;
+  z-index: 2;
+  pointer-events: none;
+}
+@keyframes cpStar {
+  0% { left: 2%; transform: translateY(-50%) rotate(-10deg) scale(1); }
+  50% { transform: translateY(-50%) rotate(14deg) scale(1.35); }
+  100% { left: calc(100% - 22px); transform: translateY(-50%) rotate(-10deg) scale(1); }
+}
+/* B 变体分格能量槽：格子随星星扫过逐个点亮/熄灭（delay 由 comic-skin.js 注入） */
+html[data-skin="comic"] .cp-seg {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; gap: 1px; padding: 0;
+  pointer-events: none;
+}
+html[data-skin="comic"] .cp-seg i {
+  flex: 1; border-radius: 2px;
+  background-color: rgba(0, 0, 0, .08);
+  border: 1px solid rgba(0, 0, 0, .35);
+  transition: background-color .08s;
+}
+html[data-skin="comic"] .cp-seg i.lit {
+  background-color: #fbbf24;
+}
+/* C · 气泡进度：三色条纹条 + 前端「加载中…」气泡 */
+html[data-skin="comic"] .cp-c:not(.step-item) { overflow: visible !important; }
+html[data-skin="comic"] .cp-c:not(.step-item)::after {
+  background: repeating-linear-gradient(90deg, #a78bfa 0 12px, #f472b6 12px 24px, #fbbf24 24px 36px) !important;
+  box-shadow: none !important;
+  filter: none !important;
+  clip-path: none !important;
+  animation: cpWidth 1.3s ease-in-out infinite alternate;
+}
+@keyframes cpWidth { from { width: 14%; } to { width: 98%; } }
+html[data-skin="comic"] .cp-c:not(.step-item)::before {
+  content: "加载中…";
+  position: absolute;
+  top: 50%;
+  left: 4%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+  background: #7c5cff;
+  border: 2px solid #000;
+  border-radius: 999px;
+  padding: 2px 9px;
+  box-shadow: 2px 2px 0 #000;
+  white-space: nowrap;
+  z-index: 2;
+  animation: cpTip 1.3s ease-in-out infinite alternate;
+}
+@keyframes cpTip { from { left: 4%; } to { left: 92%; } }
+
+/* ===== 步骤内进度条：真实轨道元素 .cp-track（comic-skin.js 注入），填充条为轨道子元素被裁剪，任意框宽都不变形不偏移 ===== */
+/* 非漫画皮肤：注入的轨道/格子/星星/气泡一律隐藏，不影响其他皮肤 */
+.cp-track, .cp-seg, .cp-star, .cp-bubble { display: none; }
+html[data-skin="comic"] .cp-track { display: block; }
+html[data-skin="comic"] .cp-seg { display: flex; }
+html[data-skin="comic"] .cp-star,
+html[data-skin="comic"] .cp-bubble { display: block; }
+/* 轨道本体：位于 step-body 底部，220px 大条，黑边米白底 */
+html[data-skin="comic"] .cp-track {
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 100%; max-width: 220px; height: 10px;
+  border: 2px solid #000; border-radius: 999px;
+  background: #f3eefe;
+  box-sizing: border-box;
+}
+/* 只给执行中的步骤显示轨道（完成/失败/等待一律隐藏） */
+html[data-skin="comic"] .step-item:not(.info):not(:has(.st-luxe--info)) .cp-track { display: none !important; }
+html[data-skin="comic"] .step-item:has(.st-luxe--info) .step-body,
+html[data-skin="comic"] .step-item.info:not(#execStep) .step-body {
+  position: relative;
+  padding-bottom: 14px;
+  overflow: visible;
+}
+/* 屏蔽各子页面 base 在 step-body 上的伪元素进度条，避免出现双轨 */
+html[data-skin="comic"] .step-item .step-body::before,
+html[data-skin="comic"] .step-item .step-body::after { content: none !important; }
+/* 三变体共用填充条（宽度相对轨道自身，不再是整个 step-body） */
+html[data-skin="comic"] .cp-a .cp-track::after,
+html[data-skin="comic"] .cp-b .cp-track::after,
+html[data-skin="comic"] .cp-c .cp-track::after {
+  content: "";
+  position: absolute; top: 0; left: 0; bottom: 0;
+  width: 45%;
+  border-radius: 999px;
+}
+/* A · 锯齿能量条（轨道内滑动，轨道 overflow hidden 裁剪） */
+html[data-skin="comic"] .cp-a .cp-track { overflow: hidden; }
+html[data-skin="comic"] .cp-a .cp-track::after {
+  background:
+    repeating-linear-gradient(105deg, rgba(255, 255, 255, .6) 0 8px, transparent 8px 16px),
+    linear-gradient(90deg, #a78bfa, #f472b6, #fbbf24, #a78bfa) !important;
+  background-size: auto, 300% 100%;
+  box-shadow: none !important;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, .55));
+  clip-path: polygon(0 22%, 6% 8%, 12% 26%, 20% 4%, 30% 24%, 40% 6%, 52% 28%, 64% 8%,
+                     76% 26%, 88% 6%, 100% 22%, 100% 78%, 88% 94%, 76% 74%, 64% 92%,
+                     52% 72%, 40% 94%, 30% 76%, 20% 96%, 12% 74%, 6% 92%, 0 78%);
+  animation: thinSlide 1.3s ease-in-out infinite alternate;
+}
+@keyframes thinSlide { from { transform: translateX(-110%); } to { transform: translateX(122%); } }
+/* B · 分格能量槽 + 星星（JS 驱动；格子铺满轨道，星星在轨道内往返） */
+html[data-skin="comic"] .cp-b .cp-track { background: #fff; overflow: visible; }
+html[data-skin="comic"] .cp-track .cp-seg {
+  position: absolute; inset: 0; z-index: 1;
+  display: flex; gap: 1px; padding: 0;
+  pointer-events: none;
+}
+html[data-skin="comic"] .cp-track .cp-star {
+  position: absolute;
+  top: 50%; left: 0;
+  transform: translateY(-50%);
+  font-size: 19px; line-height: 1;
+  color: #fbbf24;
+  -webkit-text-stroke: 1.5px #000;
+  text-shadow: 2px 2px 0 #000;
+  z-index: 2;
+  pointer-events: none;
+}
+/* C · 气泡进度：三色条纹伸缩 + 「加载中…」气泡（JS 驱动气泡在轨道内往返） */
+html[data-skin="comic"] .cp-c .cp-track { overflow: visible; }
+html[data-skin="comic"] .cp-c .cp-track::after {
+  background: repeating-linear-gradient(90deg, #a78bfa 0 12px, #f472b6 12px 24px, #fbbf24 24px 36px) !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+  filter: none !important;
+  animation: thinW 1.3s ease-in-out infinite alternate;
+}
+@keyframes thinW { from { width: 14%; } to { width: 96%; } }
+html[data-skin="comic"] .cp-track .cp-bubble {
+  position: absolute;
+  top: 50%; left: 4%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+  background: #7c5cff;
+  border: 2px solid #000;
+  border-radius: 999px;
+  padding: 2px 9px;
+  box-shadow: 2px 2px 0 #000;
+  white-space: nowrap;
+  z-index: 2;
+  pointer-events: none;
+}
+html[data-skin="comic"] .step-item {
+  border: 3px solid #000 !important;
+  border-radius: 12px !important;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .9) !important;
+  margin-bottom: 14px;
+  padding: 10px 12px !important; /* 五页步骤盒统一内边距（素材/金山原为时间线布局 0 下 20px） */
+}
+html[data-skin="comic"] .step-item:last-child { margin-bottom: 0; }
+/* 不要时间线竖线：素材/金山 base 的 .step-item:not(:last-child)::before 统一隐藏 */
+html[data-skin="comic"] .step-item::before { display: none !important; }
+/* 达芬奇顶部总状态行不需要：只保留分步骤 */
+html[data-skin="comic"] #execStep { display: none !important; }
+html[data-skin="comic"] #autoSteps,
+html[data-skin="comic"] .auto-result,
+html[data-skin="comic"] .steps {
+  gap: 14px;
+}
+html[data-skin="comic"] .step-item .step-icon,
+html[data-skin="comic"] .step-item .st-icon {
+  border: 2px solid #000 !important;
+  box-shadow: 2px 2px 0 #000 !important;
+}
+
+/* ===== 执行进度标题行：五页统一「执行进度」漫画胶囊 ===== */
+html[data-skin="comic"] .exec-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffe9a8;
+  border: 3px solid #000;
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 #000;
+  padding: 5px 14px;
+  font-size: 14px;
+  font-weight: 900;
+  color: #4a3a66;
+  transform: rotate(-1deg);
+  margin-bottom: 12px;
+}
+html[data-skin="comic"] .exec-title::after {
+  content: "▶";
+  margin-left: 2px;
+  font-size: 10px;
+  color: #fbbf24;
+}
+
+/* ===== 滚动条 ===== */
+html[data-skin="comic"] ::-webkit-scrollbar { width: 12px; height: 12px; }
+html[data-skin="comic"] ::-webkit-scrollbar-track { background: #fff3d6; border-left: 2px solid #000; }
+html[data-skin="comic"] ::-webkit-scrollbar-thumb {
+  background: #111; border-radius: 8px; border: 3px solid #fff3d6;
+}
+
+/* ===== 主页入口卡片 ===== */
+html[data-skin="comic"] .card {
+  padding: 18px 16px 16px;
+  border: 3px solid #000 !important;
+  border-radius: 16px !important;
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, .9) !important;
+  transition: transform .15s, box-shadow .15s;
+}
+html[data-skin="comic"] .card:hover {
+  transform: translate(-2px, -3px);
+  box-shadow: 8px 8px 0 rgba(0, 0, 0, .9) !important;
+}
+html[data-skin="comic"] .card-icon {
+  display: grid; place-items: center;
+  width: 58px; height: 58px;
+  background: #fff;
+  border: 3px solid #000;
+  border-radius: 14px;
+  box-shadow: 3.5px 3.5px 0 #000;
+}
+html[data-skin="comic"] .card-icon svg { width: 30px; height: 30px; stroke-width: 2.2; }
+html[data-skin="comic"] .card-title {
+  font-size: 17px; font-weight: 900; color: #111;
+  text-shadow: 2px 2px 0 #ffe9a8;
+}
+html[data-skin="comic"] .card-desc { font-weight: 700; color: #5a4a78; }
+html[data-skin="comic"] .card-meta { font-weight: 900; color: #4a3a66; }
+html[data-skin="comic"] .card-open {
+  background: linear-gradient(135deg, #ffe9a8, #fbbf24) !important;
+  color: #111 !important;
+}
+html[data-skin="comic"] .grip { color: #000; opacity: .35; }
+
+/* ===== 入口页加载动画：漫画风（方案 C · 速度线 + 感叹号） ===== */
+html[data-skin="comic"] .stage-loading {
+  background: rgba(255, 247, 232, .82) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  overflow: hidden;
+}
+/* 放射速度线：绕中心缓慢旋转 */
+html[data-skin="comic"] .stage-loading::before {
+  content: "";
+  position: absolute; inset: -20%;
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    rgba(17, 17, 17, 0) 0deg 3deg, rgba(17, 17, 17, .07) 3deg 4deg);
+  animation: comicSlRotate 6s linear infinite;
+  pointer-events: none;
+}
+@keyframes comicSlRotate { to { transform: rotate(360deg); } }
+/* 感叹号标记：金色圆 + 黑边硬阴影 + 上下弹跳 */
+html[data-skin="comic"] .stage-loading .sl-ring {
+  position: relative;
+  width: 92px; height: 92px;
+  background: #fbbf24 !important;
+  border: 4px solid #000 !important;
+  border-radius: 50% !important;
+  box-shadow: 5px 5px 0 #000 !important;
+  animation: comicSlJump .55s ease-in-out infinite alternate;
+}
+html[data-skin="comic"] .stage-loading .sl-ring::before {
+  content: "";
+  position: absolute; left: -8px; top: -10px;
+  width: 16px; height: 16px;
+  background: #a78bfa; border: 3px solid #000; border-radius: 4px;
+  animation: comicSlTwinkle .8s ease-in-out infinite alternate;
+}
+html[data-skin="comic"] .stage-loading .sl-ring::after {
+  content: "!";
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 58px; font-weight: 900; color: #111; line-height: 1;
+}
+@keyframes comicSlJump {
+  from { transform: translateY(0) scale(1) rotate(-4deg); }
+  to { transform: translateY(-16px) scale(1.08) rotate(4deg); }
+}
+@keyframes comicSlTwinkle {
+  from { transform: scale(.5) rotate(0deg); opacity: .6; }
+  to { transform: scale(1.25) rotate(45deg); opacity: 1; }
+}
+/* 文字：加粗漫画字 + 「加载」闪烁 */
+html[data-skin="comic"] .stage-loading .sl-text {
+  font-size: 17px !important;
+  font-weight: 900 !important;
+  color: #111 !important;
+  letter-spacing: 6px !important;
+  text-shadow: 2px 2px 0 #ffe9a8;
+  position: relative;
+}
+html[data-skin="comic"] .stage-loading .sl-text .sl-hl {
+  color: #7c5cff;
+  animation: comicSlBlink .9s steps(2) infinite;
+}
+@keyframes comicSlBlink { 50% { opacity: 0; } }
+
+/* ===== 账号区 / 登录态 ===== */
+html[data-skin="comic"] .avatar,
+html[data-skin="comic"] .acct .ava {
+  border: 2px solid #000 !important;
+  box-shadow: 2px 2px 0 #000 !important;
+}
+html[data-skin="comic"] .login-ttl,
+html[data-skin="comic"] .ttl {
+  border: 2px solid #000 !important;
+  box-shadow: 2px 2px 0 #000 !important;
+  font-weight: 900;
+}
+
+/* ===== 列表 / 空态 / 路径 ===== */
+html[data-skin="comic"] .list-item,
+html[data-skin="comic"] .history-item {
+  border-bottom: 2px solid #d9c9a3 !important;
+  font-weight: 700;
+}
+html[data-skin="comic"] .path-line,
+html[data-skin="comic"] .path { font-family: Consolas, monospace; font-weight: 800; color: #6b4db8; }
+
+/* ===== 主页顶栏 / 皮肤下拉 / 加载遮罩 ===== */
+html[data-skin="comic"] .topbar {
+  background: #fff !important;
+  border-bottom: 3px solid #000 !important;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, .18);
+}
+html[data-skin="comic"] .skin-drop button {
+  background: #fff !important;
+  color: #111 !important;
+  font-weight: 800;
+  border-radius: 8px;
+}
+html[data-skin="comic"] .skin-drop button:hover { background: #ffe9a8 !important; }
+
+/* ===== 角落拟声词装饰（comic-skin.js 注入；非漫画皮肤默认隐藏） ===== */
+.comic-sfx { display: none; }
+html[data-skin="comic"] .comic-sfx {
+  display: block;
+  position: fixed;
+  font-weight: 900;
+  pointer-events: none;
+  z-index: 999;
+  color: #f472b6;
+  -webkit-text-stroke: 2px #000;
+  text-shadow: 4px 4px 0 #000;
+  animation: comicSfx 6s ease-in-out infinite;
+}
+html[data-skin="comic"] .comic-sfx.c2 { color: #22d3ee; -webkit-text-stroke-width: 1.6px; animation-duration: 8s; animation-delay: 1s; opacity: .75; }
+@keyframes comicSfx {
+  0%, 86%, 100% { transform: rotate(var(--r, -7deg)) scale(1); }
+  90% { transform: rotate(var(--r, -7deg)) scale(1.15); }
+}
+
+/* ===== 玻璃/模糊元素漫画化时清除模糊，避免与硬边冲突 ===== */
+html[data-skin="comic"] * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

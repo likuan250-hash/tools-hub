@@ -1,175 +1,342 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>网盘跨盘转存</title>
+
+<!-- 共享 token（单一真源，xfer-hub 的 server.js 从仓库 shared/ 提供） -->
+<link rel="stylesheet" href="/tokens.css" />
+<link rel="stylesheet" href="/macos-motion.css" />
+
 <style>
-  :root {
-    --bg: #0f1115;
-    --panel: rgba(30, 34, 42, 0.72);
-    --panel-2: rgba(38, 43, 53, 0.6);
-    --border: rgba(255, 255, 255, 0.12);
-    --fg: #f1f5f9;
-    --fg-2: #e2e8f0;
-    --muted: #cbd5e1;
-    --dim: #94a3b8;
-    --accent: #5b8def;
-    --accent-2: #7aa2f7;
-    --ok: #4ade80;
-    --warn: #fbbf24;
-    --err: #f87171;
-    --radius: 12px;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
-  body {
-    background: radial-gradient(1200px 600px at 20% -10%, #1b2233 0%, var(--bg) 60%);
-    color: var(--fg);
-    font: 14px/1.6 "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
-    padding: 26px 30px 40px;
-  }
-  h1 { font-size: 19px; font-weight: 500; margin: 0 0 4px; letter-spacing: .5px; }
-  .sub { color: var(--dim); font-size: 13px; margin-bottom: 22px; }
+/* ===== 本页私有：几何 / 布局 / 组件（颜色一律走 token，不写死） ===== */
+:root {
+  /* 圆角阶梯（与 netdisk/kdocs/biliup 一致） */
+  --r-sm: 8px; --r-md: 12px; --r-lg: 18px; --r-pill: 999px;
+  /* 间距阶梯 */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 48px;
+  /* 动效（旧名 --dur/--ease-* 作别名，皮肤 CSS 沿用） */
+  --motion-fast: 150ms;
+  --motion-base: 220ms;
+  --ease-standard: cubic-bezier(0.28, 0.22, 1, 1);
+  --ease-emphasized: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur: var(--motion-base); --dur-fast: var(--motion-fast);
+  --ease-out: var(--ease-standard); --ease-spring: var(--ease-emphasized);
 
-  .card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px 22px;
-    backdrop-filter: blur(40px) saturate(1.8);
-    -webkit-backdrop-filter: blur(40px) saturate(1.8);
-    margin-bottom: 18px;
-  }
-  .card h2 {
-    font-size: 14px; font-weight: 500; margin: 0 0 14px;
-    color: var(--fg-2); display: flex; align-items: center; gap: 8px;
-  }
-  .card h2::before {
-    content: ""; width: 3px; height: 13px; border-radius: 2px;
-    background: var(--accent);
-  }
+  /* 表面 / 字段层（皮肤只覆盖 --bg/--accent 等基色，这里补面板层） */
+  --surface: var(--glass-bg);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --field-bg: var(--surface-2);
+  --solid-bg: var(--surface-2);
+  --border: var(--glass-border);
+  --fg: var(--text);
+  --fg-2: var(--text-dim);
+  --muted: var(--text-dim);
 
-  .accts { display: flex; gap: 12px; flex-wrap: wrap; }
-  .acct {
-    flex: 1 1 210px; display: flex; align-items: center; gap: 11px;
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 10px; padding: 13px 15px;
-  }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: 0 0 auto; }
-  .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(74,222,128,.6); }
-  .dot.off { background: var(--err); }
-  .acct-name { font-size: 13px; font-weight: 500; }
-  .acct-meta { font-size: 11.5px; color: var(--dim); margin-top: 2px; }
+  --shadow-card: 0 10px 34px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+[data-theme="light"] {
+  --surface-2: rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 8px 24px rgba(20, 30, 80, 0.1);
+  --shadow-modal: 0 30px 80px rgba(20, 30, 80, 0.25);
+}
 
-  label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 7px; }
-  textarea, input[type=text] {
-    width: 100%; background: rgba(15, 18, 24, 0.75);
-    border: 1px solid var(--border); border-radius: 9px;
-    color: var(--fg); padding: 12px 13px; font: inherit; font-size: 13px;
-    resize: vertical; outline: none; transition: border-color .15s;
-  }
-  textarea { min-height: 88px; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
-  textarea:focus, input[type=text]:focus { border-color: var(--accent); }
-  ::placeholder { color: var(--dim); opacity: 1; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background:
+    radial-gradient(900px 700px at 80% 20%, var(--bg-2), transparent 55%),
+    radial-gradient(1000px 650px at 15% 75%, var(--bg-3), transparent 58%),
+    radial-gradient(800px 500px at 110% 90%, var(--bg-2), transparent 50%),
+    linear-gradient(155deg, var(--bg-1), var(--bg-2));
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--mac-font);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 26px 30px 48px;
+  transition: background .5s ease, color .3s ease;
+}
+.wrap { max-width: 960px; margin: 0 auto; position: relative; z-index: 1; }
 
-  .row { margin-bottom: 16px; }
-  .picker { display: flex; gap: 10px; }
-  .pick {
-    flex: 1; background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 10px; padding: 13px 15px; cursor: pointer;
-    transition: all .15s; display: flex; align-items: center; gap: 10px;
-  }
-  .pick:hover { border-color: rgba(255,255,255,.24); }
-  .pick.sel { border-color: var(--accent); background: rgba(91,141,239,.13); }
-  .pick.dis { opacity: .4; cursor: not-allowed; }
-  .pick .box {
-    width: 17px; height: 17px; border-radius: 5px; border: 1.5px solid var(--dim);
-    flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-    font-size: 11px; color: transparent;
-  }
-  .pick.sel .box { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .pick-t { font-size: 13px; font-weight: 500; }
-  .pick-s { font-size: 11.5px; color: var(--dim); }
+h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px; letter-spacing: .5px;
+     text-shadow: 0 1px 10px rgba(0,0,0,.2); }
+.sub { color: var(--text-dim); font-size: 13px; margin-bottom: 22px; }
+[data-theme="light"] h1 { text-shadow: 0 1px 8px rgba(20,30,80,.14); }
 
-  .opts { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
-  .chk { display: flex; align-items: center; gap: 7px; cursor: pointer; }
-  .chk input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+/* ── 面板 ── */
+.card {
+  position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  padding: 20px 22px;
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255,255,255,.10);
+  margin-bottom: 18px;
+  transition: background .3s ease, border-color .3s ease;
+}
+[data-theme="light"] .card {
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -1px 0 rgba(20,30,80,.10);
+}
+.card h2 {
+  font-size: 14px; font-weight: 600; margin: 0 0 14px;
+  color: var(--text); display: flex; align-items: center; gap: 8px;
+}
+.card h2::before { content: ""; width: 3px; height: 13px; border-radius: 2px; background: var(--accent); }
 
-  button {
-    background: var(--accent); color: #fff; border: none; border-radius: 9px;
-    padding: 11px 26px; font: inherit; font-size: 13.5px; font-weight: 500;
-    cursor: pointer; transition: all .15s;
-  }
-  button:hover:not(:disabled) { background: var(--accent-2); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
-  button.ghost:hover:not(:disabled) { background: var(--panel-2); color: var(--fg); }
+/* ── 账号卡 ── */
+.accts { display: flex; gap: 12px; flex-wrap: wrap; }
+.acct {
+  flex: 1 1 210px; display: flex; align-items: center; gap: 11px;
+  background: var(--field-bg); border: 1px solid var(--glass-border);
+  border-radius: var(--r-md); padding: 13px 15px;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); flex: 0 0 auto; }
+.dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(var(--ok-rgb), .6); }
+.dot.off { background: var(--err); }
+.acct-name { font-size: 13px; font-weight: 600; }
+.acct-meta { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; word-break: break-all; }
 
-  .actions { display: flex; gap: 11px; align-items: center; margin-top: 4px; }
+label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 7px; }
+textarea, input[type=text] {
+  width: 100%; background: rgba(0,0,0,0.18);
+  border: 1px solid var(--glass-border); border-radius: var(--r-md);
+  color: var(--text); padding: 12px 13px; font: inherit; font-size: 13px;
+  resize: vertical; outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+[data-theme="light"] textarea, [data-theme="light"] input[type=text] { background: rgba(255,255,255,.55); }
+textarea { min-height: 88px; font-family: var(--mono-font); font-size: 12.5px; }
+textarea:focus, input[type=text]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), .18);
+}
+::placeholder { color: var(--text-dim); opacity: .85; }
 
-  .prog { margin-top: 16px; display: none; }
-  .prog.on { display: block; }
-  .bar { height: 7px; background: rgba(255,255,255,.09); border-radius: 4px; overflow: hidden; }
-  .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); border-radius: 4px; transition: width .3s; }
-  .bar.indet > i { width: 35%; animation: slide 1.3s ease-in-out infinite; }
-  @keyframes slide { 0%{margin-left:-35%} 100%{margin-left:100%} }
-  .stat { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); margin-top: 9px; }
+.row { margin-bottom: 16px; }
+.picker { display: flex; gap: 10px; }
+.pick {
+  flex: 1; background: var(--field-bg); border: 1px solid var(--glass-border);
+  border-radius: var(--r-md); padding: 13px 15px; cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out); display: flex; align-items: center; gap: 10px;
+}
+.pick:hover:not(.dis) { border-color: var(--accent); }
+.pick.sel { border-color: var(--accent); background: rgba(var(--accent-rgb), .14); }
+.pick.dis { opacity: .4; cursor: not-allowed; }
+.pick .box {
+  width: 17px; height: 17px; border-radius: 5px; border: 1.5px solid var(--text-dim);
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: transparent;
+}
+.pick.sel .box { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pick-t { font-size: 13px; font-weight: 600; }
+.pick-s { font-size: 11.5px; color: var(--text-dim); }
 
-  .steps { margin-top: 15px; display: flex; flex-direction: column; gap: 2px; }
-  .step {
-    display: flex; align-items: center; gap: 10px; padding: 7px 11px;
-    border-radius: 7px; font-size: 12.5px; color: var(--dim);
-  }
-  .step.act { background: rgba(91,141,239,.11); color: var(--fg-2); }
-  .step.ok { color: var(--ok); }
-  .step .ic {
-    width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid currentColor;
-    flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 9.5px;
-  }
-  .step.ok .ic { background: var(--ok); border-color: var(--ok); color: #0f1115; }
-  .step.act .ic { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .step small { margin-left: auto; font-size: 11.5px; opacity: .75; }
+.opts { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-dim); }
+.chk { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.chk input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 
-  .files { margin-top: 14px; max-height: 210px; overflow: auto; border-radius: 9px; border: 1px solid var(--border); }
-  .frow {
-    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
-    font-size: 12.5px; border-bottom: 1px solid rgba(255,255,255,.055);
-  }
-  .frow:last-child { border-bottom: none; }
-  .frow .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .frow .sz { color: var(--dim); font-size: 11.5px; flex: 0 0 auto; }
-  .tag { font-size: 10.5px; padding: 2px 7px; border-radius: 4px; flex: 0 0 auto; }
-  .tag.pending { background: rgba(148,163,184,.16); color: var(--dim); }
-  .tag.downloaded { background: rgba(91,141,239,.18); color: var(--accent-2); }
-  .tag.uploaded { background: rgba(74,222,128,.16); color: var(--ok); }
-  .tag.fail { background: rgba(248,113,113,.16); color: var(--err); }
+button {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff; border: none; border-radius: var(--r-md);
+  padding: 11px 26px; font: inherit; font-size: 13.5px; font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), .3);
+  transition: transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease-out);
+}
+button:hover:not(:disabled) { box-shadow: 0 10px 26px rgba(var(--accent-rgb), .45); }
+button:active:not(:disabled) { transform: scale(.97); }
+button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+button.ghost {
+  background: var(--field-bg); border: 1px solid var(--glass-border); color: var(--text);
+  box-shadow: var(--shadow-card);
+}
+button.ghost:hover:not(:disabled) { background: rgba(var(--accent-rgb), .16); box-shadow: var(--shadow-card); }
 
-  .msg { margin-top: 14px; padding: 11px 14px; border-radius: 9px; font-size: 12.5px; display: none; }
-  .msg.on { display: block; }
-  .msg.err { background: rgba(248,113,113,.11); border: 1px solid rgba(248,113,113,.32); color: #fca5a5; }
-  .msg.ok { background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); color: #86efac; }
-  .msg.info { background: rgba(91,141,239,.1); border: 1px solid rgba(91,141,239,.3); color: #93c5fd; }
+/* ── 皮肤兼容别名 ──
+   四套皮肤 CSS 是按工具箱的规范类名写的（.btn / .btn-ghost / .auth-btn / .btn-exec /
+   .btn-primary / .card h2 / .app-ico …）。本页元素带上这些类，皮肤规则才能命中。
+   放在这里而非改皮肤文件：皮肤是 shared/ 单一真源，不能为单个子工具开特例。 */
+.btn-primary,
+.btn-exec { /* 仅作皮肤钩子，样式由上面的 button 规则提供 */ }
 
-  .muted { color: var(--dim); font-size: 12px; }
-  .hint { font-size: 11.5px; color: var(--dim); margin-top: 7px; }
-  code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px; }
+.actions { display: flex; gap: 11px; align-items: center; margin-top: 4px; }
+
+/* ── 进度 ── */
+.prog { margin-top: 16px; display: none; }
+.prog.on { display: block; }
+.bar { height: 7px; background: rgba(255,255,255,.12); border-radius: 4px; overflow: hidden; }
+[data-theme="light"] .bar { background: rgba(20,30,80,.10); }
+.bar > i { display: block; height: 100%; width: 0%; background: var(--accent); border-radius: 4px; transition: width .3s; }
+.bar.indet > i { width: 35%; animation: slide 1.3s ease-in-out infinite; }
+@keyframes slide { 0%{margin-left:-35%} 100%{margin-left:100%} }
+.stat { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin-top: 9px; }
+
+.steps { margin-top: 15px; display: flex; flex-direction: column; gap: 2px; }
+.step {
+  display: flex; align-items: center; gap: 10px; padding: 7px 11px;
+  border-radius: var(--r-sm); font-size: 12.5px; color: var(--text-dim);
+}
+.step.act { background: rgba(var(--accent-rgb), .13); color: var(--text); }
+.step.ok { color: var(--ok); }
+.step .ic {
+  width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid currentColor;
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 9.5px;
+}
+.step.ok .ic { background: var(--ok); border-color: var(--ok); color: #0f1115; }
+.step.act .ic { border-color: var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.step small { margin-left: auto; font-size: 11.5px; opacity: .75; }
+
+.files {
+  margin-top: 14px; max-height: 210px; overflow: auto; border-radius: var(--r-md);
+  border: 1px solid var(--glass-border); background: rgba(0,0,0,.12);
+}
+[data-theme="light"] .files { background: rgba(255,255,255,.45); }
+.frow {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  font-size: 12.5px; border-bottom: 1px solid rgba(255,255,255,.06);
+}
+[data-theme="light"] .frow { border-bottom-color: rgba(20,30,80,.08); }
+.frow:last-child { border-bottom: none; }
+.frow .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow .sz { color: var(--text-dim); font-size: 11.5px; flex: 0 0 auto; }
+.tag { font-size: 10.5px; padding: 2px 7px; border-radius: 4px; flex: 0 0 auto; font-weight: 600; }
+.tag.pending { background: rgba(148,163,184,.16); color: var(--text-dim); }
+.tag.downloaded { background: rgba(var(--accent-rgb), .18); color: var(--accent-2); }
+.tag.uploaded { background: rgba(var(--ok-rgb), .16); color: var(--ok); }
+.tag.fail { background: rgba(var(--err-rgb), .16); color: var(--err); }
+
+.msg { margin-top: 14px; padding: 11px 14px; border-radius: var(--r-md); font-size: 12.5px; display: none; }
+.msg.on { display: block; }
+.msg.err { background: rgba(var(--err-rgb), .12); border: 1px solid rgba(var(--err-rgb), .35); color: var(--err); }
+.msg.ok { background: rgba(var(--ok-rgb), .1); border: 1px solid rgba(var(--ok-rgb), .32); color: var(--ok); }
+.msg.info { background: rgba(var(--accent-rgb), .1); border: 1px solid rgba(var(--accent-rgb), .32); color: var(--accent-2); }
+
+.muted { color: var(--text-dim); font-size: 12px; }
+.hint { font-size: 11.5px; color: var(--text-dim); margin-top: 7px; }
+code {
+  font-family: var(--mono-font); font-size: 11.5px;
+  background: rgba(255,255,255,.09); padding: 1px 5px; border-radius: 4px;
+}
+[data-theme="light"] code { background: rgba(20,30,80,.08); }
+
+/* ── 转存目录行（仿 netdisk-hub：只显示当前值 + 选择按钮，不放输入框）── */
+.dir-row {
+  margin-top: 14px; font-size: 12px; display: flex; align-items: center;
+  justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border-radius: var(--r-md);
+  border: 1px solid var(--glass-border); background: var(--field-bg);
+}
+.dir-row .dir-label { opacity: .9; line-height: 1.4; word-break: break-all; }
+.dir-row .dir-label b { font-weight: 600; }
+.dir-btn {
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  font-size: 12px; font-weight: 700; padding: 6px 14px; border-radius: var(--r-sm);
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .20), 0 4px 14px rgba(0,0,0,.3);
+  transition: transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease-out);
+}
+.dir-btn:hover { transform: translateY(-1px); box-shadow: 0 0 0 4px rgba(var(--accent-rgb), .28), 0 6px 18px rgba(0,0,0,.4); }
+.dir-btn:active { transform: scale(.97); }
+
+/* ── 厚玻璃弹窗（与 netdisk-hub 统一规范）── */
+:root {
+  --glass-modal-bg: rgba(20, 24, 55, .55);
+  --glass-modal-border: rgba(255, 255, 255, .45);
+  --glass-modal-divider: rgba(255, 255, 255, .42);
+  --glass-mask-bg: rgba(6, 8, 20, .62);
+}
+[data-theme="light"] {
+  --glass-modal-bg: rgba(255, 255, 255, .62);
+  --glass-modal-border: rgba(90, 95, 150, .45);
+  --glass-modal-divider: rgba(90, 95, 150, .42);
+}
+.modal-mask {
+  z-index: 50; padding: 16px; position: fixed; inset: 0;
+  background: var(--glass-mask-bg);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  display: none; align-items: center; justify-content: center;
+}
+.modal-mask.show { display: flex; animation: pop .25s ease; }
+@keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+.modal {
+  position: relative; width: 100%; max-width: 480px; padding: 22px;
+  border: 1px solid var(--glass-modal-border); border-radius: var(--r-lg);
+  background: var(--glass-modal-bg);
+  -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: var(--shadow-modal);
+  max-height: 80vh; display: flex; flex-direction: column;
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 15px; font-weight: 600; color: var(--text);
+  padding-bottom: 12px; border-bottom: 1px solid var(--glass-modal-divider);
+}
+.modal-close {
+  border: none; background: transparent; color: var(--text-dim); font-size: 20px;
+  cursor: pointer; line-height: 1; padding: 0 2px;
+}
+.modal-close:hover { color: var(--text); }
+.modal-breadcrumb {
+  margin: 14px 0 10px; font-size: 12px; color: var(--text-dim);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+}
+.modal-breadcrumb .bc-link { color: var(--accent-2); cursor: pointer; }
+.modal-breadcrumb .bc-link:hover { text-decoration: underline; }
+.modal-breadcrumb .bc-cur { color: var(--text); font-weight: 600; }
+.modal-breadcrumb .bc-sep { opacity: .5; }
+.modal-list {
+  flex: 1; overflow-y: auto; border: 1px solid var(--glass-modal-border);
+  border-radius: var(--r-md); background: rgba(0,0,0,.12);
+  min-height: 120px; max-height: 42vh; padding: 6px;
+}
+[data-theme="light"] .modal-list { background: rgba(255,255,255,.5); }
+.dir-item {
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+  border-radius: var(--r-sm); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out); font-size: 14px;
+}
+.dir-item:hover { background: rgba(var(--accent-rgb), .16); }
+.dir-item .dir-ico { flex-shrink: 0; opacity: .8; }
+.dir-item .dir-name { flex: 1; word-break: break-all; }
+.dir-item .dir-go { color: var(--text-dim); font-size: 18px; }
+.modal-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.modal-foot .modal-hint {
+  flex: 1; font-size: 12px; color: var(--text-dim); word-break: break-all;
+}
+.modal-foot button { padding: 9px 16px; font-size: 13px; }
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 28px 12px; color: var(--text-dim); font-size: 13px;
+}
 </style>
+
+<!-- 皮肤层（渲染层单一真源，由 sync-*-skin.js 同步，门禁校验逐字节一致） -->
+<link rel="stylesheet" href="status-luxe.css" />
+<link rel="stylesheet" href="cosmic-skin.css" />
+<link rel="stylesheet" href="comic-skin.css" />
+<link rel="stylesheet" href="gameboy-skin.css" />
 </head>
 <body>
+<div class="wrap">
 
 <h1>网盘跨盘转存</h1>
 <div class="sub">贴一个网盘分享链接 → 自动下载到本地 → 自动上传到目标网盘</div>
 
-<div class="card">
+<div class="card panel">
   <h2>账号状态</h2>
   <div class="accts" id="accts">
-    <div class="acct"><span class="dot"></span><div><div class="acct-name">检测中…</div></div></div>
+    <div class="acct chip"><span class="dot"></span><div><div class="acct-name">检测中…</div></div></div>
   </div>
 </div>
 
-<div class="card">
+<div class="card panel">
   <h2>① 分享链接</h2>
   <div class="row">
     <textarea id="link" placeholder="粘贴百度网盘或夸克网盘的分享链接（带提取码一起粘也行，会自动识别）&#10;&#10;例：https://pan.baidu.com/s/1xxxxx?pwd=abcd&#10;例：https://pan.quark.cn/s/xxxxx 提取码：abcd"></textarea>
@@ -177,28 +344,28 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card panel">
   <h2>② 目标网盘</h2>
   <div class="picker" id="picker">
     <div class="pick sel" data-p="quark"><span class="box">✓</span><div><div class="pick-t">夸克网盘</div><div class="pick-s">官方 Skill 直传</div></div></div>
     <div class="pick" data-p="baidu"><span class="box">✓</span><div><div class="pick-t">百度网盘</div><div class="pick-s">开放平台 API</div></div></div>
     <div class="pick dis" data-p="xunlei"><span class="box">✓</span><div><div class="pick-t">迅雷网盘</div><div class="pick-s">暂不支持</div></div></div>
   </div>
-  <div class="row" style="margin-top:16px">
-    <label>目标目录</label>
-    <input type="text" id="dstPath" value="/夸克中转文件夹" />
-    <div class="hint">文件会先落到你自己网盘的「中转文件夹」，再从这里下载上传。目录不存在会自动创建。</div>
+  <!-- 目标目录：只显示当前值 + 选择按钮（无输入框）。点「选择目录」弹目录树，选完全局记住。 -->
+  <div class="dir-row">
+    <span class="dir-label" id="dirLabel">转存到(默认): <b>—</b></span>
+    <button class="dir-btn" id="dirPickBtn" onclick="openDirPicker()" style="display:none">选择目录</button>
   </div>
-  <div class="opts">
+  <div class="opts" style="margin-top:14px">
     <label class="chk"><input type="checkbox" id="keepLocal" /> 保留本地临时文件（默认传完自动删）</label>
   </div>
 </div>
 
-<div class="card">
+<div class="card panel">
   <h2>③ 开始转存</h2>
   <div class="actions">
-    <button id="go">开始转存</button>
-    <button id="clear" class="ghost">清空</button>
+    <button id="go" class="btn btn-exec btn-primary">开始转存</button>
+    <button id="clear" class="ghost btn btn-ghost">清空</button>
     <span class="muted" id="tmpdir"></span>
   </div>
 
@@ -212,6 +379,28 @@
   <div class="msg" id="msg"></div>
 </div>
 
+</div>
+
+<!-- 选择目标目录弹窗（逐级浏览目标网盘真实目录树） -->
+<div class="modal-mask" id="dirModal">
+  <div class="modal">
+    <div class="modal-head">
+      <span id="dirModalTitle">选择转存目录</span>
+      <button class="modal-close" onclick="closeDirPicker()" aria-label="关闭">&times;</button>
+    </div>    <div class="modal-breadcrumb" id="dirBreadcrumb"></div>
+    <div class="modal-list" id="dirList"></div>
+    <div class="modal-foot">
+      <span class="modal-hint" id="dirHint"></span>
+      <button class="ghost btn btn-ghost" onclick="closeDirPicker()">取消</button>
+      <button id="dirConfirm" class="btn btn-exec btn-primary" onclick="confirmDir()">选择此目录</button>
+    </div>
+  </div>
+</div>
+
+<script src="status-luxe.js"></script>
+<script src="cosmic-skin.js"></script>
+<script src="comic-skin.js"></script>
+<script src="gameboy-skin.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -226,8 +415,13 @@
   ];
   let dstProvider = "quark";
   let timer = null;
-
-  const DEFAULTS = { quark: "/夸克中转文件夹", baidu: "/百度中转文件夹" };
+  // 两家网盘各自的目标目录（服务端持久化，全局记住；与 netdisk-hub 语义一致）
+  let dirs = {
+    quark: { path: "/夸克中转文件夹", userSet: false },
+    baidu: { path: "/百度中转文件夹", userSet: false },
+  };
+  // 账号可用性（决定「选择目录」按钮是否可点 —— 未登录时列不出目录）
+  let avail = { baidu: false, quark: false };
 
   function fmtSize(n) {
     if (!n) return "0 B";
@@ -243,6 +437,35 @@
     m.textContent = text;
   }
   function hideMsg() { $("msg").className = "msg"; }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // ── 目录行渲染 ──
+  function renderDirRow() {
+    const d = dirs[dstProvider] || { path: "", userSet: false };
+    const tag = d.userSet ? "转存到(已选)" : "转存到(默认)";
+    $("dirLabel").innerHTML = esc(tag) + ": <b>" + esc(d.path || "—") + "</b>";
+    // 未连接该网盘时列不出目录树，按钮隐藏（省得点了才报错）
+    $("dirPickBtn").style.display = avail[dstProvider] ? "" : "none";
+  }
+
+  // ── 目标目录设置 ──
+  async function loadTargetDir() {
+    try {
+      const r = await fetch("/api/target-dir");
+      const s = await r.json();
+      if (s && s.dirs) {
+        dirs = {
+          quark: s.dirs.quark || dirs.quark,
+          baidu: s.dirs.baidu || dirs.baidu,
+        };
+      }
+    } catch (_) {}
+    renderDirRow();
+  }
 
   // ── 账号状态 ──
   async function loadStatus() {
@@ -269,6 +492,8 @@
       box.innerHTML = rows.join("");
       if (s.tmpDir) $("tmpdir").textContent = "中转目录 " + s.tmpDir;
 
+      avail = { baidu: !!s.baidu.ok, quark: !!s.quark.ok };
+
       // 目标网盘的可用性直接反映到选择器
       document.querySelectorAll(".pick").forEach((el) => {
         const p = el.dataset.p;
@@ -276,8 +501,19 @@
         el.classList.toggle("dis", !ok);
         if (!ok) el.classList.remove("sel");
       });
+      // 当前选中的那家若不可用，自动切到可用的那家（避免卡在灰色选项上白跑）
+      const selEl = document.querySelector(".pick.sel");
+      if (!selEl || selEl.classList.contains("dis")) {
+        const firstOk = [...document.querySelectorAll(".pick")].find((x) => !x.classList.contains("dis"));
+        if (firstOk) {
+          document.querySelectorAll(".pick").forEach((x) => x.classList.remove("sel"));
+          firstOk.classList.add("sel");
+          dstProvider = firstOk.dataset.p;
+        }
+      }
+      renderDirRow();
     } catch (e) {
-      box.innerHTML = '<div class="acct"><span class="dot off"></span><div><div class="acct-name">无法读取状态</div><div class="acct-meta">' + e.message + "</div></div></div>";
+      box.innerHTML = '<div class="acct"><span class="dot off"></span><div><div class="acct-name">无法读取状态</div><div class="acct-meta">' + esc(e.message) + "</div></div></div>";
     }
   }
 
@@ -285,11 +521,6 @@
     return '<div class="acct"><span class="dot ' + (ok ? "on" : "off") + '"></span><div>'
       + '<div class="acct-name">' + esc(name) + "</div>"
       + '<div class="acct-meta">' + esc(meta) + "</div></div></div>";
-  }
-
-  function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
   // ── 链接识别 ──
@@ -318,7 +549,7 @@
     document.querySelectorAll(".pick").forEach((x) => x.classList.remove("sel"));
     el.classList.add("sel");
     dstProvider = el.dataset.p;
-    $("dstPath").value = DEFAULTS[dstProvider] || "";
+    renderDirRow(); // 切网盘 → 目录行跟着换成那一家的
   });
 
   // ── 步骤渲染 ──
@@ -418,7 +649,8 @@
         body: JSON.stringify({
           link,
           dstProvider,
-          dstPath: $("dstPath").value.trim() || DEFAULTS[dstProvider],
+          // 目录以服务端记住的为准（不传服务端也会自己兜底）
+          dstPath: (dirs[dstProvider] || {}).path || "",
           keepLocal: $("keepLocal").checked,
         }),
       });
@@ -447,7 +679,179 @@
     $("go").disabled = false;
   });
 
+  // ══════════════ 目标目录选择弹窗（逐级浏览目标网盘真实目录树） ══════════════
+  const FOLDER_ICO = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+  // 根节点 id：百度用 "/"，夸克用 "0"（Skill 的根 fid）
+  const ROOT_ID = { baidu: "/", quark: "0" };
+  const PROVIDER_NAME = { baidu: "百度网盘", quark: "夸克网盘" };
+  let dirCtx = null;
+
+  window.openDirPicker = function () {
+    const provider = dstProvider;
+    dirCtx = {
+      provider,
+      stack: [{ id: ROOT_ID[provider], name: "根目录" }],
+      folders: [],
+    };
+    $("dirModal").classList.add("show");
+    $("dirModalTitle").textContent = "选择「" + (PROVIDER_NAME[provider] || provider) + "」转存目录";
+    renderBreadcrumb();
+    browseDir(ROOT_ID[provider]);
+  };
+
+  window.closeDirPicker = function () {
+    $("dirModal").classList.remove("show");
+  };
+
+  // 把浏览栈拼成完整路径（根节点不计入）
+  function stackToPath() {
+    const segs = dirCtx.stack.map((s, i) => (i === 0 ? "" : s.name)).filter(Boolean);
+    if (!segs.length) return dirCtx.provider === "baidu" ? "/" : "/（根目录）";
+    return "/" + segs.join("/");
+  }
+
+  async function browseDir(parentId) {
+    const listEl = $("dirList");
+    listEl.innerHTML = '<div class="empty-state">加载中…</div>';
+    $("dirHint").textContent = "";
+    try {
+      // 百度用 dir= 路径、夸克用 fid= —— 与后端 /api/dirs 的参数约定一致
+      const qs = dirCtx.provider === "baidu"
+        ? "provider=baidu&dir=" + encodeURIComponent(parentId)
+        : "provider=quark&fid=" + encodeURIComponent(parentId);
+      const r = await fetch("/api/dirs?" + qs);
+      const d = await r.json();
+      if (!r.ok) {
+        listEl.innerHTML = '<div class="empty-state" style="color:var(--err)">' + esc(d.error || "加载失败") + "</div>";
+        return;
+      }
+      dirCtx.folders = d.items || [];
+      renderDirList();
+    } catch (e) {
+      listEl.innerHTML = '<div class="empty-state" style="color:var(--err)">' + esc(e.message) + "</div>";
+    }
+  }
+
+  function renderDirList() {
+    const listEl = $("dirList");
+    const folders = dirCtx.folders;
+    if (!folders.length) {
+      listEl.innerHTML = '<div class="empty-state">此目录没有子文件夹</div>';
+      return;
+    }
+    listEl.innerHTML = folders.map((f) =>
+      '<div class="dir-item" data-id="' + esc(f.id) + '" data-name="' + esc(f.name) + '">'
+      + '<span class="dir-ico">' + FOLDER_ICO + "</span>"
+      + '<span class="dir-name">' + esc(f.name) + '</span><span class="dir-go">›</span></div>'
+    ).join("");
+  }
+
+  // 事件委托（不把目录名拼进 onclick 字符串，避免引号/注入问题）
+  $("dirList").addEventListener("click", (e) => {
+    const el = e.target.closest(".dir-item");
+    if (!el || !dirCtx) return;
+    dirCtx.stack.push({ id: el.dataset.id, name: el.dataset.name });
+    renderBreadcrumb();
+    browseDir(el.dataset.id);
+  });
+
+  function renderBreadcrumb() {
+    const bc = $("dirBreadcrumb");
+    bc.innerHTML = dirCtx.stack.map((s, i) => {
+      const isLast = i === dirCtx.stack.length - 1;
+      const label = i === 0 ? "根目录" : esc(s.name);
+      return isLast
+        ? '<span class="bc-cur">' + label + "</span>"
+        : '<span class="bc-link" data-i="' + i + '">' + label + '</span><span class="bc-sep">/</span>';
+    }).join("");
+    $("dirHint").textContent = "将转存到: " + stackToPath();
+  }
+
+  $("dirBreadcrumb").addEventListener("click", (e) => {
+    const el = e.target.closest(".bc-link");
+    if (!el || !dirCtx) return;
+    const i = Number(el.dataset.i);
+    dirCtx.stack = dirCtx.stack.slice(0, i + 1);
+    renderBreadcrumb();
+    browseDir(dirCtx.stack[dirCtx.stack.length - 1].id);
+  });
+
+  window.confirmDir = async function () {
+    if (!dirCtx) return;
+    const cur = dirCtx.stack[dirCtx.stack.length - 1];
+    let path = stackToPath();
+    // 夸克根目录没有真实路径名，落库时统一用默认名，避免存成 /（根目录）
+    if (path === "/（根目录）") path = "/";
+    const btn = $("dirConfirm");
+    btn.disabled = true;
+    try {
+      const r = await fetch("/api/target-dir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: dirCtx.provider,
+          path,
+          name: cur.name === "根目录" ? "" : cur.name,
+          id: cur.id,
+        }),
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        showMsg("保存失败：" + (d.error || ""), "err");
+        return;
+      }
+      if (d.dirs) {
+        dirs = { quark: d.dirs.quark || dirs.quark, baidu: d.dirs.baidu || dirs.baidu };
+      }
+      renderDirRow();
+      closeDirPicker();
+      showMsg("目标目录已设为 " + path, "ok");
+    } catch (e) {
+      showMsg("保存失败：" + e.message, "err");
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  // 点遮罩关闭
+  $("dirModal").addEventListener("click", (e) => {
+    if (e.target.id === "dirModal") closeDirPicker();
+  });
+  // Esc 关闭
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("dirModal").classList.contains("show")) closeDirPicker();
+  });
+
+  // ── 首屏 ──
+  // 调试用：?theme=cosmic 直接预览某套皮肤（工具箱内嵌时由 webview-preload 下发，不需要这个）
+  try {
+    const _q = new URLSearchParams(location.search);
+    const qSkin = _q.get("theme");
+    if (qSkin) {
+      const map = { cosmic: "dark", comic: "light", gameboy: "light" };
+      if (map[qSkin]) {
+        document.documentElement.setAttribute("data-theme", map[qSkin]);
+        document.documentElement.setAttribute("data-skin", qSkin);
+      } else {
+        document.documentElement.setAttribute("data-theme", qSkin);
+        document.documentElement.removeAttribute("data-skin");
+      }
+    }
+    // 调试用：?picker=quark|baidu 自动展开目录选择弹窗（截图/排查用）
+    const qPicker = _q.get("picker");
+    if (qPicker === "quark" || qPicker === "baidu") {
+      avail[qPicker] = true;
+      dstProvider = qPicker;
+      document.querySelectorAll(".pick").forEach((x) => {
+        x.classList.toggle("sel", x.dataset.p === qPicker);
+      });
+      renderDirRow();
+      setTimeout(() => openDirPicker(), 600);
+    }
+  } catch (_) {}
+
   loadStatus();
+  loadTargetDir();
   setInterval(loadStatus, 30000);
 })();
 </script>

@@ -1,0 +1,192 @@
+/* status-luxe.css —— 状态组件「全量豪华档」玻璃拟态皮肤（单一真源，三处副本逐字节一致） */
+/* 变量命名空间 --st-*，与 app 现有 --ok/--warn/--err 完全隔离 */
+
+:root {
+  /* 五级实色 */
+  --st-ok: #22C55E;   --st-ok-rgb: 34, 197, 94;
+  --st-info: #3B82F6; --st-info-rgb: 59, 130, 246;
+  --st-off: #94A3B8;  --st-off-rgb: 148, 163, 184;
+  --st-warn: #F59E0B; --st-warn-rgb: 245, 158, 11;
+  --st-err: #EF4444;  --st-err-rgb: 239, 68, 68;
+
+  /* 浅色模式（默认）：bg 12–18% / glow 0.35+0.25 / border 0.30 / text 压暗实色 / solid 0.55 回退 */
+  --st-ok-bg: rgba(34, 197, 94, 0.14);
+  --st-ok-glow: 0 0 12px rgba(34, 197, 94, 0.35), 0 0 4px rgba(34, 197, 94, 0.25);
+  --st-ok-border: rgba(34, 197, 94, 0.30);
+  --st-ok-text: #15803d;
+  --st-ok-solid: rgba(34, 197, 94, 0.55);
+
+  --st-info-bg: rgba(59, 130, 246, 0.14);
+  --st-info-glow: 0 0 12px rgba(59, 130, 246, 0.35), 0 0 4px rgba(59, 130, 246, 0.25);
+  --st-info-border: rgba(59, 130, 246, 0.30);
+  --st-info-text: #1d4ed8;
+  --st-info-solid: rgba(59, 130, 246, 0.55);
+
+  --st-off-bg: rgba(148, 163, 184, 0.14);
+  --st-off-glow: 0 0 12px rgba(148, 163, 184, 0.35), 0 0 4px rgba(148, 163, 184, 0.25);
+  --st-off-border: rgba(148, 163, 184, 0.30);
+  --st-off-text: #475569;
+  --st-off-solid: rgba(148, 163, 184, 0.55);
+
+  --st-warn-bg: rgba(245, 158, 11, 0.16);
+  --st-warn-glow: 0 0 12px rgba(245, 158, 11, 0.35), 0 0 4px rgba(245, 158, 11, 0.25);
+  --st-warn-border: rgba(245, 158, 11, 0.30);
+  --st-warn-text: #b45309;
+  --st-warn-solid: rgba(245, 158, 11, 0.55);
+
+  --st-err-bg: rgba(239, 68, 68, 0.16);
+  --st-err-glow: 0 0 12px rgba(239, 68, 68, 0.35), 0 0 4px rgba(239, 68, 68, 0.25);
+  --st-err-border: rgba(239, 68, 68, 0.30);
+  --st-err-text: #b91c1c;
+  --st-err-solid: rgba(239, 68, 68, 0.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* 深色模式：bg 20–26% / glow 0.45+0.30 / border 0.40 / text 提亮实色 / solid 0.62 回退 */
+    --st-ok-bg: rgba(34, 197, 94, 0.22);
+    --st-ok-glow: 0 0 16px rgba(34, 197, 94, 0.45), 0 0 6px rgba(34, 197, 94, 0.30);
+    --st-ok-border: rgba(34, 197, 94, 0.40);
+    --st-ok-text: #4ade80;
+    --st-ok-solid: rgba(34, 197, 94, 0.62);
+
+    --st-info-bg: rgba(59, 130, 246, 0.22);
+    --st-info-glow: 0 0 16px rgba(59, 130, 246, 0.45), 0 0 6px rgba(59, 130, 246, 0.30);
+    --st-info-border: rgba(59, 130, 246, 0.40);
+    --st-info-text: #60a5fa;
+    --st-info-solid: rgba(59, 130, 246, 0.62);
+
+    --st-off-bg: rgba(148, 163, 184, 0.20);
+    --st-off-glow: 0 0 16px rgba(148, 163, 184, 0.45), 0 0 6px rgba(148, 163, 184, 0.30);
+    --st-off-border: rgba(148, 163, 184, 0.40);
+    --st-off-text: #cbd5e1;
+    --st-off-solid: rgba(148, 163, 184, 0.62);
+
+    --st-warn-bg: rgba(245, 158, 11, 0.24);
+    --st-warn-glow: 0 0 16px rgba(245, 158, 11, 0.45), 0 0 6px rgba(245, 158, 11, 0.30);
+    --st-warn-border: rgba(245, 158, 11, 0.40);
+    --st-warn-text: #fbbf24;
+    --st-warn-solid: rgba(245, 158, 11, 0.62);
+
+    --st-err-bg: rgba(239, 68, 68, 0.24);
+    --st-err-glow: 0 0 16px rgba(239, 68, 68, 0.45), 0 0 6px rgba(239, 68, 68, 0.30);
+    --st-err-border: rgba(239, 68, 68, 0.40);
+    --st-err-text: #f87171;
+    --st-err-solid: rgba(239, 68, 68, 0.62);
+  }
+}
+
+/* 基类：玻璃胶囊 */
+.st-luxe {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  background: var(--bg);
+  color: var(--txt);
+  box-shadow: var(--glow);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  position: relative;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* 等级修饰：从对应 token 取值（同时提供 --solid 供 @supports 回退） */
+.st-luxe--ok {
+  --bg: var(--st-ok-bg); --glow: var(--st-ok-glow); --txt: var(--st-ok-text);
+  --bd: var(--st-ok-border); --c: var(--st-ok); --c-rgb: var(--st-ok-rgb); --solid: var(--st-ok-solid);
+}
+.st-luxe--info {
+  --bg: var(--st-info-bg); --glow: var(--st-info-glow); --txt: var(--st-info-text);
+  --bd: var(--st-info-border); --c: var(--st-info); --c-rgb: var(--st-info-rgb); --solid: var(--st-info-solid);
+}
+.st-luxe--off {
+  --bg: var(--st-off-bg); --glow: var(--st-off-glow); --txt: var(--st-off-text);
+  --bd: var(--st-off-border); --c: var(--st-off); --c-rgb: var(--st-off-rgb); --solid: var(--st-off-solid);
+}
+.st-luxe--warn {
+  --bg: var(--st-warn-bg); --glow: var(--st-warn-glow); --txt: var(--st-warn-text);
+  --bd: var(--st-warn-border); --c: var(--st-warn); --c-rgb: var(--st-warn-rgb); --solid: var(--st-warn-solid);
+}
+.st-luxe--err {
+  --bg: var(--st-err-bg); --glow: var(--st-err-glow); --txt: var(--st-err-text);
+  --bd: var(--st-err-border); --c: var(--st-err); --c-rgb: var(--st-err-rgb); --solid: var(--st-err-solid);
+}
+
+/* 深色模式：基类 blur 加强到 10px */
+@media (prefers-color-scheme: dark) {
+  .st-luxe { backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+}
+
+/* 前导形状 */
+.st-luxe__dot {
+  width: 8px; height: 8px; flex: none; display: inline-block;
+}
+.st-luxe__dot--ok { border-radius: 50%; background: var(--c); }
+.st-luxe__dot--info {
+  border: 2px solid var(--c); background: transparent; border-radius: 50%;
+  animation: st-breathe 1.6s ease-in-out infinite;
+}
+.st-luxe__dot--off {
+  border: 2px solid var(--c); background: transparent; border-radius: 50%;
+}
+.st-luxe__dot--warn { background: var(--c); transform: rotate(45deg); border-radius: 2px; }
+.st-luxe__dot--err { background: var(--c); border-radius: 2px; }
+
+/* 流光（高光横扫） */
+.st-luxe__sweep {
+  position: absolute; top: 0; left: 0; width: 60%; height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, .55), transparent);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+.st-luxe--info .st-luxe__sweep { animation: st-sweep 2.4s ease-in-out infinite; }
+
+/* 光标光斑（info 态 hover 随动，由 JS 写入 --mx/--my） */
+.st-luxe--info::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(60px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .5), transparent 70%);
+  opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+.st-luxe--info:hover::after { opacity: .5; }
+
+/* 强制动效：即便非 info 也对 sweep 加动画 */
+.st-luxe--pulse .st-luxe__sweep { animation: st-sweep 2.4s ease-in-out infinite; }
+
+/* 长列表 tinted 实心（裁定 #3：靠容器自动套用，不改 statusHTML 签名） */
+#tasks .st-luxe,
+.batch-result .st-luxe,
+.task-group .st-luxe {
+  background: rgba(var(--c-rgb), 0.10);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 0 6px rgba(var(--c-rgb), 0.15);
+}
+
+/* 尺寸 */
+.st-luxe--sm { padding: 2px 8px; font-size: 12px; }
+.st-luxe--sm .st-luxe__dot { width: 6px; height: 6px; }
+
+/* 动画 keyframes */
+@keyframes st-sweep { 0% { transform: translateX(-120%); } 100% { transform: translateX(220%); } }
+@keyframes st-breathe { 0%, 100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.15); opacity: 1; } }
+
+/* 无障碍：尊重 prefers-reduced-motion（仅保留静态发光 + 三重编码） */
+@media (prefers-reduced-motion: reduce) {
+  .st-luxe__sweep, .st-luxe__dot--info { animation: none !important; }
+  .st-luxe--info::after { opacity: 0 !important; }
+}
+
+/* 性能护栏：不支持 backdrop-filter 时退化为纯半透明实色（55–62% alpha） */
+@supports not (backdrop-filter: blur(1px)) {
+  .st-luxe {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--solid);
+  }
+}

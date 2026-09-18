@@ -67,6 +67,16 @@ function readBody(req) {
   });
 }
 
+// 把夸克 Skill 的报错转成用户可操作的提示：
+// 命中「未登录/未授权」→ 引导登录；否则保留技术信息。
+function quarkLoginHint(msg) {
+  const m = String(msg || "");
+  if (/未登录|未授权|授权|login|token|认证/i.test(m)) {
+    return "夸克未登录或授权已过期，请点「去登录」完成授权";
+  }
+  return "夸克接口调用失败：" + m;
+}
+
 // ── 路由 ──
 const routes = {
   "GET /api/version": (req, res) => {
@@ -92,16 +102,39 @@ const routes = {
         try {
           const r = await qb.userInfo();
           const d = (r && r.data) || r || {};
-          st.quark.name = d.nickname || d.nickName || d.memberName || "";
+          const du = d.userInfo || {};
+          st.quark.name = du.nickname || d.nickname || d.nickName || d.memberName || "";
         } catch (e) {
           st.quark.ok = false;
-          st.quark.reason = "夸克 Skill 调用失败：" + e.message;
+          // 区分「未登录/授权失效」与其它技术性错误：前者给可操作的登录引导
+          st.quark.reason = quarkLoginHint(e.message);
         }
       }
       st.tmpDir = xfer.transferRoot();
       json(res, 200, st);
     } catch (e) {
       json(res, 500, { error: e.message });
+    }
+  },
+
+  // 发起夸克登录：启动浏览器 OAuth（阻塞长），fire-and-forget 返回，
+  // 由前端轮询 /api/status 检测登录态是否就绪。
+  "POST /api/quark/login": async (req, res) => {
+    // 若已登录则直接回成功，不重复弹浏览器
+    try {
+      await qb.userInfo();
+      json(res, 200, { ok: true, already: true });
+      return;
+    } catch (_) {
+      // 未登录，走下面的发起流程
+    }
+    try {
+      json(res, 200, { ok: true, started: true });
+      qb.login()
+        .then((r) => log.info("夸克登录完成:", JSON.stringify(r).slice(0, 200)))
+        .catch((e) => log.warn("夸克登录失败:", e.message));
+    } catch (e) {
+      json(res, 500, { ok: false, error: e.message });
     }
   },
 
@@ -159,6 +192,26 @@ const routes = {
         id: body.id,
       });
       json(res, 200, { ok: true, dir: cur, dirs: prefs.allTargetDirs() });
+    } catch (e) {
+      json(res, 500, { ok: false, error: e.message });
+    }
+  },
+
+  // 当前中转目录（本地落盘路径，全局唯一）
+  "GET /api/tmp-dir": (req, res) => {
+    try {
+      json(res, 200, { ok: true, tmpDir: prefs.getTmpDir() });
+    } catch (e) {
+      json(res, 500, { error: e.message });
+    }
+  },
+
+  // 保存中转目录（用户可在界面用原生目录选择器指定，全局记住）
+  "POST /api/tmp-dir": async (req, res) => {
+    try {
+      const body = await readBody(req);
+      const cur = prefs.setTmpDir(body.path);
+      json(res, 200, { ok: true, tmpDir: cur });
     } catch (e) {
       json(res, 500, { ok: false, error: e.message });
     }

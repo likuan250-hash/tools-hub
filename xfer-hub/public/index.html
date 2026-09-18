@@ -92,15 +92,22 @@ h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px; letter-spacing: .5px;
 /* ── 账号卡 ── */
 .accts { display: flex; gap: 12px; flex-wrap: wrap; }
 .acct {
-  flex: 1 1 210px; display: flex; align-items: center; gap: 11px;
+  flex: 1 1 250px; display: block;
   background: var(--field-bg); border: 1px solid var(--glass-border);
   border-radius: var(--r-md); padding: 13px 15px;
 }
+.acct-head { display: flex; align-items: center; gap: 11px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); flex: 0 0 auto; }
 .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(var(--ok-rgb), .6); }
 .dot.off { background: var(--err); }
 .acct-name { font-size: 13px; font-weight: 600; }
 .acct-meta { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; word-break: break-all; }
+.acct .login-btn {
+  margin-top: 10px; border: 1px solid var(--accent); background: transparent; color: var(--accent);
+  font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: var(--r-sm);
+  cursor: pointer; white-space: nowrap;
+}
+.acct .login-btn:hover { background: rgba(var(--accent-rgb), .14); }
 
 label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 7px; }
 textarea, input[type=text] {
@@ -332,7 +339,7 @@ code {
 <div class="card panel">
   <h2>账号状态</h2>
   <div class="accts" id="accts">
-    <div class="acct chip"><span class="dot"></span><div><div class="acct-name">检测中…</div></div></div>
+    <div class="acct chip"><div class="acct-head"><span class="dot"></span><div><div class="acct-name">检测中…</div></div></div></div>
   </div>
 </div>
 
@@ -351,11 +358,6 @@ code {
     <div class="pick" data-p="baidu"><span class="box">✓</span><div><div class="pick-t">百度网盘</div><div class="pick-s">开放平台 API</div></div></div>
     <div class="pick dis" data-p="xunlei"><span class="box">✓</span><div><div class="pick-t">迅雷网盘</div><div class="pick-s">暂不支持</div></div></div>
   </div>
-  <!-- 目标目录：只显示当前值 + 选择按钮（无输入框）。点「选择目录」弹目录树，选完全局记住。 -->
-  <div class="dir-row">
-    <span class="dir-label" id="dirLabel">转存到(默认): <b>—</b></span>
-    <button class="dir-btn" id="dirPickBtn" onclick="openDirPicker()" style="display:none">选择目录</button>
-  </div>
   <div class="opts" style="margin-top:14px">
     <label class="chk"><input type="checkbox" id="keepLocal" /> 保留本地临时文件（默认传完自动删）</label>
   </div>
@@ -366,7 +368,10 @@ code {
   <div class="actions">
     <button id="go" class="btn btn-exec btn-primary">开始转存</button>
     <button id="clear" class="ghost btn btn-ghost">清空</button>
-    <span class="muted" id="tmpdir"></span>
+  </div>
+  <div class="dir-row" id="tmpRow">
+    <span class="dir-label">中转目录（本地落盘）: <b id="tmpPath">—</b></span>
+    <button class="dir-btn" id="tmpPick">选择目录</button>
   </div>
 
   <div class="prog" id="prog">
@@ -443,13 +448,26 @@ code {
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  // ── 目录行渲染 ──
-  function renderDirRow() {
-    const d = dirs[dstProvider] || { path: "", userSet: false };
+  // ── 目录行渲染（每个网盘账号卡内各一行，仿 netdisk-hub 放在状态下面）──
+  function dirRowHtml(provider, connected) {
+    const d = dirs[provider] || { path: "", userSet: false };
     const tag = d.userSet ? "转存到(已选)" : "转存到(默认)";
-    $("dirLabel").innerHTML = esc(tag) + ": <b>" + esc(d.path || "—") + "</b>";
-    // 未连接该网盘时列不出目录树，按钮隐藏（省得点了才报错）
-    $("dirPickBtn").style.display = avail[dstProvider] ? "" : "none";
+    const btn = connected
+      ? '<button class="dir-btn" onclick="openDirPicker(\'' + provider + '\')">选择目录</button>'
+      : "";
+    return '<div class="dir-row" id="dirrow-' + provider + '"><span class="dir-label">'
+      + esc(tag) + ': <b>' + esc(d.path || "—") + '</b></span>' + btn + '</div>';
+  }
+
+  function renderDirRows() {
+    for (const p of ["baidu", "quark"]) {
+      const el = $("dirrow-" + p);
+      if (!el) continue;
+      const d = dirs[p] || { path: "", userSet: false };
+      const tag = d.userSet ? "转存到(已选)" : "转存到(默认)";
+      el.innerHTML = '<span class="dir-label">' + esc(tag) + ': <b>' + esc(d.path || "—") + '</b></span>'
+        + (avail[p] ? '<button class="dir-btn" onclick="openDirPicker(\'' + p + '\')">选择目录</button>' : "");
+    }
   }
 
   // ── 目标目录设置 ──
@@ -464,7 +482,21 @@ code {
         };
       }
     } catch (_) {}
-    renderDirRow();
+    renderDirRows();
+  }
+
+  // ── 中转目录（本地落盘路径）──
+  function renderTmpDir(t) {
+    if (!t || !t.path) return;
+    $("tmpPath").textContent = t.path + (t.userSet ? "" : "（默认）");
+  }
+
+  async function loadTmpDir() {
+    try {
+      const r = await fetch("/api/tmp-dir");
+      const s = await r.json();
+      if (s && s.tmpDir) renderTmpDir(s.tmpDir);
+    } catch (_) {}
   }
 
   // ── 账号状态 ──
@@ -481,16 +513,17 @@ code {
         s.baidu.ok
           ? (s.baidu.name || "已连接") + (s.baidu.vip ? " · 超级会员" : "")
           : (s.baidu.reason || "未连接"),
+        dirRowHtml("baidu", s.baidu.ok),
       ));
       rows.push(mkAcct(
         "夸克网盘",
         s.quark.ok,
         s.quark.ok ? (s.quark.name || "已连接") : (s.quark.reason || "未连接"),
+        dirRowHtml("quark", s.quark.ok) + (s.quark.ok ? "" : '<button class="login-btn" onclick="quarkLogin()">去登录</button>'),
       ));
-      rows.push(mkAcct("迅雷网盘", false, "暂不支持（无官方开放平台）"));
+      rows.push(mkAcct("迅雷网盘", false, "暂不支持（无官方开放平台）", ""));
 
       box.innerHTML = rows.join("");
-      if (s.tmpDir) $("tmpdir").textContent = "中转目录 " + s.tmpDir;
 
       avail = { baidu: !!s.baidu.ok, quark: !!s.quark.ok };
 
@@ -511,16 +544,50 @@ code {
           dstProvider = firstOk.dataset.p;
         }
       }
-      renderDirRow();
+      renderDirRows();
     } catch (e) {
-      box.innerHTML = '<div class="acct"><span class="dot off"></span><div><div class="acct-name">无法读取状态</div><div class="acct-meta">' + esc(e.message) + "</div></div></div>";
+      box.innerHTML = '<div class="acct"><div class="acct-head"><span class="dot off"></span><div><div class="acct-name">无法读取状态</div><div class="acct-meta">' + esc(e.message) + "</div></div></div></div>";
     }
   }
 
-  function mkAcct(name, ok, meta) {
-    return '<div class="acct"><span class="dot ' + (ok ? "on" : "off") + '"></span><div>'
+  function mkAcct(name, ok, meta, extra) {
+    return '<div class="acct">'
+      + '<div class="acct-head"><span class="dot ' + (ok ? "on" : "off") + '"></span><div>'
       + '<div class="acct-name">' + esc(name) + "</div>"
-      + '<div class="acct-meta">' + esc(meta) + "</div></div></div>";
+      + '<div class="acct-meta">' + esc(meta) + "</div></div></div>"
+      + (extra || "") + "</div>";
+  }
+
+  // 夸克登录：后台发起浏览器 OAuth，前端轮询 /api/status 直到登录态就绪
+  window.quarkLogin = async function () {
+    hideMsg();
+    showMsg("正在发起夸克授权，稍后请在浏览器完成登录…", "info");
+    try {
+      const r = await fetch("/api/quark/login", { method: "POST" });
+      const d = await r.json();
+      if (!d.ok) {
+        showMsg("发起失败：" + (d.error || "未知错误"), "err");
+        return;
+      }
+      if (d.already) {
+        showMsg("夸克已登录", "ok");
+        loadStatus();
+        return;
+      }
+      // 轮询登录态（最多约 3 分钟），成功自动刷新
+      for (let i = 0; i < 36; i++) {
+        await new Promise((res) => setTimeout(res, 5000));
+        const s = await (await fetch("/api/status")).json();
+        if (s.quark && s.quark.ok) {
+          showMsg("夸克已登录", "ok");
+          loadStatus();
+          return;
+        }
+      }
+      showMsg("授权超时，请重新点「去登录」", "err");
+    } catch (e) {
+      showMsg("发起失败：" + e.message, "err");
+    }
   }
 
   // ── 链接识别 ──
@@ -549,7 +616,44 @@ code {
     document.querySelectorAll(".pick").forEach((x) => x.classList.remove("sel"));
     el.classList.add("sel");
     dstProvider = el.dataset.p;
-    renderDirRow(); // 切网盘 → 目录行跟着换成那一家的
+  });
+
+  // ── 中转目录选择（本地磁盘，用原生目录选择器）──
+  $("tmpPick").addEventListener("click", async () => {
+    let picked = null;
+    // 在工具箱 Electron 内 → 走原生目录选择器（支持新建目录）
+    if (window.electronAPI && window.electronAPI.pickFolder) {
+      try {
+        const r = await window.electronAPI.pickFolder();
+        if (r && r.dir) picked = r.dir;
+      } catch (e) {
+        showMsg("选择目录失败：" + e.message, "err");
+        return;
+      }
+    } else {
+      // 独立调试环境（无 Electron）→ 退化为手动输入路径
+      const cur = ($("tmpPath").textContent || "").replace(/（默认）$/, "").trim();
+      const input = prompt("请输入本地中转目录完整路径：", cur || "");
+      if (!input) return;
+      picked = input.trim();
+    }
+    if (!picked) return;
+    try {
+      const r = await fetch("/api/tmp-dir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: picked }),
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        showMsg("保存失败：" + (d.error || ""), "err");
+        return;
+      }
+      renderTmpDir(d.tmpDir);
+      showMsg("中转目录已设为 " + picked, "ok");
+    } catch (e) {
+      showMsg("保存失败：" + e.message, "err");
+    }
   });
 
   // ── 步骤渲染 ──
@@ -686,8 +790,8 @@ code {
   const PROVIDER_NAME = { baidu: "百度网盘", quark: "夸克网盘" };
   let dirCtx = null;
 
-  window.openDirPicker = function () {
-    const provider = dstProvider;
+  window.openDirPicker = function (provider) {
+    provider = provider || dstProvider;
     dirCtx = {
       provider,
       stack: [{ id: ROOT_ID[provider], name: "根目录" }],
@@ -803,7 +907,7 @@ code {
       if (d.dirs) {
         dirs = { quark: d.dirs.quark || dirs.quark, baidu: d.dirs.baidu || dirs.baidu };
       }
-      renderDirRow();
+      renderDirRows();
       closeDirPicker();
       showMsg("目标目录已设为 " + path, "ok");
     } catch (e) {
@@ -845,13 +949,14 @@ code {
       document.querySelectorAll(".pick").forEach((x) => {
         x.classList.toggle("sel", x.dataset.p === qPicker);
       });
-      renderDirRow();
-      setTimeout(() => openDirPicker(), 600);
+      renderDirRows();
+      setTimeout(() => openDirPicker(qPicker), 600);
     }
   } catch (_) {}
 
   loadStatus();
   loadTargetDir();
+  loadTmpDir();
   setInterval(loadStatus, 30000);
 })();
 </script>

@@ -159,6 +159,15 @@ async function userInfo() {
   return r.result;
 }
 
+// 登录授权：启动本地授权服务器 + 打开浏览器 OAuth，阻塞等待用户完成授权。
+// 不传 --token 时走浏览器授权流程（引用 references/auth.md）。
+// 注意：此命令会阻塞较久（几十秒到几分钟），调用方应 fire-and-forget，
+//       由前端轮询 /api/status 检测登录态是否就绪。
+async function login({ onLine, timeoutMs = 0 } = {}) {
+  const r = await run(["login"], { onLine, timeoutMs });
+  return r.result;
+}
+
 // 列目录内容。
 //
 // ⚠ 实测坑（2026-09-18）：quark-drive 的 `browse --all` 在 fid="0"（根目录）时
@@ -239,6 +248,7 @@ module.exports = {
   run,
   runOrThrow,
   userInfo,
+  login,
   browse,
   findFolder,
   createFolder,

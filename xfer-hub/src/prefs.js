@@ -73,4 +73,27 @@ function allTargetDirs() {
   return { quark: getTargetDir("quark"), baidu: getTargetDir("baidu") };
 }
 
-module.exports = { DEFAULTS, getTargetDir, setTargetDir, allTargetDirs, prefsPath };
+// ── 中转目录（本地落盘路径，全局唯一，不区分网盘）──
+// 下载阶段文件先落这个目录，再上传到目标网盘。默认放 E 盘机械盘
+// （用户已确认 E 盘扛反复读写），用户可在界面改成任意本地路径并持久化。
+const DEFAULT_TMP_DIR = "E:\\网盘中转";
+
+function getTmpDir() {
+  const saved = (read().tmpDir) || {};
+  if (saved && saved.path) {
+    return { path: saved.path, userSet: !!saved.userSet };
+  }
+  return { path: DEFAULT_TMP_DIR, userSet: false };
+}
+
+function setTmpDir(p) {
+  const clean = String(p || "").trim();
+  if (!clean) throw new Error("目录不能为空");
+  const all = read();
+  all.tmpDir = { path: clean, userSet: true, at: Date.now() };
+  write(all);
+  log.info("中转目录已保存:", clean);
+  return getTmpDir();
+}
+
+module.exports = { DEFAULTS, getTargetDir, setTargetDir, allTargetDirs, getTmpDir, setTmpDir, DEFAULT_TMP_DIR, prefsPath };

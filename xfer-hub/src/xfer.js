@@ -21,6 +21,7 @@ const bd = require("./baidu-official");
 const qb = require("./quark-bridge");
 const share = require("./share");
 const creds = require("./creds");
+const prefs = require("./prefs");
 
 // ── 任务仓库（内存 + 落盘，重启可恢复列表）──
 const tasks = new Map();
@@ -81,9 +82,13 @@ function snapshot(t) {
   };
 }
 
-// 中转根目录：默认 E 盘（用户已确认 E 是机械盘，专门用来扛这种反复读写）
+// 中转根目录：优先级 用户持久化设置 > 环境变量(XFER_TMP_DIR/TOOLSHUB_XFER_DIR) > 默认 E 盘机械盘
+// 用户可在界面「选择目录」改成任意本地路径，存进 prefs.json 后这里优先采用。
 function transferRoot() {
-  return process.env.XFER_TMP_DIR || "E:\\网盘中转";
+  const saved = prefs.getTmpDir();
+  if (saved && saved.userSet && saved.path) return saved.path;
+  if (process.env.XFER_TMP_DIR) return process.env.XFER_TMP_DIR;
+  return "E:\\网盘中转";
 }
 
 function safeName(s) {

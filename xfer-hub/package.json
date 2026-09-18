@@ -1,6 +1,6 @@
 {
   "name": "xfer-hub",
-  "version": "2.8.31",
+  "version": "2.8.32",
   "description": "网盘跨盘转存：贴分享链接 → 下载到本地 → 上传到目标网盘",
   "main": "server.js",
   "private": true,

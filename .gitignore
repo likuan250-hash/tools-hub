@@ -8,6 +8,16 @@ resources/node/
 resources/bin/node_modules/
 # 构建期从 ~/.workbuddy/skills 复制进来的夸克官方 Skill（体积大且非本仓库源码），不进 git
 resources/quarkclouddrive/
+# ⚠ vendor/quarkclouddrive/ 是**故意提交**的夸克 Skill 纯代码副本（601KB CLI + references + SKILL.md）
+#   原因：CI 从 GitHub 全新 checkout，拿不到本机 ~/.workbuddy/skills，v2.8.31 曾因此出缺夸克引擎的残包。
+#   仓库里这一份是唯一能保证 CI 打包完整的来源。**但以下运行时状态必须永远排除**：
+vendor/quarkclouddrive/.quarkclouddrive/
+vendor/quarkclouddrive/**/.quarkclouddrive/
+vendor/quarkclouddrive/**/credentials*
+vendor/quarkclouddrive/workbuddy/search/
+vendor/quarkclouddrive/workbuddy/download/
+vendor/quarkclouddrive/workbuddy/upload/
+vendor/quarkclouddrive/workbuddy/config.json
 # prune-bailian.js 的 npm 兜底逻辑在构建时生成的副产物，不进 git
 # （只忽略这一个文件；resources/bin/bl.cmd 是必要文件，必须保持被 git 跟踪）
 resources/bin/package.json

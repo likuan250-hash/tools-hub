@@ -8,6 +8,18 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 
+/**
+ * 是否「正式打包」（dist / CI），而非 `--dir` 调试构建。
+ * 用途：某些运行时资源缺失时，调试构建可以放行（功能降级），
+ * 正式打包必须硬失败 —— 否则会静默产出一个「装上就坏」的包并自动推送给所有用户。
+ */
+function isReleaseBuild() {
+  if (process.env.CI) return true;                       // GitHub Actions 等
+  const argv = process.argv.slice(2).join(" ");
+  if (/\bnsis\b|--publish|(^|\s)-p(\s|$)/.test(argv)) return true; // 出安装包
+  return false;
+}
+
 // 路径一律基于 ROOT（仓库根），不要用 __dirname —— 本文件在 scripts/ 下，
 // 用 __dirname 会把目录建到 scripts/resources/*，而 NODE_DEST 指向的是仓库根的
 // resources/node/，父目录从未创建，下面的 copyFileSync 必 ENOENT（本地 build 长期崩在这）。
@@ -95,6 +107,9 @@ function bundleQuarkSkill() {
   // 而仓库在 E:\Codex\tools-hub —— 两者不同盘不同根，不能靠 ../ 相对推。
   const home = process.env.USERPROFILE || process.env.HOME || "";
   const candidates = [
+    // ⭐ 仓库内 vendored 副本优先 —— CI 从 GitHub 全新 checkout，拿不到本机 skills 目录，
+    //    只能靠仓库里这一份（v2.8.31 曾因此出过缺夸克引擎的残包，被门禁拦下）。
+    path.join(ROOT, "vendor", "quarkclouddrive"),
     process.env.QUARK_SKILL_SRC,
     home ? path.join(home, ".workbuddy", "skills", "quarkclouddrive") : null,
     "E:\\workbuddy\\.workbuddy\\skills\\quarkclouddrive",
@@ -111,8 +126,16 @@ function bundleQuarkSkill() {
   }
 
   if (!src) {
-    // 找不到不该让构建失败：xfer-hub 仍可跑百度侧；夸克侧在运行时会提示「未找到 Skill」。
-    // 但如果走的是正式 dist（非 --dir 调试），强烈建议预先安装。
+    // 找不到不该让 --dir 调试构建失败：xfer-hub 仍可跑百度侧，夸克侧运行时会提示「未找到 Skill」。
+    // 但正式 dist 必须失败：否则会静默出一个「夸克转存必坏」的包并自动推送给所有用户。
+    // （v2.8.31 就是这么漏的 —— 本地有 Skill 所以本地能过，CI 全新 checkout 拿不到，
+    //   出了 156MB 残包，靠 verify-build-assets.js 的门禁才拦下。）
+    if (isReleaseBuild()) {
+      console.error("[prepare-build] ✗ 未找到夸克官方 Skill，且当前是正式打包（dist/CI）。");
+      console.error("[prepare-build]   拒绝静默产出残包。请确认 vendor/quarkclouddrive/scripts/quark-drive.cjs 存在，");
+      console.error("[prepare-build]   或设置 QUARK_SKILL_SRC 指向 quarkclouddrive 目录。");
+      process.exit(1);
+    }
     console.log("[prepare-build] 未找到夸克官方 Skill，跳过内置（xfer-hub 的夸克能力将不可用）");
     console.log("[prepare-build] 可设置 QUARK_SKILL_SRC 指向 quarkclouddrive 目录");
     return;

@@ -364,17 +364,45 @@ async function runTransfer(body, p) {
     const destPath = (bDir && bDir.id) || baidu.getConfig().appDir;
     await baidu.ensureDir(destPath); // 幂等:目录不存在则自动创建
     const transferData = await baidu.transfer(listData.shareid, listData.uk, fsidList, destPath);
-    const transferredPaths = (transferData.file_list || []).map((f) => f.path);
+    // ── 落地校验（关键）──
+    // 百度对「文件夹分享」会返回 errno=0 / task_id=0 / file_list 为空，不能当"已落地"；
+    // 必须在目标目录里按分享解析出的名字认领（文件夹分享再进同名文件夹看一层），且异步落地要轮询。
+    const wantedNames = (listData.list || []).map((f) => f.server_filename).filter(Boolean);
+    const settleFromDir = async () => {
+      const dirList = await baidu.listDir(destPath, { all: true });
+      const hit = dirList.filter((f) => wantedNames.includes(f.server_filename));
+      const out = hit.map((f) => ({
+        fs_id: f.fs_id,
+        path: (destPath.replace(/\/$/, '') + '/' + f.server_filename),
+        server_filename: f.server_filename,
+        size: f.size,
+        isdir: f.isdir === 1,
+      }));
+      return out;
+    };
+    let settled = (transferData.file_list || []).filter((f) => f && f.fs_id);
+    if (!settled.length) {
+      for (const wait of [0, 5000, 10000, 15000]) {
+        if (wait) await new Promise((r) => setTimeout(r, wait));
+        try {
+          settled = await settleFromDir();
+        } catch (e) {
+          settled = [];
+        }
+        if (settled.length) break;
+      }
+    }
+    if (!settled.length) {
+      throw new Error(
+        `转存未落地：目标目录 ${destPath} 内没找到「${wantedNames.slice(0, 3).join('、') || '分享内容'}」` +
+          `（百度返回 errno=${transferData.errno}；文件夹分享常见返回 errno=0 且无 file_list）`
+      );
+    }
+    const transferredPaths = settled.map((f) => f.path);
     let share = null;
     if (makeShare) {
-      // 解析我盘内的真实 fs_id(百度 /share/set 必须用目标盘 fs_id,非分享源 fs_id)
-      let fsIds = (transferData.file_list || []).map((f) => f.fs_id).filter(Boolean);
-      if (!fsIds.length) {
-        // 兜底:LIST 目标目录,按文件名匹配转存后的文件
-        const names = (listData.list || []).map((f) => f.server_filename).filter(Boolean);
-        const dirList = await baidu.listDir(destPath);
-        fsIds = dirList.filter((f) => names.includes(f.server_filename)).map((f) => f.fs_id);
-      }
+      // 用"落地校验"拿到的真实 fs_id（baidu /share/set 必须用目标盘 fs_id，文件夹也能分享）
+      const fsIds = settled.map((f) => f.fs_id).filter(Boolean);
       if (fsIds.length) {
         // 百度分享提取码统一为 8888(baidu.createShare 内部也会回退到该默认值);period 固定 0=永久
         share = await baidu.createShare(fsIds, 0, sharePassword || '8888');
@@ -385,13 +413,13 @@ async function runTransfer(body, p) {
       destPath,
       destDirId: bDir && bDir.id,
       destDirName: bDir && bDir.name,
-      fileCount: fsidList.length,
-      files: (transferData.file_list || []).map((f) => ({ name: f.server_filename || f.path, size: f.size })),
+      fileCount: settled.length,
+      files: settled.map((f) => ({ name: f.server_filename || f.path, size: f.size })),
       shareLink: share ? share.link : null,
       sharePwd: share ? share.password : null,
       status: 'success',
     });
-    return { provider: 'baidu', ok: true, transfer: transferData, share, files: transferData.file_list, taskId: record.id };
+    return { provider: 'baidu', ok: true, transfer: transferData, share, files: settled, taskId: record.id };
   } catch (e) {
     logger.warn('百度转存失败:', e.message);
     mkTask({ status: 'failed', error: e.message });

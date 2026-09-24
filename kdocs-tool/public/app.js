@@ -10,6 +10,17 @@ const coverLinkRow = $("coverLinkRow");
 const coverLinkInput = $("coverLinkInput");
 const chipKdocs = $("chipKdocs"), kdocsBtn = $("kdocsBtn"), toastHost = $("toastHost");
 
+// ── 录入线路（金山文档 / 云库）：两条线路独立执行，各自报告结果 ──
+// 默认都勾；两条都不勾前端直接拦住（后端也会 400 兜底），避免空跑。
+const chkRouteKdocs = $("chkRouteKdocs"), chkRouteCloud = $("chkRouteCloud");
+const cloudGroup = $("cloudGroup"), cloudSteps = $("cloudSteps");
+function getTargets() {
+  return {
+    kdocs: chkRouteKdocs ? !!chkRouteKdocs.checked : true,
+    cloud: chkRouteCloud ? !!chkRouteCloud.checked : false,
+  };
+}
+
 // ── 分类标签选择（P0 用户偏好：免安装硬盘版/PC游戏/全DLC 三个默认勾上）──
 // 与金山文档「游戏信息」多选字段对齐：用户点 pill 切换 on/off；当前选中的标签会在「解析预览」里也显示。
 // 后端会写入 dbsheet 的「游戏信息」字段，免去用户在金文档端每次手动勾选。
@@ -286,6 +297,7 @@ function esc(s) { const d = document.createElement("div"); d.textContent = s; re
 
 // ── 一键执行（SSE 流式进度，实时看到每一步）──
 const stepEls = []; // 按 index 缓存已渲染的步骤节点，便于「进行中→成功」原地更新
+const cloudStepEls = []; // 云库线路单独一套 index，避免与金山线路互相覆盖
 
 function buildStepDetail(s) {
   const detailParts = [];
@@ -301,19 +313,24 @@ function buildStepDetail(s) {
   return detailParts.join(" · ");
 }
 
-function renderStep(s) {
+function renderStep(s, group) {
+  // 云库线路渲染到独立容器（两条线路 index 各自从 0 开始，不能共用一个数组）
+  const isCloud = group === "cloud";
+  const host = isCloud ? cloudSteps : autoSteps;
+  const store = isCloud ? cloudStepEls : stepEls;
+  if (isCloud && cloudGroup) cloudGroup.style.display = "";
   const icon = s.status === "成功" ? ico("check") : s.status === "跳过" ? ico("skip") : s.status === "失败" ? ico("cross") : s.status === "警告" ? ico("warning") : ico("refresh");
   const detail = buildStepDetail(s);
   // 状态 → 等级映射（玻璃胶囊三重编码）
   const LEVEL = { "进行中": "info", "成功": "ok", "失败": "err", "跳过": "off", "警告": "warn" };
   const lvl = LEVEL[s.status] || "info";
-  const label = esc(s.name) + " — " + s.status;
-  let item = stepEls[s.index];
+  const label = (isCloud ? "[云库] " : "") + esc(s.name) + " — " + s.status;
+  let item = store[s.index];
   if (!item) {
     item = document.createElement("div");
     item.className = "step-item";
-    autoSteps.appendChild(item);
-    stepEls[s.index] = item;
+    host.appendChild(item);
+    store[s.index] = item;
   }
   item.innerHTML = '<span class="step-icon">' + icon + '</span><div class="step-body"><div class="step-name">' + statusHTML(lvl, label) + "</div>" + (detail ? '<div class="step-detail">' + detail + "</div>" : "") + "</div>";
   // 进行中的步骤高亮提示，完成后取消
@@ -403,6 +420,14 @@ dupContinue.onclick = () => {
 // ── 一键执行（SSE 流式进度，实时看到每一步）──
 // 真正执行（可选 forceAdd / updateLinks）
 async function runAuto(text, opts = {}) {
+  const targets = getTargets();
+  if (!targets.kdocs && !targets.cloud) {
+    addLog("err", "请至少选择一条录入线路（金山文档 / 云库）");
+    autoResult.classList.add("show");
+    autoSummary.className = "result-summary fail";
+    autoSummary.textContent = "请至少选择一条录入线路";
+    return;
+  }
   setExec(autoBtn, true);
   autoResult.classList.remove("show");
   autoSteps.innerHTML = "";
@@ -413,15 +438,19 @@ async function runAuto(text, opts = {}) {
   retryCoverBtn.disabled = false;
   retryCoverBtn.innerHTML = ico("refresh") + " 仅重传封面";
   stepEls.length = 0;
+  cloudStepEls.length = 0;
+  if (cloudSteps) cloudSteps.innerHTML = "";
+  if (cloudGroup) cloudGroup.style.display = "none";
 
   autoResult.classList.add("show");
-  addLog("info", "开始一键执行..." + (opts.forceAdd ? "（强制新增）" : opts.updateLinks ? "（更新网盘链接）" : ""));
+  const routeLabel = [targets.kdocs ? "金山文档" : null, targets.cloud ? "云库" : null].filter(Boolean).join(" + ");
+  addLog("info", "开始一键执行（线路：" + routeLabel + "）" + (opts.forceAdd ? "（强制新增）" : opts.updateLinks ? "（更新网盘链接）" : ""));
 
   try {
     const r = await fetch("/api/auto", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, coverDir: coverDir.value.trim() || undefined, manualCoverUrl: coverUrl.value.trim(), forceAdd: !!opts.forceAdd, updateLinks: !!opts.updateLinks, classificationTags: getSelectedClassificationTags() }),
+      body: JSON.stringify({ text, coverDir: coverDir.value.trim() || undefined, manualCoverUrl: coverUrl.value.trim(), forceAdd: !!opts.forceAdd, updateLinks: !!opts.updateLinks, classificationTags: getSelectedClassificationTags(), targets }),
     });
     if (!r.ok && r.headers.get("content-type")?.includes("application/json")) {
       const d = await r.json();
@@ -449,7 +478,7 @@ async function runAuto(text, opts = {}) {
         let ev;
         try { ev = JSON.parse(line.slice(6)); } catch { continue; }
         if (ev.type === "step") {
-          renderStep(ev.step);
+          renderStep(ev.step, ev.group);
         } else if (ev.type === "error") {
           addLog("err", ev.error);
           autoSummary.className = "result-summary fail";
@@ -462,7 +491,12 @@ async function runAuto(text, opts = {}) {
           retryCoverBtn.style.display = "none"; // 默认隐藏，封面缺失且可补传时才显示
           coverLinkRow.style.display = d.coverStatus === "failed" ? "flex" : "none";
           if (d.gameName) { currentParsed = { ...currentParsed, gameName: d.gameName }; preview.style.display = "block"; }
-          if (!d.success) {
+          // 只勾云库（不写金山）：基础摘要留空，交给下面的云库分支独占填充，避免出现「记录 ID: —」这类金山口径的文案
+          const cloudOnly = !!(d.targets && d.targets.kdocs === false);
+          if (cloudOnly) {
+            autoSummary.className = "result-summary ok";
+            autoSummary.textContent = "";
+          } else if (!d.success) {
             autoSummary.className = "result-summary fail";
             autoSummary.textContent = "部分步骤未成功";
             retryCoverBtn.style.display = (d.coverLost && d.coverPath) ? "block" : "none";
@@ -497,11 +531,33 @@ async function runAuto(text, opts = {}) {
             addLog("info", "需人工校对：介绍或大小来源不可靠，已占位标注，建议后续补充真实数据");
           }
 
+          // 云库线路结果：独立线路，只影响自己的提示，不改变整体成败判定
+          const cl = d.cloud;
+          if (cl) {
+            // 金山线路有文案时才加分隔符；只勾云库时由云库文案独占整行
+            const withBase = (base, text) => (base ? base + " ｜ " + text : text);
+            if (cl.action === "no_password") {
+              autoSummary.className = "result-summary warn";
+              autoSummary.textContent = withBase(autoSummary.textContent,
+                cloudOnly ? "云库未配置后台密码，本次未录入任何线路" : "云库未配置密码，本次只录金山");
+              addLog("info", "云库线路已跳过：未配置后台密码（环境变量 QQBOT_ADMIN_PASSWORD）");
+            } else if (cl.ok) {
+              autoSummary.textContent = withBase(autoSummary.textContent,
+                cl.action === "skipped" ? "云库：已存在，跳过 #" + (cl.id || "—") : "云库：已入库 #" + (cl.id || "—"));
+              addLog("ok", "云库线路完成：" + (cl.action === "skipped" ? "库里已有同名记录，已跳过" : "入库 #" + cl.id));
+            } else {
+              autoSummary.className = "result-summary warn";
+              autoSummary.textContent = withBase(autoSummary.textContent, "云库线路失败：" + (cl.error || cl.action));
+              addLog("err", "云库线路失败：" + (cl.error || cl.action));
+            }
+          }
+
           // 有记录即可查看（创建/更新/跳过/封面缺失均视为有记录可查；整体失败时若已建记录也允许查看）
           kdocsViewBtn.style.display = d.recordId ? "block" : "none";
 
           // P08：写一条录入历史（成功/失败 + 稿件标题 + 时间 + 细分状态 + 副标题/原始片段）
-          {
+          // 只勾云库时不写金山历史（这条历史用于回查金山记录，云库没有对应记录 ID）
+          if (!cloudOnly) {
             const p = parseInput(text);
             const title = d.gameName || (p && p.gameName) || (currentParsed && currentParsed.gameName) || "（未命名）";
             let ok = true, status = "成功", state = "success";
@@ -538,21 +594,26 @@ async function runAuto(text, opts = {}) {
 autoBtn.onclick = async () => {
   const text = gameInput.value.trim();
   if (!text) { toastMsg("请先粘贴游戏信息", "err"); return; }
+  const preTargets = getTargets();
+  if (!preTargets.kdocs && !preTargets.cloud) { toastMsg("请至少勾选一条录入线路", "err"); return; }
   // 执行前先查重，命中重复则弹确认框（统一走 setExec，不再直接写 textContent 以免破坏 macOS 线性图标结构）
-  setExec(autoBtn, true);
-  try {
-    const r = await fetch("/api/check-exists", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (r.ok) {
-      const d = await r.json();
-      if (d.exists) { showDupModal(text, d); return; }
+  // 查重查的是金山文档，只勾云库时跳过（云库的查重在云库线路内部自己做）
+  if (preTargets.kdocs) {
+    setExec(autoBtn, true);
+    try {
+      const r = await fetch("/api/check-exists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        if (d.exists) { showDupModal(text, d); return; }
+      }
+    } catch { /* 查重接口异常不阻断，直接执行 */ }
+    finally {
+      setExec(autoBtn, false);
     }
-  } catch { /* 查重接口异常不阻断，直接执行 */ }
-  finally {
-    setExec(autoBtn, false);
   }
   runAuto(text);
 };

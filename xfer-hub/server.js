@@ -13,6 +13,7 @@ const xfer = require("./src/xfer");
 const qb = require("./src/quark-bridge");
 const bd = require("./src/baidu-official");
 const prefs = require("./src/prefs");
+const clientBridge = require("./src/client-bridge");
 
 const PORT = Number(process.env.XFER_PORT || process.env.PORT || 3900);
 const VERSION = process.env.TOOLSHUB_VERSION || readVersion();
@@ -244,12 +245,32 @@ const routes = {
       }
       const t = xfer.start({
         link: body.link,
+        // 下载方式：内建并发（默认）/ 官方客户端接力；前端没传就取用户上次选择
+        downloadMode: body.downloadMode || prefs.getDownloadMode(),
         dstProvider: body.dstProvider || "quark",
         // 前端没显式传就取用户保存过的（再没有才用内置默认）
         dstPath: body.dstPath || prefs.getTargetDir(body.dstProvider || "quark").path,
         keepLocal: !!body.keepLocal,
       });
       json(res, 200, t);
+    } catch (e) {
+      json(res, 500, { error: e.message });
+    }
+  },
+
+  // 下载方式（内建并发 / 官方客户端接力）+ 客户端探测结果
+  "GET /api/download-mode": (req, res) => {
+    let clients = { baidu: "", quark: "" };
+    try {
+      clients = clientBridge.detectAllClients();
+    } catch (e) { /* 探测失败不阻断 */ }
+    json(res, 200, { mode: prefs.getDownloadMode(), clients });
+  },
+
+  "POST /api/download-mode": async (req, res) => {
+    try {
+      const body = await readBody(req);
+      json(res, 200, { mode: prefs.setDownloadMode(body && body.mode) });
     } catch (e) {
       json(res, 500, { error: e.message });
     }

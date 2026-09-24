@@ -326,3 +326,25 @@ test("加载安全：public/app.js 在沙箱中真实执行不抛异常（含 st
   vm.runInContext(extractIconBlock(indexHtml), ctx);
   assert.doesNotThrow(() => { vm.runInContext(appSrc, ctx); }, "app.js 不应抛异常");
 });
+
+// ───────────────────────── 7) 录入线路（金山文档 / 云库）双勾选 ─────────────────────────
+// 两条线路默认都勾；getTargets() 是提交给 /api/auto 的 targets 唯一来源。
+test("录入线路：index.html 含两个线路勾选框且默认都勾", () => {
+  assert.ok(/id="chkRouteKdocs"[^>]*checked/.test(indexHtml), "金山文档勾选框应默认勾上");
+  assert.ok(/id="chkRouteCloud"[^>]*checked/.test(indexHtml), "云库勾选框应默认勾上");
+  assert.ok(/id="cloudSteps"/.test(indexHtml), "应有云库独立的步骤容器");
+});
+test("录入线路：getTargets() 随勾选框实时返回 { kdocs, cloud }", () => {
+  const { ctx, documentStub } = makeContext();
+  const k = documentStub.getElementById("chkRouteKdocs");
+  const c = documentStub.getElementById("chkRouteCloud");
+  k.checked = true; c.checked = true;
+  vm.runInContext(fs.readFileSync(path.join(PUBLIC, "status-luxe.js"), "utf8"), ctx);
+  vm.runInContext(extractIconBlock(indexHtml), ctx);
+  vm.runInContext(appSrc, ctx);
+  assert.deepStrictEqual({ ...vm.runInContext("getTargets()", ctx) }, { kdocs: true, cloud: true }, "默认两条都走");
+  k.checked = false;
+  assert.deepStrictEqual({ ...vm.runInContext("getTargets()", ctx) }, { kdocs: false, cloud: true }, "取消金山 → 只走云库");
+  c.checked = false;
+  assert.deepStrictEqual({ ...vm.runInContext("getTargets()", ctx) }, { kdocs: false, cloud: false }, "两条都不勾 → 前端应拦截空跑");
+});

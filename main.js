@@ -204,6 +204,33 @@ const CHILDREN = {
   },
 };
 
+// ── 夸克授权状态迁移：Skill 把登录态写在「Skill 目录内」（安装目录 resources/…），
+//    每次更新覆盖 resources 就会把授权冲掉（v2.8.34 实测：18:09 更新 → 18:13 重新扫码）。
+//    这里做一份镜像到 userData：启动时回填（升级后自动恢复），运行中每分钟回写（新登录也会持久化）。
+(function syncQuarkLoginState() {
+  try {
+    const skillDir = (services.xfer.env && services.xfer.env.QUARK_SKILL_DIR) || "";
+    if (!skillDir) return;
+    const live = path.join(skillDir, "workbuddy");
+    const backup = path.join(app.getPath("userData"), "xfer-hub", "quarkclouddrive", "workbuddy");
+    const copy = (from, to) => {
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.cpSync(from, to, { recursive: true });
+    };
+    if (!fs.existsSync(live) && fs.existsSync(backup)) {
+      copy(backup, live); // 升级后回填登录态
+      log("夸克登录态已从 userData 回填（升级未丢授权）");
+    } else if (fs.existsSync(live)) {
+      copy(live, backup); // 首次运行：把现有登录态备份到 userData
+    }
+    setInterval(() => {
+      try { if (fs.existsSync(live)) copy(live, backup); } catch (e) { /* 静默 */ }
+    }, 60 * 1000).unref();
+  } catch (e) {
+    log("夸克登录态同步失败: " + e.message);
+  }
+})();
+
 const MAX_RESTART = 5;
 let mainWindow = null;
 let quitting = false;

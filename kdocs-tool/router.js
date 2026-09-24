@@ -126,8 +126,16 @@ router.post("/api/check-exists", async (req, res) => {
 });
 
 router.post("/api/auto", async (req, res) => {
-  const { text, coverDir, manualCoverUrl, forceAdd, updateLinks, classificationTags } = req.body;
+  const { text, coverDir, manualCoverUrl, forceAdd, updateLinks, classificationTags, targets } = req.body;
   if (!text) return res.status(400).json({ error: "请输入游戏信息" });
+  // 录入线路（金山文档 / 云库）：缺省 = 只走金山（保持与历史调用一致的默认）；
+  // 前端会显式传两个勾选框的值（默认都勾）。两条都不勾属于空跑，直接挡掉。
+  const t = targets && typeof targets === "object"
+    ? { kdocs: targets.kdocs !== false, cloud: targets.cloud !== false }
+    : undefined;
+  if (t && !t.kdocs && !t.cloud) {
+    return res.status(400).json({ error: "请至少选择一条录入线路（金山文档 / 云库）" });
+  }
   const parsed = parseInput(text);
   if (!parsed) return res.status(400).json({ error: "无法解析输入" });
 
@@ -154,6 +162,8 @@ router.post("/api/auto", async (req, res) => {
       updateLinks: !!updateLinks,
       // 分类标签：前端传过来时按用户当前勾选；未传（null/undefined）走后端默认 3 个
       classificationTags: Array.isArray(classificationTags) ? classificationTags : undefined,
+      // 录入线路：未传则只走金山（历史行为）
+      targets: t,
       onStep: (ev) => send(ev),
     });
   } catch (e) {

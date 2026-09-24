@@ -361,6 +361,15 @@ code {
   <div class="opts" style="margin-top:14px">
     <label class="chk"><input type="checkbox" id="keepLocal" /> 保留本地临时文件（默认传完自动删）</label>
   </div>
+  <div class="dir-row" id="dlModeRow" style="margin-top:12px">
+    <span class="dir-label">下载方式:
+      <select id="dlMode" style="margin-left:6px">
+        <option value="builtin">内建并发下载（全自动，较快）</option>
+        <option value="client">官方客户端接力（最快，需客户端下载到中转目录）</option>
+      </select>
+    </span>
+    <span class="dir-label" id="dlModeHint" style="opacity:.75"></span>
+  </div>
 </div>
 
 <div class="card panel">
@@ -377,6 +386,9 @@ code {
   <div class="prog" id="prog">
     <div class="bar" id="bar"><i></i></div>
     <div class="stat"><span id="phase">准备中…</span><span id="pct"></span></div>
+    <div class="dir-row" id="srcRow">
+      <span class="dir-label">转存文件夹（源）: <b id="srcPath">—</b></span>
+    </div>
     <div class="steps" id="steps"></div>
     <div class="files" id="files" style="display:none"></div>
   </div>
@@ -443,6 +455,45 @@ code {
   }
   function hideMsg() { $("msg").className = "msg"; }
 
+  // ── 下载方式（内建并发 / 官方客户端接力）──
+  let dlClients = { baidu: "", quark: "" };
+  function dlModeHint() {
+    const v = ($("dlMode") || {}).value || "builtin";
+    const el = $("dlModeHint");
+    if (!el) return;
+    if (v === "client") {
+      const miss = ["baidu", "quark"].filter((p) => !dlClients[p]);
+      el.textContent = miss.length
+        ? "（未检测到" + miss.map((p) => (p === "baidu" ? "百度" : "夸克")).join("/") + "客户端）"
+        : "（已检测到客户端；需把客户端下载目录设为中转目录）";
+    } else {
+      el.textContent = "（多文件 3 路并发，全自动）";
+    }
+  }
+  async function loadDlMode() {
+    try {
+      const r = await fetch("/api/download-mode");
+      const s = await r.json();
+      if (s && s.clients) dlClients = s.clients;
+      if ($("dlMode") && s && s.mode) $("dlMode").value = s.mode;
+      dlModeHint();
+    } catch (e) { /* 忽略 */ }
+  }
+  const dlSel = $("dlMode");
+  if (dlSel) {
+    dlSel.addEventListener("change", async () => {
+      dlModeHint();
+      try {
+        await fetch("/api/download-mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: dlSel.value }),
+        });
+      } catch (e) { /* 忽略 */ }
+    });
+  }
+  loadDlMode();
+
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -451,9 +502,9 @@ code {
   // ── 目录行渲染（每个网盘账号卡内各一行，仿 netdisk-hub 放在状态下面）──
   function dirRowHtml(provider, connected) {
     const d = dirs[provider] || { path: "", userSet: false };
-    const tag = d.userSet ? "转存到(已选)" : "转存到(默认)";
+    const tag = d.userSet ? "目标文件夹(已选)" : "目标文件夹(默认)";
     const btn = connected
-      ? '<button class="dir-btn" onclick="openDirPicker(\'' + provider + '\')">选择目录</button>'
+      ? '<button class="dir-btn" onclick="openDirPicker(\'' + provider + '\')">选择目标文件夹</button>'
       : "";
     return '<div class="dir-row" id="dirrow-' + provider + '"><span class="dir-label">'
       + esc(tag) + ': <b>' + esc(d.path || "—") + '</b></span>' + btn + '</div>';
@@ -464,9 +515,9 @@ code {
       const el = $("dirrow-" + p);
       if (!el) continue;
       const d = dirs[p] || { path: "", userSet: false };
-      const tag = d.userSet ? "转存到(已选)" : "转存到(默认)";
+      const tag = d.userSet ? "目标文件夹(已选)" : "目标文件夹(默认)";
       el.innerHTML = '<span class="dir-label">' + esc(tag) + ': <b>' + esc(d.path || "—") + '</b></span>'
-        + (avail[p] ? '<button class="dir-btn" onclick="openDirPicker(\'' + p + '\')">选择目录</button>' : "");
+        + (avail[p] ? '<button class="dir-btn" onclick="openDirPicker(\'' + p + '\')">选择目标文件夹</button>' : "");
     }
   }
 
@@ -708,6 +759,9 @@ code {
     }
 
     $("phase").textContent = t.message || t.phase;
+    // 状态区上方固定显示「转存文件夹（源）」—— 与下面的"目标文件夹"彻底分开，避免看混
+    const srcPathEl = $("srcPath");
+    if (srcPathEl) srcPathEl.textContent = t.rootName || (t.items && t.items.length === 1 && t.items[0].isDir ? t.items[0].name : "（散文件，无顶层文件夹）");
 
     if (t.items && t.items.length) {
       const box = $("files");
@@ -753,6 +807,7 @@ code {
         body: JSON.stringify({
           link,
           dstProvider,
+          downloadMode: ($("dlMode") || {}).value || "builtin",
           // 目录以服务端记住的为准（不传服务端也会自己兜底）
           dstPath: (dirs[dstProvider] || {}).path || "",
           keepLocal: $("keepLocal").checked,

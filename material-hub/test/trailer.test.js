@@ -104,6 +104,7 @@ function make(opts = {}) {
     env: opts.env || {},
     proxyUrl: opts.proxyUrl,
     retryGapMs: opts.retryGapMs === undefined ? 0 : opts.retryGapMs,
+    fetchFn: opts.fetchFn,
   });
 }
 

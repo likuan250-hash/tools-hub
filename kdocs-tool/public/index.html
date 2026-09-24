@@ -175,6 +175,37 @@
       border-color: rgba(var(--accent-rgb), 0.85);
     }
 
+    /* 录入线路：两条线路独立执行，各自报告结果 */
+    .route-toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+    .route-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 14px;
+      font-size: 13px;
+      border-radius: 999px;
+      border: 1px solid rgba(var(--accent-rgb), 0.25);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+    .route-check:hover { border-color: rgba(var(--accent-rgb), 0.5); color: var(--text); }
+    .route-check input { margin: 0; }
+    .route-check:has(input:checked) {
+      background: rgba(var(--accent-rgb), 0.12);
+      color: var(--text);
+      border-color: rgba(var(--accent-rgb), 0.6);
+    }
+    /* 云库线路的步骤容器（与金山步骤分开渲染，index 不互相覆盖） */
+    .route-group-title {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin: 12px 0 6px;
+      padding-left: 10px;
+      border-left: 2px solid var(--glass-border);
+    }
+
     .field { margin-top: 14px; }
     .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; padding-left: 10px; border-left: 2px solid var(--glass-border); }
 
@@ -902,6 +933,16 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <span></span>
     </div>
 
+    <!-- 录入线路：两条线路独立执行、各自报告结果，默认都勾；只勾一条就只走那条 -->
+    <div class="input-row" id="routeRow">
+      <label><i class="app-ico" data-ico="link"></i> 录入线路</label>
+      <div class="route-toggles" id="routeToggles">
+        <label class="route-check" for="chkRouteKdocs"><input type="checkbox" id="chkRouteKdocs" checked /> 金山文档</label>
+        <label class="route-check" for="chkRouteCloud"><input type="checkbox" id="chkRouteCloud" checked /> 云库（游戏库网站）</label>
+      </div>
+      <span></span>
+    </div>
+
     <div class="toolbar">
       <button class="btn-exec" id="autoBtn" type="button">
         <svg class="bx-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
@@ -919,6 +960,10 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <div class="panel auto-result" id="autoResult">
     <div class="exec-title">执行进度</div>
     <div id="autoSteps"></div>
+    <div id="cloudGroup" style="display:none">
+      <div class="route-group-title">云库（游戏库网站）</div>
+      <div id="cloudSteps"></div>
+    </div>
     <div class="result-summary" id="autoSummary"></div>
     <button class="btn ghost" id="kdocsViewBtn" style="display:none;"><i class="app-ico" data-ico="link"></i> 在金山文档查看</button>
     <button class="btn ghost" id="retryCoverBtn" style="display:none;"><i class="app-ico" data-ico="refresh"></i> 仅重传封面</button>

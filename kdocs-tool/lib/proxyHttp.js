@@ -42,6 +42,7 @@ const DIRECT_HOSTS = [
   "qwps.cn",
   "flysheep6.com",
   "steamchina.com",
+  "steampowered.com",
   "steamstatic.com",
   "steamcontent.com",
   "eccdnx.com",

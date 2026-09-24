@@ -82,12 +82,19 @@ function writeDetailsCache(appid, data) {
  * 实测本机 Steam 商店/CND 直连时通、时不通（代理对部分节点 TLS 失败），
  * 单押一边都会整段失败；两段都试、各自短超时，才能稳定拿到数据。
  */
-async function getJsonSteam(url, timeout, fetchImpl) {
+async function getJsonSteam(url, timeout, fetchImpl, opts = {}) {
   if (typeof fetchImpl === "function") return fetchImpl(url, { timeout }); // 单测注入：直接用
-  try {
-    const direct = await fetchJsonProxy(url, { timeout, env: {} }); // env={} → 强制直连
-    if (direct) return direct;
-  } catch (e) { /* 落代理 */ }
+  // 直连优先 + 短超时多次重试：Steam 直连常见"第一次超时、第二次就通"，一次 10s 会白等太久
+  const directTimeout = Math.max(2000, Math.min(Number(timeout) || 8000, 4000));
+  const tries = Math.max(1, Number(opts.tries) || 3);
+  const allowProxy = opts.allowProxy !== false;
+  for (let i = 0; i < tries; i += 1) {
+    try {
+      const direct = await fetchJsonProxy(url, { timeout: directTimeout, env: {} }); // env={} → 强制直连
+      if (direct) return direct;
+    } catch (e) { /* 下一次重试 */ }
+  }
+  if (!allowProxy) return null;
   try {
     return await fetchJsonProxy(url, { timeout });
   } catch (e) {
@@ -128,19 +135,26 @@ async function searchSteamAppId(gameName, fetchImpl) {
   push(cleanGameName(String(gameName).trim()));
   // 剥英文版本词（Game of the Year / Remastered / Definitive ...）得到基础英文名，提升精确匹配率
   push(String(gameName).replace(EDITION_RE_G, "").replace(/\s+/g, " ").trim());
+  // 在线反查预算：最多 3 次请求 / 总时长 12s（防止 变体×语言×重试 叠成几分钟）
+  const searchBudget = { left: 3, deadline: Date.now() + 12000 };
   for (const term of variants) {
     // 纯序号/结构词（the 2nd、Chapter II…）不是游戏名，搜下去只会命中无关作品
     if (!hasMeaningfulQuery(term)) continue;
+    // 在线搜索预算：最多 3 次请求、总时长 ≤12s。否则 3 名字变体 × 2 语言 × 每次 20s 会搜到天荒地老
+    if (searchBudget.left <= 0 || Date.now() > searchBudget.deadline) break;
     // 语言随查询词走：中文名必须 l=schinese（l=english 配中文 term 实测 total=0，这是查不到 AppID 的根因）；
     // 再补 cc=US：国区不上架的游戏（如艾尔登法环）用 cc=CN 搜是 total=0，必须落国际区目录。
     const cjk = /[\u3400-\u9fff]/.test(term);
     const langs = cjk ? ["l=schinese&cc=CN", "l=schinese&cc=US"] : ["l=english&cc=CN", "l=english&cc=US"];
     let items = [];
     for (const lang of langs) {
+      if (searchBudget.left <= 0 || Date.now() > searchBudget.deadline) break;
+      searchBudget.left -= 1;
       const url = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&${lang}`;
       let j = null;
       try {
-        j = await getJsonSteam(url, 8000, fetchImpl);
+        // Steam 不走代理 + 单次短超时：直连通就快，不通也别耗着
+        j = await getJsonSteam(url, 5000, fetchImpl, { tries: 1, allowProxy: false });
       } catch {
         j = null;
       }
@@ -187,10 +201,58 @@ async function searchSteamAppId(gameName, fetchImpl) {
       }
     }
   }
+  // 兜底源：steamcommunity SearchApps
+  // 背景：store.steampowered.com 在部分网络下直连/代理都不通（实测两边都超时），
+  // 但 steamcommunity.com 走代理可达；该接口返回 [{appid,name,icon,logo}]，
+  // 其中 logo 就是带 hash 的官方封面直链，顺手写进详情缓存供封面步骤使用。
+  for (const term of variants) {
+    if (!hasMeaningfulQuery(term)) continue;
+    try {
+      const api = `https://steamcommunity.com/actions/SearchApps/${encodeURIComponent(term)}`;
+      const arr = await getJsonSteam(api, 8000, fetchImpl, { tries: 1, allowProxy: true });
+      const list = Array.isArray(arr) ? arr : (arr && Array.isArray(arr.results) ? arr.results : []);
+      const qq = norm(term);
+      for (const it of list) {
+        const nm = norm(it && it.name);
+        if (!nm || !qq) continue;
+        const hit = nm === qq || nm.includes(qq) || qq.includes(nm);
+        if (!hit) continue;
+        if (!iterationMatches(term, it && it.name)) continue;
+        const id = String(it.appid || "").trim();
+        if (!/^[0-9]+$/.test(id)) continue;
+        rememberAppId(it.name || term, id, { zhName: /\p{Script=Han}/u.test(gameName) ? gameName : "" });
+        if (it.logo) {
+          writeDetailsCache(id, { shortDescription: "", genres: [], type: "", size: "", headerImage: String(it.logo) });
+        }
+        log.info(`[steam] SearchApps 命中 appid=${id} name=${it.name}`);
+        return id;
+      }
+    } catch (e) { /* 该源失败：继续下一个名字变体 */ }
+  }
   return null;
 }
 
 /** 校验文件头 magic 是否为真实图片（JPEG/PNG/WEBP/GIF/BMP）。用于下载后过滤占位图/错误页。 */
+/** 从 JPEG/PNG 头部解析宽高（解析失败返回 null）。用来拒绝 Logo/占位图。 */
+function imageDimensions(buf) {
+  try {
+    if (buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50) {
+      return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+    }
+    if (buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) { i += 1; continue; }
+      const marker = buf[i + 1];
+      const len = buf.readUInt16BE(i + 2);
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+      }
+      i += 2 + len;
+    }
+  } catch (e) { /* 头不完整 */ }
+  return null;
+}
 function isImageMagic(buf) {
   if (!buf || buf.length < 4) return false;
   // JPEG: FF D8 FF
@@ -279,7 +341,10 @@ function tryDownload(url, fp) {
 function downloadCover(gameName, appid, coverDir, opts = {}) {
   coverDir = coverDir || DEFAULT_COVER_DIR;
   if (!fs.existsSync(coverDir)) fs.mkdirSync(coverDir, { recursive: true });
-  const safe = gameName.replace(/[\\/:*?"<>|]/g, "_");
+  // 游戏名可能为空（输入只贴了链接/全是噪声词）→ 退化为 appid，避免产出 "_cover.jpg"
+  const safe =
+    String(gameName == null ? "" : gameName).replace(/[\\/:*?"<>|]/g, "_").trim() ||
+    (appid ? "appid_" + String(appid) : "cover");
   const fp = path.join(coverDir, `${safe}_cover.jpg`);
   const cdn = `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}`;
   const fas = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appid}`;
@@ -311,7 +376,23 @@ function downloadCover(gameName, appid, coverDir, opts = {}) {
     try {
       for (const u of await bingCoverUrls(gameName)) {
         try {
-          return await tryDownload(u, fp);
+          const got = await tryDownload(u, fp);
+          // 尺寸闸门：Bing 壁纸/Logo 这类小图直接丢弃（只卡兜底图，官方图不卡）
+          let dim = null;
+          try {
+            const target = got && got.path ? got.path : fp;
+            const fd = fs.openSync(target, "r");
+            const head = Buffer.alloc(65536);
+            const n = fs.readSync(fd, head, 0, head.length, 0);
+            fs.closeSync(fd);
+            dim = imageDimensions(head.subarray(0, n));
+          } catch (e2) { dim = null; }
+          if (dim && (dim.w < 640 || dim.h < 360)) {
+            log.warn("Bing 兜底图太小已丢弃 " + dim.w + "x" + dim.h + ": " + u);
+            try { fs.unlinkSync(got && got.path ? got.path : fp); } catch (e3) { /* 忽略 */ }
+            continue;
+          }
+          return got;
         } catch (e) {
           lastErr = e;
         }
@@ -354,8 +435,14 @@ async function getSteamAppDetails(appid) {
     `https://store.steampowered.com/api/appdetails?appids=${appid}&l=schinese&cc=CN`,
   ];
   for (const url of urls) {
-    // 每个源都"直连 → 代理"各试一次，避免单边抽风就把大小/描述全丢
-    const j = await getJsonSteam(url, url.includes("steamchina") ? 8000 : 10000);
+    const isCn = url.includes("steamchina");
+    // 中国区：直连快（实测 0.3~0.4s），失败也不重试堆积等待；
+    // 国际站：直连 2 次短超时（4s）后再给一次代理机会，整体控制在十几秒内
+    const j = await getJsonSteam(url, isCn ? 6000 : 8000, undefined, {
+      tries: isCn ? 1 : 2,
+      // 实测：store 系【直连才通、走代理必超时】（2026-09-23 复测）；代理只留给社区 SearchApps 那条路
+      allowProxy: false,
+    });
     const entry = j && j[String(appid)];
     // 中国站对非国区游戏会返回 {success:false}（HTTP 200）→ 必须继续试国际站，不能 break
     if (entry && entry.success && entry.data) {
@@ -369,23 +456,63 @@ async function getSteamAppDetails(appid) {
 
 /**
  * Bing 图片搜索兜底（Steam 接口/官方 CDN 不可达时用）。
- * 只取图片直链，优先 Steam 自家域名（说明是官方封面图），最多 4 张。
+ * 只取搜索结果里的真实图片直链（murl 字段），并**排除 bing/微软自家图**（否则会抓到 Bing 壁纸/Logo）。
+ * 优先 Steam 自家域名（基本等于官方封面），最多 4 张。
  */
+/**
+ * 社区 SearchApps 反查官方封面直链（带 hash 的 store_item_assets 路径）。
+ * 背景：新游戏封面路径带 hash，只有 appdetails / 社区接口能给；appdetails 不通时用它补。
+ * @param {string} gameName 游戏名（中英皆可）
+ * @param {string|number} appid 期望命中的 appid（可空：则取名字最匹配的一条）
+ * @returns {Promise<string>} 官方图直链；取不到返回空串
+ */
+async function communityLogoUrl(gameName, appid) {
+  const q = String(gameName == null ? "" : gameName).trim();
+  const want = String(appid == null ? "" : appid).trim();
+  if (!q && !want) return "";
+  const terms = [q].filter(Boolean);
+  for (const term of terms) {
+    try {
+      const api = `https://steamcommunity.com/actions/SearchApps/${encodeURIComponent(term)}`;
+      const arr = await getJsonSteam(api, 8000, undefined, { tries: 1, allowProxy: true });
+      const list = Array.isArray(arr) ? arr : [];
+      const hit = want
+        ? list.find((it) => String(it && it.appid) === want)
+        : list[0];
+      if (hit && hit.logo) {
+        log.info(`[steam] 社区反查官方图 appid=${hit.appid} name=${hit.name}`);
+        return String(hit.logo);
+      }
+    } catch (e) { /* 试下一个词 */ }
+  }
+  return "";
+}
+
 async function bingCoverUrls(gameName) {
-  const q = encodeURIComponent(String(gameName || "").trim() + " steam 封面 cover");
+  const q = encodeURIComponent(String(gameName || "").trim() + " steam cover");
   const html = await fetchTextProxy("https://cn.bing.com/images/search?q=" + q, { timeout: 8000, env: {} });
   if (!html) return [];
+  const raw = html.replace(/&quot;|&#34;/g, '"').replace(/\\u002f|\\\//g, "/");
   const urls = [];
-  const re = /https?:\\?\/\\?\/[^"'\\\s]+?\.(?:jpg|jpeg|png)/gi;
-  const raw = html.replace(/&quot;|\\u002f/gi, (m) => (m === "&quot;" ? '"' : "/")).replace(/\\\//g, "/");
-  const all = raw.match(re) || [];
-  for (const u of all) {
-    const clean = u.replace(/[",]+$/, "");
-    if (!urls.includes(clean)) urls.push(clean);
-    if (urls.length >= 12) break;
+  // Bing 把结果图片放在 "murl":"https://…" 里，这是唯一可靠的来源
+  const re = /"murl"\s*:\s*"(https?:[^"]+?\.(?:jpg|jpeg|png|webp))/gi;
+  let m;
+  while ((m = re.exec(raw))) {
+    const u = m[1].replace(/\\\\/g, "\\");
+    if (!urls.includes(u)) urls.push(u);
+    if (urls.length >= 40) break;
   }
-  const steamFirst = urls.filter((u) => /steamstatic|eccdnx|steampowered|steamcdn/i.test(u));
-  return (steamFirst.length ? steamFirst : urls).slice(0, 4);
+  const bad = /(^|\.)(bing\.com|microsoft\.com|msn\.com|live\.com|windows\.com|office\.com)$/i;
+  const ok = urls.filter((u) => {
+    try {
+      const h = new URL(u).hostname;
+      return !bad.test(h) && !/(^|\.)bing\./i.test(h);
+    } catch (e) {
+      return false;
+    }
+  });
+  const steamFirst = ok.filter((u) => /steamstatic|eccdnx|steampowered|steamcdn|akamai|cloudflare/i.test(u));
+  return (steamFirst.length ? steamFirst : ok).slice(0, 4);
 }
 
 /** 从任意图片 URL 下载封面（非 Steam 游戏：用户提供的官方封面链接兜底） */
@@ -906,6 +1033,8 @@ function extractStorageFromHtml(html) {
 }
 
 module.exports = {
+  communityLogoUrl,
+  bingCoverUrls, imageDimensions,
   searchSteamAppId,
   downloadCover,
   downloadCoverFromUrl,

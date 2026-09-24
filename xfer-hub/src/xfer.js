@@ -17,6 +17,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const log = require("./logger");
+const cb = require("./client-bridge");
 const bd = require("./baidu-official");
 const qb = require("./quark-bridge");
 const share = require("./share");
@@ -57,6 +58,39 @@ function makeThrottle(task, intervalMs = 400) {
   };
 }
 
+/** 接力模式：等客户端把文件下到中转目录（存在且大小一致），超时抛错 */
+async function waitForLocalFiles(workDir, items, { timeoutMs = 3600000, intervalMs = 5000, onTick } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const targetOf = (it) => path.join(workDir, String(it.rel || it.name).split("/").join(path.sep));
+  for (;;) {
+    let done = 0;
+    for (const it of items) {
+      const p = targetOf(it);
+      let ok = false;
+      try { const st = fs.statSync(p); ok = !it.size || st.size === it.size; } catch (e) { ok = false; }
+      it.localPath = p;
+      it.downloaded = ok ? (it.size || 0) : 0;
+      if (ok) { it.status = "downloaded"; done += 1; }
+    }
+    if (done === items.length) return { done, total: items.length };
+    if (Date.now() > deadline) throw new Error("等待客户端下载超时（" + Math.round(timeoutMs / 60000) + " 分钟）：已就绪 " + done + "/" + items.length);
+    if (onTick) onTick(done, items.length);
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
+/** 并发池：limit 路并行跑 fn(item, index)（网盘侧并发过高会被限速/风控，默认取 3） */
+async function pMap(items, limit, fn) {
+  const n = Math.max(1, Math.min(Number(limit) || 1, items.length || 1));
+  let cursor = 0;
+  const workers = new Array(n).fill(0).map(async () => {
+    while (cursor < items.length) {
+      const i = cursor++;
+      await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+}
 function snapshot(t) {
   return {
     id: t.id,
@@ -79,6 +113,7 @@ function snapshot(t) {
     updatedAt: t.updatedAt,
     keepLocal: t.keepLocal,
     localDir: t.localDir,
+    rootName: t.rootName || "",
   };
 }
 
@@ -157,15 +192,20 @@ async function runTask(task) {
       }
     }
 
-    // 展开目录：百度/夸克都把目录当成一个条目，需要递归列出里面的文件
+    // 顶层文件夹：分享若是「单个文件夹」，它就是本次转存的根 —— 下载和上传都原样保留它
+    const dirCount = task.items.filter((x) => x.isDir).length;
+    task.rootName = task.items.length === 1 && dirCount === 1 ? safeName(task.items[0].name) : "";
+    if (task.rootName) emit(task, "probe", `顶层文件夹：${task.rootName}（下载/上传都会保留）`);
+
+    // 展开目录（递归，保留相对路径 it.rel）：百度/夸克都把目录当成一个条目
     const flat = [];
     for (const it of task.items) {
       if (it.isDir) {
         emit(task, "probe", `展开目录 ${it.name}…`);
-        const sub = await listRecursive(src, it);
-        flat.push(...sub);
+        const prefix = task.rootName ? safeName(it.name) : "";
+        flat.push(...(await listRecursive(src, it, prefix)));
       } else {
-        flat.push(it);
+        flat.push(Object.assign({}, it, { rel: safeName(it.name) }));
       }
     }
     task.items = flat;
@@ -175,17 +215,35 @@ async function runTask(task) {
     if (!flat.length) throw new Error("分享里没有可下载的文件（只有空目录）");
 
     // ── 阶段 4：下载 ──
+    if (task.downloadMode === "client") {
+      // 官方客户端接力：客户端吃 P2P/专属节点，我们只做"唤起 + 监控 + 接管上传"
+      const r = cb.launch(src, task.link, { dryRun: false, onLog: (m) => log.info(m) });
+      if (!r.ok) throw new Error(`唤起${src === "baidu" ? "百度" : "夸克"}客户端失败：${r.reason}`);
+      emit(task, "download", `已唤起客户端：请在客户端里把「${task.rootName || "中转文件夹"}」下载到中转目录，脚本会自动接管上传…`);
+      await waitForLocalFiles(workDir, task.items, {
+        timeoutMs: Number(process.env.XFER_CLIENT_TIMEOUT_MS || 60 * 60 * 1000),
+        intervalMs: 5000,
+        onTick: (done, total) => emit(task, "download", `等待客户端下载：${done}/${total} 个文件就绪`),
+      });
+      task.doneBytesBase = task.items.reduce((s, x) => s + (x.downloaded || 0), 0);
+      task.doneBytes = task.doneBytesBase;
+      emit(task, "download", "本地文件已齐，开始接管上传");
+    } else {
     emit(task, "download", "开始下载到本地中转目录…");
-    for (const it of task.items) {
+    const dlConc = Math.max(1, Number(process.env.XFER_DL_CONCURRENCY || 3));
+    // 并发下载（默认 3 路）：单流串行跑不满带宽，多文件并行才接近客户端速度
+    await pMap(task.items, dlConc, async (it) => {
       task.currentFile = it.name;
       emit(task, "download", `下载 ${it.name} (${fmtSize(it.size)})`, { currentFile: it.name });
 
-      const subDir = path.join(workDir, src === "baidu" ? "bd" : "qk");
+      // 本地落盘保留整棵目录（含顶层文件夹）：workDir/<rel>
+      const relNative = String(it.rel || it.name).split("/").join(path.sep);
+      const localTarget = path.join(workDir, relNative);
+      fs.mkdirSync(path.dirname(localTarget), { recursive: true });
       let saved;
       if (src === "baidu") {
-        const target = path.join(subDir, safeName(it.name));
         const size = it.size || 0;
-        saved = await bd.download(it.srcId, target, (p) => {
+        saved = await bd.download(it.srcId, localTarget, (p) => {
           it.percent = p.percent;
           task.doneBytes = (task.doneBytesBase || 0) + p.got;
           progress("download", `下载 ${it.name} ${(p.percent * 100).toFixed(0)}%`, {
@@ -196,9 +254,9 @@ async function runTask(task) {
           });
         });
       } else {
-        saved = await qb.download(it.srcId, subDir);
+        saved = await qb.download(it.srcId, path.dirname(localTarget));
       }
-      it.localPath = saved.path || path.join(subDir, it.name);
+      it.localPath = saved.path || localTarget;
       it.downloaded = fs.existsSync(it.localPath) ? fs.statSync(it.localPath).size : 0;
       it.status = "downloaded";
       task.doneBytesBase = (task.doneBytesBase || 0) + (it.downloaded || 0);
@@ -206,19 +264,45 @@ async function runTask(task) {
       if (it.size && it.downloaded !== it.size) {
         log.warn(`大小不符 ${it.name}: 期望${it.size} 实得${it.downloaded}`);
       }
-    }
+    });
     emit(task, "download", "下载完成");
+    }
 
     // ── 阶段 5：上传 ──
     const dst = task.dstProvider;
     emit(task, "upload", `开始上传到${dst === "baidu" ? "百度" : "夸克"}…`);
     const upDir = await ensureRemoteDir(dst, task.dstPath);
+    // rel → 目标网盘上的远端目录 fid/路径（含顶层文件夹），按需逐级建目录
+    const remoteDirCache = new Map();
+    const remoteDirFor = async (relDir) => {
+      const segs = String(relDir || "").split("/").filter(Boolean).map(safeName);
+      const key = segs.join("/");
+      if (remoteDirCache.has(key)) return remoteDirCache.get(key);
+      let parent = dst === "baidu" ? task.dstPath : upDir;
+      let parentFid = upDir;
+      for (const seg of segs) {
+        if (dst === "baidu") {
+          parent = parent + "/" + seg;
+          await bd.ensureDir(parent);
+          parentFid = parent;
+        } else {
+          parentFid = await qb.ensureFolder(seg, parentFid);
+        }
+      }
+      const val = dst === "baidu" ? { path: parent, fid: parentFid } : parentFid;
+      remoteDirCache.set(key, val);
+      return val;
+    };
 
     let upBase = 0;
-    for (const it of task.items) {
+    const upConc = Math.max(1, Number(process.env.XFER_UP_CONCURRENCY || 3));
+    // 并发上传（默认 3 路）；并发过高会被网盘限速/风控，可用环境变量下调
+    await pMap(task.items, upConc, async (it) => {
       emit(task, "upload", `上传 ${it.name}`, { currentFile: it.name });
+      const relDir = String(it.rel || it.name).split("/").slice(0, -1).join("/");
+      const dest = await remoteDirFor(relDir);
       if (dst === "baidu") {
-        const remote = `${task.dstPath}/${it.name}`;
+        const remote = `${dest.path}/${safeName(it.name)}`;
         const r = await bd.upload(it.localPath, remote, (p) => {
           if (p.phase === "upload" && p.total) {
             const frac = (p.got || 0) / p.total;
@@ -233,21 +317,32 @@ async function runTask(task) {
         it.remoteFsId = r.fsId;
         it.instant = r.instant;
       } else {
-        const r = await qb.upload(it.localPath, upDir);
+        const r = await qb.upload(it.localPath, dest);
         it.remoteFsId = (r.ids || [])[0];
         it.instant = r.instant;
       }
       it.status = "uploaded";
       upBase += it.downloaded || 0;
       task.doneBytes = upBase;
-    }
+    });
     emit(task, "upload", "上传完成");
 
     // ── 阶段 6：校验 ──
     emit(task, "verify", "正在校验远端文件…");
-    const remoteItems = await listRemote(dst, task.dstPath);
+    // 上传保留了目录结构 → 校验要按每个文件所在的远端目录分别列表
+    const verifyDirCache = new Map();
+    const remoteIn = async (relDir) => {
+      const key = String(relDir || "");
+      if (!verifyDirCache.has(key)) {
+        const remotePath = task.dstPath + (key ? "/" + key : "");
+        verifyDirCache.set(key, await listRemote(dst, remotePath).catch(() => []));
+      }
+      return verifyDirCache.get(key);
+    };
     let okCount = 0;
     for (const it of task.items) {
+      const relDir = String(it.rel || it.name).split("/").slice(0, -1).join("/");
+      const remoteItems = await remoteIn(relDir);
       const hit = remoteItems.find((r) => (r.name || "") === it.name);
       if (
         hit &&
@@ -294,59 +389,29 @@ async function runTask(task) {
   }
 }
 
-// 递归列出目录下的文件（把目录项展开成扁平文件列表）
-async function listRecursive(provider, dirItem) {
+// 递归列出目录下的文件，**保留相对路径 it.rel**（含顶层文件夹与所有子目录），
+// 下载与上传都按这个相对路径落盘/建目录，不再拍平成一层。
+async function listRecursive(provider, dirItem, prefix = "") {
   const out = [];
+  const joinRel = (a, b) => (a ? a + "/" + safeName(b) : safeName(b));
   if (provider === "baidu") {
     const items = await bd.listDir(dirItem.srcId ? "/" + dirItem.name : "/");
     for (const f of items) {
+      const rel = joinRel(prefix, f.server_filename);
       if (f.isdir === 1) {
-        const sub = await bd.listDir(`/${f.server_filename}`);
-        out.push(
-          ...sub
-            .filter((x) => x.isdir !== 1)
-            .map((x) => ({
-              name: x.server_filename,
-              size: x.size,
-              isDir: false,
-              srcId: x.fs_id,
-              status: "pending",
-            })),
-        );
+        out.push(...(await listRecursive(provider, { name: f.server_filename, srcId: f.fs_id, isDir: true }, rel)));
       } else {
-        out.push({
-          name: f.server_filename,
-          size: f.size,
-          isDir: false,
-          srcId: f.fs_id,
-          status: "pending",
-        });
+        out.push({ name: f.server_filename, rel, size: f.size, isDir: false, srcId: f.fs_id, status: "pending" });
       }
     }
   } else {
     const files = await qb.browse(dirItem.srcId, {});
     for (const f of files) {
+      const rel = joinRel(prefix, f.filename);
       if (f.file_type === "0") {
-        const sub = await qb.browse(f.fid, {});
-        out.push(
-          ...sub
-            .filter((x) => x.file_type === "1")
-            .map((x) => ({
-              name: x.filename,
-              size: x.size,
-              isDir: false,
-              srcId: x.fid,
-              status: "pending",
-            })),
-        );
+        out.push(...(await listRecursive(provider, { name: f.filename, srcId: f.fid, isDir: true }, rel)));
       } else {
-        out.push({
-          name: f.filename,
-          size: f.size,
-          isDir: false,
-          srcId: f.fid,
-          status: "pending",
-        });
+        out.push({ name: f.filename, rel, size: f.size, isDir: false, srcId: f.fid, status: "pending" });
       }
     }
   }
@@ -389,13 +454,14 @@ function fmtSize(n) {
 }
 
 // ── 对外入口 ──
-function start({ link, dstProvider, dstPath, keepLocal = false, onEvent }) {
+function start({ link, dstProvider, dstPath, keepLocal = false, downloadMode = "builtin", onEvent }) {
   const t = {
     id: newId(),
     link: String(link || "").trim(),
     dstProvider: dstProvider || "quark",
     dstPath: dstPath || (dstProvider === "baidu" ? "/百度中转文件夹" : "/夸克中转文件夹"),
     keepLocal: !!keepLocal,
+    downloadMode: String(downloadMode) === "client" ? "client" : "builtin",
     phase: "queued",
     status: "queued",
     message: "排队中",
@@ -425,4 +491,4 @@ function all() {
   return [...tasks.values()].map(snapshot).sort((a, b) => b.startedAt - a.startedAt);
 }
 
-module.exports = { start, get, all, fmtSize, transferRoot };
+module.exports = {start, get, all, fmtSize, transferRoot, waitForLocalFiles };

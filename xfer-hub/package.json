@@ -1,12 +1,12 @@
 {
   "name": "xfer-hub",
-  "version": "2.8.34",
+  "version": "2.8.36",
   "description": "网盘跨盘转存：贴分享链接 → 下载到本地 → 上传到目标网盘",
   "main": "server.js",
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/"
+    "test": "node --test test/share.test.js test/client-bridge.test.js test/client-dir.test.js test/client-autofill.test.js"
   },
   "dependencies": {}
 }

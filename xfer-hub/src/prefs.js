@@ -96,4 +96,18 @@ function setTmpDir(p) {
   return getTmpDir();
 }
 
-module.exports = { DEFAULTS, getTargetDir, setTargetDir, allTargetDirs, getTmpDir, setTmpDir, DEFAULT_TMP_DIR, prefsPath };
+// 下载方式："builtin" = 内建多连接并发下载；"client" = 官方客户端接力（客户端吃 P2P/专属节点）
+function getDownloadMode() {
+  const v = String(read().downloadMode || "").trim();
+  return v === "client" ? "client" : "builtin";
+}
+
+function setDownloadMode(mode) {
+  const v = String(mode || "").trim() === "client" ? "client" : "builtin";
+  const cur = read();
+  cur.downloadMode = v;
+  write(cur);
+  return v;
+}
+
+module.exports = { DEFAULTS, getTargetDir, setTargetDir, allTargetDirs, getTmpDir, setTmpDir, DEFAULT_TMP_DIR, prefsPath, getDownloadMode, setDownloadMode };

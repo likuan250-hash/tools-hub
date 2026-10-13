@@ -4,7 +4,9 @@ const assert = require("node:assert");
 const { parseInput } = require("../lib/parser");
 
 test("清洗带 Build/版本/补丁/免安装长尾的游戏名", () => {
-  const p = parseInput("双影奇境（Split Fiction）Build.18353366 (v20250527) 官方中文+联机补丁+升级补丁 免安装硬盘版\n夸克：https://pan.quark.cn/s/abc123");
+  const p = parseInput(
+    "双影奇境（Split Fiction）Build.18353366 (v20250527) 官方中文+联机补丁+升级补丁 免安装硬盘版\n夸克：https://pan.quark.cn/s/abc123",
+  );
   assert.strictEqual(p.gameName, "双影奇境");
   assert.strictEqual(p.englishName, "Split Fiction");
   assert.ok(p.tags.includes("PC游戏"));
@@ -21,7 +23,9 @@ test("无括号纯中文名 + 显式大小", () => {
 });
 
 test("识别百度与迅雷网盘链接", () => {
-  const p = parseInput("测试游戏\n百度：https://pan.baidu.com/s/xyz\n迅雷：https://pan.xunlei.com/s/abc");
+  const p = parseInput(
+    "测试游戏\n百度：https://pan.baidu.com/s/xyz\n迅雷：https://pan.xunlei.com/s/abc",
+  );
   assert.strictEqual(p.baiduUrl, "https://pan.baidu.com/s/xyz");
   assert.strictEqual(p.xunleiUrl, "https://pan.xunlei.com/s/abc");
   assert.strictEqual(p.quarkUrl, "");
@@ -55,10 +59,15 @@ test("「大小：」前缀提取游戏大小", () => {
 
 test("提取英文名：括号优先，无括号时取内嵌英文名", () => {
   assert.strictEqual(parseInput("Hades II").englishName, "Hades II");
-  assert.strictEqual(parseInput("黑神话悟空（Black Myth Wukong）").englishName, "Black Myth Wukong");
+  assert.strictEqual(
+    parseInput("黑神话悟空（Black Myth Wukong）").englishName,
+    "Black Myth Wukong",
+  );
   // 中文名 + 空格 + 英文名（无括号）也能提取，并剥版本尾巴
   assert.strictEqual(
-    parseInput("战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 官方中文+全DLC 免安装硬盘版").englishName,
+    parseInput(
+      "战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 官方中文+全DLC 免安装硬盘版",
+    ).englishName,
     "Warhammer 40,000: Space Marine 2",
   );
   // 纯中文名仍为空（交给 resolveEnglishName 在线解析）
@@ -69,7 +78,9 @@ test("提取英文名：括号优先，无括号时取内嵌英文名", () => {
 
 // ── H3：脏名清洗（版本号 + repack 标签全剥，保留副标题）──
 test("清洗脏名：版本号+复合 repack 标签全剥，保留「重制版」副标题", () => {
-  const p = parseInput("最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档 免安装硬盘版");
+  const p = parseInput(
+    "最后的生还者2：重制版 v1.6.10721.0105 官方中文+预购特典+单独升级档 免安装硬盘版",
+  );
   assert.strictEqual(p.gameName, "最后的生还者2：重制版");
   assert.strictEqual(p.englishName, "");
 });
@@ -81,7 +92,10 @@ test("清洗脏名：v 版本号拖尾点不残留（避免 .预购特典 这类
 
 // ── H1：从粘贴的 Steam 链接抽取 AppID（手动链接兜底）──
 test("从粘贴的 Steam 链接抽取 AppID（store/community/steamdb）", () => {
-  assert.strictEqual(parseInput("黑神话：悟空\nhttps://store.steampowered.com/app/2358720/").appid, "2358720");
+  assert.strictEqual(
+    parseInput("黑神话：悟空\nhttps://store.steampowered.com/app/2358720/").appid,
+    "2358720",
+  );
   assert.strictEqual(parseInput("某游戏\nhttps://steamcommunity.com/app/1091500").appid, "1091500");
   assert.strictEqual(parseInput("某游戏\nhttps://steamdb.info/app/400/").appid, "400");
 });
@@ -90,4 +104,20 @@ test("无 Steam 链接时 appid 为空，且不影响网盘链接提取", () => 
   const p = parseInput("无链接的普通游戏\n百度：https://pan.baidu.com/s/x");
   assert.strictEqual(p.appid, "");
   assert.strictEqual(p.baiduUrl, "https://pan.baidu.com/s/x");
+});
+
+// 回归：用户实际输入「全面战争：战锤3 Total War: Warhammer III绕D版 v8.1.1 官方中文+全DLC+单板补丁 免安装硬盘版」
+// 旧逻辑把内嵌英文名和"绕D版/单板补丁"一起当成游戏名 → 中文名、离线库、站点搜索全部落空（"取不到游戏"）。
+test("内嵌英文名 + 绕D版/单板补丁 噪音：中文名只留核心名", () => {
+  const text = [
+    "全面战争：战锤3 Total War: Warhammer III绕D版 v8.1.1 官方中文+全DLC+单板补丁 免安装硬盘版",
+    "链接: https://pan.baidu.com/s/1LHiYZd1Cj83YWCyhGKJgAw?pwd=8888",
+    "链接：https://pan.quark.cn/s/453017885490",
+  ].join("\n");
+  const { parseInput } = require("../lib/parser");
+  const p = parseInput(text);
+  assert.strictEqual(p.gameName, "全面战争：战锤3");
+  assert.strictEqual(p.englishName, "Total War: Warhammer III");
+  assert.strictEqual(p.baiduUrl.includes("pan.baidu.com/s/1LHiYZd1Cj83YWCyhGKJgAw"), true);
+  assert.strictEqual(p.quarkUrl.includes("pan.quark.cn/s/453017885490"), true);
 });

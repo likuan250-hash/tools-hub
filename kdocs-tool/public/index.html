@@ -192,12 +192,13 @@
     }
     .route-check:hover { border-color: rgba(var(--accent-rgb), 0.5); color: var(--text); }
     .route-check input { margin: 0; }
+    .route-hint { align-self: center; font-size: 12px; color: var(--text-dim); opacity: .85; }
     .route-check:has(input:checked) {
       background: rgba(var(--accent-rgb), 0.12);
       color: var(--text);
       border-color: rgba(var(--accent-rgb), 0.6);
     }
-    /* 云库线路的步骤容器（与金山步骤分开渲染，index 不互相覆盖） */
+    /* 执行进度步骤容器 */
     .route-group-title {
       font-size: 12px;
       color: var(--text-dim);
@@ -933,12 +934,21 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <span></span>
     </div>
 
-    <!-- 录入线路：两条线路独立执行、各自报告结果，默认都勾；只勾一条就只走那条 -->
+    <!-- 录入线路：云库线路已下线（后台失效），现在只写金山文档 -->
     <div class="input-row" id="routeRow">
       <label><i class="app-ico" data-ico="link"></i> 录入线路</label>
       <div class="route-toggles" id="routeToggles">
         <label class="route-check" for="chkRouteKdocs"><input type="checkbox" id="chkRouteKdocs" checked /> 金山文档</label>
-        <label class="route-check" for="chkRouteCloud"><input type="checkbox" id="chkRouteCloud" checked /> 云库（游戏库网站）</label>
+      </div>
+      <span></span>
+    </div>
+
+    <!-- 取数线路（可选，默认不勾）：封面/中文介绍优先从 flysheep6 游戏站取；站内没有的游戏自动回退 Steam 官方源 -->
+    <div class="input-row" id="sourceRow">
+      <label><i class="app-ico" data-ico="image"></i> 取数线路</label>
+      <div class="route-toggles" id="sourceToggles">
+        <label class="route-check" for="chkRouteFlysheep"><input type="checkbox" id="chkRouteFlysheep" /> flysheep6 游戏站（封面 / 介绍）</label>
+        <span class="route-hint">不勾 = 沿用 Steam 官方源</span>
       </div>
       <span></span>
     </div>
@@ -960,10 +970,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   <div class="panel auto-result" id="autoResult">
     <div class="exec-title">执行进度</div>
     <div id="autoSteps"></div>
-    <div id="cloudGroup" style="display:none">
-      <div class="route-group-title">云库（游戏库网站）</div>
-      <div id="cloudSteps"></div>
-    </div>
     <div class="result-summary" id="autoSummary"></div>
     <button class="btn ghost" id="kdocsViewBtn" style="display:none;"><i class="app-ico" data-ico="link"></i> 在金山文档查看</button>
     <button class="btn ghost" id="retryCoverBtn" style="display:none;"><i class="app-ico" data-ico="refresh"></i> 仅重传封面</button>

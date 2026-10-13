@@ -13,14 +13,10 @@ function ensureLoaded() {
   try {
     const kdocsLib = path.join(__dirname, "..", "..", "kdocs-tool", "lib");
     const { lookupEnglishNameOffline } = require(path.join(kdocsLib, "gamemap.js"));
-    const { getActiveDataPack } = require(path.join(kdocsLib, "datapack.js"));
+    const { lookupAppIdOffline } = require(path.join(kdocsLib, "gameappid.js"));
     zhLookup = (name) => lookupEnglishNameOffline(name) || null;
-    appIdLookup = (en) => {
-      const n = String(en == null ? "" : en)
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "");
-      return n ? String(getActiveDataPack().appIds[n] || "") : "";
-    };
+    // 走 kdocs 同一套解析：精选小库 → 商店全量大库（17 万+ 中/英文名）
+    appIdLookup = (name) => lookupAppIdOffline(name) || "";
   } catch (e) {
     /* 保持空映射 */
   }

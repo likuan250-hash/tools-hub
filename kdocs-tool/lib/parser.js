@@ -3,11 +3,48 @@ const { cleanGameName, parseSteamAppIdFromText } = require("./nameutil");
 
 /** 不是游戏名的"伪英文名"词：序号/版本/结构词（the 2nd / Part 2 / Chapter II …） */
 const EN_STOPWORDS = new Set([
-  "the", "of", "and", "a", "an", "to", "in", "on", "for", "with",
-  "part", "chapter", "episode", "vol", "volume", "book", "act",
-  "edition", "remastered", "remaster", "definitive", "complete", "deluxe", "ultimate",
-  "final", "cut", "hd", "goty", "game", "year", "version", "ver",
-  "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x",
+  "the",
+  "of",
+  "and",
+  "a",
+  "an",
+  "to",
+  "in",
+  "on",
+  "for",
+  "with",
+  "part",
+  "chapter",
+  "episode",
+  "vol",
+  "volume",
+  "book",
+  "act",
+  "edition",
+  "remastered",
+  "remaster",
+  "definitive",
+  "complete",
+  "deluxe",
+  "ultimate",
+  "final",
+  "cut",
+  "hd",
+  "goty",
+  "game",
+  "year",
+  "version",
+  "ver",
+  "i",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
 ]);
 
 /**
@@ -25,10 +62,17 @@ function isMeaningfulEnglishName(s) {
 }
 
 function parseInput(text) {
-  const lines = text.trim().split("\n").map(l => l.trim()).filter(l => l);
+  const lines = text
+    .trim()
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l);
   if (!lines.length) return null;
   const firstLine = lines[0];
-  let baidu = "", quark = "", xunlei = "", appid = "";
+  let baidu = "",
+    quark = "",
+    xunlei = "",
+    appid = "";
   for (const line of lines) {
     // 只提取纯链接，兼容「百度：https://...」「链接：https://...」等带前缀标签的写法
     const m = line.match(/https?:\/\/[^\s）)】]+/);
@@ -44,10 +88,14 @@ function parseInput(text) {
       if (aid) appid = aid;
     }
   }
-  let gameName = firstLine, englishName = "";
+  let gameName = firstLine,
+    englishName = "";
+  let embeddedHead = ""; // 中文名（在英文名之前的那段），用于切掉内嵌英文名与 repack 尾巴
   // 先提取英文原名（括号内）
   const m = firstLine.match(/[（(]([^）)]+)[）)]/);
-  if (m && isMeaningfulEnglishName(m[1])) { englishName = m[1]; }
+  if (m && isMeaningfulEnglishName(m[1])) {
+    englishName = m[1];
+  }
   if (!englishName) {
     // 无括号时取「中文名后内嵌的英文名」（如「战锤40K：星际战士2 Warhammer 40,000: Space Marine 2 v14.0 …」）。
     // 直接命中 Steam 搜索，避免整条标题走 Bangumi/维基/百度模糊反查而错配 AppID（如 40K 系列拿到 Darktide）。
@@ -65,10 +113,24 @@ function parseInput(text) {
       // 剥版本尾巴（v14.0 / v1.2.3），与中文名里的版本号处理保持一致
       const cleaned = best.replace(/\s*v?\d+(?:\.\d+){1,3}\s*$/i, "").trim();
       if (isMeaningfulEnglishName(cleaned)) englishName = cleaned;
+      // 内嵌英文名 = 中文名后面的那一段（"全面战争：战锤3 Total War: Warhammer III绕D版 v8.1.1 …"）：
+      // 中文名在英文名之前时，游戏名直接切到英文名起点，避免把英文名和后面的 repack 尾巴一起当游戏名
+      // （否则中文名会变成"全面战争：战锤3 Total War: Warhammer III绕D版 +单板补丁"，站内/Steam 都搜不到）。
+      if (englishName) {
+        const at = firstLine.indexOf(best.trim());
+        const head = at > 0 ? firstLine.substring(0, at).trim() : "";
+        if (head && (head.match(/[\u4e00-\u9fff]/g) || []).length >= 2) embeddedHead = head;
+      }
     }
   }
   // 游戏名：取括号前中文名；若无中文则用英文名；并去掉 Build/版本/补丁/免安装等长尾
-  gameName = (m ? firstLine.substring(0, m.index).trim() : firstLine).replace(/\s*[Bb]uild\.\S+|\(?v?\d{4,}\S*\)?|\s*官方中文\+?|\+?升级补丁|\+?联机补丁|\s*免安装硬盘版|\s*免安装|\s*硬盘版/g, "").trim() || englishName;
+  gameName =
+    (m ? firstLine.substring(0, m.index).trim() : embeddedHead || firstLine)
+      .replace(
+        /\s*[Bb]uild\.\S+|\(?v?\d{4,}\S*\)?|\s*官方中文\+?|\+?升级补丁|\+?联机补丁|\s*免安装硬盘版|\s*免安装|\s*硬盘版/g,
+        "",
+      )
+      .trim() || englishName;
   // 二次清洗：剥除版本号与 repack 标签噪音（如 v1.6.10721.0105 / 官方中文+预购特典+单独升级档），
   // 得到干净游戏名，既利于中文 Steam 检索、也用于封面文件名与展示（H3）。
   gameName = cleanGameName(gameName);
@@ -83,7 +145,10 @@ function parseInput(text) {
   for (const line of lines) {
     const tm = line.match(/^标签\s*[:：]\s*(.+)$/);
     if (tm) {
-      const parts = tm[1].split(/[,，、\s]+/).map(s => s.trim()).filter(Boolean);
+      const parts = tm[1]
+        .split(/[,，、\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
       for (const p of parts) if (!tags.includes(p)) tags.push(p);
     }
   }
@@ -91,19 +156,39 @@ function parseInput(text) {
   // 游戏大小：自动识别文本中的容量描述（如 30.7G / 2.3TB / 512MB），或「大小：xxx」显式标注
   let size = "";
   for (const line of lines) {
-    const sm = line.match(/(?:大小|容量|体积)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:GB|G|TB|T|MB|M|KB|K)\b)/i)
-            || line.match(/(\d+(?:\.\d+)?\s*(?:GB|G|TB|T|MB|M|KB|K)\b)/i);
-    if (sm) { size = sm[1].trim().replace(/\s+/g, ""); break; }
+    const sm =
+      line.match(/(?:大小|容量|体积)\s*[:：]?\s*(\d+(?:\.\d+)?\s*(?:GB|G|TB|T|MB|M|KB|K)\b)/i) ||
+      line.match(/(\d+(?:\.\d+)?\s*(?:GB|G|TB|T|MB|M|KB|K)\b)/i);
+    if (sm) {
+      size = sm[1].trim().replace(/\s+/g, "");
+      break;
+    }
   }
 
   // 手动封面链接：独立图片 URL 行，或「封面：https://...」前缀行（非 Steam 游戏兜底出图用）
   let coverUrl = "";
   for (const line of lines) {
-    const cm = line.match(/(?:封面|cover)?\s*[:：]?\s*(https?:\/\/\S+\.(?:jpg|jpeg|png|webp|gif))(?:\?[^)\s]*)?/i);
-    if (cm) { coverUrl = cm[1]; break; }
+    const cm = line.match(
+      /(?:封面|cover)?\s*[:：]?\s*(https?:\/\/\S+\.(?:jpg|jpeg|png|webp|gif))(?:\?[^)\s]*)?/i,
+    );
+    if (cm) {
+      coverUrl = cm[1];
+      break;
+    }
   }
 
-  return { gameName, englishName, baiduUrl: baidu, quarkUrl: quark, xunleiUrl: xunlei, appid, tags, raw: firstLine, size, coverUrl };
+  return {
+    gameName,
+    englishName,
+    baiduUrl: baidu,
+    quarkUrl: quark,
+    xunleiUrl: xunlei,
+    appid,
+    tags,
+    raw: firstLine,
+    size,
+    coverUrl,
+  };
 }
 
 module.exports = { parseInput, isMeaningfulEnglishName };

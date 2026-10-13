@@ -34,6 +34,22 @@ const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
   ? path.join(RES, "node", "node.exe")
   : "node";
 
+// 本机若装了做 TLS 中间人的安全软件/代理，Node 只信自带 CA 根，直连 Steam/GitHub 会报
+// "unable to verify the first certificate"（表现为"节点不可达"，其实网络是通的）。
+// Node ≥22.15/23 支持 --use-system-ca（叠加系统证书库），统一透给子进程，避免这类假故障。
+const NODE_CA_FLAG = (() => {
+  try {
+    const [maj, min] = spawnSync(NODE_BIN, ["-v"], { encoding: "utf8" })
+      .stdout.trim()
+      .replace(/^v/, "")
+      .split(".")
+      .map(Number);
+    return maj > 22 || (maj === 22 && min >= 15) ? "--use-system-ca" : "";
+  } catch (e) {
+    return "";
+  }
+})();
+
 // 启动令牌：随机生成，注入子进程环境变量；子服务在 /api/version 回显。
 // 主进程据此校验"占用本端口的确实是我们自己的服务"，可检测端口被其他进程抢占/伪造(本地安全)。
 const BOOT_TOKEN = crypto.randomBytes(16).toString("hex");
@@ -209,7 +225,8 @@ const CHILDREN = {
 //    这里做一份镜像到 userData：启动时回填（升级后自动恢复），运行中每分钟回写（新登录也会持久化）。
 (function syncQuarkLoginState() {
   try {
-    const skillDir = (services.xfer.env && services.xfer.env.QUARK_SKILL_DIR) || "";
+    // 注意：注册表叫 CHILDREN（以前这里写成不存在的 services，异常被 catch 吞掉 → 镜像功能一直没生效）
+    const skillDir = (CHILDREN.xfer.env && CHILDREN.xfer.env.QUARK_SKILL_DIR) || "";
     if (!skillDir) return;
     const live = path.join(skillDir, "workbuddy");
     const backup = path.join(app.getPath("userData"), "xfer-hub", "quarkclouddrive", "workbuddy");
@@ -224,7 +241,11 @@ const CHILDREN = {
       copy(live, backup); // 首次运行：把现有登录态备份到 userData
     }
     setInterval(() => {
-      try { if (fs.existsSync(live)) copy(live, backup); } catch (e) { /* 静默 */ }
+      try {
+        if (fs.existsSync(live)) copy(live, backup);
+      } catch (e) {
+        /* 静默 */
+      }
     }, 60 * 1000).unref();
   } catch (e) {
     log("夸克登录态同步失败: " + e.message);
@@ -530,6 +551,11 @@ function startChild(cfg) {
     .join(",");
   proxyEnv.no_proxy = proxyEnv.NO_PROXY;
   const childEnv = Object.assign({}, cfg.env, dataEnv, proxyEnv, { BOOT_TOKEN: BOOT_TOKEN });
+  if (NODE_CA_FLAG) {
+    childEnv.NODE_OPTIONS = [childEnv.NODE_OPTIONS || process.env.NODE_OPTIONS, NODE_CA_FLAG]
+      .filter(Boolean)
+      .join(" ");
+  }
   // #6 注入资源目录，供 fork 子进程解析打包内置的 biliup.exe（子进程无 process.resourcesPath）。
   if (RES) childEnv.TOOLSHUB_RESOURCES_DIR = RES;
 

@@ -1,37 +1,94 @@
-﻿const $ = id => document.getElementById(id);
-const gameInput = $("gameInput"), coverUrl = $("coverUrl");
-const autoBtn = $("autoBtn"), coverDir = $("coverDir"), browseDirBtn = $("browseDirBtn");
+﻿const $ = (id) => document.getElementById(id);
+const gameInput = $("gameInput"),
+  coverUrl = $("coverUrl");
+const autoBtn = $("autoBtn"),
+  coverDir = $("coverDir"),
+  browseDirBtn = $("browseDirBtn");
 const clearBtn = $("clearBtn");
-const preview = $("preview"), previewContent = $("previewContent");
-const autoResult = $("autoResult"), autoSteps = $("autoSteps"), autoSummary = $("autoSummary"), autoLog = $("autoLog"), kdocsViewBtn = $("kdocsViewBtn");
+const preview = $("preview"),
+  previewContent = $("previewContent");
+const autoResult = $("autoResult"),
+  autoSteps = $("autoSteps"),
+  autoSummary = $("autoSummary"),
+  autoLog = $("autoLog"),
+  kdocsViewBtn = $("kdocsViewBtn");
 const retryCoverBtn = $("retryCoverBtn");
 const retryCoverUrlBtn = $("retryCoverUrlBtn");
 const coverLinkRow = $("coverLinkRow");
 const coverLinkInput = $("coverLinkInput");
-const chipKdocs = $("chipKdocs"), kdocsBtn = $("kdocsBtn"), toastHost = $("toastHost");
+const chipKdocs = $("chipKdocs"),
+  kdocsBtn = $("kdocsBtn"),
+  toastHost = $("toastHost");
 
-// ── 录入线路（金山文档 / 云库）：两条线路独立执行，各自报告结果 ──
-// 默认都勾；两条都不勾前端直接拦住（后端也会 400 兜底），避免空跑。
-const chkRouteKdocs = $("chkRouteKdocs"), chkRouteCloud = $("chkRouteCloud");
-const cloudGroup = $("cloudGroup"), cloudSteps = $("cloudSteps");
+// ── 录入线路（金山文档）──
+// 云库线路已彻底移除（2026-10）：只写金山文档。
+const chkRouteKdocs = $("chkRouteKdocs");
 function getTargets() {
-  return {
-    kdocs: chkRouteKdocs ? !!chkRouteKdocs.checked : true,
-    cloud: chkRouteCloud ? !!chkRouteCloud.checked : false,
-  };
+  return { kdocs: chkRouteKdocs ? !!chkRouteKdocs.checked : true };
 }
+
+// 取数线路（可选）：勾上则封面/中文介绍优先从 flysheep6 游戏站取，站内没有自动回退 Steam 官方源。
+const chkRouteFlysheep = $("chkRouteFlysheep");
+function getFlysheepLine() {
+  return !!(chkRouteFlysheep && chkRouteFlysheep.checked);
+}
+
+// 线路勾选持久化：以前每次重开页面都会变回默认（取数线路默认不勾），用户会以为"这条线路没生效"。
+// 现在把两个勾选状态记在 localStorage，重开页面保持上次的选择。
+const ROUTE_PREFS_KEY = "kdocsRoutePrefs";
+function readRoutePrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(ROUTE_PREFS_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+function saveRoutePrefs() {
+  try {
+    localStorage.setItem(
+      ROUTE_PREFS_KEY,
+      JSON.stringify({
+        kdocs: chkRouteKdocs ? !!chkRouteKdocs.checked : true,
+        flysheep: getFlysheepLine(),
+      }),
+    );
+  } catch {
+    /* 隐私模式可能抛错，忽略 */
+  }
+}
+(() => {
+  const prefs = readRoutePrefs();
+  if (chkRouteKdocs && typeof prefs.kdocs === "boolean") chkRouteKdocs.checked = prefs.kdocs;
+  if (chkRouteFlysheep && typeof prefs.flysheep === "boolean")
+    chkRouteFlysheep.checked = prefs.flysheep;
+  for (const el of [chkRouteKdocs, chkRouteFlysheep]) {
+    if (el && typeof el.addEventListener === "function")
+      el.addEventListener("change", saveRoutePrefs);
+  }
+})();
 
 // ── 分类标签选择（P0 用户偏好：免安装硬盘版/PC游戏/全DLC 三个默认勾上）──
 // 与金山文档「游戏信息」多选字段对齐：用户点 pill 切换 on/off；当前选中的标签会在「解析预览」里也显示。
 // 后端会写入 dbsheet 的「游戏信息」字段，免去用户在金文档端每次手动勾选。
-const CLASSIFICATION_TAGS = ["免安装硬盘版", "PC游戏", "全DLC", "虚拟机版", "查询工具", "游戏工具", "热门推荐", "最近更新"];
+const CLASSIFICATION_TAGS = [
+  "免安装硬盘版",
+  "PC游戏",
+  "全DLC",
+  "虚拟机版",
+  "查询工具",
+  "游戏工具",
+  "热门推荐",
+  "最近更新",
+];
 const classTagToggles = $("classTagToggles");
-const classTagPills = classTagToggles ? Array.from(classTagToggles.querySelectorAll(".tag-pill")) : [];
+const classTagPills = classTagToggles
+  ? Array.from(classTagToggles.querySelectorAll(".tag-pill"))
+  : [];
 const DEFAULT_CHECKED = new Set(["免安装硬盘版", "PC游戏", "全DLC"]); // 与后端 DEFAULT_CLASSIFICATION_TAGS 保持一致
 function getSelectedClassificationTags() {
-  return classTagPills.filter(p => p.classList.contains("on")).map(p => p.dataset.tag);
+  return classTagPills.filter((p) => p.classList.contains("on")).map((p) => p.dataset.tag);
 }
-classTagPills.forEach(pill => {
+classTagPills.forEach((pill) => {
   if (DEFAULT_CHECKED.has(pill.dataset.tag)) pill.classList.add("on");
   pill.addEventListener("click", () => {
     pill.classList.toggle("on");
@@ -45,26 +102,26 @@ function setExec(btn, on) {
   if (!btn) return;
   if (on) {
     if (btn.dataset.label === undefined) {
-      var l = btn.querySelector('.bx-label');
+      var l = btn.querySelector(".bx-label");
       btn.dataset.label = l ? l.textContent : btn.textContent;
     }
-    btn.classList.add('is-loading');
+    btn.classList.add("is-loading");
     btn.disabled = true;
-    btn.setAttribute('aria-busy', 'true');
-    var lbl = btn.querySelector('.bx-label');
-    if (lbl) lbl.textContent = '执行中…';
+    btn.setAttribute("aria-busy", "true");
+    var lbl = btn.querySelector(".bx-label");
+    if (lbl) lbl.textContent = "执行中…";
   } else {
-    btn.classList.remove('is-loading');
+    btn.classList.remove("is-loading");
     btn.disabled = false;
-    btn.removeAttribute('aria-busy');
-    var lbl2 = btn.querySelector('.bx-label');
+    btn.removeAttribute("aria-busy");
+    var lbl2 = btn.querySelector(".bx-label");
     if (lbl2 && btn.dataset.label !== undefined) lbl2.textContent = btn.dataset.label;
   }
 }
 
 let currentParsed = null;
-let currentRecordId = null;   // 供「仅重传封面」补传
-let currentCoverPath = null;  // 已下载但上传失败的本地封面路径
+let currentRecordId = null; // 供「仅重传封面」补传
+let currentCoverPath = null; // 已下载但上传失败的本地封面路径
 
 // ── 「仅重传封面」：封面已下载但上传失败时，补传并写回记录（P0-3 补救）──
 retryCoverBtn.onclick = async () => {
@@ -92,8 +149,8 @@ retryCoverBtn.onclick = async () => {
     }
   } catch (e) {
     autoSummary.className = "result-summary fail";
-      autoSummary.textContent = "重传请求失败：" + e.message;
-      addLog("err", "重传请求失败：" + e.message);
+    autoSummary.textContent = "重传请求失败：" + e.message;
+    addLog("err", "重传请求失败：" + e.message);
     retryCoverBtn.disabled = false;
     retryCoverBtn.innerHTML = ico("refresh") + " 仅重传封面";
   }
@@ -103,14 +160,21 @@ retryCoverBtn.onclick = async () => {
 retryCoverUrlBtn.onclick = async () => {
   const url = coverLinkInput.value.trim();
   if (!currentRecordId) return;
-  if (!url) { toastMsg("请先粘贴封面图片 URL", "err"); return; }
+  if (!url) {
+    toastMsg("请先粘贴封面图片 URL", "err");
+    return;
+  }
   retryCoverUrlBtn.disabled = true;
   retryCoverUrlBtn.innerHTML = ico("hourglass") + " 下载上传中…";
   try {
     const r = await fetch("/api/retry-cover", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recordId: currentRecordId, coverUrl: url, coverDir: coverDir.value.trim() || undefined }),
+      body: JSON.stringify({
+        recordId: currentRecordId,
+        coverUrl: url,
+        coverDir: coverDir.value.trim() || undefined,
+      }),
     });
     const d = await r.json();
     if (d.success) {
@@ -167,7 +231,9 @@ function toastMsg(msg, type) {
   host.appendChild(el);
   setTimeout(() => {
     el.classList.add("toast-out");
-    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+    setTimeout(() => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 220);
   }, 3000);
 }
 
@@ -234,32 +300,49 @@ browseDirBtn.onclick = async () => {
 
 // ── 预览 ──
 let pt;
-gameInput.oninput = () => { clearTimeout(pt); pt = setTimeout(doPreview, 400); };
+gameInput.oninput = () => {
+  clearTimeout(pt);
+  pt = setTimeout(doPreview, 400);
+};
 
 function doPreview() {
   const t = gameInput.value.trim();
-  if (!t) { preview.style.display = "none"; return; }
+  if (!t) {
+    preview.style.display = "none";
+    return;
+  }
   const p = parseInput(t);
-  if (!p) { preview.style.display = "none"; return; }
+  if (!p) {
+    preview.style.display = "none";
+    return;
+  }
   preview.style.display = "block";
   renderPreview(p);
 }
 
 // 与后端 parser.js 保持一致的轻量解析（仅用于前端预览）
 function parseInput(text) {
-  const lines = text.split("\n").map(l => l.trim()).filter(l => l);
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l);
   if (!lines.length) return null;
   const first = lines[0];
-  let b = "", q = "", x = "";
+  let b = "",
+    q = "",
+    x = "";
   for (const l of lines) {
     const c = l.replace(/^(?:链接)?[：:]\s*/, "");
     if (c.includes("pan.baidu.com")) b = c;
     else if (c.includes("pan.quark.cn")) q = c;
     else if (c.includes("pan.xunlei.com")) x = c;
   }
-  let name = first, en = "";
+  let name = first,
+    en = "";
   const m = first.match(/[（(]([^）)]+)[）)]/);
-  if (m) { en = m[1]; } // 游戏名保留第一行原样（用户要求不可改动）；en 仅作可选展示
+  if (m) {
+    en = m[1];
+  } // 游戏名保留第一行原样（用户要求不可改动）；en 仅作可选展示
   const tags = [];
   if (first.includes("全DLC")) tags.push("全DLC");
   if (first.includes("免安装硬盘版") || first.includes("免安装")) tags.push("免安装硬盘版");
@@ -269,35 +352,65 @@ function parseInput(text) {
 
   let cover = "";
   for (const line of lines) {
-    const cm = line.match(/(?:封面|cover)?\s*[:：]?\s*(https?:\/\/\S+\.(?:jpg|jpeg|png|webp|gif))(?:\?[^)\s]*)?/i);
-    if (cm) { cover = cm[1]; break; }
+    const cm = line.match(
+      /(?:封面|cover)?\s*[:：]?\s*(https?:\/\/\S+\.(?:jpg|jpeg|png|webp|gif))(?:\?[^)\s]*)?/i,
+    );
+    if (cm) {
+      cover = cm[1];
+      break;
+    }
   }
-  return { gameName: name, englishName: en, baiduUrl: b, quarkUrl: q, xunleiUrl: x, tags, raw: first, coverUrl: cover };
+  return {
+    gameName: name,
+    englishName: en,
+    baiduUrl: b,
+    quarkUrl: q,
+    xunleiUrl: x,
+    tags,
+    raw: first,
+    coverUrl: cover,
+  };
 }
 
 function renderPreview(p) {
   // 分类标签 = 自动检测的 parsed.tags + 用户当前勾选的分类标签（去重保序）
   const seen = new Set();
   const allTags = [];
-  const push = (t) => { if (t && !seen.has(t)) { seen.add(t); allTags.push(t); } };
+  const push = (t) => {
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      allTags.push(t);
+    }
+  };
   getSelectedClassificationTags().forEach(push);
-  const th = allTags.map(t => `<span class="tag">${esc(t)}</span>`).join(" ");
+  const th = allTags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ");
   const rows = [
-    `<span class="label">${ico('gamepad')} 游戏</span><span class="value">${esc(p.raw || p.gameName)}</span>`,
-    `<span class="label">${ico('tag')} 标签</span><span class="value">${th}</span>`,
-    p.coverUrl ? `<span class="label">${ico('image')} 封面</span><span class="value">${esc(p.coverUrl)}</span>` : "",
-    p.baiduUrl ? `<span class="label">${ico('link')} 百度</span><span class="value">${esc(p.baiduUrl)}</span>` : "",
-    p.quarkUrl ? `<span class="label">${ico('link')} 夸克</span><span class="value">${esc(p.quarkUrl)}</span>` : "",
-    p.xunleiUrl ? `<span class="label">${ico('link')} 迅雷</span><span class="value">${esc(p.xunleiUrl)}</span>` : "",
+    `<span class="label">${ico("gamepad")} 游戏</span><span class="value">${esc(p.raw || p.gameName)}</span>`,
+    `<span class="label">${ico("tag")} 标签</span><span class="value">${th}</span>`,
+    p.coverUrl
+      ? `<span class="label">${ico("image")} 封面</span><span class="value">${esc(p.coverUrl)}</span>`
+      : "",
+    p.baiduUrl
+      ? `<span class="label">${ico("link")} 百度</span><span class="value">${esc(p.baiduUrl)}</span>`
+      : "",
+    p.quarkUrl
+      ? `<span class="label">${ico("link")} 夸克</span><span class="value">${esc(p.quarkUrl)}</span>`
+      : "",
+    p.xunleiUrl
+      ? `<span class="label">${ico("link")} 迅雷</span><span class="value">${esc(p.xunleiUrl)}</span>`
+      : "",
   ];
   previewContent.innerHTML = rows.join("");
 }
 
-function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
 
 // ── 一键执行（SSE 流式进度，实时看到每一步）──
 const stepEls = []; // 按 index 缓存已渲染的步骤节点，便于「进行中→成功」原地更新
-const cloudStepEls = []; // 云库线路单独一套 index，避免与金山线路互相覆盖
 
 function buildStepDetail(s) {
   const detailParts = [];
@@ -314,17 +427,24 @@ function buildStepDetail(s) {
 }
 
 function renderStep(s, group) {
-  // 云库线路渲染到独立容器（两条线路 index 各自从 0 开始，不能共用一个数组）
-  const isCloud = group === "cloud";
-  const host = isCloud ? cloudSteps : autoSteps;
-  const store = isCloud ? cloudStepEls : stepEls;
-  if (isCloud && cloudGroup) cloudGroup.style.display = "";
-  const icon = s.status === "成功" ? ico("check") : s.status === "跳过" ? ico("skip") : s.status === "失败" ? ico("cross") : s.status === "警告" ? ico("warning") : ico("refresh");
+  void group; // 云库线路已移除，group 参数保留仅为兼容旧调用
+  const host = autoSteps;
+  const store = stepEls;
+  const icon =
+    s.status === "成功"
+      ? ico("check")
+      : s.status === "跳过"
+        ? ico("skip")
+        : s.status === "失败"
+          ? ico("cross")
+          : s.status === "警告"
+            ? ico("warning")
+            : ico("refresh");
   const detail = buildStepDetail(s);
   // 状态 → 等级映射（玻璃胶囊三重编码）
-  const LEVEL = { "进行中": "info", "成功": "ok", "失败": "err", "跳过": "off", "警告": "warn" };
+  const LEVEL = { 进行中: "info", 成功: "ok", 失败: "err", 跳过: "off", 警告: "warn" };
   const lvl = LEVEL[s.status] || "info";
-  const label = (isCloud ? "[云库] " : "") + esc(s.name) + " — " + s.status;
+  const label = esc(s.name) + " — " + s.status;
   let item = store[s.index];
   if (!item) {
     item = document.createElement("div");
@@ -332,12 +452,22 @@ function renderStep(s, group) {
     host.appendChild(item);
     store[s.index] = item;
   }
-  item.innerHTML = '<span class="step-icon">' + icon + '</span><div class="step-body"><div class="step-name">' + statusHTML(lvl, label) + "</div>" + (detail ? '<div class="step-detail">' + detail + "</div>" : "") + "</div>";
+  item.innerHTML =
+    '<span class="step-icon">' +
+    icon +
+    '</span><div class="step-body"><div class="step-name">' +
+    statusHTML(lvl, label) +
+    "</div>" +
+    (detail ? '<div class="step-detail">' + detail + "</div>" : "") +
+    "</div>";
   // 进行中的步骤高亮提示，完成后取消
   if (s.status === "进行中") {
     addLog("info", "进行中：" + s.name);
   } else {
-    addLog(s.status === "成功" ? "ok" : s.status === "失败" ? "err" : "info", s.name + " — " + s.status);
+    addLog(
+      s.status === "成功" ? "ok" : s.status === "失败" ? "err" : "info",
+      s.name + " — " + s.status,
+    );
   }
 }
 
@@ -366,36 +496,55 @@ function closeModal() {
 // 副标题/片段提取工具独立于 public/history-meta.js（UMD：浏览器挂 window.HistoryMeta，Node require 拿导出）
 const HISTORY_KEY_KDOCS = "toolshub:history:kdocs";
 const HISTORY_MAX = 50;
-const { extractVersion, countDiskLinks, buildHistorySubtitle } = (typeof window !== "undefined" && window.HistoryMeta) ? window.HistoryMeta : {};
+const { extractVersion, countDiskLinks, buildHistorySubtitle } =
+  typeof window !== "undefined" && window.HistoryMeta ? window.HistoryMeta : {};
 function loadHistory(key) {
-  try { return JSON.parse(localStorage.getItem(key) || "[]") || []; } catch { return []; }
+  try {
+    return JSON.parse(localStorage.getItem(key) || "[]") || [];
+  } catch {
+    return [];
+  }
 }
 function pushHistory(key, entry) {
   const list = loadHistory(key);
   list.unshift(entry); // 最新在前
   if (list.length > HISTORY_MAX) list.length = HISTORY_MAX;
-  try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* 隐私模式可能抛错，忽略 */ }
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    /* 隐私模式可能抛错，忽略 */
+  }
   return list;
 }
 
 // 写入历史（兼容旧记录：旧 {ok,title,status,ts} 缺新字段时渲染自动回退默认值）
 function writeKdocsHistory(ok, title, status, extra) {
-  const entry = { ok: !!ok, title: String(title || "（未命名）"), status: String(status || (ok ? "成功" : "失败")), ts: Date.now() };
+  const entry = {
+    ok: !!ok,
+    title: String(title || "（未命名）"),
+    status: String(status || (ok ? "成功" : "失败")),
+    ts: Date.now(),
+  };
   if (extra && typeof extra === "object") Object.assign(entry, extra);
   pushHistory(HISTORY_KEY_KDOCS, entry);
 }
-function writeKdocsHistory(ok, title, status) {
-  pushHistory(HISTORY_KEY_KDOCS, { ts: Date.now(), ok: !!ok, title: title || "（未命名）", status: status || "" });
-}
 
 // ── 重复确认 modal 元素与互斥逻辑（接入 P09 统一弹窗）──
-const dupMask = $("dupMask"), dupTitle = $("dupTitle"), dupBody = $("dupBody");
-const chkForceAdd = $("chkForceAdd"), chkUpdateLinks = $("chkUpdateLinks");
-const dupCancel = $("dupCancel"), dupContinue = $("dupContinue");
+const dupMask = $("dupMask"),
+  dupTitle = $("dupTitle"),
+  dupBody = $("dupBody");
+const chkForceAdd = $("chkForceAdd"),
+  chkUpdateLinks = $("chkUpdateLinks");
+const dupCancel = $("dupCancel"),
+  dupContinue = $("dupContinue");
 
 // 两选项互斥（勾一个禁用另一个）
-chkForceAdd.onchange = () => { if (chkForceAdd.checked) chkUpdateLinks.checked = false; };
-chkUpdateLinks.onchange = () => { if (chkUpdateLinks.checked) chkForceAdd.checked = false; };
+chkForceAdd.onchange = () => {
+  if (chkForceAdd.checked) chkUpdateLinks.checked = false;
+};
+chkUpdateLinks.onchange = () => {
+  if (chkUpdateLinks.checked) chkForceAdd.checked = false;
+};
 
 let _dupText = "";
 function showDupModal(text, d) {
@@ -406,12 +555,16 @@ function showDupModal(text, d) {
   if (d.existingLinks && d.existingLinks.baidu) links.push("百度");
   if (d.existingLinks && d.existingLinks.quark) links.push("夸克");
   if (d.existingLinks && d.existingLinks.xunlei) links.push("迅雷");
-  dupBody.innerHTML = `记录 ID：<b>${esc(d.recordId || "")}</b><br>当前已有网盘链接：${links.length ? links.map(l => `<span class="lk">${esc(l)}</span>`).join("") : "（无）"}<br>请选择处理方式（默认跳过）：`;
-  chkForceAdd.checked = false; chkUpdateLinks.checked = false;
+  dupBody.innerHTML = `记录 ID：<b>${esc(d.recordId || "")}</b><br>当前已有网盘链接：${links.length ? links.map((l) => `<span class="lk">${esc(l)}</span>`).join("") : "（无）"}<br>请选择处理方式（默认跳过）：`;
+  chkForceAdd.checked = false;
+  chkUpdateLinks.checked = false;
   openModal(dupMask);
 }
 
-dupCancel.onclick = () => { closeModal(); addLog("info", "已取消（保留原记录）"); };
+dupCancel.onclick = () => {
+  closeModal();
+  addLog("info", "已取消（保留原记录）");
+};
 dupContinue.onclick = () => {
   closeModal();
   runAuto(_dupText, { forceAdd: chkForceAdd.checked, updateLinks: chkUpdateLinks.checked });
@@ -421,11 +574,11 @@ dupContinue.onclick = () => {
 // 真正执行（可选 forceAdd / updateLinks）
 async function runAuto(text, opts = {}) {
   const targets = getTargets();
-  if (!targets.kdocs && !targets.cloud) {
-    addLog("err", "请至少选择一条录入线路（金山文档 / 云库）");
+  if (!targets.kdocs) {
+    addLog("err", "请勾选「金山文档」录入线路");
     autoResult.classList.add("show");
     autoSummary.className = "result-summary fail";
-    autoSummary.textContent = "请至少选择一条录入线路";
+    autoSummary.textContent = "请勾选「金山文档」录入线路";
     return;
   }
   setExec(autoBtn, true);
@@ -438,23 +591,36 @@ async function runAuto(text, opts = {}) {
   retryCoverBtn.disabled = false;
   retryCoverBtn.innerHTML = ico("refresh") + " 仅重传封面";
   stepEls.length = 0;
-  cloudStepEls.length = 0;
-  if (cloudSteps) cloudSteps.innerHTML = "";
-  if (cloudGroup) cloudGroup.style.display = "none";
 
   autoResult.classList.add("show");
-  const routeLabel = [targets.kdocs ? "金山文档" : null, targets.cloud ? "云库" : null].filter(Boolean).join(" + ");
-  addLog("info", "开始一键执行（线路：" + routeLabel + "）" + (opts.forceAdd ? "（强制新增）" : opts.updateLinks ? "（更新网盘链接）" : ""));
+  const routeLabel =
+    (targets.kdocs ? "金山文档" : "未选线路") + (getFlysheepLine() ? " · 取数：flysheep6" : "");
+  addLog(
+    "info",
+    "开始一键执行（线路：" +
+      routeLabel +
+      "）" +
+      (opts.forceAdd ? "（强制新增）" : opts.updateLinks ? "（更新网盘链接）" : ""),
+  );
 
   try {
     const r = await fetch("/api/auto", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, coverDir: coverDir.value.trim() || undefined, manualCoverUrl: coverUrl.value.trim(), forceAdd: !!opts.forceAdd, updateLinks: !!opts.updateLinks, classificationTags: getSelectedClassificationTags(), targets }),
+      body: JSON.stringify({
+        text,
+        coverDir: coverDir.value.trim() || undefined,
+        manualCoverUrl: coverUrl.value.trim(),
+        forceAdd: !!opts.forceAdd,
+        updateLinks: !!opts.updateLinks,
+        classificationTags: getSelectedClassificationTags(),
+        targets,
+        flysheep: getFlysheepLine(),
+      }),
     });
     if (!r.ok && r.headers.get("content-type")?.includes("application/json")) {
       const d = await r.json();
-      addLog("err", (d.error || r.status));
+      addLog("err", d.error || r.status);
       autoSummary.className = "result-summary fail";
       autoSummary.textContent = "执行失败";
       return;
@@ -473,10 +639,14 @@ async function runAuto(text, opts = {}) {
       while ((idx = buf.indexOf("\n\n")) >= 0) {
         const chunk = buf.slice(0, idx);
         buf = buf.slice(idx + 2);
-        const line = chunk.split("\n").find(l => l.startsWith("data: "));
+        const line = chunk.split("\n").find((l) => l.startsWith("data: "));
         if (!line) continue;
         let ev;
-        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+        try {
+          ev = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        }
         if (ev.type === "step") {
           renderStep(ev.step, ev.group);
         } else if (ev.type === "error") {
@@ -490,22 +660,24 @@ async function runAuto(text, opts = {}) {
           currentCoverPath = d.coverPath || null;
           retryCoverBtn.style.display = "none"; // 默认隐藏，封面缺失且可补传时才显示
           coverLinkRow.style.display = d.coverStatus === "failed" ? "flex" : "none";
-          if (d.gameName) { currentParsed = { ...currentParsed, gameName: d.gameName }; preview.style.display = "block"; }
-          // 只勾云库（不写金山）：基础摘要留空，交给下面的云库分支独占填充，避免出现「记录 ID: —」这类金山口径的文案
-          const cloudOnly = !!(d.targets && d.targets.kdocs === false);
-          if (cloudOnly) {
-            autoSummary.className = "result-summary ok";
-            autoSummary.textContent = "";
-          } else if (!d.success) {
+          if (d.gameName) {
+            currentParsed = { ...currentParsed, gameName: d.gameName };
+            preview.style.display = "block";
+          }
+          if (!d.success) {
             autoSummary.className = "result-summary fail";
             autoSummary.textContent = "部分步骤未成功";
-            retryCoverBtn.style.display = (d.coverLost && d.coverPath) ? "block" : "none";
+            retryCoverBtn.style.display = d.coverLost && d.coverPath ? "block" : "none";
           } else if (d.coverStatus === "failed") {
             // 封面缺失但记录已建：显式黄警，不再假装「全部完成」（P0-1 修复）
             autoSummary.className = "result-summary warn";
             autoSummary.textContent = "已完成，但封面未成功获取/上传（记录无封面）";
-            addLog("info", "封面缺失：" + (d.coverLost ? "已下载但上传失败，可点「仅重传封面」" : "下载失败，无可用封面"));
-            retryCoverBtn.style.display = (d.coverLost && d.coverPath) ? "block" : "none";
+            addLog(
+              "info",
+              "封面缺失：" +
+                (d.coverLost ? "已下载但上传失败，可点「仅重传封面」" : "下载失败，无可用封面"),
+            );
+            retryCoverBtn.style.display = d.coverLost && d.coverPath ? "block" : "none";
           } else if (d.action === "skipped") {
             autoSummary.className = "result-summary ok";
             autoSummary.textContent = "已跳过（文档中已存在）记录 ID: " + (d.recordId || "—");
@@ -527,45 +699,46 @@ async function runAuto(text, opts = {}) {
           // 占位/缺失字段显式标注（不再静默空），提醒人工校对
           if (d.needsReview) {
             autoSummary.className = "result-summary warn";
-            autoSummary.textContent = "已完成，但部分字段为占位/待核对（" + prov.join("，") + "），建议人工补充";
+            autoSummary.textContent =
+              "已完成，但部分字段为占位/待核对（" + prov.join("，") + "），建议人工补充";
             addLog("info", "需人工校对：介绍或大小来源不可靠，已占位标注，建议后续补充真实数据");
-          }
-
-          // 云库线路结果：独立线路，只影响自己的提示，不改变整体成败判定
-          const cl = d.cloud;
-          if (cl) {
-            // 金山线路有文案时才加分隔符；只勾云库时由云库文案独占整行
-            const withBase = (base, text) => (base ? base + " ｜ " + text : text);
-            if (cl.action === "no_password") {
-              autoSummary.className = "result-summary warn";
-              autoSummary.textContent = withBase(autoSummary.textContent,
-                cloudOnly ? "云库未配置后台密码，本次未录入任何线路" : "云库未配置密码，本次只录金山");
-              addLog("info", "云库线路已跳过：未配置后台密码（环境变量 QQBOT_ADMIN_PASSWORD）");
-            } else if (cl.ok) {
-              autoSummary.textContent = withBase(autoSummary.textContent,
-                cl.action === "skipped" ? "云库：已存在，跳过 #" + (cl.id || "—") : "云库：已入库 #" + (cl.id || "—"));
-              addLog("ok", "云库线路完成：" + (cl.action === "skipped" ? "库里已有同名记录，已跳过" : "入库 #" + cl.id));
-            } else {
-              autoSummary.className = "result-summary warn";
-              autoSummary.textContent = withBase(autoSummary.textContent, "云库线路失败：" + (cl.error || cl.action));
-              addLog("err", "云库线路失败：" + (cl.error || cl.action));
-            }
           }
 
           // 有记录即可查看（创建/更新/跳过/封面缺失均视为有记录可查；整体失败时若已建记录也允许查看）
           kdocsViewBtn.style.display = d.recordId ? "block" : "none";
 
           // P08：写一条录入历史（成功/失败 + 稿件标题 + 时间 + 细分状态 + 副标题/原始片段）
-          // 只勾云库时不写金山历史（这条历史用于回查金山记录，云库没有对应记录 ID）
-          if (!cloudOnly) {
+          {
             const p = parseInput(text);
-            const title = d.gameName || (p && p.gameName) || (currentParsed && currentParsed.gameName) || "（未命名）";
-            let ok = true, status = "成功", state = "success";
-            if (!d.success) { ok = false; status = "部分步骤失败"; state = "partial"; }
-            else if (d.coverStatus === "failed") { ok = true; status = "封面缺失"; state = "coverMissing"; }
-            else if (d.action === "skipped") { ok = true; status = "已跳过"; state = "skipped"; }
-            else if (d.action === "updated") { ok = true; status = "已更新"; state = "updated"; }
-            else if (d.action === "created") { ok = true; status = "创建"; state = "created"; }
+            const title =
+              d.gameName ||
+              (p && p.gameName) ||
+              (currentParsed && currentParsed.gameName) ||
+              "（未命名）";
+            let ok = true,
+              status = "成功",
+              state = "success";
+            if (!d.success) {
+              ok = false;
+              status = "部分步骤失败";
+              state = "partial";
+            } else if (d.coverStatus === "failed") {
+              ok = true;
+              status = "封面缺失";
+              state = "coverMissing";
+            } else if (d.action === "skipped") {
+              ok = true;
+              status = "已跳过";
+              state = "skipped";
+            } else if (d.action === "updated") {
+              ok = true;
+              status = "已更新";
+              state = "updated";
+            } else if (d.action === "created") {
+              ok = true;
+              status = "创建";
+              state = "created";
+            }
             writeKdocsHistory(ok, title, status, {
               state,
               subtitle: buildHistorySubtitle(text),
@@ -593,11 +766,17 @@ async function runAuto(text, opts = {}) {
 
 autoBtn.onclick = async () => {
   const text = gameInput.value.trim();
-  if (!text) { toastMsg("请先粘贴游戏信息", "err"); return; }
+  if (!text) {
+    toastMsg("请先粘贴游戏信息", "err");
+    return;
+  }
   const preTargets = getTargets();
-  if (!preTargets.kdocs && !preTargets.cloud) { toastMsg("请至少勾选一条录入线路", "err"); return; }
+  if (!preTargets.kdocs) {
+    toastMsg("请勾选「金山文档」录入线路", "err");
+    return;
+  }
   // 执行前先查重，命中重复则弹确认框（统一走 setExec，不再直接写 textContent 以免破坏 macOS 线性图标结构）
-  // 查重查的是金山文档，只勾云库时跳过（云库的查重在云库线路内部自己做）
+  // 查重查的是金山文档
   if (preTargets.kdocs) {
     setExec(autoBtn, true);
     try {
@@ -608,10 +787,14 @@ autoBtn.onclick = async () => {
       });
       if (r.ok) {
         const d = await r.json();
-        if (d.exists) { showDupModal(text, d); return; }
+        if (d.exists) {
+          showDupModal(text, d);
+          return;
+        }
       }
-    } catch { /* 查重接口异常不阻断，直接执行 */ }
-    finally {
+    } catch {
+      /* 查重接口异常不阻断，直接执行 */
+    } finally {
       setExec(autoBtn, false);
     }
   }
@@ -630,19 +813,33 @@ function addLog(type, msg) {
 if (typeof bindStatusCursor === "function") bindStatusCursor(document);
 
 // ── P08：历史展示（接入 P09 统一弹窗机制）──
-const historyMask = $("historyMask"), historyList = $("historyList");
-const historyOpenBtn = $("historyIconBtn"), historyCloseBtn = $("historyClose"), historyClearBtn = $("historyClear");
+const historyMask = $("historyMask"),
+  historyList = $("historyList");
+const historyOpenBtn = $("historyIconBtn"),
+  historyCloseBtn = $("historyClose"),
+  historyClearBtn = $("historyClear");
 
 function renderKdocsHistory() {
   const list = loadHistory(HISTORY_KEY_KDOCS);
-  if (!list.length) { historyList.innerHTML = '<div class="empty-state"><span class="es-ico">' + ico('inbox') + '</span>还没有录入记录</div>'; return; }
-  historyList.innerHTML = list.map((h) => {
-    const time = new Date(h.ts).toLocaleString("zh-CN");
-    const state = h.state || (h.ok ? "success" : "err");
-    const badge = h.status || (h.ok ? "成功" : "失败");
-    const subtitleHtml = h.subtitle ? `<div class="history-subtitle">${esc(h.subtitle)}</div>` : "";
-    const snippetHtml = h.snippet ? `<div class="history-snippet">${esc(h.snippet)}${h.snippet.length >= 80 ? "…" : ""}</div>` : "";
-    return `<div class="history-item">
+  if (!list.length) {
+    historyList.innerHTML =
+      '<div class="empty-state"><span class="es-ico">' +
+      ico("inbox") +
+      "</span>还没有录入记录</div>";
+    return;
+  }
+  historyList.innerHTML = list
+    .map((h) => {
+      const time = new Date(h.ts).toLocaleString("zh-CN");
+      const state = h.state || (h.ok ? "success" : "err");
+      const badge = h.status || (h.ok ? "成功" : "失败");
+      const subtitleHtml = h.subtitle
+        ? `<div class="history-subtitle">${esc(h.subtitle)}</div>`
+        : "";
+      const snippetHtml = h.snippet
+        ? `<div class="history-snippet">${esc(h.snippet)}${h.snippet.length >= 80 ? "…" : ""}</div>`
+        : "";
+      return `<div class="history-item">
       <span class="history-dot ${h.ok ? "ok" : "err"}"></span>
       <div class="history-main">
         <div class="history-title">${esc(h.title)}</div>
@@ -651,7 +848,8 @@ function renderKdocsHistory() {
         ${snippetHtml}
       </div>
     </div>`;
-  }).join("");
+    })
+    .join("");
 }
 function openKdocsHistory() {
   renderKdocsHistory();
@@ -659,19 +857,28 @@ function openKdocsHistory() {
 }
 if (historyOpenBtn) historyOpenBtn.onclick = openKdocsHistory;
 if (historyCloseBtn) historyCloseBtn.onclick = closeModal;
-if (historyMask) historyMask.addEventListener("click", (e) => { if (e.target === historyMask) closeModal(); });
-if (historyClearBtn) historyClearBtn.onclick = () => {
-  if (confirm("确定清空全部录入历史?")) {
-    try { localStorage.removeItem(HISTORY_KEY_KDOCS); } catch { /* ignore */ }
-    renderKdocsHistory();
-  }
-};
+if (historyMask)
+  historyMask.addEventListener("click", (e) => {
+    if (e.target === historyMask) closeModal();
+  });
+if (historyClearBtn)
+  historyClearBtn.onclick = () => {
+    if (confirm("确定清空全部录入历史?")) {
+      try {
+        localStorage.removeItem(HISTORY_KEY_KDOCS);
+      } catch {
+        /* ignore */
+      }
+      renderKdocsHistory();
+    }
+  };
 
 // T02：首屏入场编排（零侵入：仅给 .wrap 首屏可见块挂 pop-in + --i，复用内联 macos-motion.css 的 stagger）
 (function () {
   function applyEntrance(scope, max) {
     try {
-      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+        return;
     } catch (e) {}
     const root = scope || document;
     const blocks = Array.from(root.children).filter((el) => {

@@ -46,7 +46,11 @@ router.get("/api/ready", (req, res) => {
 
 // ── 版本（只读；更新由工具箱 tools-hub 统一管理，不再自更新）──
 function getVersion() {
-  try { return require("./package.json").version; } catch (e) { return "?"; }
+  try {
+    return require("./package.json").version;
+  } catch (e) {
+    return "?";
+  }
 }
 
 router.get("/api/version", (req, res) => {
@@ -79,10 +83,14 @@ router.post("/api/browse-dir", async (req, res) => {
   const dataDir = process.env.KDOCS_DATA_DIR
     ? path.resolve(process.env.KDOCS_DATA_DIR)
     : path.join(__dirname, "data");
-  try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+  } catch {}
   const reqPath = path.join(dataDir, "browse_req.json");
   const resPath = path.join(dataDir, "browse_res.json");
-  try { if (fs.existsSync(resPath)) fs.unlinkSync(resPath); } catch {}
+  try {
+    if (fs.existsSync(resPath)) fs.unlinkSync(resPath);
+  } catch {}
 
   try {
     fs.writeFileSync(reqPath, JSON.stringify({ initial }), "utf8");
@@ -95,21 +103,34 @@ router.post("/api/browse-dir", async (req, res) => {
     if (fs.existsSync(resPath)) {
       try {
         const out = JSON.parse(fs.readFileSync(resPath, "utf8"));
-        try { fs.unlinkSync(resPath); } catch {}
-        try { if (fs.existsSync(reqPath)) fs.unlinkSync(reqPath); } catch {}
+        try {
+          fs.unlinkSync(resPath);
+        } catch {}
+        try {
+          if (fs.existsSync(reqPath)) fs.unlinkSync(reqPath);
+        } catch {}
         if (out.error) return res.status(500).json({ error: "文件夹选择器异常：" + out.error });
         const dir = (out.dir || "").trim();
         if (dir) return res.json({ dir });
         return res.json({ dir: "", cancelled: true }); // 用户取消
       } catch (e) {
-        try { fs.unlinkSync(resPath); } catch {}
+        try {
+          fs.unlinkSync(resPath);
+        } catch {}
         return res.status(500).json({ error: "读取选择结果失败：" + e.message });
       }
     }
     await new Promise((r) => setTimeout(r, 400));
   }
-  try { if (fs.existsSync(reqPath)) fs.unlinkSync(reqPath); } catch {}
-  return res.status(500).json({ error: "文件夹选择器超时：请确认「控制面板程序本身」已关闭并重新打开（仅重启后端服务不会加载新面板代码），且未选择「仅关闭面板(服务后台继续)」。" });
+  try {
+    if (fs.existsSync(reqPath)) fs.unlinkSync(reqPath);
+  } catch {}
+  return res
+    .status(500)
+    .json({
+      error:
+        "文件夹选择器超时：请确认「控制面板程序本身」已关闭并重新打开（仅重启后端服务不会加载新面板代码），且未选择「仅关闭面板(服务后台继续)」。",
+    });
 });
 
 router.post("/api/check-exists", async (req, res) => {
@@ -126,15 +147,17 @@ router.post("/api/check-exists", async (req, res) => {
 });
 
 router.post("/api/auto", async (req, res) => {
-  const { text, coverDir, manualCoverUrl, forceAdd, updateLinks, classificationTags, targets } = req.body;
+  const { text, coverDir, manualCoverUrl, forceAdd, updateLinks, classificationTags, flysheep } =
+    req.body;
   if (!text) return res.status(400).json({ error: "请输入游戏信息" });
-  // 录入线路（金山文档 / 云库）：缺省 = 只走金山（保持与历史调用一致的默认）；
-  // 前端会显式传两个勾选框的值（默认都勾）。两条都不勾属于空跑，直接挡掉。
-  const t = targets && typeof targets === "object"
-    ? { kdocs: targets.kdocs !== false, cloud: targets.cloud !== false }
-    : undefined;
-  if (t && !t.kdocs && !t.cloud) {
-    return res.status(400).json({ error: "请至少选择一条录入线路（金山文档 / 云库）" });
+  // 录入线路：云库线路已彻底移除（2026-10），只剩金山文档。
+  // 前端不勾金山时直接挡掉，避免空跑（后端不再接受 targets.cloud 这类旧参数）。
+  if (
+    req.body.targets &&
+    typeof req.body.targets === "object" &&
+    req.body.targets.kdocs === false
+  ) {
+    return res.status(400).json({ error: "请勾选「金山文档」录入线路" });
   }
   const parsed = parseInput(text);
   if (!parsed) return res.status(400).json({ error: "无法解析输入" });
@@ -143,17 +166,26 @@ router.post("/api/auto", async (req, res) => {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
-    "Connection": "keep-alive",
+    Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   });
   const send = (obj) => {
     try {
       res.write("data: " + JSON.stringify(obj) + "\n\n");
       if (typeof res.flush === "function") res.flush();
-    } catch { /* 客户端已断开 */ }
+    } catch {
+      /* 客户端已断开 */
+    }
   };
   // 每 3 秒发一次 SSE 心跳注释，让代理/浏览器保持连接
-  const heartbeat = setInterval(() => { try { res.write(": hb\n\n"); if (typeof res.flush === "function") res.flush(); } catch { /* ignore */ } }, 3000);
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(": hb\n\n");
+      if (typeof res.flush === "function") res.flush();
+    } catch {
+      /* ignore */
+    }
+  }, 3000);
 
   try {
     await autoExecute(parsed, null, coverDir, {
@@ -162,15 +194,19 @@ router.post("/api/auto", async (req, res) => {
       updateLinks: !!updateLinks,
       // 分类标签：前端传过来时按用户当前勾选；未传（null/undefined）走后端默认 3 个
       classificationTags: Array.isArray(classificationTags) ? classificationTags : undefined,
-      // 录入线路：未传则只走金山（历史行为）
-      targets: t,
+      // 取数线路（可选）：flysheep6 游戏站 —— 封面/中文介绍优先从该站取（站内没有会自动回退 Steam 官方）
+      flysheep: !!flysheep,
       onStep: (ev) => send(ev),
     });
   } catch (e) {
     send({ type: "error", error: e.message });
   } finally {
     clearInterval(heartbeat);
-    try { res.end(); } catch { /* 已结束 */ }
+    try {
+      res.end();
+    } catch {
+      /* 已结束 */
+    }
   }
 });
 
@@ -184,12 +220,15 @@ router.post("/api/retry-cover", async (req, res) => {
     let localPath = coverPath;
     if (!localPath && coverUrl) {
       const url = String(coverUrl).trim();
-      if (!/^https?:\/\/.+/i.test(url)) return res.status(400).json({ success: false, error: "封面链接格式不正确" });
+      if (!/^https?:\/\/.+/i.test(url))
+        return res.status(400).json({ success: false, error: "封面链接格式不正确" });
       const dir = String(coverDir || "").trim() || path.join(os.homedir(), "Desktop");
       localPath = await downloadCoverFromUrl("cover", url, dir);
     }
     if (!localPath || !fs.existsSync(localPath)) {
-      return res.status(400).json({ success: false, error: "缺少可用的封面文件（需 coverPath 或 coverUrl 至少其一）" });
+      return res
+        .status(400)
+        .json({ success: false, error: "缺少可用的封面文件（需 coverPath 或 coverUrl 至少其一）" });
     }
     const r = await retryCoverUpload(recordId, localPath, {});
     res.json(r);

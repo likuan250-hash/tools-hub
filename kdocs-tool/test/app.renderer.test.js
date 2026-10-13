@@ -17,20 +17,39 @@ const indexHtml = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
 
 // ───────────────────────── 轻量 DOM stub（增强版） ─────────────────────────
 class StyleStub {
-  constructor() { this._props = {}; }
-  setProperty(k, v) { this._props[k] = v; }
-  removeProperty(k) { delete this._props[k]; }
-  getPropertyValue(k) { return this._props[k] || ""; }
+  constructor() {
+    this._props = {};
+  }
+  setProperty(k, v) {
+    this._props[k] = v;
+  }
+  removeProperty(k) {
+    delete this._props[k];
+  }
+  getPropertyValue(k) {
+    return this._props[k] || "";
+  }
 }
 class ClassListStub {
-  constructor() { this._set = new Set(); }
-  add(...c) { c.forEach((x) => this._set.add(x)); }
-  remove(...c) { c.forEach((x) => this._set.delete(x)); }
-  toggle(c, force) {
-    if (force === undefined) { this._set.has(c) ? this._set.delete(c) : this._set.add(c); }
-    else { force ? this._set.add(c) : this._set.delete(c); }
+  constructor() {
+    this._set = new Set();
   }
-  contains(c) { return this._set.has(c); }
+  add(...c) {
+    c.forEach((x) => this._set.add(x));
+  }
+  remove(...c) {
+    c.forEach((x) => this._set.delete(x));
+  }
+  toggle(c, force) {
+    if (force === undefined) {
+      this._set.has(c) ? this._set.delete(c) : this._set.add(c);
+    } else {
+      force ? this._set.add(c) : this._set.delete(c);
+    }
+  }
+  contains(c) {
+    return this._set.has(c);
+  }
 }
 class El {
   constructor(tag = "div") {
@@ -61,26 +80,57 @@ class El {
     this._sinks = {};
     const self = this;
     Object.defineProperty(this, "innerHTML", {
-      get() { return self._innerHTML; },
-      set(v) { self._innerHTML = v; if (v === "") self.children.length = 0; },
+      get() {
+        return self._innerHTML;
+      },
+      set(v) {
+        self._innerHTML = v;
+        if (v === "") self.children.length = 0;
+      },
     });
     Object.defineProperty(this, "className", {
-      get() { return Array.from(this.classList._set).join(" "); },
-      set(v) { this.classList._set.clear(); String(v).split(/\s+/).filter(Boolean).forEach((c) => this.classList._set.add(c)); },
+      get() {
+        return Array.from(this.classList._set).join(" ");
+      },
+      set(v) {
+        this.classList._set.clear();
+        String(v)
+          .split(/\s+/)
+          .filter(Boolean)
+          .forEach((c) => this.classList._set.add(c));
+      },
     });
   }
-  setAttribute(k, v) { this._attrs[k] = v; }
-  getAttribute(k) { return k in this._attrs ? this._attrs[k] : null; }
-  removeAttribute(k) { delete this._attrs[k]; }
-  addEventListener(t, cb) { (this._listeners[t] = this._listeners[t] || []).push(cb); }
+  setAttribute(k, v) {
+    this._attrs[k] = v;
+  }
+  getAttribute(k) {
+    return k in this._attrs ? this._attrs[k] : null;
+  }
+  removeAttribute(k) {
+    delete this._attrs[k];
+  }
+  addEventListener(t, cb) {
+    (this._listeners[t] = this._listeners[t] || []).push(cb);
+  }
   removeEventListener() {}
-  appendChild(c) { c.parent = this; this.children.push(c); return c; }
-  removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); return c; }
-  remove() { if (this.parent) this.parent.removeChild(this); }
+  appendChild(c) {
+    c.parent = this;
+    this.children.push(c);
+    return c;
+  }
+  removeChild(c) {
+    const i = this.children.indexOf(c);
+    if (i >= 0) this.children.splice(i, 1);
+    return c;
+  }
+  remove() {
+    if (this.parent) this.parent.removeChild(this);
+  }
   _findChild(sel) {
     const cls = sel.startsWith(".") ? sel.slice(1) : null;
     const id = sel.startsWith("#") ? sel.slice(1) : null;
-    const tag = (!cls && !id) ? sel.toLowerCase() : null;
+    const tag = !cls && !id ? sel.toLowerCase() : null;
     for (const ch of this.children) {
       if (cls && ch.classList.contains(cls)) return ch;
       if (id && ch.id === id) return ch;
@@ -94,10 +144,19 @@ class El {
     if (!this._sinks[sel]) this._sinks[sel] = new El();
     return this._sinks[sel];
   }
-  querySelectorAll() { return []; }
-  closest() { return null; }
-  getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 50, right: 100, bottom: 50 }; }
-  focus() {} scrollIntoView() {} setPointerCapture() {} releasePointerCapture() {}
+  querySelectorAll() {
+    return [];
+  }
+  closest() {
+    return null;
+  }
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 100, height: 50, right: 100, bottom: 50 };
+  }
+  focus() {}
+  scrollIntoView() {}
+  setPointerCapture() {}
+  releasePointerCapture() {}
 }
 
 function makeLocalStorage() {
@@ -120,9 +179,15 @@ function makeContext(opts = {}) {
       if (!ids[id]) ids[id] = new El();
       return ids[id];
     },
-    createElement(tag) { return new El(tag); },
-    querySelector() { return new El(); },
-    querySelectorAll() { return []; },
+    createElement(tag) {
+      return new El(tag);
+    },
+    querySelector() {
+      return new El();
+    },
+    querySelectorAll() {
+      return [];
+    },
     addEventListener() {},
   };
   const ctx = {};
@@ -167,15 +232,43 @@ function extractFunction(src, name) {
   const start = src.indexOf(sig);
   if (start < 0) throw new Error("未找到函数: " + name);
   let k = src.indexOf("{", start);
-  let depth = 0, inStr = null, inTmpl = false;
+  let depth = 0,
+    inStr = null,
+    inTmpl = false;
   for (; k < src.length; k++) {
     const ch = src[k];
-    if (inStr) { if (ch === "\\") { k++; continue; } if (ch === inStr) inStr = null; continue; }
-    if (inTmpl) { if (ch === "\\") { k++; continue; } if (ch === "`") inTmpl = false; continue; }
-    if (ch === "'" || ch === '"') { inStr = ch; continue; }
-    if (ch === "`") { inTmpl = true; continue; }
+    if (inStr) {
+      if (ch === "\\") {
+        k++;
+        continue;
+      }
+      if (ch === inStr) inStr = null;
+      continue;
+    }
+    if (inTmpl) {
+      if (ch === "\\") {
+        k++;
+        continue;
+      }
+      if (ch === "`") inTmpl = false;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inStr = ch;
+      continue;
+    }
+    if (ch === "`") {
+      inTmpl = true;
+      continue;
+    }
     if (ch === "{") depth++;
-    else if (ch === "}") { depth--; if (depth === 0) { k++; break; } }
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        k++;
+        break;
+      }
+    }
   }
   return src.slice(start, k);
 }
@@ -193,8 +286,11 @@ function iconBlockMd5(html) {
 
 function makeButtonEl() {
   const btn = new El("button");
-  const ico = new El("svg"); ico.classList.add("bx-ico");
-  const label = new El("span"); label.classList.add("bx-label"); label.textContent = "一键执行";
+  const ico = new El("svg");
+  ico.classList.add("bx-ico");
+  const label = new El("span");
+  label.classList.add("bx-label");
+  label.textContent = "一键执行";
   btn.appendChild(ico);
   btn.appendChild(label);
   return btn;
@@ -224,8 +320,15 @@ test("图标系统：hydrateIcons(root) 能把 [data-ico] 元素填成 <svg>", (
 });
 test("图标系统：三模块 index.html 图标脚本块逐字节一致（md5）", () => {
   const a = iconBlockMd5(indexHtml);
-  const b = iconBlockMd5(fs.readFileSync(path.join(__dirname, "..", "..", "biliup-hub", "public", "index.html"), "utf8"));
-  const c = iconBlockMd5(fs.readFileSync(path.join(__dirname, "..", "..", "netdisk-hub", "public", "index.html"), "utf8"));
+  const b = iconBlockMd5(
+    fs.readFileSync(path.join(__dirname, "..", "..", "biliup-hub", "public", "index.html"), "utf8"),
+  );
+  const c = iconBlockMd5(
+    fs.readFileSync(
+      path.join(__dirname, "..", "..", "netdisk-hub", "public", "index.html"),
+      "utf8",
+    ),
+  );
   assert.strictEqual(a, b);
   assert.strictEqual(b, c);
 });
@@ -257,11 +360,15 @@ test("setExec：异步流程抛异常时 finally 必调用 setExec(btn,false)，
   vm.runInContext("var setExec = (" + extractFunction(appSrc, "setExec") + ");", ctx);
   vm.runInContext(
     "globalThis.__work = async function(btn){ setExec(btn, true); try { await Promise.reject(new Error('boom')); } finally { setExec(btn, false); } };",
-    ctx
+    ctx,
   );
   const btn = makeButtonEl();
   let thrown = null;
-  try { await ctx.__work(btn); } catch (e) { thrown = e; }
+  try {
+    await ctx.__work(btn);
+  } catch (e) {
+    thrown = e;
+  }
   assert.ok(thrown && /boom/.test(thrown.message), "异常应向上抛出（行为真实）");
   assert.ok(!btn.classList.contains("is-loading"), "finally 后不应卡在 .is-loading");
   assert.strictEqual(btn.disabled, false);
@@ -279,7 +386,10 @@ test("toastMsg(ok)：在 #toastHost 下生成玻璃 .toast-host / .toast 子节�
   const toastEl = ctx.toastHost.children[0];
   assert.ok(toastEl.classList.contains("toast"), "子节点应含 .toast");
   assert.strictEqual(toastEl._sinks[".toast-msg"].textContent, "AI 已恢复在线");
-  assert.ok(/<svg class="app-ico"/.test(toastEl._sinks[".toast-ico"].innerHTML), "ok 态应内联 check 图标 SVG");
+  assert.ok(
+    /<svg class="app-ico"/.test(toastEl._sinks[".toast-ico"].innerHTML),
+    "ok 态应内联 check 图标 SVG",
+  );
 });
 test("toastMsg(err)：错误态内联 cross 图标 SVG", () => {
   const { ctx } = makeContext();
@@ -288,29 +398,42 @@ test("toastMsg(err)：错误态内联 cross 图标 SVG", () => {
   vm.runInContext("var toastMsg = (" + extractFunction(appSrc, "toastMsg") + ");", ctx);
   ctx.toastMsg("AI 重连失败", "err");
   const toastEl = ctx.toastHost.children[0];
-  assert.ok(/<svg class="app-ico"/.test(toastEl._sinks[".toast-ico"].innerHTML), "err 态应内联 cross 图标 SVG");
+  assert.ok(
+    /<svg class="app-ico"/.test(toastEl._sinks[".toast-ico"].innerHTML),
+    "err 态应内联 cross 图标 SVG",
+  );
 });
 
 // ───────────────────────── 4) 按钮结构（无 emoji 残留） ─────────────────────────
 test("按钮结构：#autoBtn(.btn-exec) 含 .bx-ico(SVG) + .bx-label", () => {
-  const re = /<button class="btn-exec" id="autoBtn"[\s\S]*?<svg class="bx-ico"[\s\S]*?<span class="bx-label">/;
+  const re =
+    /<button class="btn-exec" id="autoBtn"[\s\S]*?<svg class="bx-ico"[\s\S]*?<span class="bx-label">/;
   assert.ok(re.test(indexHtml), "autoBtn 应含 bx-ico 与 bx-label");
 });
 test("按钮结构：.icon-btn(#historyIconBtn) 含 .ib-ico + .ib-label", () => {
-  const re = /<button class="icon-btn" id="historyIconBtn"[\s\S]*?class="ib-ico"[\s\S]*?class="ib-label">/;
+  const re =
+    /<button class="icon-btn" id="historyIconBtn"[\s\S]*?class="ib-ico"[\s\S]*?class="ib-label">/;
   assert.ok(re.test(indexHtml), "historyIconBtn 应含 ib-ico 与 ib-label");
 });
 test("无残留 emoji：app.js + index.html 中 Extended_Pictographic 只允许 ↩（本模块为 0）", () => {
   const scan = (s) => [...s.matchAll(/\p{Extended_Pictographic}/gu)].map((x) => x[0]);
-  for (const [label, src] of [["app.js", appSrc], ["index.html", indexHtml]]) {
+  for (const [label, src] of [
+    ["app.js", appSrc],
+    ["index.html", indexHtml],
+  ]) {
     const em = scan(src);
-    assert.ok(em.every((c) => c === "↩"), `${label} 中存在非 ↩ 的 emoji: [${em.join("")}]`);
+    assert.ok(
+      em.every((c) => c === "↩"),
+      `${label} 中存在非 ↩ 的 emoji: [${em.join("")}]`,
+    );
   }
 });
 
 // ───────────────────────── 5) 零回归（厚玻璃 / 焦点环 / 减弱动效） ─────────────────────────
 test("零回归：.modal.glass 厚玻璃 backdrop-filter: blur(40px) saturate(2.0)", () => {
-  assert.ok(/\.modal\.glass\s*\{[\s\S]*?backdrop-filter:\s*blur\(40px\)\s*saturate\(2\.0\)/.test(indexHtml));
+  assert.ok(
+    /\.modal\.glass\s*\{[\s\S]*?backdrop-filter:\s*blur\(40px\)\s*saturate\(2\.0\)/.test(indexHtml),
+  );
 });
 test("零回归：:focus-visible 键盘焦点环门禁存在", () => {
   assert.ok(/:focus-visible\s*\{/.test(indexHtml));
@@ -324,27 +447,55 @@ test("加载安全：public/app.js 在沙箱中真实执行不抛异常（含 st
   const { ctx } = makeContext();
   vm.runInContext(fs.readFileSync(path.join(PUBLIC, "status-luxe.js"), "utf8"), ctx);
   vm.runInContext(extractIconBlock(indexHtml), ctx);
-  assert.doesNotThrow(() => { vm.runInContext(appSrc, ctx); }, "app.js 不应抛异常");
+  assert.doesNotThrow(() => {
+    vm.runInContext(appSrc, ctx);
+  }, "app.js 不应抛异常");
 });
 
-// ───────────────────────── 7) 录入线路（金山文档 / 云库）双勾选 ─────────────────────────
-// 两条线路默认都勾；getTargets() 是提交给 /api/auto 的 targets 唯一来源。
-test("录入线路：index.html 含两个线路勾选框且默认都勾", () => {
+// ───────────────────────── 7) 录入线路（金山文档）─────────────────────────
+// 云库线路已彻底移除（2026-10）：页面不再出现云库勾选框，targets 里也不再有 cloud。
+test("录入线路：只剩金山文档勾选框（云库勾选框已移除）", () => {
   assert.ok(/id="chkRouteKdocs"[^>]*checked/.test(indexHtml), "金山文档勾选框应默认勾上");
-  assert.ok(/id="chkRouteCloud"[^>]*checked/.test(indexHtml), "云库勾选框应默认勾上");
-  assert.ok(/id="cloudSteps"/.test(indexHtml), "应有云库独立的步骤容器");
+  assert.ok(!/id="chkRouteCloud"/.test(indexHtml), "云库勾选框应已移除");
+  assert.ok(!/云库（游戏库网站）/.test(indexHtml), "不应再出现云库录入线路文案");
 });
-test("录入线路：getTargets() 随勾选框实时返回 { kdocs, cloud }", () => {
+test("录入线路：getTargets() 只受金山勾选框影响，不再有 cloud", () => {
   const { ctx, documentStub } = makeContext();
   const k = documentStub.getElementById("chkRouteKdocs");
-  const c = documentStub.getElementById("chkRouteCloud");
-  k.checked = true; c.checked = true;
+  k.checked = true;
   vm.runInContext(fs.readFileSync(path.join(PUBLIC, "status-luxe.js"), "utf8"), ctx);
   vm.runInContext(extractIconBlock(indexHtml), ctx);
   vm.runInContext(appSrc, ctx);
-  assert.deepStrictEqual({ ...vm.runInContext("getTargets()", ctx) }, { kdocs: true, cloud: true }, "默认两条都走");
+  assert.deepStrictEqual(
+    { ...vm.runInContext("getTargets()", ctx) },
+    { kdocs: true },
+    "默认只走金山",
+  );
   k.checked = false;
-  assert.deepStrictEqual({ ...vm.runInContext("getTargets()", ctx) }, { kdocs: false, cloud: true }, "取消金山 → 只走云库");
-  c.checked = false;
-  assert.deepStrictEqual({ ...vm.runInContext("getTargets()", ctx) }, { kdocs: false, cloud: false }, "两条都不勾 → 前端应拦截空跑");
+  assert.deepStrictEqual(
+    { ...vm.runInContext("getTargets()", ctx) },
+    { kdocs: false },
+    "取消金山 → 前端应拦截空跑",
+  );
+});
+
+// ───────────────────────── 7.5) 取数线路（flysheep6 游戏站，可选，默认不勾）─────────────────────────
+test("取数线路：index.html 含 flysheep6 勾选框且默认不勾", () => {
+  assert.ok(/id="chkRouteFlysheep"/.test(indexHtml), "应有 flysheep6 取数线路勾选框");
+  assert.ok(
+    !/id="chkRouteFlysheep"[^>]*checked/.test(indexHtml),
+    "取数线路默认不勾（不勾=沿用 Steam 官方源）",
+  );
+});
+test("取数线路：getFlysheepLine() 随勾选变化，提交体带 flysheep 字段", () => {
+  const { ctx, documentStub } = makeContext();
+  const f = documentStub.getElementById("chkRouteFlysheep");
+  vm.runInContext(fs.readFileSync(path.join(PUBLIC, "status-luxe.js"), "utf8"), ctx);
+  vm.runInContext(extractIconBlock(indexHtml), ctx);
+  vm.runInContext(appSrc, ctx);
+  f.checked = false;
+  assert.strictEqual(vm.runInContext("getFlysheepLine()", ctx), false);
+  f.checked = true;
+  assert.strictEqual(vm.runInContext("getFlysheepLine()", ctx), true);
+  assert.ok(/flysheep:\s*getFlysheepLine\(\)/.test(appSrc), "提交体应带 flysheep 字段");
 });

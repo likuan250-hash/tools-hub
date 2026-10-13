@@ -5,8 +5,11 @@
 /** 从任意文本抽 Steam AppID（store.steampowered.com/app/<id> / steamcommunity / steamdb）。纯函数。 */
 function parseSteamAppIdFromText(text) {
   if (!text) return "";
-  const m = /store\.steampowered\.com\/app\/(\d+)|steamcommunity\.com\/app\/(\d+)|steamdb\.info\/app\/(\d+)/i.exec(String(text));
-  return m ? (m[1] || m[2] || m[3] || "") : "";
+  const m =
+    /store\.steampowered\.com\/app\/(\d+)|steamcommunity\.com\/app\/(\d+)|steamdb\.info\/app\/(\d+)/i.exec(
+      String(text),
+    );
+  return m ? m[1] || m[2] || m[3] || "" : "";
 }
 
 // ── 清洗：剥除游戏名里的版本号 / repack 标签噪音，便于百科精确匹配 ──
@@ -14,23 +17,84 @@ function parseSteamAppIdFromText(text) {
 // 直接拿去 Wikidata / 百度百科搜会因词条名不匹配而 0 结果。先做轻量清洗再查命中率显著上升。
 const NOISE_TAGS = [
   // 复合标签优先剥
-  '官方中文+预购特典+单独升级档', '官方简中+预购特典+单独升级档', '官方繁中+预购特典+单独升级档',
-  '官方中文+预购特典', '官方简中+预购特典', '官方繁中+预购特典',
-  '预购特典+单独升级档', '预购特典',
-  '单独升级档',
+  "官方中文+预购特典+单独升级档",
+  "官方简中+预购特典+单独升级档",
+  "官方繁中+预购特典+单独升级档",
+  "官方中文+预购特典",
+  "官方简中+预购特典",
+  "官方繁中+预购特典",
+  "预购特典+单独升级档",
+  "预购特典",
+  "单独升级档",
   // 单标签
-  '官方中文', '官方简中', '官方繁中', '官方英文', '官方日文', '官方中文版',
-  '整合版', '年度版', '终极版', '完全版', '豪华版', '典藏版', '黄金版', '黄金典藏版',
-  '高清版', '中文版', '汉化版', '国行版', '美版', '欧版', '日版',
-  'PC版', 'Steam版', '免安装', '免安装版', '绿色版', '破解版', '学习版', '未加密版',
-  '离线版', '联机版', '单机版', '多人版',
-  'D加密', 'Steam脱机', '数字版', '实体版', '光盘版', '全DLC', 'DLC',
-  '赠品版', '体验版', '正式版', '尝鲜版', '抢先版', 'Beta版', 'Demo版',
-  '更新版', '修正版', '升级版', '补丁版',
-  '简体中文', '官方简体中文',
+  "官方中文",
+  "官方简中",
+  "官方繁中",
+  "官方英文",
+  "官方日文",
+  "官方中文版",
+  "整合版",
+  "年度版",
+  "终极版",
+  "完全版",
+  "豪华版",
+  "典藏版",
+  "黄金版",
+  "黄金典藏版",
+  "高清版",
+  "中文版",
+  "汉化版",
+  "国行版",
+  "美版",
+  "欧版",
+  "日版",
+  "PC版",
+  "Steam版",
+  "免安装",
+  "免安装版",
+  "绿色版",
+  "破解版",
+  "学习版",
+  "未加密版",
+  "离线版",
+  "联机版",
+  "单机版",
+  "多人版",
+  "D加密",
+  "Steam脱机",
+  "数字版",
+  "实体版",
+  "光盘版",
+  "全DLC",
+  "DLC",
+  "赠品版",
+  "体验版",
+  "正式版",
+  "尝鲜版",
+  "抢先版",
+  "Beta版",
+  "Demo版",
+  "更新版",
+  "修正版",
+  "升级版",
+  "补丁版",
+  // repack 圈常见写法（常紧贴上一个词，没有分隔符，如「Warhammer III绕D版」「全DLC+单板补丁」）
+  "绕D版",
+  "绕版",
+  "D版",
+  "单板补丁",
+  "单板",
+  "免安装硬盘版",
+  "硬盘版",
+  "升级补丁",
+  "联机补丁",
+  "简体中文",
+  "官方简体中文",
 ];
 
-function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 /**
  * 清洗游戏名：剥除版本号与尾部 repack 标签噪音，保留副标题（重制版等）。
@@ -38,27 +102,30 @@ function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); 
  * 纯函数，可单测。
  */
 function cleanGameName(raw) {
-  if (!raw || typeof raw !== 'string') return '';
+  if (!raw || typeof raw !== "string") return "";
   let s = raw.trim();
-  if (!s) return '';
+  if (!s) return "";
+  // 0) repack 标记常紧贴上一个词（"…WARHAMMER III绕D版"、"全DLC+单板补丁"），没有分隔符，
+  //    这里先无条件剥一遍，避免残留在游戏名里导致中文站/Steam 都搜不到。
+  s = s.replace(/\s*(?:绕D版|绕版|单板补丁|单板|免安装硬盘版|硬盘版)(?=\s|$|[+、/])/g, " ");
   // 1) 剥版本号 v1.2.3 / V2 / v 1.2（含拖尾的 "."，避免 "v1.6.10721" 被其它规则切碎后留下 "v1.6." 残点）
-  s = s.replace(/\s*[vV]\s*\d+(?:\.\d+)*\.?/g, ' ');
+  s = s.replace(/\s*[vV]\s*\d+(?:\.\d+)*\.?/g, " ");
   // 2) 反复剥除 +/、/空格/，串接的标签（前/后锚定避免误伤核心名里的同字）
-  const SEP = '[+\\s、/,,　]';
+  const SEP = "[+\\s、/,,　]";
   for (let pass = 0; pass < 4; pass++) {
     let changed = false;
     for (const tag of NOISE_TAGS) {
-      const re = new RegExp(`(?:^|${SEP})${escapeRe(tag)}(?=${SEP}|$)`, 'g');
+      const re = new RegExp(`(?:^|${SEP})${escapeRe(tag)}(?=${SEP}|$)`, "g");
       const before = s;
-      s = s.replace(re, ' ');
+      s = s.replace(re, " ");
       if (s !== before) changed = true;
     }
     if (!changed) break;
   }
   // 3) 清理多余分隔符
-  s = s.replace(/\s+/g, ' ').trim();
-  s = s.replace(/^[：:+\s、/,,]+/, '').replace(/[：:+\s、/,,]+$/, '');
-  s = s.replace(/\s+\+\s+/g, ' ').trim();
+  s = s.replace(/\s+/g, " ").trim();
+  s = s.replace(/^[：:+\s、/,,]+/, "").replace(/[：:+\s、/,,]+$/, "");
+  s = s.replace(/\s+\+\s+/g, " ").trim();
   return s;
 }
 
@@ -67,10 +134,10 @@ function cleanGameName(raw) {
  * 仅保留核心名用作百科兜底查询。纯函数。
  */
 function stripSubtitle(name) {
-  if (!name || typeof name !== 'string') return '';
+  if (!name || typeof name !== "string") return "";
   const m = /^([^：:\-—–]+?)\s*[：:\-—–]\s*/.exec(name);
   let core = m ? m[1].trim() : name.trim();
-  core = core.replace(/[：:+\s、/,,]+$/, '').trim();
+  core = core.replace(/[：:+\s、/,,]+$/, "").trim();
   return core;
 }
 

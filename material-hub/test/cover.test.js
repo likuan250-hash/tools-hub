@@ -752,6 +752,9 @@ test("第 2 级 wallhaven 端到端：API → 直链 → 下载 → 校验 → �
   assert.equal(fs.written.length, 1);
 });
 
+// 说明：名字要用离线库（data-pack + 17 万条大库）查不到的，否则 steam-cdn 会真的被启用。
+const NO_SUCH_GAME = "ZZZ测试用不存在游戏999";
+
 test("fetchCover 按新规范顺序降级：steam-cdn 无 appid 跳过 → wallhaven 命中", async () => {
   const events = [];
   const img = "https://w.wallhaven.cc/full/ab/wallhaven-1.jpg";
@@ -762,7 +765,7 @@ test("fetchCover 按新规范顺序降级：steam-cdn 无 appid 跳过 → wallh
     if (url === img) return { buf: jpegBuf(1920, 1080) };
     return null; // 其它来源（Bing / reddit / Steam）一律无果
   });
-  const r = await c.fetchCover("仁王3", "D:\\out", {
+  const r = await c.fetchCover(NO_SUCH_GAME, "D:\\out", {
     emit: (type, step, msg, ok, detail) => events.push({ type, msg, ok, detail }),
   });
   assert.equal(r.ok, true);
@@ -776,7 +779,7 @@ test("fetchCover 按新规范顺序降级：steam-cdn 无 appid 跳过 → wallh
 test("fetchCover 缺少入参的来源被跳过（不计入 tried）", async () => {
   const c = makeCover(() => null);
   // 不传 coverUrl / videoId / steamAppId → user / youtube / steam 两级跳过
-  const r = await c.fetchCover("X", "D:\\out");
+  const r = await c.fetchCover(NO_SUCH_GAME, "D:\\out");
   assert.equal(r.ok, false);
   assert.equal(r.reason, "cover-all-sources-failed");
   assert.deepEqual(r.tried, ["4kwallpapers", "wallhaven", "reddit", "alphacoders"]);
@@ -790,12 +793,15 @@ test("第 4 级用户指定 URL：默认排在第 4 位，userUrlFirst 可提前
       return null;
     });
 
-  const r1 = await make().fetchCover("X", "D:\\out", { coverUrl: user });
+  const r1 = await make().fetchCover(NO_SUCH_GAME, "D:\\out", { coverUrl: user });
   assert.equal(r1.ok, true);
   assert.equal(r1.source, "user");
   assert.deepEqual(r1.tried, ["4kwallpapers", "wallhaven", "reddit", "user"]);
 
-  const r2 = await make().fetchCover("X", "D:\\out", { coverUrl: user, userUrlFirst: true });
+  const r2 = await make().fetchCover(NO_SUCH_GAME, "D:\\out", {
+    coverUrl: user,
+    userUrlFirst: true,
+  });
   assert.equal(r2.ok, true);
   assert.deepEqual(r2.tried, ["user"]);
 });
@@ -834,7 +840,10 @@ test("某一级抛异常不会中断整条降级链", async () => {
 
 test("全部来源失败时返回 cover-all-sources-failed 并列出尝试过的来源", async () => {
   const c = makeCover(() => ({ status: 500 }));
-  const r = await c.fetchCover("X", "D:\\out", { coverUrl: "https://a.com/x.jpg", videoId: "v1" });
+  const r = await c.fetchCover(NO_SUCH_GAME, "D:\\out", {
+    coverUrl: "https://a.com/x.jpg",
+    videoId: "v1",
+  });
   assert.equal(r.ok, false);
   assert.equal(r.reason, "cover-all-sources-failed");
   assert.deepEqual(r.tried, [
@@ -937,9 +946,11 @@ test("resolveEnglishTitle：原名本身是拉丁标题时直接复用，不打�
 });
 
 test("resolveEnglishTitle：中文名经维基百科反查拿到英文名并缓存", async () => {
+  // 名字要用离线库查不到的（离线命中就不会再走维基了）
+  const ZH = "测试虚构游戏甲";
   const zhSearchUrl =
     "https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=" +
-    encodeURIComponent("仁王3") +
+    encodeURIComponent(ZH) +
     "&format=json&srlimit=5";
   const llUrl =
     "https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=123&format=json&lllimit=1";
@@ -951,7 +962,7 @@ test("resolveEnglishTitle：中文名经维基百科反查拿到英文名并缓�
   const calls = [];
   const c = makeCover(
     {
-      [zhSearchUrl]: { json: { query: { search: [{ pageid: 123, title: "仁王3" }] } } },
+      [zhSearchUrl]: { json: { query: { search: [{ pageid: 123, title: ZH }] } } },
       [llUrl]: { json: { query: { pages: { 123: { langlinks: [{ "*": "Nioh 3" }] } } } } },
       [enPagesUrl]: {
         json: { query: { pages: { "-1": { pageprops: { wikibase_item: "Q12345" } } } } },
@@ -967,13 +978,13 @@ test("resolveEnglishTitle：中文名经维基百科反查拿到英文名并缓�
     null,
     calls,
   );
-  const r = await c.resolveEnglishTitle("仁王3");
+  const r = await c.resolveEnglishTitle(ZH);
   assert.equal(r.title, "Nioh 3");
   assert.equal(r.source, "wiki");
   assert.equal(r.steamAppId, "1325200");
   assert.equal(calls.length, 4);
 
-  const again = await c.resolveEnglishTitle("仁王3");
+  const again = await c.resolveEnglishTitle(ZH);
   assert.equal(again.title, "Nioh 3");
   assert.equal(again.steamAppId, "1325200");
   assert.equal(calls.length, 4);
@@ -1078,15 +1089,16 @@ test("fetchCover 原名即英文名时只跑一轮（不白费网络请求）", 
 });
 
 test("fetchCover 不传 englishTitle 时自动经维基百科反查（端到端链路）", async () => {
+  const ZH = "测试虚构游戏乙";
   const zhUrl =
     "https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=" +
-    encodeURIComponent("仁王3") +
+    encodeURIComponent(ZH) +
     "&format=json&srlimit=5";
   const llUrl =
     "https://zh.wikipedia.org/w/api.php?action=query&prop=langlinks&lllang=en&pageids=123&format=json&lllimit=1";
   const img = "https://w.wallhaven.cc/full/cd/wallhaven-nioh.jpg";
   const c = makeCover((url) => {
-    if (url === zhUrl) return { json: { query: { search: [{ pageid: 123, title: "仁王3" }] } } };
+    if (url === zhUrl) return { json: { query: { search: [{ pageid: 123, title: ZH }] } } };
     if (url === llUrl)
       return { json: { query: { pages: { 123: { langlinks: [{ "*": "Nioh 3" }] } } } } };
     if (url.includes("wallhaven.cc/api")) {
@@ -1098,12 +1110,12 @@ test("fetchCover 不传 englishTitle 时自动经维基百科反查（端到端�
     return null;
   });
 
-  const r = await c.fetchCover("仁王3", "D:\\out");
+  const r = await c.fetchCover(ZH, "D:\\out");
   assert.equal(r.ok, true);
   assert.equal(r.englishTitle, "Nioh 3");
   assert.equal(r.englishTitleSource, "wiki");
   assert.equal(r.queryUsed, "Nioh 3");
-  assert.deepEqual(r.queryPlan, ["Nioh 3", "仁王3"]);
+  assert.deepEqual(r.queryPlan, ["Nioh 3", ZH]);
 });
 
 test("fetchCover 全失败时也要带上查询词决策信息，便于排查", async () => {

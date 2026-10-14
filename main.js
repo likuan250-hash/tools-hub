@@ -492,9 +492,15 @@ function probeChildPort(cfg) {
 
 function startChild(cfg) {
   if (!fs.existsSync(cfg.script)) {
+    // 更新装了一半 / 被杀软删过 → 模块文件缺失。以前这里只写日志、直接 return，
+    // 前端就是一个连不上的白页（2026-10-15「达芬奇剪辑打不开」就是这种）。
+    // 现在落一条明确原因到状态里，页面会显示「模块文件缺失，请重新运行安装包修复」。
+    cfg.lastError = "模块文件缺失：" + cfg.script + "（请重新运行安装包修复）";
     log(`子进程脚本不存在，跳过 ${cfg.key}: ${cfg.script}`);
+    pushStatus();
     return;
   }
+  cfg.lastError = null;
   cfg.stopRequested = false;
   cfg.lastActive = Date.now();
   log(`启动子进程 ${cfg.key} -> ${cfg.script}`);

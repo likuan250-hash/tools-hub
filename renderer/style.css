@@ -224,6 +224,27 @@ body {
 }
 @keyframes slSpin{to{transform:rotate(360deg)}}
 .stage-loading .sl-text{font-size:13px;color:var(--text-dim);letter-spacing:.5px}
+/* 模块打不开的说明卡（缺文件/服务没起来）——盖在对应 webview 上，样式跟玻璃拟态一致 */
+.svc-error{
+  position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb, var(--bg-1) 62%, transparent);backdrop-filter:blur(4px);
+}
+.svc-error-card{
+  max-width:520px;margin:24px;padding:22px 24px;border-radius:16px;text-align:center;
+  background:var(--glass-bg);border:1px solid var(--glass-border);box-shadow:var(--shadow-card);
+  color:var(--text);
+}
+.svc-error-title{font-size:17px;font-weight:600;margin-bottom:10px}
+.svc-error-msg{
+  font-size:13px;line-height:1.6;color:var(--text-dim);word-break:break-all;
+  background:color-mix(in srgb, var(--bg-2) 70%, transparent);border-radius:10px;padding:10px 12px;
+}
+.svc-error-hint{font-size:12px;line-height:1.6;color:var(--text-dim);margin-top:10px}
+.svc-error-btn{
+  margin-top:14px;padding:7px 22px;border-radius:10px;cursor:pointer;font-size:13px;
+  color:var(--text);background:var(--glass-bg);border:1px solid var(--glass-border);
+}
+.svc-error-btn:hover{border-color:var(--accent);color:var(--accent)}
 html[data-skin="cosmic"] .stage-loading .sl-text{
   font-family:'Share Tech Mono','Consolas',ui-monospace,monospace;
   color:var(--accent);text-shadow:0 0 8px rgba(94,242,255,.6);letter-spacing:.12em;

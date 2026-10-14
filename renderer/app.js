@@ -496,6 +496,13 @@
       const retries = Number(wv.dataset.retries || 0);
       if (retries >= 5) {
         console.warn("webview 加载失败", key, e.errorDescription);
+        // 重试到头还是打不开：给一张说明卡（模块文件缺失是最常见原因），别只留白页
+        const st = (serviceStatus && serviceStatus[key]) || {};
+        showSvcError(
+          key,
+          t.name,
+          st.lastError || "服务未启动：" + t.url + "（" + e.errorDescription + "）",
+        );
         return;
       }
       wv.dataset.retries = String(retries + 1);
@@ -514,6 +521,7 @@
     // DOM 准备好后触发一次 resize，确保 webview 内部内容正确撑满容器
     wv.addEventListener("dom-ready", () => {
       wv.dataset.ready = "1";
+      hideSvcError(key); // 页面真的起来了，撤掉说明卡
       try {
         wv.send("sync-theme", theme);
       } catch (e) {} // 加载完成后同步工具箱主题
@@ -535,6 +543,60 @@
 
     renderTabs();
     switchTab(key);
+  }
+
+  // ── 模块起不来的说明卡（缺文件 / 服务没起来）──
+  // 以前只在控制台 warn，用户看到的就是一个连不上的白页；现在在 webview 上盖一张卡，写清原因和修复办法。
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+    );
+  }
+  function svcErrorCard(key) {
+    const wv = document.getElementById("wv-" + key);
+    return wv && wv.parentElement ? wv.parentElement.querySelector(".svc-error") : null;
+  }
+  function showSvcError(key, name, msg) {
+    const wv = document.getElementById("wv-" + key);
+    if (!wv || !wv.parentElement) return;
+    let card = svcErrorCard(key);
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "svc-error";
+      wv.parentElement.appendChild(card);
+    }
+    card.innerHTML =
+      '<div class="svc-error-card">' +
+      '<div class="svc-error-title">' +
+      escapeHtml(name || key) +
+      " 打不开</div>" +
+      '<div class="svc-error-msg">' +
+      escapeHtml(msg || "服务未启动") +
+      "</div>" +
+      '<div class="svc-error-hint">多数是更新没装完导致模块文件缺失：重新运行安装包（ToolsHub-Setup）修复，装完再点下面的「重试」。</div>' +
+      '<button class="svc-error-btn" type="button">重试</button>' +
+      "</div>";
+    const btn = card.querySelector(".svc-error-btn");
+    if (btn) {
+      btn.onclick = () => {
+        hideSvcError(key);
+        try {
+          wv.dataset.retries = "0";
+          wv.reload();
+        } catch (e) {
+          try {
+            wv.src = wv.src;
+          } catch (e2) {
+            /* 忽略 */
+          }
+        }
+      };
+    }
+  }
+  function hideSvcError(key) {
+    const card = svcErrorCard(key);
+    if (card) card.remove();
   }
 
   function closeTab(key, event) {
@@ -742,6 +804,13 @@
       if (aggEl) aggEl.textContent = "离线";
     }
     renderCards(); // 无论状态系统是否成功，卡片必须渲染、页面必须可操作
+    // 模块缺文件/起不来时，若该标签已经打开，直接盖说明卡（用户不用等 webview 重试 5 次）
+    for (const t of openTabs) {
+      const st = serviceStatus[t.key];
+      if (!st) continue;
+      if (!st.running && st.lastError) showSvcError(t.key, st.name || t.name, st.lastError);
+      else if (st.running) hideSvcError(t.key);
+    }
   }
   if (api && api.getStatus) {
     api

@@ -146,6 +146,28 @@ def check_trailer_codec(src, ffprobe):
     return codec
 
 
+def parse_fps(value, default=0.0):
+    """解析 '30/1' / '59.94' / '29.97 DF' 这类帧率值。"""
+    try:
+        s = str(value).strip().split()[0]
+        if '/' in s:
+            num, den = s.split('/', 1)
+            num, den = float(num), float(den)
+            return num / den if den else default
+        return float(s)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return default
+
+
+def probe_video_fps(path, ffprobe):
+    """视频源帧率（r_frame_rate），用于把源帧换算成时间线帧。"""
+    r = subprocess.run(
+        [ffprobe, '-v', 'error', '-select_streams', 'v:0',
+         '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', path],
+        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
+    return parse_fps((r.stdout or '').strip(), 0.0)
+
+
 def probe_frame_count(path, ffprobe):
     r = subprocess.run(
         [ffprobe, '-v', 'error', '-count_frames', '-select_streams', 'v:0',
@@ -403,13 +425,22 @@ def cmd_setup(args):
     cover_frames = int(os.environ.get('RESOLVE_COVER_FRAMES', '180') or 180)
     trailer_frames = None
     tail_frames = None
+    try:
+        tl_fps = parse_fps(proj.GetSetting('timelineFrameRate'), 60.0)
+    except Exception:
+        tl_fps = 60.0
+    if tl_fps <= 0:
+        tl_fps = 60.0
     tl = find_timeline(proj, 'Timeline 1')
     if tl is None:
         # 步骤 3：导入前先量视频长度，把模板 V2/V3 尾部文本预设成同样长度（免手动拉伸）
         trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
-        tail_frames = max(1, trailer_frames - 30)  # 预告片从源第 30 帧起放，左侧留 30 帧手柄
-        print('[timeline] 预告片 %d 帧 → V1 片段 %d 帧（源 30..%d）'
-              % (trailer_frames, tail_frames, trailer_frames))
+        src_fps = probe_video_fps(os.path.join(folder, trailer), args.ffprobe) or tl_fps
+        # 预告片从源第 30 帧起放（左侧留 30 帧手柄），且源帧率可能≠时间线帧率
+        # （例：源 30fps/896帧 → 项目 60fps 片段 1732 帧，不是 866）
+        tail_frames = max(1, int(round((trailer_frames - 30) * tl_fps / src_fps)))
+        print('[timeline] 预告片 %d 帧 @%.3gfps → 时间线片段 %d 帧 @%.3gfps（源 30..%d）'
+              % (trailer_frames, src_fps, tail_frames, tl_fps, trailer_frames))
         preset = build_template_with_tail(args.template, args.work_dir, cover_frames, tail_frames)
         tl = mp.ImportTimelineFromFile(preset or args.template)
         if not tl and preset:
@@ -433,21 +464,11 @@ def cmd_setup(args):
         # ⚠️ 静止图有自己的帧率（Resolve 一般是 24fps），AppendToTimeline 的 start/endFrame
         # 是「源帧」，会按 tl_fps/still_fps 换算成时间线帧：
         #   以前直接传 endFrame=180 → 179×(60/24)=447.5 → 实测 447 帧，这就是 180 变 447 的原因。
-        def _fps(v, default):
-            try:
-                return float(str(v).strip().split()[0])
-            except (TypeError, ValueError):
-                return default
-        try:
-            tl_fps_raw = proj.GetSetting('timelineFrameRate')
-        except Exception:
-            tl_fps_raw = 60.0
-        tl_fps = _fps(tl_fps_raw, 60.0)
         try:
             still_fps_raw = cover_item.GetClipProperty('FPS')
         except Exception:
             still_fps_raw = None
-        still_fps = _fps(still_fps_raw, tl_fps)
+        still_fps = parse_fps(still_fps_raw, tl_fps)
         if still_fps <= 0:
             still_fps = tl_fps
         cover_src_start = 1
@@ -476,7 +497,8 @@ def cmd_setup(args):
                       % round(cover_actual - cover_frames))
         if trailer_frames is None:
             trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
-            tail_frames = max(1, trailer_frames - 30)
+            src_fps = probe_video_fps(os.path.join(folder, trailer), args.ffprobe) or tl_fps
+            tail_frames = max(1, int(round((trailer_frames - 30) * tl_fps / src_fps)))
             print('[timeline] 警告：时间线已存在（模板未重新导入），尾部文本需手动拉伸')
         trailer_ok = mp.AppendToTimeline([{
             'mediaPoolItem': trailer_item,

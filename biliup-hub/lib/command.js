@@ -14,33 +14,33 @@
 //   注意：v0.2.4【不认识】--video-file 与 --cookies：
 //     - 视频文件是 upload 之后的【位置参数】
 //     - 鉴权走全局 -u（指向 biliup 的 LoginInfo 文件，非扁平 web cookie）
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { execFile } = require('child_process');
-const logger = require('./logger');
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const { execFile } = require("child_process");
+const logger = require("./logger");
 // 仅用于兜底解析 LoginInfo 文件路径（真实运行 config 已携带 loginInfoPath）。
 // 这里 require store 不会形成循环依赖（store 仅依赖 biliupBin）。
-const store = require('./store');
+const store = require("./store");
 
-const TMP_DIR = path.join(__dirname, '..', '.tmp');
+const TMP_DIR = path.join(__dirname, "..", ".tmp");
 
 // ── PowerShell 字符串转义 ──
-// 在 ps1 双引号字符串内，双引号需转义为 `"（反引号+双引号）。
+// 必须用单引号字面量：双引号里 $(...) / $var / 反引号会被 PowerShell 展开执行，
+// 标题/简介/文件名里出现 $ 或反引号时既有命令注入风险，也会把文案改坏。
 function ps1Quote(value) {
-  const escaped = String(value == null ? '' : value).replace(/"/g, '`"');
-  return '"' + escaped + '"';
+  const escaped = String(value == null ? "" : value).replace(/'/g, "''");
+  return "'" + escaped + "'";
 }
-// 多行 desc：换行 → `n，双引号 → `"，整体包双引号（坑点2/3）。
+// 多行 desc：单引号字面量可以直接跨行（ps1 文件为 UTF-8 BOM），无需 `n 转义。
 function ps1MultiLine(value) {
-  const escaped = String(value == null ? '' : value)
-    .replace(/"/g, '`"')
-    .replace(/\r\n|\r|\n/g, '`n');
-  return '"' + escaped + '"';
+  return ps1Quote(value);
 }
-// bat 兜底：双引号用 "" 转义；不支持多行（多行场景一律走 ps1）。
+// bat 兜底：双引号用 "" 转义、% 用 %% 转义；不支持多行（多行场景一律走 ps1）。
 function batQuote(value) {
-  const escaped = String(value == null ? '' : value).replace(/"/g, '""');
+  const escaped = String(value == null ? "" : value)
+    .replace(/%/g, "%%")
+    .replace(/"/g, '""');
   return '"' + escaped + '"';
 }
 
@@ -61,39 +61,39 @@ function batQuote(value) {
 // @param {{quote?:Function, multiLine?:Function}} [opts] 引号转义函数（ps1/bat 各一套）
 // @returns {string[]} 完整有序参数数组：[-u <loginInfo>, upload, ...flags, <videoPath>]
 function buildArgs(req, cfg, coverPath, opts = {}) {
-  const quote = typeof opts.quote === 'function' ? opts.quote : ps1Quote;
-  const multiLine = typeof opts.multiLine === 'function' ? opts.multiLine : ps1MultiLine;
+  const quote = typeof opts.quote === "function" ? opts.quote : ps1Quote;
+  const multiLine = typeof opts.multiLine === "function" ? opts.multiLine : ps1MultiLine;
 
   // biliup 登录信息文件（LoginInfo 结构）：优先用 config 注入，兜底取 store 默认路径。
-  const loginInfoPath = (cfg && cfg.loginInfoPath)
-    || (store && store.getLoginInfoPath ? store.getLoginInfoPath() : '');
+  const loginInfoPath =
+    (cfg && cfg.loginInfoPath) || (store && store.getLoginInfoPath ? store.getLoginInfoPath() : "");
 
   const args = [];
   // ① 全局参数 -u 必须放在子命令 upload 之前（v0.2.4 全局位置）。
   if (loginInfoPath) {
-    args.push('-u', quote(loginInfoPath));
+    args.push("-u", quote(loginInfoPath));
   }
   // ② 子命令。
-  args.push('upload');
+  args.push("upload");
   // ③ 封面（可选）。
-  if (coverPath) args.push('--cover', quote(coverPath));
+  if (coverPath) args.push("--cover", quote(coverPath));
   // ④ 标题 / 分区。
-  args.push('--title', quote(req.title || ''));
-  args.push('--tid', String(cfg.tid));
+  args.push("--title", quote(req.title || ""));
+  args.push("--tid", String(cfg.tid));
   // ⑤ 标签：多个 tag 合并成【单个逗号分隔值】——v0.2.4 要求 --tag a,b,c 形态。
-  const tags = (req.tags && req.tags.length) ? req.tags : (cfg.tags || []);
-  const tagStr = tags.filter((t) => t).join(',');
-  if (tagStr) args.push('--tag', quote(tagStr));
+  const tags = req.tags && req.tags.length ? req.tags : cfg.tags || [];
+  const tagStr = tags.filter((t) => t).join(",");
+  if (tagStr) args.push("--tag", quote(tagStr));
   // ⑥ 版权 / 转载限制。
-  args.push('--copyright', String(cfg.copyright));
-  args.push('--no-reprint', String(cfg.noReprint));
+  args.push("--copyright", String(cfg.copyright));
+  args.push("--no-reprint", String(cfg.noReprint));
   // ⑦ 上传线路。
-  args.push('--line', quote(cfg.line));
+  args.push("--line", quote(cfg.line));
   // ⑧ 简介（多行用 multiLine 转义）。
-  args.push('--desc', multiLine(req.desc || ''));
+  args.push("--desc", multiLine(req.desc || ""));
   // ⑨ 延时发布（仅 dtime 模式且提供了时间戳）。
-  if (req.publishMode === 'dtime' && req.dtime) {
-    args.push('--dtime', String(req.dtime));
+  if (req.publishMode === "dtime" && req.dtime) {
+    args.push("--dtime", String(req.dtime));
   }
   // ⑩ 视频文件：位置参数，放在 upload 之后、所有 flag 之后（v0.2.4 语法，绝不能用 --video-file）。
   args.push(quote(req.videoPath));
@@ -112,10 +112,8 @@ function buildArgs(req, cfg, coverPath, opts = {}) {
 function buildPs1(req, cfg, coverPath) {
   const exe = cfg.biliupExePath;
   const args = buildArgs(req, cfg, coverPath, { quote: ps1Quote, multiLine: ps1MultiLine });
-  const content = [
-    '& ' + ps1Quote(exe) + ' ' + args.join(' '),
-  ].join('\n');
-  return { path: '', content, shell: 'ps1' };
+  const content = ["& " + ps1Quote(exe) + " " + args.join(" ")].join("\n");
+  return { path: "", content, shell: "ps1" };
 }
 
 /**
@@ -125,13 +123,13 @@ function buildPs1(req, cfg, coverPath) {
 function buildBat(req, cfg, coverPath) {
   const exe = cfg.biliupExePath;
   // bat 不支持多行 desc：若 desc 含换行，强制改用 ps1（调用方应优先选 ps1）。
-  if (/[\r\n]/.test(req.desc || '')) {
+  if (/[\r\n]/.test(req.desc || "")) {
     return buildPs1(req, cfg, coverPath);
   }
   // 复用 buildArgs，bat 用 batQuote（"" 转义），desc 单行用 batQuote 即可。
   const args = buildArgs(req, cfg, coverPath, { quote: batQuote, multiLine: batQuote });
-  const content = '@echo off\r\n' + '"' + exe + '" ' + args.join(' ');
-  return { path: '', content, shell: 'bat' };
+  const content = "@echo off\r\n" + '"' + exe + '" ' + args.join(" ");
+  return { path: "", content, shell: "bat" };
 }
 
 /**
@@ -144,12 +142,15 @@ function buildBat(req, cfg, coverPath) {
 function writeTempScript(scriptFile, dir) {
   const baseDir = dir || TMP_DIR;
   fs.mkdirSync(baseDir, { recursive: true });
-  const ext = scriptFile.shell === 'bat' ? 'bat' : 'ps1';
-  const tmpPath = path.join(baseDir, `biliup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
+  const ext = scriptFile.shell === "bat" ? "bat" : "ps1";
+  const tmpPath = path.join(
+    baseDir,
+    `biliup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`,
+  );
   // 关键：utf-8-sig 编码（带 BOM），PowerShell 才能正确识别 UTF-8（坑点3）。
   // Node 的 fs 无 'utf-8-sig' 别名，故手动前置 BOM(EF BB BF) + utf8 内容。
-  const bom = Buffer.from([0xEF, 0xBB, 0xBF]);
-  fs.writeFileSync(tmpPath, Buffer.concat([bom, Buffer.from(scriptFile.content, 'utf8')]));
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  fs.writeFileSync(tmpPath, Buffer.concat([bom, Buffer.from(scriptFile.content, "utf8")]));
   return tmpPath;
 }
 
@@ -163,13 +164,15 @@ function writeTempScript(scriptFile, dir) {
  */
 function runViaTempScript(scriptFile, opts = {}) {
   const deps = Object.assign({ execFile }, opts.deps || {});
-  const onLog = typeof opts.onLog === 'function' ? opts.onLog : () => {};
-  const onError = typeof opts.onError === 'function' ? opts.onError : () => {};
+  const onLog = typeof opts.onLog === "function" ? opts.onLog : () => {};
+  const onError = typeof opts.onError === "function" ? opts.onError : () => {};
 
   // v1 仅保证 Windows 可用（与现有工具一致）；非 Windows 路径留 TODO 不崩溃进程。
-  if (process.platform !== 'win32') {
+  if (process.platform !== "win32") {
     return Promise.reject(
-      new Error('runViaTempScript 当前仅支持 Windows（v1）。非 Windows 环境暂不支持：请改用 bash 脚本拼装（TODO）。')
+      new Error(
+        "runViaTempScript 当前仅支持 Windows（v1）。非 Windows 环境暂不支持：请改用 bash 脚本拼装（TODO）。",
+      ),
     );
   }
 
@@ -178,33 +181,49 @@ function runViaTempScript(scriptFile, opts = {}) {
     try {
       tmpPath = writeTempScript(scriptFile);
     } catch (e) {
-      return reject(new Error('写入临时脚本失败: ' + e.message));
+      return reject(new Error("写入临时脚本失败: " + e.message));
     }
-    const cleanup = () => { try { fs.unlinkSync(tmpPath); } catch (_) {} };
+    const cleanup = () => {
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch (_) {}
+    };
     let file, args;
-    if (scriptFile.shell === 'bat') {
-      file = 'cmd';
-      args = ['/c', tmpPath];
+    if (scriptFile.shell === "bat") {
+      file = "cmd";
+      args = ["/c", tmpPath];
     } else {
-      file = 'powershell'; // 默认 ps1
-      args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tmpPath];
+      file = "powershell"; // 默认 ps1
+      args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", tmpPath];
     }
-    const child = deps.execFile(file, args, { windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
-      cleanup();
-      // 透传 exit code：成功路径 code=0；失败路径取 err.code 或 child.exitCode，
-      // 以便上层区分「真上传成功」vs「exit0 但无标识」（根治铺路）。
-      const code = err ? (err.code ?? child.exitCode) : 0;
-      if (err) {
-        onError(stderr || err.message);
-        const execErr = new Error('biliup 执行失败: ' + (stderr || err.message));
-        // 可选：为 reject 的 Error 附带 exit code，便于上游早报/治理。
-        if (code !== null && code !== undefined) execErr.code = code;
-        return reject(execErr);
+    const child = deps.execFile(
+      file,
+      args,
+      { windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        cleanup();
+        // 透传 exit code：成功路径 code=0；失败路径取 err.code 或 child.exitCode，
+        // 以便上层区分「真上传成功」vs「exit0 但无标识」（根治铺路）。
+        const code = err ? (err.code ?? child.exitCode) : 0;
+        if (err) {
+          onError(stderr || err.message);
+          const execErr = new Error("biliup 执行失败: " + (stderr || err.message));
+          // 可选：为 reject 的 Error 附带 exit code，便于上游早报/治理。
+          if (code !== null && code !== undefined) execErr.code = code;
+          return reject(execErr);
+        }
+        resolve({ stdout: stdout || "", stderr: stderr || "", code });
+      },
+    );
+    if (typeof opts.onChild === "function") {
+      try {
+        opts.onChild(child);
+      } catch (_) {
+        /* 忽略 */
       }
-      resolve({ stdout: stdout || '', stderr: stderr || '', code });
-    });
-    if (child.stdout) child.stdout.on('data', (d) => onLog(d.toString()));
-    if (child.stderr) child.stderr.on('data', (d) => onError(d.toString()));
+    }
+    if (child.stdout) child.stdout.on("data", (d) => onLog(d.toString()));
+    if (child.stderr) child.stderr.on("data", (d) => onError(d.toString()));
   });
 }
 

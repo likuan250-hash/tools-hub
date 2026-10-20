@@ -1,22 +1,22 @@
 // lib/biliup.js —— 执行上传（临时脚本）+ getVideoInfo 重试（坑点4：-404 延迟索引）
-const fs = require('fs');
-const path = require('path');
-const command = require('./command');
-const logger = require('./logger');
+const fs = require("fs");
+const path = require("path");
+const command = require("./command");
+const logger = require("./logger");
 
 // Node 18+ 自带 fetch（undici）。优先用全局 fetch；若需强约束可用 undici.fetch（可选依赖）。
 let _fetch;
 function getFetch() {
   if (_fetch) return _fetch;
   try {
-    _fetch = require('undici').fetch; // 可选依赖，缺失时回退全局
+    _fetch = require("undici").fetch; // 可选依赖，缺失时回退全局
   } catch (e) {
-    _fetch = (globalThis.fetch || global.fetch);
+    _fetch = globalThis.fetch || global.fetch;
   }
   return _fetch;
 }
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1';
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) biliup-hub/0.1";
 
 // 默认依赖（真实实现）；测试经 opts.deps 注入 mock。
 const DEFAULT_DEPS = {
@@ -30,7 +30,7 @@ const DEFAULT_DEPS = {
 // ── 从 biliup stdout 解析投稿结果（bvid + aid）──
 // biliup-rs 上传成功会输出 BV 号与 aid（JSON 或日志行）。多策略兜底解析。
 function parseUploadOutput(stdout) {
-  const text = String(stdout || '');
+  const text = String(stdout || "");
   // 优先匹配 JSON 形态：{"bvid":"BV...","aid":123} 或 "aid":123,"bvid":"BV..."
   // biliup-rs 实际输出中 aid 在 ResponseData 里为 "aid": Number(117042187343755) 形态，
   // 支持 Number(...) 包裹，避免定时投稿 aid 解析成空。
@@ -48,6 +48,34 @@ function parseUploadOutput(stdout) {
 
 // 完整上传输出落盘目录（与 command 共用 .tmp）。
 const UPLOAD_LOG_DIR = command.TMP_DIR;
+const MAX_UPLOAD_LOGS = 200; // 只保留最近 200 份上传日志，避免 .tmp 无限膨胀
+
+function pruneUploadLogs(f) {
+  try {
+    const names = f.readdirSync(UPLOAD_LOG_DIR).filter((n) => /^upload-.*\.log$/.test(n));
+    if (names.length <= MAX_UPLOAD_LOGS) return;
+    const rows = names
+      .map((n) => {
+        let t = 0;
+        try {
+          t = f.statSync(path.join(UPLOAD_LOG_DIR, n)).mtimeMs;
+        } catch (_) {
+          /* ignore */
+        }
+        return { n, t };
+      })
+      .sort((a, b) => b.t - a.t);
+    for (const row of rows.slice(MAX_UPLOAD_LOGS)) {
+      try {
+        f.unlinkSync(path.join(UPLOAD_LOG_DIR, row.n));
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+}
 
 /**
  * 将完整 stdout + stderr + exit code 落盘（根治铺路的关键证据）。
@@ -62,23 +90,29 @@ function writeUploadLog(stdout, stderr, code, fsImpl) {
   const f = fsImpl || fs;
   try {
     f.mkdirSync(UPLOAD_LOG_DIR, { recursive: true });
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const logPath = path.join(UPLOAD_LOG_DIR, `upload-${ts}.log`);
     // utf-8 无 BOM；含时间戳、exit code 与完整 stdout/stderr。
     const header = `[${new Date().toISOString()}] biliup upload finished (exit=${code})\n`;
-    const body = header +
-      '----- stdout -----\n' + (stdout || '') +
-      '\n----- stderr -----\n' + (stderr || '') + '\n';
-    f.writeFileSync(logPath, body, { encoding: 'utf8' });
+    const body =
+      header +
+      "----- stdout -----\n" +
+      (stdout || "") +
+      "\n----- stderr -----\n" +
+      (stderr || "") +
+      "\n";
+    f.writeFileSync(logPath, body, { encoding: "utf8" });
+    pruneUploadLogs(f);
     return logPath;
   } catch (e) {
-    logger.error('[biliup] 上传日志落盘失败:', e.message);
+    logger.error("[biliup] 上传日志落盘失败:", e.message);
     return null;
   }
 }
 
 // B站 API 失败特征关键字（不区分大小写）：鉴权/会话失效类错误。
-const BILIUP_API_FAILURE_KEYWORDS = /请求错误|未登录|登录失效|登录过期|请先登录|token|cookie|鉴权|UNAUTHORIZED|csrf/i;
+const BILIUP_API_FAILURE_KEYWORDS =
+  /请求错误|未登录|登录失效|登录过期|请先登录|token|cookie|鉴权|UNAUTHORIZED|csrf/i;
 
 /**
  * 检测 biliup 是否以「exit0 假成功」收场、但 stderr 暴露了 B站 API 失败（多为登录态失效/鉴权失败）。
@@ -95,18 +129,18 @@ const BILIUP_API_FAILURE_KEYWORDS = /请求错误|未登录|登录失效|登录�
  * @param {string} stderr biliup 标准错误输出
  */
 function detectBiliupApiFailure(stderr) {
-  const text = String(stderr || '');
+  const text = String(stderr || "");
   if (!text.trim()) return; // 空 stderr：真·静默成功但无标识，不抛（保留旧行为，避免误杀）
   // 优先：解析 JSON 形态错误 {"code":<负数>,"message":"<msg>"}（字段顺序可能含 data 等中间键）。
   const codeMatch = text.match(/"code"\s*:\s*(-?\d+)/);
   if (codeMatch && parseInt(codeMatch[1], 10) < 0) {
     const msgMatch = text.match(/"message"\s*:\s*"([^"]*)"/);
-    const message = msgMatch ? msgMatch[1] : '未知错误';
-    throw new Error('biliup 上传失败(code=' + codeMatch[1] + '): ' + message);
+    const message = msgMatch ? msgMatch[1] : "未知错误";
+    throw new Error("biliup 上传失败(code=" + codeMatch[1] + "): " + message);
   }
   // 退化：关键字命中（鉴权/会话相关）。
   if (BILIUP_API_FAILURE_KEYWORDS.test(text)) {
-    throw new Error('biliup 上传失败(疑似鉴权/会话失效): ' + text.slice(0, 200));
+    throw new Error("biliup 上传失败(疑似鉴权/会话失效): " + text.slice(0, 200));
   }
 }
 
@@ -118,8 +152,12 @@ function detectBiliupApiFailure(stderr) {
  */
 async function runUpload(scriptFile, opts = {}) {
   const deps = Object.assign({}, DEFAULT_DEPS, opts.deps || {});
-  const onLog = typeof opts.onLog === 'function' ? opts.onLog : () => {};
-  const { stdout, stderr, code } = await deps.runViaTempScript(scriptFile, { onLog, deps: opts.deps });
+  const onLog = typeof opts.onLog === "function" ? opts.onLog : () => {};
+  const { stdout, stderr, code } = await deps.runViaTempScript(scriptFile, {
+    onLog,
+    deps: opts.deps,
+    onChild: typeof opts.onChild === "function" ? opts.onChild : undefined,
+  });
 
   // ② 完整 stdout/stderr/exit code 落盘（无论解析成败都落盘，根治铺路关键证据）。
   const fsImpl = deps.fs || fs;
@@ -130,14 +168,14 @@ async function runUpload(scriptFile, opts = {}) {
     // ① 上传真实性早报：
     if (code != null && code !== 0) {
       // exit!=0 → 明确抛「上传失败」，让 task 早报真实失败，而非下游 getVideoInfo 当替罪羊。
-      throw new Error('biliup 上传失败(exit=' + code + '): ' + (stderr || '').slice(0, 300));
+      throw new Error("biliup 上传失败(exit=" + code + "): " + (stderr || "").slice(0, 300));
     }
     // exit==0 或 code 为 null：检测 stderr 是否暗示 B站 API 失败（exit0 假成功）。
     // 命中（如 {"code":-400,"message":"请求错误"} 或鉴权/会话失效关键字）即【抛出清晰错误】，
     // 让 task 早报真实失败原因，而非下游 getVideoInfo 当替罪羊报误导性「缺少 bvid/aid」。
     detectBiliupApiFailure(stderr); // 命中则抛错（不返回）
     // 未命中（stderr 为空或无失败特征）→ 维持现状 WARN + 返回空 ref（保留旧行为，避免误杀）。
-    logger.warn('[biliup] 上传已结束(exit=0)但未从输出解析到 bvid/aid，完整日志已落盘: ' + logPath);
+    logger.warn("[biliup] 上传已结束(exit=0)但未从输出解析到 bvid/aid，完整日志已落盘: " + logPath);
   }
   return ref;
 }
@@ -154,7 +192,7 @@ async function runUpload(scriptFile, opts = {}) {
 async function getVideoInfo(ref, opts = {}) {
   const deps = Object.assign({}, DEFAULT_DEPS, opts.deps || {});
   const fetchFn = deps.fetchFn || deps.getFetch();
-  const onLog = typeof opts.onLog === 'function' ? opts.onLog : () => {};
+  const onLog = typeof opts.onLog === "function" ? opts.onLog : () => {};
   const MAX = 120;
   const BASE_INTERVAL = 5000;
   const FACTOR = 1.4;
@@ -162,16 +200,18 @@ async function getVideoInfo(ref, opts = {}) {
   const bvid = ref && ref.bvid;
   const aid = ref && ref.aid;
   if (!bvid && !aid) {
-    throw new Error('getVideoInfo 缺少 bvid/aid，无法查询稿件信息');
+    throw new Error("getVideoInfo 缺少 bvid/aid，无法查询稿件信息");
   }
   let lastErr = null;
   for (let i = 1; i <= MAX; i++) {
     const wait = Math.min(MAX_INTERVAL, Math.round(BASE_INTERVAL * Math.pow(FACTOR, i - 1)));
     try {
       const url = bvid
-        ? 'https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bvid)
-        : 'https://api.bilibili.com/x/web-interface/view?aid=' + encodeURIComponent(aid);
-      const resp = await fetchFn(url, { headers: { 'User-Agent': USER_AGENT, 'Referer': 'https://www.bilibili.com/' } });
+        ? "https://api.bilibili.com/x/web-interface/view?bvid=" + encodeURIComponent(bvid)
+        : "https://api.bilibili.com/x/web-interface/view?aid=" + encodeURIComponent(aid);
+      const resp = await fetchFn(url, {
+        headers: { "User-Agent": USER_AGENT, Referer: "https://www.bilibili.com/" },
+      });
       const json = await resp.json();
       if (json && json.code === 0 && json.data) {
         const data = json.data;
@@ -180,35 +220,42 @@ async function getVideoInfo(ref, opts = {}) {
       }
       if (json && json.code === -404) {
         // 尚未索引，等待重试
-        lastErr = new Error('稿件尚未索引 (code=-404)');
-        onLog('getVideoInfo 重试 ' + i + '/' + MAX + ' (-404) ...');
+        lastErr = new Error("稿件尚未索引 (code=-404)");
+        onLog("getVideoInfo 重试 " + i + "/" + MAX + " (-404) ...");
         if (i < MAX) await deps.sleep(wait);
         continue;
       }
       // 定时发布：稿件已过审但未到发布时间，公开接口查不到；不是 -404 索引延迟，
       // 直接报「定时发布待发布」，不再空转重试。
       if (json && json.code === 62003) {
-        const err = new Error('稿件已通过审核，等待定时发布 (code=62003)');
+        const err = new Error("稿件已通过审核，等待定时发布 (code=62003)");
         err.code = 62003;
         err.scheduled = true;
         throw err;
       }
       // 其他非 0 码：立即失败（如 -101 未登录 / -404 之外的错误）
-      throw new Error('getVideoInfo 返回 code=' + (json && json.code) + ' msg=' + (json && json.message));
+      throw new Error(
+        "getVideoInfo 返回 code=" + (json && json.code) + " msg=" + (json && json.message),
+      );
     } catch (e) {
       // 仅传输/网络类错误可重试（索引延迟/网络抖动）；
       // 非 -404 的业务错误码已在 try 中 throw 并应在此立即失败（不重试）。
-      const retryable = /ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network|socket|fetch failed|timeout/i.test(String(e.message));
+      const retryable =
+        /ECONNRESET|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|network|socket|fetch failed|timeout/i.test(
+          String(e.message),
+        );
       lastErr = e;
       if (i < MAX && retryable) {
-        onLog('getVideoInfo 重试 ' + i + '/' + MAX + ' (' + e.message + ') ...');
+        onLog("getVideoInfo 重试 " + i + "/" + MAX + " (" + e.message + ") ...");
         await deps.sleep(wait);
         continue;
       }
       break;
     }
   }
-  const finalErr = new Error('getVideoInfo 重试耗尽(' + MAX + '/指数退避 5s→30s)：' + (lastErr && lastErr.message));
+  const finalErr = new Error(
+    "getVideoInfo 重试耗尽(" + MAX + "/指数退避 5s→30s)：" + (lastErr && lastErr.message),
+  );
   // 保留业务错误特征（如 62003 定时发布待发布），供调用方区分「定时」与「真失败」。
   if (lastErr && lastErr.code) finalErr.code = lastErr.code;
   if (lastErr && lastErr.scheduled) finalErr.scheduled = true;
@@ -234,32 +281,32 @@ async function getCreativeArchive(vid, cookieHeader, opts = {}) {
   const bvid = vid && vid.bvid;
   const aid = vid && vid.aid;
   if (!bvid && !aid) {
-    throw new Error('archive/view 缺少 bvid/aid，无法查询稿件信息');
+    throw new Error("archive/view 缺少 bvid/aid，无法查询稿件信息");
   }
-  const q = bvid
-    ? 'bvid=' + encodeURIComponent(bvid)
-    : 'aid=' + encodeURIComponent(aid);
-  const url = 'https://member.bilibili.com/x/vupre/web/archive/view?' + q + '&t=' + Date.now();
+  const q = bvid ? "bvid=" + encodeURIComponent(bvid) : "aid=" + encodeURIComponent(aid);
+  const url = "https://member.bilibili.com/x/vupre/web/archive/view?" + q + "&t=" + Date.now();
   let resp;
   try {
     resp = await fetchFn(url, {
       headers: {
-        'Cookie': cookieHeader,
-        'Referer': 'https://member.bilibili.com/',
-        'User-Agent': USER_AGENT,
+        Cookie: cookieHeader,
+        Referer: "https://member.bilibili.com/",
+        "User-Agent": USER_AGENT,
       },
     });
   } catch (e) {
-    throw new Error('archive/view 请求失败: ' + e.message);
+    throw new Error("archive/view 请求失败: " + e.message);
   }
   let json;
   try {
     json = await resp.json();
   } catch (e) {
-    throw new Error('archive/view 响应解析失败: ' + e.message);
+    throw new Error("archive/view 响应解析失败: " + e.message);
   }
   if (!json || json.code !== 0 || !json.data) {
-    throw new Error('archive/view 返回 code=' + (json && json.code) + ' msg=' + (json && json.message));
+    throw new Error(
+      "archive/view 返回 code=" + (json && json.code) + " msg=" + (json && json.message),
+    );
   }
   const archive = json.data.archive || {};
   const videos = Array.isArray(json.data.videos) ? json.data.videos : [];
@@ -267,7 +314,7 @@ async function getCreativeArchive(vid, cookieHeader, opts = {}) {
   return {
     aid: Number(archive.aid) || Number(aid) || 0,
     cid: Number(first.cid) || 0,
-    title: archive.title || first.title || '',
+    title: archive.title || first.title || "",
   };
 }
 

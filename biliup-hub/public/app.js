@@ -1020,11 +1020,30 @@
         toast("定时时间无效", "err");
         return;
       }
+      if (dtime <= Math.floor(Date.now() / 1000) + 60) {
+        const m = "定时发布时间需晚于当前时间（至少 1 分钟后）";
+        logLine(m, "err");
+        toast(m, "err");
+        return;
+      }
     }
     const tags = ($("tagsInput").value || "")
       .split(/[，,]/)
       .map((s) => s.trim())
       .filter(Boolean);
+    if (tags.length > 10) {
+      const m = "标签最多 10 个（当前 " + tags.length + " 个）";
+      logLine(m, "err");
+      toast(m, "err");
+      return;
+    }
+    const longTag = tags.find((t) => t.length > 20);
+    if (longTag) {
+      const m = "单个标签最多 20 字：" + longTag;
+      logLine(m, "err");
+      toast(m, "err");
+      return;
+    }
     const payload = {
       videoPath: selectedVideo,
       title: titleVal,
@@ -1035,6 +1054,11 @@
 
     running = true;
     setExec($("submitBtn"), true);
+    const stopBtn = $("stopUploadBtn");
+    if (stopBtn) {
+      stopBtn.hidden = false;
+      stopBtn.disabled = false;
+    }
     // #4 展示日志面板（含标题与空状态）
     $("logWrap").style.display = "";
     $("logBox").innerHTML = "";
@@ -1066,8 +1090,71 @@
     } finally {
       running = false;
       setExec($("submitBtn"), false);
+      if (stopBtn) stopBtn.hidden = true;
       refreshHealth(); // 投稿结束后刷新状态为就绪
+      refreshUploadStatus();
     }
+  }
+
+  // 上传状态：刷新/断线后仍能看到后台任务并停止
+  async function refreshUploadStatus() {
+    const stopBtn = $("stopUploadBtn");
+    try {
+      const j = await (await fetch("/api/upload/status")).json();
+      if (j && j.busy) {
+        const hint = $("submitHint");
+        if (hint) {
+          hint.textContent =
+            "后台有投稿任务正在执行：" +
+            (j.title || "未命名") +
+            " · " +
+            (j.stage || "处理中") +
+            " · " +
+            (j.elapsedSec || 0) +
+            "s";
+        }
+        if (stopBtn) {
+          stopBtn.hidden = false;
+          stopBtn.disabled = false;
+        }
+        const sb = $("submitBtn");
+        if (sb && !running) sb.disabled = true;
+        setTimeout(refreshUploadStatus, 3000);
+      } else {
+        const hint = $("submitHint");
+        if (hint) hint.textContent = "选择视频后点击投稿（发布前会二次确认模式）";
+        if (stopBtn) stopBtn.hidden = true;
+        if (!running) {
+          const sb = $("submitBtn");
+          if (sb) sb.disabled = false;
+        }
+      }
+    } catch (_) {
+      /* 忽略状态查询失败 */
+    }
+  }
+
+  const stopUploadBtnEl = $("stopUploadBtn");
+  if (stopUploadBtnEl) {
+    stopUploadBtnEl.addEventListener("click", async () => {
+      stopUploadBtnEl.disabled = true;
+      try {
+        const r = await fetch("/api/upload/cancel", { method: "POST" });
+        const j = await r.json().catch(() => ({}));
+        if (j && j.ok) {
+          logLine("已请求停止投稿，等待进程退出…", "stage");
+          toast("已请求停止投稿", "ok");
+        } else {
+          toast((j && j.error) || "当前没有正在上传的任务", "err");
+        }
+      } catch (e) {
+        toast("停止失败：" + e.message, "err");
+      } finally {
+        setTimeout(() => {
+          stopUploadBtnEl.disabled = false;
+        }, 1500);
+      }
+    });
   }
 
   async function consumeSSE(resp) {
@@ -1739,6 +1826,7 @@
   refreshSeasons().finally(() => loadConfig()); // chain: 先 populate 下拉再 apply cfg 避免 race
   refreshAccount();
   refreshHealth();
+  refreshUploadStatus(); // 页面刷新/重开后接管后台投稿状态（可停止）
   setInterval(refreshHealth, 20000); // 每 20s 探活
   if (typeof window.bindStatusCursor === "function") window.bindStatusCursor(document);
 

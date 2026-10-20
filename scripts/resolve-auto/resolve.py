@@ -8,6 +8,7 @@ import argparse
 import ctypes
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -308,7 +309,56 @@ def dump_timeline(tl):
                     ttype[0].upper(), t, str(c.GetName())[:32], c.GetStart(), c.GetDuration()))
 
 
-def build_template_with_tail(template_path, work_dir, cover_frames, tail_frames):
+def find_node_bin():
+    """找 Node（用于 zstd 解/压 Rich 文本 blob）：RESOLVE_NODE > 安装包内置 node > PATH。
+    内置 node 版本固定（22.23+，带 zlib.zstd*），优先用它，避免系统 node 太老不支持 zstd。"""
+    env = os.environ.get('RESOLVE_NODE')
+    if env and os.path.isfile(env):
+        return env
+    res = os.environ.get('TOOLSHUB_RESOURCES_DIR')
+    if res:
+        p = os.path.join(res, 'node', 'node.exe')
+        if os.path.isfile(p):
+            return p
+    found = shutil.which('node')
+    if found:
+        return found
+    return None
+
+
+def patch_rich_text_hex(hex_str, old_text, new_text, work_dir):
+    """调用 richtext_blob.js 替换 Rich 文本内容（保持字体/样式/长度字段一致）。"""
+    node = find_node_bin()
+    helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'richtext_blob.js')
+    if not node or not os.path.isfile(helper):
+        return None
+    os.makedirs(work_dir, exist_ok=True)
+    in_f = os.path.join(work_dir, 'rt_edit_in.hex')
+    out_f = os.path.join(work_dir, 'rt_edit_out.hex')
+    with open(in_f, 'w', encoding='ascii') as f:
+        f.write(hex_str)
+    try:
+        if os.path.exists(out_f):
+            os.remove(out_f)
+        r = subprocess.run([node, helper, in_f, out_f, old_text, new_text],
+                           capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=60)
+        if r.returncode == 0 and os.path.isfile(out_f):
+            with open(out_f, 'r', encoding='ascii') as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return None
+
+
+def game_title_from_folder(folder):
+    """素材目录名 → 游戏名（去掉【游戏NNN】前缀）。"""
+    name = os.path.basename(os.path.normpath(folder))
+    name = re.sub(r'^【游戏\d+】', '', name).strip()
+    return name or os.path.basename(os.path.normpath(folder))
+
+
+def build_template_with_tail(template_path, work_dir, cover_frames, tail_frames, game_name=''):
     """导入前预设模板里的文本时长（DRT 本质是 zip + 明文 XML）。
 
     - 开场文本（Start = 模板起点）：时长 = cover_frames
@@ -352,6 +402,26 @@ def build_template_with_tail(template_path, work_dir, cover_frames, tail_frames)
                                           '<Duration>%d</Duration>' % tail_frames, block, count=1)
                         return block
                     text = re.sub(r'<Sm2TiGenerator[\s\S]*?</Sm2TiGenerator>', _rewrite_gen, text)
+                    # 开场文本占位「游戏名」→ 文件夹里的游戏名（含 Rich 文本 blob 改写）
+                    if game_name and game_name != '游戏名':
+                        replaced = 0
+                        def _patch_name(m):
+                            nonlocal replaced
+                            block = m.group(0)
+                            em = re.search(r'<EffectFiltersBA>([0-9a-fA-F]+)</EffectFiltersBA>', block)
+                            if not em:
+                                return block
+                            new_hex = patch_rich_text_hex(em.group(1), '游戏名', game_name, work_dir)
+                            if new_hex:
+                                replaced += 1
+                                return block.replace(em.group(0),
+                                                     '<EffectFiltersBA>%s</EffectFiltersBA>' % new_hex)
+                            return block
+                        text = re.sub(r'<Sm2TiGenerator[\s\S]*?</Sm2TiGenerator>', _patch_name, text)
+                        if replaced:
+                            print('[timeline] 已替换开场文本占位「游戏名」→「%s」' % game_name)
+                        else:
+                            print('[timeline] 警告：未找到可替换的「游戏名」占位（保持原样）')
 
                     def _rewrite_transition(m):
                         block = m.group(0)
@@ -441,7 +511,8 @@ def cmd_setup(args):
         tail_frames = max(1, int(round((trailer_frames - 30) * tl_fps / src_fps)))
         print('[timeline] 预告片 %d 帧 @%.3gfps → 时间线片段 %d 帧 @%.3gfps（源 30..%d）'
               % (trailer_frames, src_fps, tail_frames, tl_fps, trailer_frames))
-        preset = build_template_with_tail(args.template, args.work_dir, cover_frames, tail_frames)
+        preset = build_template_with_tail(args.template, args.work_dir, cover_frames, tail_frames,
+                                          game_title_from_folder(folder))
         tl = mp.ImportTimelineFromFile(preset or args.template)
         if not tl and preset:
             print('[timeline] 警告：预设模板导入失败，改用原模板')

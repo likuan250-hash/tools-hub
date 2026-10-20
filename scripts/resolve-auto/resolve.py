@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import time
+import zipfile
 
 VIDEO_EXTS = ('.mp4', '.mkv', '.webm', '.mov')
 COVER_EXTS = ('.jpg', '.jpeg', '.png', '.webp')
@@ -285,6 +286,78 @@ def dump_timeline(tl):
                     ttype[0].upper(), t, str(c.GetName())[:32], c.GetStart(), c.GetDuration()))
 
 
+def build_template_with_tail(template_path, work_dir, cover_frames, tail_frames):
+    """导入前预设模板里的文本时长（DRT 本质是 zip + 明文 XML）。
+
+    - 开场文本（Start = 模板起点）：时长 = cover_frames
+    - 尾部文本（Start > 模板起点，V2[3]/V3[3]）：Start = 起点+cover_frames，时长 = tail_frames（= 视频片段帧数）
+    - 平滑剪接转场：起点跟随 cover_frames
+    返回生成的新 DRT 路径；失败返回 None（调用方回退原模板）。
+    """
+    try:
+        if not os.path.isfile(template_path):
+            return None
+        os.makedirs(work_dir, exist_ok=True)
+        out_path = os.path.join(work_dir, 'Timeline_preset.drt')
+        with zipfile.ZipFile(template_path, 'r') as zin:
+            entries = [(info, zin.read(info.filename)) for info in zin.infolist()]
+        out_entries = []
+        changed = False
+        for info, data in entries:
+            if info.filename.lower().endswith('.xml') and b'Sm2TiGenerator' in data:
+                text = data.decode('utf-8')
+                gen_blocks = re.findall(r'<Sm2TiGenerator[\s\S]*?</Sm2TiGenerator>', text)
+                starts = []
+                for block in gen_blocks:
+                    m = re.search(r'<Start>(\d+)</Start>', block)
+                    if m:
+                        starts.append(int(m.group(1)))
+                if starts:
+                    template_start = min(starts)
+                    def _rewrite_gen(m):
+                        block = m.group(0)
+                        sm = re.search(r'<Start>(\d+)</Start>', block)
+                        if not sm:
+                            return block
+                        start = int(sm.group(1))
+                        if start == template_start:
+                            return re.sub(r'<Duration>\d+</Duration>',
+                                          '<Duration>%d</Duration>' % cover_frames, block, count=1)
+                        if start > template_start:
+                            block = re.sub(r'<Start>\d+</Start>',
+                                           '<Start>%d</Start>' % (template_start + cover_frames), block, count=1)
+                            return re.sub(r'<Duration>\d+</Duration>',
+                                          '<Duration>%d</Duration>' % tail_frames, block, count=1)
+                        return block
+                    text = re.sub(r'<Sm2TiGenerator[\s\S]*?</Sm2TiGenerator>', _rewrite_gen, text)
+
+                    def _rewrite_transition(m):
+                        block = m.group(0)
+                        sm = re.search(r'<Start>(\d+)</Start>', block)
+                        if sm and int(sm.group(1)) == template_start + 180:
+                            return re.sub(r'<Start>\d+</Start>',
+                                          '<Start>%d</Start>' % (template_start + cover_frames), block, count=1)
+                        return block
+                    text = re.sub(r'<Sm2TiTransition[\s\S]*?</Sm2TiTransition>', _rewrite_transition, text)
+                    data = text.encode('utf-8')
+                    changed = True
+            out_entries.append((info, data))
+        if not changed:
+            return None
+        with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for info, data in out_entries:
+                zi = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+                zi.compress_type = info.compress_type or zipfile.ZIP_DEFLATED
+                zi.external_attr = info.external_attr
+                zout.writestr(zi, data)
+        print('[timeline] 已生成预设模板：尾部文本 %d 帧、开场文本 %d 帧 → %s'
+              % (tail_frames, cover_frames, out_path))
+        return out_path
+    except Exception as e:
+        print('[timeline] 警告：模板预设失败（将使用原模板）：' + str(e))
+        return None
+
+
 def cmd_setup(args):
     folder = os.path.abspath(args.dir)
     if not os.path.isdir(folder):
@@ -327,10 +400,21 @@ def cmd_setup(args):
         raise RuntimeError('素材导入媒体池失败')
     print('[素材] 已就绪（封面原图 + 预告片）')
 
+    cover_frames = int(os.environ.get('RESOLVE_COVER_FRAMES', '180') or 180)
+    trailer_frames = None
+    tail_frames = None
     tl = find_timeline(proj, 'Timeline 1')
     if tl is None:
-        # 步骤 3：从 DRT 导入时间线模板（保留文本位置/样式）
-        tl = mp.ImportTimelineFromFile(args.template)
+        # 步骤 3：导入前先量视频长度，把模板 V2/V3 尾部文本预设成同样长度（免手动拉伸）
+        trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
+        tail_frames = max(1, trailer_frames - 30)  # 预告片从源第 30 帧起放，左侧留 30 帧手柄
+        print('[timeline] 预告片 %d 帧 → V1 片段 %d 帧（源 30..%d）'
+              % (trailer_frames, tail_frames, trailer_frames))
+        preset = build_template_with_tail(args.template, args.work_dir, cover_frames, tail_frames)
+        tl = mp.ImportTimelineFromFile(preset or args.template)
+        if not tl and preset:
+            print('[timeline] 警告：预设模板导入失败，改用原模板')
+            tl = mp.ImportTimelineFromFile(args.template)
         if not tl:
             raise RuntimeError('时间线模板导入失败：' + args.template)
         print('[timeline] 已导入模板：' + str(tl.GetName()))
@@ -346,7 +430,6 @@ def cmd_setup(args):
         # 尾部文本从 216180 开始；所以默认也是 180 帧。需要 5s 封面时用 RESOLVE_COVER_FRAMES=300 覆盖。
         # 封面是静帧天然带无限右手柄；预告片从源第 30 帧起放留左手柄，平滑剪接转场才拖得上去。
         # recordFrame 用时间线起始帧（如 216000=01:00:00:00），否则会落到播放头/错误位置。
-        cover_frames = int(os.environ.get('RESOLVE_COVER_FRAMES', '180') or 180)
         # ⚠️ 静止图有自己的帧率（Resolve 一般是 24fps），AppendToTimeline 的 start/endFrame
         # 是「源帧」，会按 tl_fps/still_fps 换算成时间线帧：
         #   以前直接传 endFrame=180 → 179×(60/24)=447.5 → 实测 447 帧，这就是 180 变 447 的原因。
@@ -391,7 +474,10 @@ def cmd_setup(args):
             if abs(cover_actual - cover_frames) > 3:
                 print('[timeline] 警告：封面实际时长与目标差 %d 帧，请检查静止图/项目帧率'
                       % round(cover_actual - cover_frames))
-        trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
+        if trailer_frames is None:
+            trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
+            tail_frames = max(1, trailer_frames - 30)
+            print('[timeline] 警告：时间线已存在（模板未重新导入），尾部文本需手动拉伸')
         trailer_ok = mp.AppendToTimeline([{
             'mediaPoolItem': trailer_item,
             'startFrame': 30,

@@ -347,18 +347,50 @@ def cmd_setup(args):
         # 封面是静帧天然带无限右手柄；预告片从源第 30 帧起放留左手柄，平滑剪接转场才拖得上去。
         # recordFrame 用时间线起始帧（如 216000=01:00:00:00），否则会落到播放头/错误位置。
         cover_frames = int(os.environ.get('RESOLVE_COVER_FRAMES', '180') or 180)
+        # ⚠️ 静止图有自己的帧率（Resolve 一般是 24fps），AppendToTimeline 的 start/endFrame
+        # 是「源帧」，会按 tl_fps/still_fps 换算成时间线帧：
+        #   以前直接传 endFrame=180 → 179×(60/24)=447.5 → 实测 447 帧，这就是 180 变 447 的原因。
+        def _fps(v, default):
+            try:
+                return float(str(v).strip().split()[0])
+            except (TypeError, ValueError):
+                return default
+        try:
+            tl_fps_raw = proj.GetSetting('timelineFrameRate')
+        except Exception:
+            tl_fps_raw = 60.0
+        tl_fps = _fps(tl_fps_raw, 60.0)
+        try:
+            still_fps_raw = cover_item.GetClipProperty('FPS')
+        except Exception:
+            still_fps_raw = None
+        still_fps = _fps(still_fps_raw, tl_fps)
+        if still_fps <= 0:
+            still_fps = tl_fps
+        cover_src_start = 1
+        still_span = max(1, int(round(cover_frames * still_fps / tl_fps)))
+        cover_src_end = cover_src_start + still_span
+        print('[timeline] 封面入轨：目标 %d 帧 @%.3gfps，静止图 %.3gfps → 源帧 %d..%d'
+              % (cover_frames, tl_fps, still_fps, cover_src_start, cover_src_end))
         cover_ok = mp.AppendToTimeline([{
             'mediaPoolItem': cover_item,
-            'startFrame': 1,
-            'endFrame': cover_frames,
+            'startFrame': cover_src_start,
+            'endFrame': cover_src_end,
             'trackIndex': 1,
             'recordFrame': tl.GetStartFrame(),
         }])
         cover_end = tl.GetStartFrame() + cover_frames
+        cover_actual = None
         for c in tl.GetItemListInTrack('video', 1):
             if str(c.GetName() or '').startswith('封面'):
                 cover_end = c.GetEnd()
+                cover_actual = c.GetDuration()
                 break
+        if cover_actual is not None:
+            print('[timeline] 封面实际时长：%d 帧（目标 %d 帧）' % (round(cover_actual), cover_frames))
+            if abs(cover_actual - cover_frames) > 3:
+                print('[timeline] 警告：封面实际时长与目标差 %d 帧，请检查静止图/项目帧率'
+                      % round(cover_actual - cover_frames))
         trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
         trailer_ok = mp.AppendToTimeline([{
             'mediaPoolItem': trailer_item,

@@ -20,6 +20,10 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Micro
 h1 { font-size: 20px; margin: 0 0 4px; }
 .sub { font-size: 12px; color: var(--dim); font-weight: normal; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 14px; }
+/* 本页是整块大面板：漫画/GameBoy 皮肤给 .card 加了 hover 位移，鼠标一进整块就会浮动。
+   与其它工具保持一致，这里禁用位移（颜色/阴影反馈保留）。 */
+html .card:hover,
+html .card:active { transform: none !important; }
 .card h3 { margin: 0 0 10px; font-size: 14px; }
 .exec-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin: 0 0 10px; opacity: .9; }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

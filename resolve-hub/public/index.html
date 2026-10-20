@@ -73,6 +73,21 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
 .out-path-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--dim); }
 .out-path-row code { background: var(--log-bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; word-break: break-all; color: var(--text); }
 .out-path-row[hidden] { display: none; }
+/* 自检问题确认弹窗 */
+.modal-mask {
+  position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .55);
+}
+.modal-mask[hidden] { display: none; }
+.modal-card {
+  width: min(620px, calc(100vw - 48px)); max-height: 70vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .45);
+}
+.modal-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.modal-msg { font-size: 13px; color: var(--dim); margin-bottom: 10px; }
+.modal-list { margin: 0 0 14px; padding-left: 20px; font-size: 13px; line-height: 1.8; color: var(--text); }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 /* 输出文件名：小标题占一行 + 输入框左对齐占一行 */
 .out-field { margin: 16px 0 6px; }
 .out-title { font-size: 13px; font-weight: 700; color: var(--dim); margin-bottom: 8px; }
@@ -139,6 +154,17 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
       <button id="openFolderBtn" type="button">打开所在文件夹</button>
     </div>
   </section>
+</div>
+<div class="modal-mask" id="selfcheckMask" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="selfcheckTitle">
+    <div class="modal-title" id="selfcheckTitle">渲染前自检发现问题</div>
+    <div class="modal-msg">以下内容未通过自检，现在渲染可能不符合标准流程。你要返回修改，还是仍然渲染？</div>
+    <ul class="modal-list" id="selfcheckList"></ul>
+    <div class="modal-actions">
+      <button id="scBack" type="button">返回修改</button>
+      <button id="scContinue" class="primary" type="button">仍然渲染</button>
+    </div>
+  </div>
 </div>
 <script src="/app.js"></script>
 <script src="cosmic-skin.js"></script>

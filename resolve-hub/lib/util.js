@@ -90,6 +90,7 @@ function stripExitMarker(text) {
 }
 
 module.exports = {
+  EXIT_MARKER,
   DEFAULT_SUFFIX,
   sanitizeProjectName,
   sanitizeOutName,

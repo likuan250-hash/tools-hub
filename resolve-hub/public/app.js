@@ -23,6 +23,10 @@
   const outPathRow = $("outPathRow");
   const outPath = $("outPath");
   const openFolderBtn = $("openFolderBtn");
+  const selfcheckMask = $("selfcheckMask");
+  const selfcheckList = $("selfcheckList");
+  const scBack = $("scBack");
+  const scContinue = $("scContinue");
 
   const STATE_KEY = "resolve-hub-state-v1";
   const DEFAULT_SUFFIX = "官方中文+全DLC+免安装硬盘版 免费学习版下载";
@@ -111,6 +115,7 @@
     for (const raw of lines) {
       if (!raw.trim()) continue;
       if (new RegExp("^" + EXIT_MARKER + "=\\d+$").test(raw.trim())) continue; // 机器标记不进日志
+      if (/^__SELFCHECK__=/.test(raw.trim())) continue; // 自检问题 JSON 进弹窗，不进日志
       const isErr = /\[错误\]|Traceback/.test(raw);
       const isWarn = !isErr && /警告|可忽略|缺失/.test(raw);
       const isOk = !isErr && !isWarn && /完成|成功|✓/.test(raw);
@@ -152,6 +157,18 @@
     execSteps.querySelectorAll(".step-item.info").forEach((el) => {
       el.classList.remove("info");
       el.classList.add(cls);
+    });
+  }
+
+  function finishLogNeutral(title, detail) {
+    flushLines();
+    execStep.classList.remove("info", "ok", "err", "warn");
+    execStep.classList.add("warn");
+    execStepName.textContent = title || "等待确认";
+    execStepDetail.textContent = detail || "";
+    execSteps.querySelectorAll(".step-item.info").forEach((el) => {
+      el.classList.remove("info");
+      el.classList.add("warn");
     });
   }
 
@@ -322,6 +339,12 @@
     }
     exitCode = parseExitMarker(output);
     output = stripExitMarker(output);
+    if (exitCode === 3) {
+      running = false;
+      setButtons();
+      finishLogNeutral("等待确认：自检发现问题", "请选择「返回修改」或「仍然渲染」。");
+      return { ok: false, exitCode, output };
+    }
     const ok =
       exitCode !== null
         ? exitCode === 0 && !cancelRequested
@@ -351,18 +374,49 @@
     applyPhase();
   };
 
-  finishBtn.onclick = async () => {
+  function showSelfcheck(output) {
+    let issues = [];
+    const m = String(output).match(/__SELFCHECK__=(\[[^\n]*\])/);
+    if (m) {
+      try {
+        issues = JSON.parse(m[1]);
+      } catch (e) {
+        issues = [];
+      }
+    }
+    if (selfcheckList) {
+      selfcheckList.innerHTML = (issues.length ? issues : ["自检未通过"])
+        .map((s) => "<li>" + esc(s) + "</li>")
+        .join("");
+    }
+    if (selfcheckMask) selfcheckMask.hidden = false;
+    doneEl.textContent = "渲染前自检发现问题：请选择「返回修改」或「仍然渲染」。";
+  }
+
+  async function runRender(force) {
     if (!current || running) return;
     const out = sanitizeOutName(outInput.value, current.name);
     outInput.value = out;
     state.out = out;
     saveState();
-    beginRun("渲染导出（8-9）", "正在加载导出预设并渲染…");
+    beginRun(
+      force ? "渲染导出（8-9，已跳过自检）" : "渲染导出（8-9）",
+      force ? "正在加载导出预设并渲染…" : "先做渲染前自检，通过后开始渲染…",
+    );
     const res = await streamRun("/api/render", {
       project: current.name,
       out,
       target: current.path,
+      force: !!force,
     });
+    if (res.exitCode === 3) {
+      // 自检有问题：停下来让用户选择，而不是直接开渲染
+      state.phase = "setup_done";
+      saveState();
+      showSelfcheck(res.output);
+      applyPhase();
+      return;
+    }
     const m = res.output.match(/\[render\] 完成：(.+?)（\d+ bytes）/);
     if (res.ok && m) {
       state.phase = "done";
@@ -383,7 +437,23 @@
       doneEl.textContent = cancelRequested ? "已停止渲染。" : "渲染失败，请修正后重试。";
     }
     applyPhase();
-  };
+  }
+
+  finishBtn.onclick = () => runRender(false);
+
+  if (scBack) {
+    scBack.onclick = () => {
+      if (selfcheckMask) selfcheckMask.hidden = true;
+      doneEl.textContent = "已返回修改：完成手动步骤后再点「确认好了，继续导出」。";
+      applyPhase();
+    };
+  }
+  if (scContinue) {
+    scContinue.onclick = () => {
+      if (selfcheckMask) selfcheckMask.hidden = true;
+      runRender(true);
+    };
+  }
 
   if (cancelBtn) {
     cancelBtn.onclick = async () => {

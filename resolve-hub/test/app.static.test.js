@@ -37,6 +37,15 @@ test("页面包含停止按钮、输出路径与打开文件夹按钮，且不�
   assert.ok(!/^\s*select\s*\{/m.test(html), "select 样式应已移除");
 });
 
+test("渲染前自检有问题必须停下来问：exitCode 3 + 返回修改/仍然渲染", () => {
+  assert.match(app, /__SELFCHECK__/);
+  assert.match(app, /exitCode === 3/);
+  assert.match(app, /force: !!force/);
+  assert.match(html, /id="selfcheckMask"/);
+  assert.match(html, /id="scBack"/);
+  assert.match(html, /id="scContinue"/);
+});
+
 test("VERSION 与 package.json 版本一致", () => {
   const pkg = require("../package.json");
   const ver = fs.readFileSync(path.join(__dirname, "..", "VERSION"), "utf8").trim();

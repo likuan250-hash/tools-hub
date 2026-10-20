@@ -46,6 +46,7 @@ test("findRenderedFile：能认 DaVinci 的 名字 (1).mp4，并取最新", () =
 });
 
 test("退出码标记：解析最后一个，并从日志里剥离", () => {
+  assert.strictEqual(util.EXIT_MARKER, "__RESOLVE_EXIT__");
   const text = "日志\n__RESOLVE_EXIT__=1\n更多\n__RESOLVE_EXIT__=0\n";
   assert.strictEqual(util.parseExitMarker(text), 0);
   assert.strictEqual(util.stripExitMarker(text).includes("__RESOLVE_EXIT__"), false);

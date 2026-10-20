@@ -6,6 +6,7 @@
 """
 import argparse
 import ctypes
+import json
 import os
 import re
 import shutil
@@ -208,8 +209,12 @@ def clean_work_dir(work_dir, keep_days=30):
 
 
 def self_check(tl):
-    """渲染前自检（仅提示、不阻塞）：V1 结构 / 平滑剪接转场 / 尾部文本对齐。"""
+    """渲染前自检：V1 结构 / 平滑剪接转场 / 尾部文本对齐；返回问题列表（由 render 决定是否暂停）。"""
     print('--- 渲染前自检（仅供参考，不阻塞） ---')
+    issues = []
+    def _issue(msg):
+        issues.append(msg)
+        print('[自检] ' + msg)
     start = tl.GetStartFrame()
     v1 = tl.GetItemListInTrack('video', 1) or []
     cover = trailer = trans = None
@@ -223,25 +228,26 @@ def self_check(tl):
         else:
             trailer = c
     if not cover:
-        print('[自检] V1 封面：缺失')
+        _issue('V1 封面：缺失')
     if not trailer:
-        print('[自检] V1 预告片：缺失')
+        _issue('V1 预告片：缺失')
     if not trans:
-        print('[自检] V1 平滑剪接转场：缺失（请完成手动步骤 6）')
+        _issue('V1 平滑剪接转场：缺失（请完成手动步骤 6）')
     if trailer:
         vdur = trailer.GetDuration()
         for t in (2, 3):
             items = tl.GetItemListInTrack('video', t) or []
             texts = [c for c in items if str(c.GetName() or '') in ('文本', 'Rich')]
             if not texts:
-                print('[自检] V%d：未找到文本' % t)
+                _issue('V%d：未找到文本' % t)
                 continue
             tail = texts[-1]
             diff = tail.GetDuration() - vdur
             if abs(diff) > 60:
-                print('[自检] V%d 尾部文本时长 %d ≠ 视频 %d（差 %d 帧，请完成手动步骤 5）'
-                      % (t, tail.GetDuration(), vdur, diff))
+                _issue('V%d 尾部文本时长 %d ≠ 视频 %d（差 %d 帧，请完成手动步骤 5）'
+                       % (t, tail.GetDuration(), vdur, diff))
     print('--- 自检结束 ---')
+    return issues
 
 
 def ensure_project(pm, name, create=True):
@@ -594,6 +600,11 @@ def cmd_setup(args):
           '然后执行 render 子命令导出。')
 
 
+class SelfCheckPending(Exception):
+    """自检有问题、等待用户决定是否继续渲染（退出码 3）。"""
+    pass
+
+
 def cmd_render(args):
     resolve = connect(args.exe)
     pm = resolve.GetProjectManager()
@@ -605,7 +616,13 @@ def cmd_render(args):
         raise RuntimeError('项目里没有时间线')
     proj.SetCurrentTimeline(tl)
     print('[render] 时间线：' + str(tl.GetName()) + '（end=' + str(tl.GetEndFrame()) + '）')
-    self_check(tl)
+    issues = self_check(tl)
+    if issues and not getattr(args, 'force', False):
+        print('[render] 自检发现 %d 项问题，已暂停渲染：请返回修改，或选择「仍然渲染」' % len(issues))
+        print('__SELFCHECK__=' + json.dumps(issues, ensure_ascii=True))
+        raise SelfCheckPending()
+    if issues and getattr(args, 'force', False):
+        print('[render] 用户选择继续渲染：跳过 %d 项自检问题' % len(issues))
 
     # 步骤 8：导出预设 + 格式/编码 + 输出设置
     # 预设加载成功后格式/编码已就绪；失败时兜底手动设置（注意 GetRenderCodecs 返回
@@ -714,12 +731,15 @@ def main():
     p_render.add_argument('--mark-in', type=int, default=None, help='可选：只渲染该帧区间（验证用）')
     p_render.add_argument('--mark-out', type=int, default=None)
     p_render.add_argument('--timeout', type=int, default=1800, help='渲染等待上限秒数')
+    p_render.add_argument('--force', action='store_true', help='忽略自检问题直接渲染（用户确认后）')
     p_render.add_argument('--exe', default=os.environ.get('RESOLVE_EXE', r'D:\Program Files\Blackmagic Design\DaVinci Resolve\Resolve.exe'))
     p_render.set_defaults(func=cmd_render)
 
     args = parser.parse_args()
     try:
         args.func(args)
+    except SelfCheckPending:
+        sys.exit(3)
     except RuntimeError as e:
         print('[错误] ' + str(e))
         sys.exit(1)

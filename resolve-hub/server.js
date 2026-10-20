@@ -304,6 +304,7 @@ function createServer(options = {}) {
         const args = ["--project", project];
         const out = util.sanitizeOutName(body.out, project);
         args.push("--out", out);
+        if (body.force) args.push("--force");
         if (body.target) {
           const target = String(body.target).trim();
           if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {

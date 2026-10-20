@@ -24,7 +24,6 @@ h1 { font-size: 20px; margin: 0 0 4px; }
 .exec-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin: 0 0 10px; opacity: .9; }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 label { font-size: 13px; color: var(--dim); }
-select { flex: 1; min-width: 260px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); font-size: 14px; }
 input[type="text"] { flex: 1; min-width: 240px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); font-size: 14px; }
 button { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--log-bg); color: var(--text); cursor: pointer; font-size: 14px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
@@ -44,6 +43,7 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
 .step-item.info .step-icon { background: var(--accent); color: #fff; animation: step-pulse 1.6s ease-in-out infinite; }
 .step-item.ok .step-icon { background: var(--ok); color: #1b1f3b; }
 .step-item.err .step-icon { background: var(--err); color: #fff; }
+.step-item.warn .step-icon { background: #f0a63c; color: #241a05; }
 @keyframes step-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(77,132,255,.45); } 50% { box-shadow: 0 0 0 7px rgba(77,132,255,0); } }
 .step-body { flex: 1; min-width: 0; }
 .step-name { font-size: 13px; line-height: 1.5; }
@@ -64,6 +64,11 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
 .log-area .line { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
 .log-area .line.ok { color: var(--ok); }
 .log-area .line.err { color: var(--err); }
+.log-area .line.warn { color: #f0b95c; }
+/* 渲染输出路径 */
+.out-path-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--dim); }
+.out-path-row code { background: var(--log-bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; word-break: break-all; color: var(--text); }
+.out-path-row[hidden] { display: none; }
 /* 输出文件名：小标题占一行 + 输入框左对齐占一行 */
 .out-field { margin: 16px 0 6px; }
 .out-title { font-size: 13px; font-weight: 700; color: var(--dim); margin-bottom: 8px; }
@@ -89,6 +94,7 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
     <div class="info" id="folderInfo"></div>
     <div class="row" style="margin-top:10px">
       <button id="startBtn" class="primary" type="button" disabled>开始做视频（0-4）</button>
+      <button id="cancelBtn" type="button" hidden>停止</button>
       <span class="info" id="startState"></span>
     </div>
     <div class="info" style="margin-top:8px">说明：素材直接用原文件，不做转码/时长控制。推荐格式：封面 ≥1920×1080（JPG/PNG），预告片 H.264+AAC mp4（1080p60）；非 H.264 预告片会在日志中警告，Resolve 渲染会失败。</div>
@@ -124,6 +130,10 @@ pre { background: var(--log-bg); border: 1px solid var(--line); border-radius: 1
       <div class="log-area" id="execLog"></div>
     </details>
     <div id="done"></div>
+    <div class="out-path-row" id="outPathRow" hidden>
+      <span>输出：</span><code id="outPath"></code>
+      <button id="openFolderBtn" type="button">打开所在文件夹</button>
+    </div>
   </section>
 </div>
 <script src="/app.js"></script>

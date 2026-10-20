@@ -5,7 +5,8 @@
   "description": "达芬奇剪辑工具：选素材目录 → 自动建项目/导模板(0-4) → 手动5-7 → 一键渲染导出(8-9)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "license": "UNLICENSED"
 }

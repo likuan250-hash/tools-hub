@@ -14,6 +14,17 @@ import time
 
 VIDEO_EXTS = ('.mp4', '.mkv', '.webm', '.mov')
 COVER_EXTS = ('.jpg', '.jpeg', '.png', '.webp')
+ILLEGAL_NAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def sanitize_out_name(name, project):
+    """输出名消毒：去 .mp4 后缀 / 路径分隔符 / 非法字符；空则回退标准命名。"""
+    s = re.sub(r'\.mp4$', '', str(name or '').strip(), flags=re.I)
+    s = ILLEGAL_NAME_CHARS.sub('_', s)
+    s = re.sub(r'\s+', ' ', s).strip(' .')
+    if not s or s in ('.', '..'):
+        s = str(project) + ' 官方中文+全DLC+免安装硬盘版 免费学习版下载'
+    return s[:120].strip()
 
 
 def launch_resolve(resolve_exe):
@@ -142,7 +153,15 @@ def probe_frame_count(path, ffprobe):
     try:
         return int((r.stdout or '').strip())
     except ValueError:
-        raise RuntimeError('无法探测预告片帧数')
+        # 部分容器 -count_frames 拿不到，退回容器头的 nb_frames
+        r2 = subprocess.run(
+            [ffprobe, '-v', 'error', '-select_streams', 'v:0',
+             '-show_entries', 'stream=nb_frames', '-of', 'csv=p=0', path],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
+        try:
+            return int((r2.stdout or '').strip())
+        except ValueError:
+            raise RuntimeError('无法探测预告片帧数')
 
 
 def clean_work_dir(work_dir, keep_days=30):
@@ -322,17 +341,20 @@ def cmd_setup(args):
     if timeline_has_trailer(tl, trailer):
         print('[timeline] 预告片已在 V1，跳过追加（幂等）')
     else:
-        # 步骤 4：封面（原图静帧，先按 300 帧≈5s 入轨，用户手动调整）→ 预告片
+        # 步骤 4：封面（原图静帧）→ 预告片
+        # 封面时长必须和 DRT 模板的开场文本对齐：模板里 V2/V3 开场文本是 180 帧（3s），
+        # 尾部文本从 216180 开始；所以默认也是 180 帧。需要 5s 封面时用 RESOLVE_COVER_FRAMES=300 覆盖。
         # 封面是静帧天然带无限右手柄；预告片从源第 30 帧起放留左手柄，平滑剪接转场才拖得上去。
         # recordFrame 用时间线起始帧（如 216000=01:00:00:00），否则会落到播放头/错误位置。
+        cover_frames = int(os.environ.get('RESOLVE_COVER_FRAMES', '180') or 180)
         cover_ok = mp.AppendToTimeline([{
             'mediaPoolItem': cover_item,
             'startFrame': 1,
-            'endFrame': 300,
+            'endFrame': cover_frames,
             'trackIndex': 1,
             'recordFrame': tl.GetStartFrame(),
         }])
-        cover_end = tl.GetStartFrame() + 300
+        cover_end = tl.GetStartFrame() + cover_frames
         for c in tl.GetItemListInTrack('video', 1):
             if str(c.GetName() or '').startswith('封面'):
                 cover_end = c.GetEnd()
@@ -387,9 +409,9 @@ def cmd_render(args):
         if not proj.SetCurrentRenderFormatAndCodec('mp4', codec):
             raise RuntimeError('设置格式/编码失败')
         print('[render] 格式 mp4 / 编码 ' + codec)
-    # 命名规则（标准流程）：输出到素材目录，文件名 = 项目名 + 固定版本描述后缀
-    target = args.target or os.path.join(args.material_root, args.project)
-    out = args.out or (args.project + ' 官方中文+全DLC+免安装硬盘版 免费学习版下载')
+    # 命名规则（标准流程）：输出到所选素材目录，文件名 = 项目名 + 固定版本描述后缀
+    target = args.target or getattr(args, 'dir', None) or os.path.join(args.material_root, args.project)
+    out = sanitize_out_name(args.out or (args.project + ' 官方中文+全DLC+免安装硬盘版 免费学习版下载'), args.project)
     os.makedirs(target, exist_ok=True)
     # 显式 MarkIn/MarkOut 覆盖项目里残留的旧区间（SelectAllFrames 不一定会清掉旧标记）
     settings = {
@@ -406,8 +428,14 @@ def cmd_render(args):
         raise RuntimeError('设置渲染参数失败')
     print('[render] 输出目录：' + target + '，文件名：' + out)
 
-    # 步骤 9：清残留任务（同名旧任务会互相覆盖/失败阻塞）→ 加任务 → 渲染 → 轮询 → 验证
-    proj.DeleteAllRenderJobs()
+    # 步骤 9：只清掉「同名输出」的残留任务（以前 DeleteAllRenderJobs 会连用户其它排队任务一起删）
+    for job in (proj.GetRenderJobList() or []):
+        jname = os.path.basename(str(job.get('OutputFilename') or ''))
+        if jname and jname.lower().startswith(out.lower()):
+            try:
+                proj.DeleteRenderJob(job.get('JobId'))
+            except Exception:
+                pass
     if not proj.AddRenderJob():
         raise RuntimeError('添加渲染任务失败')
     jobs = proj.GetRenderJobList() or []
@@ -424,12 +452,27 @@ def cmd_render(args):
         status = str(st.get('JobStatus') or '')
         if status and ('失败' in status or 'failed' in status.lower() or 'error' in status.lower()):
             raise RuntimeError('渲染任务失败：' + status)
+    # DaVinci 遇到同名文件会输出「名字 (1).mp4」，所以按前缀找最新产物，不认死文件名
+    pat = re.compile(r'^' + re.escape(out) + r'( \(\d+\))?\.mp4$', re.I)
     expected = os.path.join(target, out + '.mp4')
+    found = None
     deadline = time.time() + 30
-    while not (os.path.exists(expected) and os.path.getsize(expected) > 0) and time.time() < deadline:
+    while time.time() < deadline:
+        candidates = []
+        try:
+            for name in os.listdir(target):
+                if pat.match(name):
+                    p = os.path.join(target, name)
+                    if os.path.isfile(p) and os.path.getsize(p) > 0:
+                        candidates.append(p)
+        except OSError:
+            pass
+        if candidates:
+            found = max(candidates, key=os.path.getmtime)
+            break
         time.sleep(2)
-    if os.path.exists(expected) and os.path.getsize(expected) > 0:
-        print('[render] 完成：' + expected + '（' + str(os.path.getsize(expected)) + ' bytes）')
+    if found:
+        print('[render] 完成：' + found + '（' + str(os.path.getsize(found)) + ' bytes）')
         return
     raise RuntimeError('渲染结束但未找到输出文件：' + expected)
 
@@ -454,6 +497,7 @@ def main():
     p_render.add_argument('--project', required=True, help='项目名')
     p_render.add_argument('--out', default=None, help='输出文件名（不含扩展名，默认按标准流程命名规则）')
     p_render.add_argument('--target', default=None, help='输出目录（默认 E:\\素材\\<项目名>）')
+    p_render.add_argument('--dir', default=None, help='素材目录（等同 --target，工具按用户所选目录传入）')
     p_render.add_argument('--preset', default=os.environ.get('RESOLVE_RENDER_PRESET', '导出预设'))
     p_render.add_argument('--material-root', default=os.environ.get('RESOLVE_MATERIAL_ROOT', 'E:\\素材'))
     p_render.add_argument('--mark-in', type=int, default=None, help='可选：只渲染该帧区间（验证用）')

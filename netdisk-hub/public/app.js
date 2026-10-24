@@ -163,23 +163,8 @@ async function loadAccounts() {
           else msg = d;
           diag = `<div class="meta" style="margin-top:6px;font-size:12px;opacity:.75;color:var(--err)">诊断: ${msg}</div>`;
         }
-        // 登录态剩余天数（授权时抓取的 cookie 真实过期时间；无则显示有效期未知，不误报）
-        let ttlHTML = "";
-        if (connected && a.expiresAt) {
-          const days = Math.ceil((a.expiresAt - Date.now()) / 86400000);
-          const prefix = a.expiresAtEstimated ? "约 " : "";
-          if (days <= 0) {
-            ttlHTML =
-              '<div><span class="ttl ttl-dead"><span class="p"></span>登录态已过期，请重新授权</span></div>';
-          } else if (days <= 7) {
-            ttlHTML = `<div><span class="ttl ttl-warn"><span class="p"></span>登录态剩余 ${prefix}${days} 天，请提前重新授权</span></div>`;
-          } else {
-            ttlHTML = `<div><span class="ttl ttl-ok"><span class="p"></span>登录态剩余 ${prefix}${days} 天</span></div>`;
-          }
-        } else if (connected) {
-          ttlHTML =
-            '<div><span class="ttl ttl-none"><span class="p"></span>登录态有效期未知</span></div>';
-        }
+        // 平台返回的 Token 到期时间不代表网页登录失效时间，登录卡片不显示时间。
+        const ttlHTML = "";
         // 未连接必须授权; 已连接但「登录态真失效(authBroken)」才提示重新授权。
         // 仅网络探测不通(net_error)不算故障,不弹重授权(重授权救不了网络,反而误导)。
         const showAuth = !connected || dead;
@@ -681,7 +666,7 @@ batchBtn.onclick = async () => {
   batchErr.textContent = "";
   batchResult.className = "batch-result";
   batchResult.innerHTML = "";
-  refreshUI();
+  // 不在提交前 refreshUI：它会重建复选框并恢复默认全选，覆盖用户刚取消的勾选。
   const jobs = getSelectedJobs();
   if (!jobs.length) {
     // 空点校验：仅保留轻量 toast 反馈，去掉红色边框横幅（v2.1.8：用户反馈此处不需要红色提示）
@@ -885,18 +870,28 @@ let dirCtx = { provider: "", stack: [], folders: [], loading: false };
 const ROOT_ID = { baidu: "/", quark: "0", xunlei: "" };
 
 async function openDirPicker(provider) {
+  const rootId = ROOT_ID[provider];
   dirCtx = {
     provider,
-    stack: [{ id: ROOT_ID[provider], name: "根目录" }],
+    stack: [{ id: rootId, name: "根目录" }],
     folders: [],
     loading: false,
   };
+  try {
+    const r = await fetch("/api/dirs/" + provider);
+    const d = r.ok ? await r.json() : null;
+    if (d && d.selected && d.selected.id !== rootId) {
+      dirCtx.stack.push({ id: d.selected.id, name: d.selected.name });
+    }
+  } catch (_) {
+    /* 读取已选目录失败不影响从根目录重新选择 */
+  }
   const modal = document.getElementById("dirModal");
   modal.classList.add("show");
   document.getElementById("dirModalTitle").textContent =
     "选择「" + (PROVIDER_NAME[provider] || provider) + "」转存目录";
   renderBreadcrumb();
-  await browseDir(ROOT_ID[provider]);
+  await browseDir(dirCtx.stack[dirCtx.stack.length - 1].id);
 }
 
 async function browseDir(parentId) {
@@ -970,7 +965,7 @@ function renderBreadcrumb() {
     .join("");
   const cur = dirCtx.stack[dirCtx.stack.length - 1];
   let target;
-  if (dirCtx.provider === "baidu") target = cur.id === "/" ? "/" : cur.name;
+  if (dirCtx.provider === "baidu") target = cur.id;
   else target = cur.id === "0" || cur.id === "" ? "(根目录)" : cur.name;
   document.getElementById("dirHint").textContent = "将转存到: " + target;
 }
@@ -1006,6 +1001,23 @@ async function confirmDir() {
     loadAccounts();
   } catch (e) {
     toast("保存失败: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function useDefaultDir() {
+  const btn = document.getElementById("dirUseDefault");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/dirs/" + dirCtx.provider, { method: "DELETE" });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || "恢复默认目录失败");
+    closeDirPicker();
+    await loadAccounts();
+    toast("已恢复默认目录：" + d.fallback, "ok");
+  } catch (e) {
+    toast(e.message, "err");
   } finally {
     btn.disabled = false;
   }

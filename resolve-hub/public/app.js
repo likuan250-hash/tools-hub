@@ -89,6 +89,18 @@
       /* 隐私模式忽略 */
     }
   }
+  function clearSavedState() {
+    try {
+      localStorage.removeItem(STATE_KEY);
+    } catch (e) {
+      /* 隐私模式忽略 */
+    }
+  }
+  function isRestorableState(saved) {
+    if (!saved || !saved.dir) return false;
+    const phase = (saved && saved.phase) || "idle";
+    return phase === "idle" || phase === "setup_done";
+  }
 
   function stepForTag(tag) {
     const def = STEP_TAGS.find((d) => d.tag === tag);
@@ -563,11 +575,20 @@
   (async function init() {
     const saved = loadState();
     const savedPhase = (saved && saved.phase) || "idle";
-    if (saved && saved.dir) {
+    if (isRestorableState(saved)) {
       dirInput.value = saved.dir;
       state.phase = savedPhase;
       state.outputPath = saved.outputPath || "";
       state.out = saved.out || "";
+    } else if (saved && saved.dir) {
+      // 已完成或异常阶段属于上一次工作，不带入下一次进入页面。
+      clearSavedState();
+      dirInput.value = "";
+      outInput.value = "";
+      state.dir = "";
+      state.name = "";
+      state.out = "";
+      resetRunState();
     }
     if (current === null && dirInput.value.trim()) {
       await refreshInfo({ restore: true });

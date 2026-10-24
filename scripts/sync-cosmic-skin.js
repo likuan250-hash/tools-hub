@@ -11,24 +11,34 @@
 //   - 仅显式调用时执行：需手动 `npm run sync-cosmic-skin`。
 //
 // 退出码：全部同步成功(含无变更) exit 0；检测到副本彼此分歧 exit 1。
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
-const ROOT = path.resolve(__dirname, '..');
-const SHARED = { name: 'shared', dir: 'shared/cosmic-skin' };
+const ROOT = path.resolve(__dirname, "..");
+const SHARED = { name: "shared", dir: "shared/cosmic-skin" };
 const COPIES = [
-  { name: 'renderer', dir: 'renderer' },
-  { name: 'netdisk-hub', dir: 'netdisk-hub/public' },
-  { name: 'kdocs-tool', dir: 'kdocs-tool/public' },
-  { name: 'biliup-hub', dir: 'biliup-hub/public' },
-  { name: 'material-hub', dir: 'material-hub/public' },
-  { name: 'resolve-hub', dir: 'resolve-hub/public' },
-  { name: 'xfer-hub', dir: 'xfer-hub/public' },
+  { name: "renderer", dir: "renderer" },
+  { name: "netdisk-hub", dir: "netdisk-hub/public" },
+  { name: "kdocs-tool", dir: "kdocs-tool/public" },
+  { name: "biliup-hub", dir: "biliup-hub/public" },
+  { name: "material-hub", dir: "material-hub/public" },
+  { name: "resolve-hub", dir: "resolve-hub/public" },
 ];
-const FILES = ['cosmic-skin.css', 'cosmic-skin.js', 'ark-pixel-16px-latin.woff2', 'ark-pixel-16px-zh_cn.woff2', 'OFL-ark-pixel.txt'];
+const FILES = [
+  "cosmic-skin.css",
+  "cosmic-skin.js",
+  "ark-pixel-16px-latin.woff2",
+  "ark-pixel-16px-zh_cn.woff2",
+  "OFL-ark-pixel.txt",
+];
 
 function readFileOrNull(p) {
-  try { return fs.readFileSync(p); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+  try {
+    return fs.readFileSync(p);
+  } catch (e) {
+    if (e.code === "ENOENT") return null;
+    throw e;
+  }
 }
 
 let divergence = false;
@@ -45,7 +55,7 @@ for (const f of FILES) {
     const p = path.join(ROOT, c.dir, f);
     return { c, p, buf: readFileOrNull(p) };
   }).filter((e) => e.buf !== null);
-  const distinct = new Set(existing.map((e) => e.buf.toString('utf8')));
+  const distinct = new Set(existing.map((e) => e.buf.toString("utf8")));
   if (distinct.size > 1) {
     divergence = true;
     console.error(`[FAIL] ${f} 副本彼此不一致（疑似手工编辑），拒绝覆盖。`);
@@ -63,4 +73,8 @@ for (const f of FILES) {
 }
 
 if (divergence) process.exit(1);
-console.log(changedAny ? '\ncosmic-skin 已以 shared/ 为真源同步到七处前端副本。' : '\ncosmic-skin 七处前端副本已与真源一致，无需同步。');
+console.log(
+  changedAny
+    ? "\ncosmic-skin 已以 shared/ 为真源同步到七处前端副本。"
+    : "\ncosmic-skin 七处前端副本已与真源一致，无需同步。",
+);

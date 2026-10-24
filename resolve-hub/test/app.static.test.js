@@ -30,6 +30,12 @@ test("状态持久化 + 切目录重置 + 输出名消毒 + 取消 + 打开输�
   assert.match(app, /revealInFolder/);
 });
 
+test("进入页面只恢复 idle/setup_done，done 状态自动清空", () => {
+  assert.match(app, /phase === "idle" \|\| phase === "setup_done"/);
+  assert.match(app, /clearSavedState\(\);[\s\S]{0,250}resetRunState\(\)/);
+  assert.doesNotMatch(app, /savedPhase !== "done"/);
+});
+
 test("页面包含停止按钮、输出路径与打开文件夹按钮，且不再保留无用 select 样式", () => {
   assert.match(html, /id="cancelBtn"/);
   assert.match(html, /id="outPathRow"/);

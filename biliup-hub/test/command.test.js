@@ -9,6 +9,7 @@ const {
   ps1Quote,
   ps1MultiLine,
   batQuote,
+  stripAnsi,
 } = require("../lib/command");
 
 const cfg = {
@@ -54,6 +55,11 @@ test("ps1Quote 单引号字面量：$()/反引号不会被 PowerShell 展开（�
 test("batQuote 转义 % 与双引号", () => {
   assert.equal(batQuote("%PATH%"), '"%%PATH%%"');
   assert.equal(batQuote('a"b'), '"a""b"');
+});
+
+test("stripAnsi 清除 biliup 日志颜色控制符并保留中文", () => {
+  const raw = "\x1b[2m2026-10-18 22:54:59\x1b[0m \x1b[32m INFO\x1b[0m APP接口投稿成功";
+  assert.equal(stripAnsi(raw), "2026-10-18 22:54:59  INFO APP接口投稿成功");
 });
 
 test("buildBat 不写 @chcp 也正常生成", () => {

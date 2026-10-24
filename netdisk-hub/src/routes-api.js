@@ -47,6 +47,12 @@ function registerApiRoutes(app, ctx) {
     return /no_session|_errno|errno|401|403|captcha|token|未授权|invalid|sign/i.test(d);
   }
 
+  function providerFallback(provider) {
+    if (provider === "baidu") return baidu.getConfig().appDir;
+    if (provider === "quark") return quark.FOLDER_NAME;
+    return "游戏";
+  }
+
   app.get("/api/accounts", (req, res) => {
     const baiduAcc = store.getAccount("baidu");
     const quarkAcc = store.getAccount("quark");
@@ -57,10 +63,17 @@ function registerApiRoutes(app, ctx) {
     // （与 xunlei.auth.js 的兜底一致），并标记 estimated 供前端显示「约」。
     function effectiveExpiresAt(acc) {
       if (!acc) return null;
-      if (acc.expiresAt) return { ts: acc.expiresAt, estimated: false };
+      const now = Date.now();
+      // 历史版本把 OAuth/token 的 expiresAt 写进了账号记录；百度 Cookie 与迅雷
+      // refresh_token 实际仍可能有效。过期时间已过去时不能再据此宣称“登录态已过期”，
+      // 是否失效只由实时 ping/authBroken 判定。
+      if (acc.expiresAt && Number(acc.expiresAt) > now) {
+        return { ts: Number(acc.expiresAt), estimated: false };
+      }
       if (acc.loginAt) {
         const t = new Date(acc.loginAt).getTime();
-        if (Number.isFinite(t)) return { ts: t + 90 * 24 * 3600 * 1000, estimated: true };
+        const ts = t + 90 * 24 * 3600 * 1000;
+        if (Number.isFinite(ts) && ts > now) return { ts, estimated: true };
       }
       return null;
     }
@@ -94,8 +107,7 @@ function registerApiRoutes(app, ctx) {
         hasToken: !!(baiduAcc && baiduAcc.accessToken),
         hasCookie: hasBaiduCookie,
         detail: bDetail,
-        authBroken:
-          hasBaiduCookie && pingCache.baidu === false && isAuthBroken(bDetail),
+        authBroken: hasBaiduCookie && pingCache.baidu === false && isAuthBroken(bDetail),
         expiresAt: bExp && bExp.ts,
         expiresAtEstimated: bExp ? bExp.estimated : false,
         dir: {
@@ -108,8 +120,7 @@ function registerApiRoutes(app, ctx) {
         connected: hasQuarkCred,
         pingOK: pingCache.quark,
         detail: qDetail,
-        authBroken:
-          hasQuarkCred && pingCache.quark === false && isAuthBroken(qDetail),
+        authBroken: hasQuarkCred && pingCache.quark === false && isAuthBroken(qDetail),
         expiresAt: qExp && qExp.ts,
         expiresAtEstimated: qExp ? qExp.estimated : false,
         dir: {
@@ -122,8 +133,7 @@ function registerApiRoutes(app, ctx) {
         connected: hasXunleiCred,
         pingOK: pingCache.xunlei,
         detail: xDetail,
-        authBroken:
-          hasXunleiCred && pingCache.xunlei === false && isAuthBroken(xDetail),
+        authBroken: hasXunleiCred && pingCache.xunlei === false && isAuthBroken(xDetail),
         expiresAt: xExp && xExp.ts,
         expiresAtEstimated: xExp ? xExp.estimated : false,
         dir: {
@@ -141,8 +151,7 @@ function registerApiRoutes(app, ctx) {
     const map = { baidu: "baidu", quark: "quark", xunlei: "xunlei" };
     if (!map[p]) return res.status(400).json({ error: "未知网盘" });
     const d = store.getDir(p);
-    const fallback =
-      p === "baidu" ? baidu.getConfig().appDir : p === "quark" ? quark.FOLDER_NAME : "游戏";
+    const fallback = providerFallback(p);
     res.json({ selected: d, fallback, fallbackName: fallback });
   });
 
@@ -176,10 +185,24 @@ function registerApiRoutes(app, ctx) {
     const map = { baidu: "baidu", quark: "quark", xunlei: "xunlei" };
     if (!map[p]) return res.status(400).json({ error: "未知网盘" });
     const { id, name } = req.body || {};
-    if (!id || !name) return res.status(400).json({ error: "缺少 id 或 name" });
+    // 迅雷根目录的合法 id 就是空串；不能用 falsy 判断把它误判成缺参数。
+    if (id === undefined || id === null || !name) {
+      return res.status(400).json({ error: "缺少 id 或 name" });
+    }
     const saved = store.setDir(p, { id: String(id), name: String(name) });
     logger.info("保存转存目录:", { provider: p, id: saved.id, name: saved.name });
     res.json({ ok: true, dir: saved });
+  });
+
+  app.delete("/api/dirs/:provider", (req, res) => {
+    const p = req.params.provider;
+    if (!["baidu", "quark", "xunlei"].includes(p)) {
+      return res.status(400).json({ error: "未知网盘" });
+    }
+    store.clearDir(p);
+    const fallback = providerFallback(p);
+    logger.info("恢复默认转存目录:", { provider: p, fallback });
+    res.json({ ok: true, fallback });
   });
 
   // ── 聚合搜索:并行搜三盘「各自转存目录」第一层,按关键词过滤 ──
@@ -502,6 +525,7 @@ function registerApiRoutes(app, ctx) {
               sharePeriod: 0,
               sharePassword,
               force,
+              recordFailure: attempt > 0,
               title: (req.body.title || "").trim(),
             });
             if (r.ok || attempt > 0) {

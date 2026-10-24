@@ -422,7 +422,13 @@
   const clearBtnEl = $("clearBtn");
   if (clearBtnEl) {
     clearBtnEl.addEventListener("click", () => {
-      if (!selectedVideo) {
+      const stopBtn = $("stopUploadBtn");
+      if (running || (stopBtn && !stopBtn.hidden)) {
+        toast("投稿进行中，完成后再清空");
+        return;
+      }
+      const logWrap = $("logWrap");
+      if (!selectedVideo && (!logWrap || logWrap.style.display === "none")) {
         // #3：未选视频时为安全空操作（轻提示），不报错、不隐藏（常驻于卡片右上角）
         toast("当前没有已选择的视频");
         return;
@@ -436,6 +442,26 @@
         ti.value = "";
         ti.dataset.userEdited = "";
       } // 重置标签（含手动编辑标记）
+      if (logWrap) logWrap.style.display = "none";
+      const logBox = $("logBox");
+      if (logBox) {
+        logBox.innerHTML = "";
+        logBox.scrollTop = 0;
+      }
+      if ($("logEmpty")) $("logEmpty").style.display = "";
+      if (execStepsEl) execStepsEl.innerHTML = "";
+      Object.keys(stepEls).forEach((k) => delete stepEls[k]);
+      const progress = $("biliExecProgress");
+      if (progress) {
+        progress.classList.remove("show");
+        const bar = progress.querySelector(".bili-exec-bar");
+        if (bar) {
+          bar.style.removeProperty("width");
+          bar.style.removeProperty("animation");
+        }
+      }
+      setExec($("submitBtn"), false);
+      setCapsule("warn", "投稿状态：就绪（待投稿）");
       $("submitHint").textContent = "选择视频后点击投稿（发布前会二次确认模式）";
     });
   }
@@ -482,10 +508,12 @@
     }
   }
 
-  // ── 发布模式切换（#C：根据选中显隐 dtimeInput；切到定时发布默认填 +1h）──
+  // ── 发布模式切换（#C：根据选中显隐 dtimeInput；切到定时发布默认次日 08:20）──
   function defaultDtime() {
-    // 当前本地时间 + 1 小时，格式 YYYY-MM-DDTHH:mm（本地时区）。
-    const d = new Date(Date.now() + 60 * 60 * 1000);
+    // 固定次日 08:20，格式 YYYY-MM-DDTHH:mm（用户本地时区）。
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(8, 20, 0, 0);
     const pad = (n) => String(n).padStart(2, "0");
     return (
       d.getFullYear() +

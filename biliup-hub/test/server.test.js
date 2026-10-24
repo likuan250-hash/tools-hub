@@ -488,7 +488,9 @@ test("GET /api/tags/suggest 正当防卫4：返回 游戏名 + 类型标签（�
         encodeURIComponent("【游戏268】正当防卫4 官方中文+全DLC+免安装硬盘版 免费学习版下载.mp4"),
     );
     assert.equal(status, 200);
-    assert.deepEqual(body, { tags: ["正当防卫4", "动作游戏", "开放世界"] });
+    assert.deepEqual(body, {
+      tags: ["正当防卫4", "动作游戏", "开放世界", "单机游戏", "PC游戏"],
+    });
   } finally {
     srv.close();
   }
@@ -503,7 +505,9 @@ test("GET /api/tags/suggest EA SPORTS FC 26：返回 游戏名 + 体育/足球�
       "/api/tags/suggest?keyword=" +
         encodeURIComponent("【游戏269】EA SPORTS FC 26 官方中文+全DLC+免安装硬盘版 免费学习版下载"),
     );
-    assert.deepEqual(body, { tags: ["EA SPORTS FC 26", "体育游戏", "足球游戏"] });
+    assert.deepEqual(body, {
+      tags: ["EA SPORTS FC 26", "体育游戏", "足球游戏", "单机游戏", "PC游戏"],
+    });
   } finally {
     srv.close();
   }
@@ -516,7 +520,7 @@ test("GET /api/tags/suggest 规则表外游戏：只有游戏名（不混入无�
       srv,
       "/api/tags/suggest?keyword=" + encodeURIComponent("【游戏999】某冷门独立游戏 官方中文版"),
     );
-    assert.deepEqual(body, { tags: ["某冷门独立游戏"] });
+    assert.deepEqual(body, { tags: ["某冷门独立游戏", "单机游戏", "PC游戏"] });
   } finally {
     srv.close();
   }
@@ -543,7 +547,9 @@ test("GET /api/tags/suggest 未登录也能推荐（本地提取，无网络依�
       srv,
       "/api/tags/suggest?keyword=" + encodeURIComponent("正当防卫4 官方中文版"),
     );
-    assert.deepEqual(body, { tags: ["正当防卫4", "动作游戏", "开放世界"] });
+    assert.deepEqual(body, {
+      tags: ["正当防卫4", "动作游戏", "开放世界", "单机游戏", "PC游戏"],
+    });
   } finally {
     srv.close();
     writeCookies({ SESSDATA: "x", bili_jct: "y" });

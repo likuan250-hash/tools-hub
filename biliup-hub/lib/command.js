@@ -44,6 +44,14 @@ function batQuote(value) {
   return '"' + escaped + '"';
 }
 
+// biliup/tracing 会向非 TTY 管道输出 ANSI 颜色控制符；前端会显示成方框乱码。
+function stripAnsi(value) {
+  return String(value == null ? "" : value)
+    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, "")
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+}
+
 // ── 拼装 biliup 参数数组（不含 exe 调用符）──
 //
 // biliup-cli v0.2.4 真实语法（见 bin/biliup.exe upload --help / --help）：
@@ -222,8 +230,8 @@ function runViaTempScript(scriptFile, opts = {}) {
         /* 忽略 */
       }
     }
-    if (child.stdout) child.stdout.on("data", (d) => onLog(d.toString()));
-    if (child.stderr) child.stderr.on("data", (d) => onError(d.toString()));
+    if (child.stdout) child.stdout.on("data", (d) => onLog(stripAnsi(d.toString())));
+    if (child.stderr) child.stderr.on("data", (d) => onError(stripAnsi(d.toString())));
   });
 }
 
@@ -236,5 +244,6 @@ module.exports = {
   ps1Quote,
   ps1MultiLine,
   batQuote,
+  stripAnsi,
   TMP_DIR,
 };

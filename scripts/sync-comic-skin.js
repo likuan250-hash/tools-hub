@@ -9,21 +9,20 @@
 //   - 不破坏手工编辑：若六副本彼此不一致（疑似有人只改了其中一份），
 //     拒绝静默覆盖，报错退出 1 并提示先手工统一，避免误删某份的编辑。
 //   - 仅显式调用时执行：需手动 `npm run sync-comic-skin`。
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
-const ROOT = path.resolve(__dirname, '..');
-const SHARED = { name: 'shared', dir: 'shared/comic-skin' };
+const ROOT = path.resolve(__dirname, "..");
+const SHARED = { name: "shared", dir: "shared/comic-skin" };
 const COPIES = [
-  { name: 'renderer', dir: 'renderer' },
-  { name: 'netdisk-hub', dir: 'netdisk-hub/public' },
-  { name: 'kdocs-tool', dir: 'kdocs-tool/public' },
-  { name: 'biliup-hub', dir: 'biliup-hub/public' },
-  { name: 'material-hub', dir: 'material-hub/public' },
-  { name: 'resolve-hub', dir: 'resolve-hub/public' },
-  { name: 'xfer-hub', dir: 'xfer-hub/public' },
+  { name: "renderer", dir: "renderer" },
+  { name: "netdisk-hub", dir: "netdisk-hub/public" },
+  { name: "kdocs-tool", dir: "kdocs-tool/public" },
+  { name: "biliup-hub", dir: "biliup-hub/public" },
+  { name: "material-hub", dir: "material-hub/public" },
+  { name: "resolve-hub", dir: "resolve-hub/public" },
 ];
-const FILES = ['comic-skin.css', 'comic-skin.js'];
+const FILES = ["comic-skin.css", "comic-skin.js"];
 
 let divergence = false;
 let changedAny = false;
@@ -39,7 +38,7 @@ for (const f of FILES) {
     const p = path.join(ROOT, c.dir, f);
     return { c, p, buf: fs.existsSync(p) ? fs.readFileSync(p) : null };
   }).filter((e) => e.buf !== null);
-  const distinct = new Set(existing.map((e) => e.buf.toString('utf8')));
+  const distinct = new Set(existing.map((e) => e.buf.toString("utf8")));
   if (distinct.size > 1) {
     divergence = true;
     console.error(`[FAIL] ${f} 副本彼此不一致（疑似手工编辑），拒绝覆盖。`);
@@ -57,4 +56,8 @@ for (const f of FILES) {
 }
 
 if (divergence) process.exit(1);
-console.log(changedAny ? '\ncomic-skin 已以 shared/ 为真源同步到七处前端副本。' : '\ncomic-skin 七处前端副本已与真源一致，无需同步。');
+console.log(
+  changedAny
+    ? "\ncomic-skin 已以 shared/ 为真源同步到七处前端副本。"
+    : "\ncomic-skin 七处前端副本已与真源一致，无需同步。",
+);

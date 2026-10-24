@@ -139,15 +139,29 @@ test("/api/accounts：无 expiresAt（会话级 Cookie）→ loginAt+90 天兜�
 
 test("/api/accounts：有真实 expiresAt → 原样返回且 estimated=false", async () => {
   const loginAt = new Date("2026-07-29T13:08:30.912Z").toISOString();
+  const futureExpiresAt = Date.now() + 30 * 24 * 3600 * 1000;
   store.saveAccount("quark", {
     connected: true,
     cookie: "__pus=x",
     loginAt,
-    expiresAt: 1793106609374,
+    expiresAt: futureExpiresAt,
   });
   const { body } = await get("/api/accounts");
-  assert.strictEqual(body.quark.expiresAt, 1793106609374, "真实过期时间应原样返回");
+  assert.strictEqual(body.quark.expiresAt, futureExpiresAt, "真实过期时间应原样返回");
   assert.strictEqual(body.quark.expiresAtEstimated, false);
+});
+
+test("/api/accounts：历史过期 token 时间不能覆盖仍有效的登录态", async () => {
+  const loginAt = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString();
+  store.saveAccount("baidu", {
+    connected: true,
+    cookie: "BDUSS=x",
+    loginAt,
+    expiresAt: Date.now() - 24 * 3600 * 1000,
+  });
+  const { body } = await get("/api/accounts");
+  assert.ok(body.baidu.expiresAt > Date.now(), "应回退到 loginAt+90 天估算");
+  assert.strictEqual(body.baidu.expiresAtEstimated, true);
 });
 
 test("/api/dirs/quark：返回选中目录与 fallback", async () => {
@@ -176,6 +190,18 @@ test("POST /api/dirs/quark：保存目录需 id 与 name", async () => {
   assert.strictEqual(ok.body.dir.id, "new");
   const missing = await send("POST", "/api/dirs/quark", { id: "x" });
   assert.strictEqual(missing.status, 400);
+});
+
+test("POST/DELETE /api/dirs/xunlei：根目录空 id 可保存，并可恢复默认", async () => {
+  const saved = await send("POST", "/api/dirs/xunlei", { id: "", name: "根目录" });
+  assert.strictEqual(saved.status, 200);
+  assert.strictEqual(saved.body.dir.id, "");
+  assert.strictEqual(store.getDir("xunlei").id, "");
+
+  const removed = await send("DELETE", "/api/dirs/xunlei");
+  assert.strictEqual(removed.status, 200);
+  assert.strictEqual(removed.body.fallback, "游戏");
+  assert.strictEqual(store.getDir("xunlei"), null);
 });
 
 test("POST /api/transfer：成功透传 ok", async () => {
@@ -425,6 +451,19 @@ test("/api/transfer/batch：转存失败 → step 失败 + done okCount=0", asyn
   const done = events.find((e) => e.type === "done");
   assert.strictEqual(done.okCount, 0);
   progress.remove("t-batch-fail");
+});
+
+test("/api/transfer/batch：自动重试只在最后一次尝试记录失败历史", async () => {
+  const attempts = [];
+  doTransferImpl = async (job) => {
+    attempts.push(job.recordFailure);
+    return { ok: false, error: "网络抖动" };
+  };
+  const { status } = await send("POST", "/api/transfer/batch", {
+    jobs: [{ provider: "quark" }],
+  });
+  assert.strictEqual(status, 200);
+  assert.deepStrictEqual(attempts, [false, true]);
 });
 
 test("/api/transfer：带 client 时推送 step/done 事件（成功）", async () => {

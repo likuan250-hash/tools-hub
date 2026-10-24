@@ -14,6 +14,7 @@ function $(id) {
 
 const gameName = $("gameName");
 const collectBtn = $("collectBtn");
+const clearCollectBtn = $("clearCollectBtn");
 const formError = $("formError");
 const forceTrailerCb = $("forceTrailer");
 const forceCoverCb = $("forceCover");
@@ -374,11 +375,13 @@ function renderDone(ev) {
 async function runCollect(name) {
   running = true;
   collectBtn.disabled = true;
+  if (clearCollectBtn) clearCollectBtn.disabled = true;
   collectBtn.textContent = "搜集中…";
   resetPanels();
   $("panel-running").classList.add("show");
   $("panel-done").classList.remove("show");
   addLog("info", "开始搜集：" + name);
+  let succeeded = false;
 
   try {
     const r = await fetch("/api/collect", {
@@ -391,7 +394,10 @@ async function runCollect(name) {
         coverUrl: coverUrlInput.value.trim(),
         biliUrl: biliCollectUrl.value.trim(),
         biliQuality: "1080",
-        biliFormatId: biliQualitySel && !biliQualitySel.disabled ? biliQualitySel.value || undefined : undefined,
+        biliFormatId:
+          biliQualitySel && !biliQualitySel.disabled
+            ? biliQualitySel.value || undefined
+            : undefined,
       }),
     });
     const ctype = r.headers.get("content-type") || "";
@@ -429,6 +435,7 @@ async function runCollect(name) {
         } catch (e) {
           continue;
         }
+        if (ev.type === "done" && ev.ok === true) succeeded = true;
         handleEvent(ev);
       }
     }
@@ -441,13 +448,17 @@ async function runCollect(name) {
   } finally {
     running = false;
     collectBtn.disabled = false;
+    if (clearCollectBtn) clearCollectBtn.disabled = false;
     collectBtn.textContent = "开始搜集";
     forceTrailerCb.checked = false;
     forceCoverCb.checked = false;
-    coverUrlInput.value = "";
-    biliCollectUrl.value = "";
-    resetBiliQuality();
-    setBiliHint("", "");
+    // 成功保留两个链接，便于同素材再次补搜；失败清空，便于直接重试。
+    if (!succeeded) {
+      coverUrlInput.value = "";
+      biliCollectUrl.value = "";
+      resetBiliQuality();
+      setBiliHint("", "");
+    }
   }
 }
 
@@ -703,8 +714,7 @@ async function sendCoverChoice(url) {
 // ── B站画质解析：链接 → 档位下拉（默认最高），登录态复用「B站自动投稿」 ──
 function resetBiliQuality() {
   if (!biliQualitySel) return;
-  biliQualitySel.innerHTML =
-    '<option value="">粘贴 B站链接后点「解析 B站画质」</option>';
+  biliQualitySel.innerHTML = '<option value="">粘贴 B站链接后点「解析 B站画质」</option>';
   biliQualitySel.disabled = true;
 }
 function setBiliHint(txt, cls) {
@@ -731,7 +741,10 @@ async function parseBiliFormats() {
     if (!d || !d.ok) {
       const msg = (d && d.error) || "解析失败";
       if (d && d.reason === "bili-auth") {
-        setBiliHint("B站拒绝了未登录请求（HTTP 412），请到「B站自动投稿」完成扫码登录后重试", "err");
+        setBiliHint(
+          "B站拒绝了未登录请求（HTTP 412），请到「B站自动投稿」完成扫码登录后重试",
+          "err",
+        );
       } else {
         setBiliHint(msg, "err");
       }
@@ -739,7 +752,10 @@ async function parseBiliFormats() {
       return;
     }
     if (!d.formats || !d.formats.length) {
-      setBiliHint("未解析到可用画质档位" + (d.title ? "：" + String(d.title).slice(0, 60) : ""), "err");
+      setBiliHint(
+        "未解析到可用画质档位" + (d.title ? "：" + String(d.title).slice(0, 60) : ""),
+        "err",
+      );
       resetBiliQuality();
       return;
     }
@@ -772,8 +788,7 @@ async function parseBiliFormats() {
           : "已找到「B站自动投稿」登录态，在线校验未通过（网络/代理），下载仍会携带 cookie";
       loginCls = lg.reason === "not-logged" ? "err" : "warn";
     } else {
-      loginTxt =
-        "未检测到 B站登录态，请到「B站自动投稿」扫码登录后解析，否则会被 HTTP 412 拦截";
+      loginTxt = "未检测到 B站登录态，请到「B站自动投稿」扫码登录后解析，否则会被 HTTP 412 拦截";
       loginCls = "err";
     }
     setBiliHint(
@@ -808,6 +823,28 @@ biliCollectUrl.addEventListener("input", () => {
     }, 700);
   }
 });
+
+if (clearCollectBtn) {
+  clearCollectBtn.onclick = () => {
+    if (running) return;
+    gameName.value = "";
+    coverUrlInput.value = "";
+    biliCollectUrl.value = "";
+    forceTrailerCb.checked = false;
+    forceCoverCb.checked = false;
+    resetBiliQuality();
+    setBiliHint("", "");
+    closeCoverPicker();
+    closeVideoPicker();
+    resetPanels();
+    $("panel-running").classList.remove("show");
+    $("panel-done").classList.remove("show");
+    doneSummary.className = "result-summary";
+    doneSummary.textContent = "尚未执行";
+    formError.textContent = "";
+    gameName.focus();
+  };
+}
 
 collectBtn.onclick = () => {
   if (running) return;

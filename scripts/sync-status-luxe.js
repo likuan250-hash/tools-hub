@@ -2,7 +2,7 @@
 //
 // 单一来源工作流工具：把「真源」shared/status-luxe 的两份文件
 // （status-luxe.css / status-luxe.js）复制到五处前端副本
-// （renderer / netdisk-hub/public / kdocs-tool/public / biliup-hub/public / xfer-hub/public）。
+// （renderer / netdisk-hub/public / kdocs-tool/public / biliup-hub/public）。
 //
 // 设计原则（对应 verify-status-luxe-sync.js 的门禁）：
 //   - 幂等：当五副本已与真源逐字节一致时，不做任何写入（no-op）。
@@ -17,25 +17,24 @@
 //   3) npm run verify:status-luxe # 可选，确认门禁仍绿
 //
 // 退出码：全部同步成功(含无变更) exit 0；检测到副本彼此分歧 exit 1。
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
-const ROOT = path.resolve(__dirname, '..');
-const SHARED = { name: 'shared', dir: 'shared/status-luxe' };
+const ROOT = path.resolve(__dirname, "..");
+const SHARED = { name: "shared", dir: "shared/status-luxe" };
 const COPIES = [
-  { name: 'renderer', dir: 'renderer' },
-  { name: 'netdisk-hub', dir: 'netdisk-hub/public' },
-  { name: 'kdocs-tool', dir: 'kdocs-tool/public' },
-  { name: 'biliup-hub', dir: 'biliup-hub/public' },
-  { name: 'xfer-hub', dir: 'xfer-hub/public' },
+  { name: "renderer", dir: "renderer" },
+  { name: "netdisk-hub", dir: "netdisk-hub/public" },
+  { name: "kdocs-tool", dir: "kdocs-tool/public" },
+  { name: "biliup-hub", dir: "biliup-hub/public" },
 ];
-const FILES = ['status-luxe.css', 'status-luxe.js'];
+const FILES = ["status-luxe.css", "status-luxe.js"];
 
 function readFileOrNull(p) {
   try {
     return fs.readFileSync(p);
   } catch (e) {
-    if (e.code === 'ENOENT') return null;
+    if (e.code === "ENOENT") return null;
     throw e;
   }
 }
@@ -58,7 +57,7 @@ for (const f of FILES) {
     return { c, p, buf };
   }).filter((e) => e.buf !== null);
 
-  const distinct = new Set(existing.map((e) => e.buf.toString('utf8')));
+  const distinct = new Set(existing.map((e) => e.buf.toString("utf8")));
   if (distinct.size > 1) {
     divergence = true;
     console.error(`[FAIL] ${f} 多副本彼此不一致（疑似手工编辑），拒绝覆盖。`);
@@ -87,7 +86,7 @@ if (divergence) {
   process.exit(1);
 }
 if (changedAny) {
-  console.log('\nstatus-luxe 已以 shared/ 为真源同步到五处前端副本。');
+  console.log("\nstatus-luxe 已以 shared/ 为真源同步到五处前端副本。");
 } else {
-  console.log('\nstatus-luxe 五处前端副本已与真源一致，无需同步。');
+  console.log("\nstatus-luxe 五处前端副本已与真源一致，无需同步。");
 }

@@ -149,7 +149,7 @@ const ESSENTIAL_COOKIES = [
   "BAIDUID",
   "PANPSC",
 ];
-function buildCookieHeader(minimal) {
+function buildCookieHeader(minimal, bdclndOverride) {
   let header;
   if (minimal) {
     header = Object.keys(cookieJar)
@@ -159,9 +159,14 @@ function buildCookieHeader(minimal) {
   } else {
     header = cleanCookie;
   }
-  if (cookieJar["BDCLND"] && !header.includes("BDCLND=")) {
-    header = (header ? header + "; " : "") + `BDCLND=${cookieJar["BDCLND"]}`;
-  }
+  // BDCLND 是单个分享的提取码校验结果，批量任务不能共用全局值。
+  const parts = String(header || "")
+    .split(";")
+    .map((s) => s.trim())
+    .filter((s) => s && !s.startsWith("BDCLND="));
+  const bdclnd = bdclndOverride !== undefined ? String(bdclndOverride || "") : cookieJar["BDCLND"];
+  if (bdclnd) parts.push(`BDCLND=${bdclnd}`);
+  header = parts.join("; ");
   return header;
 }
 function cookieHeader() {
@@ -178,6 +183,9 @@ function reqHeaders(extra) {
 let cachedBdstoken = null;
 let bdstokenTs = 0;
 async function getBdstoken() {
+  // 每次取 token 前都从当前 store 重建 Cookie 头。目录浏览、搜索、删除等入口
+  // 可能先于 checkSession/getShareList 执行，不能依赖某个前置请求负责初始化。
+  syncJar();
   if (cachedBdstoken && Date.now() - bdstokenTs < 5 * 60 * 1000) return cachedBdstoken;
   const url = `${PAN}/api/gettemplatevariable?clienttype=0&app_id=38824127&web=1&fields=${encodeURIComponent('["bdstoken","token","uk","isdocuser","servertime"]')}`;
   // 先全量 cookie 请求;errno=-6 时退回「仅核心 cookie」重试(部分账号/新设备会话下全量会被判异常)
@@ -274,8 +282,7 @@ async function verify(surl, pwd, bdstoken) {
   const data = await res.json();
   if (data.errno !== 0)
     throw new Error("提取码错误(errno=" + data.errno + "),请确认分享提取码是否正确");
-  if (data.randsk) cookieJar["BDCLND"] = data.randsk;
-  return data.randsk;
+  return data.randsk || "";
 }
 
 // 从分享页 HTML 解析出转存所需的 shareid / share_uk / fs_id 列表
@@ -295,11 +302,13 @@ async function getShareList(surl, pwd) {
   // surl 去掉开头的 '1'(百度规范:pan.baidu.com/s/1xxx 内部 surl=xxx)
   const s = surl.startsWith("1") ? surl.slice(1) : surl;
 
-  if (pwd) await verify(s, pwd, bdstoken);
+  const bdclnd = pwd ? await verify(s, pwd, bdstoken) : "";
 
   // GET 分享链接(带 BDCLND cookie),从 HTML 解析参数
   const link = `${PAN}/s/${surl}`;
-  const res = await fetch(link, { headers: reqHeaders() });
+  const res = await fetch(link, {
+    headers: reqHeaders({ Cookie: buildCookieHeader(false, bdclnd) }),
+  });
   const html = await res.text();
 
   const shareid = (html.match(SHARE_ID_RE) || [])[1];
@@ -322,13 +331,19 @@ async function getShareList(surl, pwd) {
     );
   }
 
-  return { list, shareid, uk };
+  return { list, shareid, uk, bdclnd };
 }
 
 // 转存到我的网盘(目标目录 destPath)
-async function transfer(shareid, uk, fsidList, destPath) {
+async function transfer(shareid, uk, fsidList, destPath, opts = {}) {
   if (!getCookie()) throw new Error("百度尚未登录(BDUSS),无法转存");
   const bdstoken = await getBdstoken();
+  let bdclnd = String(opts.bdclnd || "");
+  const shareSurl = String(opts.surl || "").replace(/^1(?=[A-Za-z0-9_-]{5,}$)/, "");
+  // 兼容旧调用：没有显式校验结果时，在转存前重新验证当前分享。
+  if (!bdclnd && opts.pwd && shareSurl) {
+    bdclnd = await verify(shareSurl, opts.pwd, bdstoken);
+  }
   const qs = new URLSearchParams({
     shareid: String(shareid),
     from: String(uk),
@@ -340,7 +355,11 @@ async function transfer(shareid, uk, fsidList, destPath) {
   const body = new URLSearchParams({ fsidlist: JSON.stringify(fsidList), path: destPath });
   const res = await fetch(`${PAN}/share/transfer?${qs}`, {
     method: "POST",
-    headers: reqHeaders({ "Content-Type": "application/x-www-form-urlencoded" }),
+    headers: reqHeaders({
+      "Content-Type": "application/x-www-form-urlencoded",
+      Cookie: buildCookieHeader(false, bdclnd),
+      Referer: `${PAN}/s/${opts.surl || ""}`,
+    }),
     body: body.toString(),
   });
   const data = await res.json();
@@ -458,12 +477,14 @@ async function searchFiles(dirPath, keyword) {
 async function trashFiles(fsIds, paths) {
   if (!fsIds || !fsIds.length) throw new Error("删除失败:缺少文件 fs_id");
   const acc = store.getAccount("baidu");
+  let openApiError = "";
   if (acc && acc.accessToken && Array.isArray(paths) && paths.length === fsIds.length) {
     try {
       return await trashViaOpenApi(fsIds, paths, acc.accessToken);
     } catch (e) {
       // token 失效等 → 回退网页 cookie 通道
       if (!/errno=/.test(String(e.message))) throw e;
+      openApiError = String(e.message);
     }
   }
   const bdstoken = await getBdstoken();
@@ -484,8 +505,11 @@ async function trashFiles(fsIds, paths) {
   const j = await res.json();
   if (j.errno !== 0) {
     if (j.errno === 132) {
+      const apiHint = openApiError ? "；百度官方 API 同样失败：" + openApiError : "";
       throw new Error(
-        "百度触发安全验证：请先登录网页版 https://pan.baidu.com 手动删除任意一个文件完成滑块验证，再回来重试",
+        "百度网页删除接口返回 errno=132（风控拒绝，不一定是等待验证页）" +
+          apiHint +
+          "。请重新授权百度网盘以刷新官方删除权限，或直接在网页端手动删除",
       );
     }
     throw new Error("百度删除失败 errno=" + j.errno + " " + JSON.stringify(j).slice(0, 160));
@@ -499,11 +523,13 @@ async function trashViaOpenApi(fsIds, paths, accessToken) {
   const qs = new URLSearchParams({
     method: "filemanager",
     access_token: accessToken,
-    opera: "delete",
-    async: "0",
   });
   const filelist = fsIds.map((id, i) => ({ path: paths[i], fsid: Number(id) }));
-  const body = new URLSearchParams({ filelist: JSON.stringify(filelist) });
+  const body = new URLSearchParams({
+    opera: "delete",
+    async: "0",
+    filelist: JSON.stringify(filelist),
+  });
   const res = await fetch(`https://pan.baidu.com/rest/2.0/xpan/file?${qs}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

@@ -18,6 +18,8 @@ import zipfile
 VIDEO_EXTS = ('.mp4', '.mkv', '.webm', '.mov')
 COVER_EXTS = ('.jpg', '.jpeg', '.png', '.webp')
 ILLEGAL_NAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+SOURCE_HANDLE_FRAMES = 30
+SMOOTH_CUT_FRAMES = 60
 
 
 def sanitize_out_name(name, project):
@@ -58,9 +60,8 @@ def resolve_running():
 def connect(resolve_exe=None, timeout=240):
     """连接 Resolve；未运行时按步骤 0 自动启动并轮询等待。
 
-    重要：Resolve 启动后脚本服务约 60-90 秒才就绪，过早/过频的 scriptapp 探测
-    会打断它的握手（日志里 ScriptServer 反复重启）。因此启动后先暖机 75 秒，
-    再以 15 秒间隔温和轮询，避免把服务打进死亡循环。
+    Resolve 启动后脚本服务需要时间就绪。先暖机 30 秒，再用 15 秒间隔温和探测；
+    过早/过频探测可能打断 scriptapp 握手，因此不采用秒级轮询。
     """
     api = os.environ.get('RESOLVE_SCRIPT_API') or r'C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Developer\Scripting'
     lib = os.environ.get('RESOLVE_SCRIPT_LIB') or r'D:\Program Files\Blackmagic Design\DaVinci Resolve\fusionscript.dll'
@@ -69,24 +70,35 @@ def connect(resolve_exe=None, timeout=240):
     if api:
         sys.path.append(os.path.join(api, 'Modules'))
     import DaVinciResolveScript as dvr  # noqa: E402
+    print('[resolve] 正在连接脚本 API…', flush=True)
     resolve = dvr.scriptapp('Resolve')
     if resolve is None and resolve_exe and os.path.exists(resolve_exe):
         print('[resolve] 检测到 Resolve 未运行，自动启动…')
         launch_resolve(resolve_exe)
-        print('[resolve] 等待脚本服务就绪（暖机约 75 秒，勿中断）…')
-        time.sleep(75)
+        try:
+            warmup = max(0, int(os.environ.get('RESOLVE_CONNECT_WARMUP', '30')))
+        except ValueError:
+            warmup = 30
+        try:
+            interval = max(5, int(os.environ.get('RESOLVE_CONNECT_INTERVAL', '15')))
+        except ValueError:
+            interval = 15
+        print('[resolve] 等待脚本服务就绪（暖机 %d 秒，勿中断）…' % warmup, flush=True)
+        time.sleep(warmup)
         deadline = time.time() + timeout
         while time.time() < deadline:
             resolve = dvr.scriptapp('Resolve')
             if resolve is not None:
                 break
-            time.sleep(15)
+            print('[resolve] 脚本服务尚未就绪，%d 秒后重试…' % interval, flush=True)
+            time.sleep(interval)
     elif resolve is None and resolve_running():
         # 已在运行但连不上：可能是脚本服务刚被误打断，温和重试
-        print('[resolve] Resolve 已运行，等待脚本服务恢复…')
+        print('[resolve] Resolve 已运行，等待脚本服务恢复…', flush=True)
         deadline = time.time() + 90
         while time.time() < deadline:
             time.sleep(15)
+            print('[resolve] 正在重试连接脚本服务…', flush=True)
             resolve = dvr.scriptapp('Resolve')
             if resolve is not None:
                 break
@@ -155,38 +167,146 @@ def parse_fps(value, default=0.0):
         if '/' in s:
             num, den = s.split('/', 1)
             num, den = float(num), float(den)
-            return num / den if den else default
-        return float(s)
+            rate = num / den if den else default
+        else:
+            rate = float(s)
+        return rate if rate > 0 and rate != float('inf') else default
     except (TypeError, ValueError, ZeroDivisionError):
         return default
 
 
 def probe_video_fps(path, ffprobe):
-    """视频源帧率（r_frame_rate），用于把源帧换算成时间线帧。"""
+    """视频源帧率；优先 avg_frame_rate，兼容 VFR 和 0/0 的 r_frame_rate。"""
     r = subprocess.run(
         [ffprobe, '-v', 'error', '-select_streams', 'v:0',
-         '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', path],
+         '-show_entries', 'stream=r_frame_rate,avg_frame_rate', '-of', 'json', path],
         capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
-    return parse_fps((r.stdout or '').strip(), 0.0)
+    try:
+        stream = ((json.loads(r.stdout or '{}').get('streams') or [{}])[0])
+    except (ValueError, AttributeError, IndexError):
+        stream = {}
+    for key in ('avg_frame_rate', 'r_frame_rate'):
+        rate = parse_fps(stream.get(key), 0.0)
+        if rate > 0:
+            return rate
+    return 0.0
 
 
 def probe_frame_count(path, ffprobe):
-    r = subprocess.run(
-        [ffprobe, '-v', 'error', '-count_frames', '-select_streams', 'v:0',
-         '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', path],
-        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
-    try:
-        return int((r.stdout or '').strip())
-    except ValueError:
-        # 部分容器 -count_frames 拿不到，退回容器头的 nb_frames
-        r2 = subprocess.run(
+    """先读容器头；缺失或 VFR 时再逐帧扫描，避免长视频每次都全量解码。"""
+    queries = (
+        ('stream=nb_frames', []),
+        ('stream=nb_read_frames', ['-count_frames']),
+    )
+    for entries, extra in queries:
+        r = subprocess.run(
             [ffprobe, '-v', 'error', '-select_streams', 'v:0',
-             '-show_entries', 'stream=nb_frames', '-of', 'csv=p=0', path],
+             *extra, '-show_entries', entries, '-of', 'csv=p=0', path],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
         try:
-            return int((r2.stdout or '').strip())
+            value = int((r.stdout or '').strip())
+            if value > 0:
+                return value
         except ValueError:
-            raise RuntimeError('无法探测预告片帧数')
+            pass
+    raise RuntimeError('无法探测预告片帧数')
+
+
+def media_item_fps(item):
+    try:
+        return parse_fps(item.GetClipProperty('FPS'), 0.0)
+    except Exception:
+        return 0.0
+
+
+def effective_source_fps(item, path, ffprobe, tl_fps):
+    """Resolve 的导入时基优先；它可能把 60 识别为 59.94，混用会造成累计偏差。"""
+    resolve_fps = media_item_fps(item)
+    probe_fps = probe_video_fps(path, ffprobe)
+    if resolve_fps > 0:
+        if probe_fps > 0 and abs(resolve_fps - probe_fps) > 0.001:
+            print('[timeline] 帧率识别差异：Resolve %.3ffps / ffprobe %.3ffps，按 Resolve 换算'
+                  % (resolve_fps, probe_fps))
+        return resolve_fps
+    if probe_fps > 0:
+        print('[timeline] 警告：Resolve 未返回源帧率，暂用 ffprobe %.3ffps' % probe_fps)
+        return probe_fps
+    print('[timeline] 警告：源帧率不可用，暂用项目帧率 %.3ffps' % tl_fps)
+    return tl_fps
+
+
+def source_clip_timeline_frames(frame_count, source_fps, tl_fps, handle=SOURCE_HANDLE_FRAMES):
+    usable = int(frame_count) - int(handle)
+    if usable <= 0:
+        raise RuntimeError('预告片不足 %d 帧，无法保留左手柄' % (handle + 1))
+    if source_fps <= 0 or tl_fps <= 0:
+        raise RuntimeError('帧率无效，无法换算预告片时长')
+    # Resolve 的帧换算按时间基准向下取整；用 round 在 59.94/60 这类时基上会多出 8 帧。
+    return max(1, int(usable * tl_fps / source_fps))
+
+
+def positive_int_env(name, default):
+    raw = os.environ.get(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        print('[project] 警告：%s=%s 无效，改用 %d' % (name, raw or '<空>', default))
+        return default
+    return value
+
+
+def ensure_smooth_cut(tl, trailer_item, track_index=1):
+    """在视频入点加与 V2/V3 同位置、同时长的右对齐 Smooth Cut。"""
+    if not trailer_item:
+        return None
+    seam = trailer_item.GetStart()
+    existing = None
+    for item in tl.GetItemListInTrack('video', track_index) or []:
+        if item.GetType() != 'transition':
+            continue
+        if item.GetStart() <= seam <= item.GetEnd():
+            existing = item
+            break
+    if (existing and abs(existing.GetStart() - seam) <= 1
+            and abs(existing.GetDuration() - SMOOTH_CUT_FRAMES) <= 1):
+        print('[timeline] 接缝转场已对齐：%d 帧' % round(existing.GetDuration()))
+        return existing
+    if existing:
+        tl.DeleteClips([existing], False)
+        print('[timeline] 已移除位置不一致的 V1 转场，按 V2/V3 重新对齐')
+    try:
+        left_handle = int(round(trailer_item.GetLeftOffset()))
+    except Exception:
+        left_handle = 0
+    duration = SMOOTH_CUT_FRAMES
+    if duration < 2:
+        print('[timeline] 警告：视频左侧手柄不足，无法自动添加平滑剪接')
+        return None
+    transition = trailer_item.AddTransition({
+        'type': 'Smooth Cut',
+        'category': 'simple',
+        'position': 'start',
+        'alignment': 'right',
+        'duration': duration,
+    })
+    if not transition and left_handle >= 1:
+        fallback = min(SMOOTH_CUT_FRAMES, left_handle * 2)
+        fallback -= fallback % 2
+        if fallback >= 2:
+            transition = trailer_item.AddTransition({
+                'type': 'Smooth Cut',
+                'category': 'simple',
+                'position': 'start',
+                'alignment': 'right',
+                'duration': fallback,
+            })
+    if transition:
+        print('[timeline] 已自动添加平滑剪接：%d 帧' % round(transition.GetDuration()))
+    else:
+        print('[timeline] 警告：自动添加 V1 平滑剪接失败（请在接缝处手动添加）')
+    return transition
 
 
 def clean_work_dir(work_dir, keep_days=30):
@@ -243,7 +363,7 @@ def self_check(tl):
                 continue
             tail = texts[-1]
             diff = tail.GetDuration() - vdur
-            if abs(diff) > 60:
+            if abs(diff) > 1:
                 _issue('V%d 尾部文本时长 %d ≠ 视频 %d（差 %d 帧，请完成手动步骤 5）'
                        % (t, tail.GetDuration(), vdur, diff))
     print('--- 自检结束 ---')
@@ -477,10 +597,18 @@ def cmd_setup(args):
 
     # 步骤 1：项目时间线帧率 60fps（DRT 模板本身也是 60fps，双保险）
     try:
-        proj.SetSetting('timelineFrameRate', '60')
-        print('[project] 时间线帧率已设为 60fps')
+        fps_set = proj.SetSetting('timelineFrameRate', '60')
     except Exception as e:
-        print('[project] 设置帧率失败（可忽略）：' + str(e))
+        fps_set = False
+        print('[project] 设置帧率异常：' + str(e))
+    try:
+        project_fps = parse_fps(proj.GetSetting('timelineFrameRate'), 0.0)
+    except Exception:
+        project_fps = 0.0
+    if not fps_set or abs(project_fps - 60.0) > 0.05:
+        raise RuntimeError('时间线帧率未能设为 60fps（当前 %s），请先保存/关闭占用项目的窗口后重试'
+                           % (project_fps or '未知'))
+    print('[project] 时间线帧率已设为 60fps')
 
     # 仅检查编码（不转码），素材格式由收集环节按规范产出
     check_trailer_codec(os.path.join(folder, trailer), args.ffprobe)
@@ -498,7 +626,7 @@ def cmd_setup(args):
         raise RuntimeError('素材导入媒体池失败')
     print('[素材] 已就绪（封面原图 + 预告片）')
 
-    cover_frames = int(os.environ.get('RESOLVE_COVER_FRAMES', '180') or 180)
+    cover_frames = positive_int_env('RESOLVE_COVER_FRAMES', 180)
     trailer_frames = None
     tail_frames = None
     try:
@@ -511,10 +639,12 @@ def cmd_setup(args):
     if tl is None:
         # 步骤 3：导入前先量视频长度，把模板 V2/V3 尾部文本预设成同样长度（免手动拉伸）
         trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
-        src_fps = probe_video_fps(os.path.join(folder, trailer), args.ffprobe) or tl_fps
+        src_fps = effective_source_fps(
+            trailer_item, os.path.join(folder, trailer), args.ffprobe, tl_fps)
         # 预告片从源第 30 帧起放（左侧留 30 帧手柄），且源帧率可能≠时间线帧率
         # （例：源 30fps/896帧 → 项目 60fps 片段 1732 帧，不是 866）
-        tail_frames = max(1, int(round((trailer_frames - 30) * tl_fps / src_fps)))
+        tail_frames = source_clip_timeline_frames(
+            trailer_frames, src_fps, tl_fps, SOURCE_HANDLE_FRAMES)
         print('[timeline] 预告片 %d 帧 @%.3gfps → 时间线片段 %d 帧 @%.3gfps（源 30..%d）'
               % (trailer_frames, src_fps, tail_frames, tl_fps, trailer_frames))
         preset = build_template_with_tail(args.template, args.work_dir, cover_frames, tail_frames,
@@ -574,12 +704,14 @@ def cmd_setup(args):
                       % round(cover_actual - cover_frames))
         if trailer_frames is None:
             trailer_frames = probe_frame_count(os.path.join(folder, trailer), args.ffprobe)
-            src_fps = probe_video_fps(os.path.join(folder, trailer), args.ffprobe) or tl_fps
-            tail_frames = max(1, int(round((trailer_frames - 30) * tl_fps / src_fps)))
+            src_fps = effective_source_fps(
+                trailer_item, os.path.join(folder, trailer), args.ffprobe, tl_fps)
+            tail_frames = source_clip_timeline_frames(
+                trailer_frames, src_fps, tl_fps, SOURCE_HANDLE_FRAMES)
             print('[timeline] 警告：时间线已存在（模板未重新导入），尾部文本需手动拉伸')
         trailer_ok = mp.AppendToTimeline([{
             'mediaPoolItem': trailer_item,
-            'startFrame': 30,
+            'startFrame': SOURCE_HANDLE_FRAMES,
             'endFrame': trailer_frames,
             'trackIndex': 1,
             'recordFrame': cover_end,
@@ -587,16 +719,35 @@ def cmd_setup(args):
         trailer_audio_ok = mp.AppendToTimeline([{
             'mediaPoolItem': trailer_item,
             'mediaType': 2,
-            'startFrame': 30,
+            'startFrame': SOURCE_HANDLE_FRAMES,
             'endFrame': trailer_frames,
             'trackIndex': 1,
             'recordFrame': cover_end,
         }])
         if not cover_ok or not trailer_ok or not trailer_audio_ok:
             raise RuntimeError('素材追加到时间线失败')
+        trailer_name = os.path.splitext(trailer)[0].lower()
+        trailer_actual = None
+        for item in tl.GetItemListInTrack('video', 1) or []:
+            if trailer_name in str(item.GetName() or '').lower():
+                trailer_actual = item.GetDuration()
+                break
+        if trailer_actual is not None and tail_frames is not None:
+            diff = round(trailer_actual - tail_frames)
+            print('[timeline] 预告片实际时长：%d 帧（文本目标 %d 帧，差 %d 帧）'
+                  % (round(trailer_actual), tail_frames, diff))
+            if abs(diff) > 1:
+                print('[timeline] 警告：Resolve 实际入轨时长与预算不一致，尾部文本可能差 %d 帧' % diff)
         print('[timeline] 已追加 封面(原图) → 预告片(留左手柄) 到 V1/A1')
+    trailer_timeline_item = None
+    trailer_name = os.path.splitext(trailer)[0].lower()
+    for item in tl.GetItemListInTrack('video', 1) or []:
+        if trailer_name in str(item.GetName() or '').lower():
+            trailer_timeline_item = item
+            break
+    ensure_smooth_cut(tl, trailer_timeline_item)
     dump_timeline(tl)
-    print('完成：请按标准流程手动完成 5-7（拉伸 V2[3]/V3[3] 文本、V1 平滑剪接、改开场文本），'
+    print('完成：请按标准流程检查 5-7（V2[3]/V3[3] 文本已预设时长、V1 平滑剪接、开场文本），'
           '然后执行 render 子命令导出。')
 
 

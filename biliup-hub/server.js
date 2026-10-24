@@ -120,6 +120,15 @@ const GAME_NAME_STRIP_WORDS = [
 ];
 const GAME_NAME_SENSITIVE = ["学习版", "破解版", "盗版"];
 
+// 游戏名/类型之外的补充检索面。放在最后，避免通用词挤掉精准标签。
+const BASE_DISCOVERY_TAGS = ["单机游戏", "PC游戏"];
+const CONTENT_TAG_RULES = [
+  { match: ["攻略", "教程", "安装教程"], tags: ["游戏攻略"] },
+  { match: ["实况", "解说", "流程", "通关"], tags: ["游戏实况"] },
+  { match: ["预告", "宣传片", "trailer"], tags: ["游戏预告"] },
+  { match: ["评测", "测评", "review"], tags: ["游戏评测"] },
+];
+
 // 游戏名关键词 → 类型标签（需求②修订）：按标题/游戏名子串匹配，可多规则命中、跨规则去重。
 // 新游戏补类型 = 在数组加一行（match 命中关键词，tags 为要补的类型标签），命中规则表外游戏
 // 只有游戏名 + 固定默认标签（不混入无关标签）。
@@ -231,6 +240,16 @@ function matchGenreTags(raw) {
       out.push(t);
       if (out.length >= 6) break;
     }
+  }
+  return out;
+}
+
+function matchContentTags(raw) {
+  const key = String(raw == null ? "" : raw).toLowerCase();
+  const out = [];
+  for (const rule of CONTENT_TAG_RULES) {
+    if (!rule.match.some((m) => key.includes(m))) continue;
+    for (const t of rule.tags) if (!out.includes(t)) out.push(t);
   }
   return out;
 }
@@ -528,12 +547,20 @@ app.get("/api/tags/suggest", async (req, res) => {
   const name = extractGameName(kw);
   if (!name) return res.json({ tags: [] });
   const genres = matchGenreTags(kw + " " + name);
+  const contentTags = matchContentTags(kw);
   // 单标签上限 20 字（B 站硬限，超长直接 21005 拒稿）：
   // 超长游戏名（如「零 ～红蝶～ 重制版 FATAL FRAME II Crimson Butterfly REMAKE」）丢弃，
   // 前端收到空推荐后自动走 genTags 分词兜底，绝不整串进标签。
+  const seen = new Set();
   const tags = [];
-  if (name.length <= 20) tags.push(name);
-  for (const g of genres) if (g.length <= 20) tags.push(g);
+  for (const t of [name, ...genres, ...contentTags, ...BASE_DISCOVERY_TAGS]) {
+    if (!t || t.length > 20) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(t);
+    if (tags.length >= 10) break;
+  }
   res.json({ tags });
 });
 
@@ -1167,4 +1194,5 @@ process.on("unhandledRejection", (r) => logger.error("未处理的 Promise 拒�
 // 便于单测 require（实际启动走上面的 startServer）
 app.extractGameName = extractGameName; // 导出纯函数供单测直接验证
 app.matchGenreTags = matchGenreTags; // 导出纯函数供单测直接验证
+app.matchContentTags = matchContentTags;
 module.exports = app;

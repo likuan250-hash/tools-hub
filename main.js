@@ -27,7 +27,6 @@ const NETDISK_DIR = path.join(RES, "netdisk-hub");
 const BILIUP_DIR = path.join(RES, "biliup-hub");
 const MATERIAL_DIR = path.join(RES, "material-hub");
 const RESOLVE_DIR = path.join(RES, "resolve-hub");
-const XFER_DIR = path.join(RES, "xfer-hub");
 
 // Node 运行时：打包后自带 resources/node/node.exe；开发时回退系统 PATH 的 node
 const NODE_BIN = fs.existsSync(path.join(RES, "node", "node.exe"))
@@ -184,73 +183,7 @@ const CHILDREN = {
     startedAt: 0,
     lastError: null,
   },
-  xfer: {
-    key: "xfer",
-    name: "网盘跨盘转存",
-    script: path.join(XFER_DIR, "server.js"),
-    cwd: XFER_DIR,
-    url: "http://localhost:3900",
-    env: Object.assign({}, process.env, {
-      TOOLSHUB_VERSION: app.getVersion(),
-      XFER_PORT: "3900",
-      // 只读复用 netdisk-hub 已保存的登录态（百度/夸克授权），不另起一套登录
-      NETDISK_DIR: NETDISK_DIR,
-      NETDISK_DATA_DIR: path.join(app.getPath("userData"), "netdisk-hub", "data"),
-      // xfer-hub 自己的偏好（目标目录等）+ 夸克 Skill 运行时目录，独立存放不污染 netdisk
-      XFER_DATA_DIR: path.join(app.getPath("userData"), "xfer-hub"),
-      // 夸克官方 Skill（quark-drive.cjs）：打包后在 resources/quarkclouddrive；
-      // 开发时回退到本机安装位置（这台机器在 E:\workbuddy\.workbuddy\skills）。
-      QUARK_SKILL_DIR: fs.existsSync(
-        path.join(RES, "quarkclouddrive", "scripts", "quark-drive.cjs"),
-      )
-        ? path.join(RES, "quarkclouddrive")
-        : [
-            process.env.QUARK_SKILL_DIR,
-            path.join(process.env.USERPROFILE || "", ".workbuddy", "skills", "quarkclouddrive"),
-            "E:\\workbuddy\\.workbuddy\\skills\\quarkclouddrive",
-          ].find((p) => p && fs.existsSync(path.join(p, "scripts", "quark-drive.cjs"))) || "",
-      // 中转落地目录（用户 E 盘为机械盘，专门扛这种反复读写）
-      XFER_TMP_DIR: process.env.TOOLSHUB_XFER_DIR || "E:\\网盘中转",
-    }),
-    proc: null,
-    running: false,
-    attempts: 0,
-    startedAt: 0,
-    lastError: null,
-  },
 };
-
-// ── 夸克授权状态迁移：Skill 把登录态写在「Skill 目录内」（安装目录 resources/…），
-//    每次更新覆盖 resources 就会把授权冲掉（v2.8.34 实测：18:09 更新 → 18:13 重新扫码）。
-//    这里做一份镜像到 userData：启动时回填（升级后自动恢复），运行中每分钟回写（新登录也会持久化）。
-(function syncQuarkLoginState() {
-  try {
-    // 注意：注册表叫 CHILDREN（以前这里写成不存在的 services，异常被 catch 吞掉 → 镜像功能一直没生效）
-    const skillDir = (CHILDREN.xfer.env && CHILDREN.xfer.env.QUARK_SKILL_DIR) || "";
-    if (!skillDir) return;
-    const live = path.join(skillDir, "workbuddy");
-    const backup = path.join(app.getPath("userData"), "xfer-hub", "quarkclouddrive", "workbuddy");
-    const copy = (from, to) => {
-      fs.mkdirSync(path.dirname(to), { recursive: true });
-      fs.cpSync(from, to, { recursive: true });
-    };
-    if (!fs.existsSync(live) && fs.existsSync(backup)) {
-      copy(backup, live); // 升级后回填登录态
-      log("夸克登录态已从 userData 回填（升级未丢授权）");
-    } else if (fs.existsSync(live)) {
-      copy(live, backup); // 首次运行：把现有登录态备份到 userData
-    }
-    setInterval(() => {
-      try {
-        if (fs.existsSync(live)) copy(live, backup);
-      } catch (e) {
-        /* 静默 */
-      }
-    }, 60 * 1000).unref();
-  } catch (e) {
-    log("夸克登录态同步失败: " + e.message);
-  }
-})();
 
 const MAX_RESTART = 5;
 let mainWindow = null;

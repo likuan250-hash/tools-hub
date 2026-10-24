@@ -68,6 +68,22 @@ test("parseSurl：从完整链接/短码/查询参数提取 surl（保留前导1
   assert.strictEqual(baidu.parseSurl("plaincode"), "plaincode");
 });
 
+test("listSubfolders：新进程首次调用也必须先同步已保存的 Cookie", async () => {
+  store.saveAccount("baidu", { cookie: "BDUSS=abc; STOKEN=def" });
+  global.fetch = makeFetch((url, opts) => {
+    if (url.includes("/api/gettemplatevariable")) {
+      const cookie = String((opts && opts.headers && opts.headers.Cookie) || "");
+      return [cookie.includes("BDUSS=abc") ? bdstokenOk() : { errno: -6, result: null }];
+    }
+    if (url.includes("/api/list")) {
+      return [{ errno: 0, list: [{ fs_id: 1, server_filename: "游戏", isdir: 1, path: "/游戏" }] }];
+    }
+    return [{}, 200, {}];
+  });
+  const folders = await baidu.listSubfolders("/");
+  assert.deepStrictEqual(folders, [{ id: "/游戏", name: "游戏" }]);
+});
+
 test("getShareList：解析分享页 HTML，正确配对 fs_id 与文件名", async () => {
   store.saveAccount("baidu", { cookie: "BDUSS=abc; STOKEN=def" });
   global.fetch = makeFetch((url) => {
@@ -294,7 +310,8 @@ test("trashFiles：有 accessToken 时走官方 OpenAPI（path+fsid 对象、asy
   assert.strictEqual(j.errno, 0);
   assert.ok(sent.url.includes("method=filemanager"));
   assert.ok(sent.url.includes("access_token=TOKEN1"));
-  assert.ok(sent.url.includes("async=0"));
+  assert.ok(decodeURIComponent(sent.body).includes("opera=delete"));
+  assert.ok(decodeURIComponent(sent.body).includes("async=0"));
   assert.ok(
     decodeURIComponent(sent.body).includes(
       'filelist=[{"path":"/a","fsid":1},{"path":"/b","fsid":2}]',

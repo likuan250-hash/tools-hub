@@ -2,9 +2,9 @@
 // DaVinci Resolve 游戏剪辑标准流程自动化 CLI（步骤 0-4 / 8-9）
 // 用法：node scripts/resolve-auto/index.js setup --dir "E:\素材\【游戏282】…"
 //       node scripts/resolve-auto/index.js render --project "…" --out "…"
-const { spawn } = require('child_process');
-const path = require('path');
-const cfg = require('./config');
+const { spawn } = require("child_process");
+const path = require("path");
+const cfg = require("./config");
 
 const cmd = process.argv[2];
 const args = process.argv.slice(3);
@@ -25,17 +25,19 @@ function usage() {
 RESOLVE_PYTHON / RESOLVE_TEMPLATE_DRT / RESOLVE_RENDER_PRESET / RESOLVE_MATERIAL_ROOT`);
 }
 
-if (!['setup', 'render'].includes(cmd)) {
+if (!["setup", "render"].includes(cmd)) {
   usage();
-  process.exit(cmd === 'help' ? 0 : 1);
+  process.exit(cmd === "help" ? 0 : 1);
 }
 
-const py = spawn(cfg.python, [path.join(__dirname, 'resolve.py'), cmd, ...args], {
-  stdio: 'inherit',
+// -u：强制 Python 无缓冲输出，否则管道模式下日志会攒到进程结束才显示，
+// 用户会误以为工具启动后长时间没有反应。
+const py = spawn(cfg.python, ["-u", path.join(__dirname, "resolve.py"), cmd, ...args], {
+  stdio: "inherit",
   shell: false, // 铁律：数组传参，绝不用 shell 字符串拼接
   env: {
     ...process.env,
-    PYTHONUTF8: '1',
+    PYTHONUTF8: "1",
     RESOLVE_SCRIPT_API: cfg.scriptApi,
     RESOLVE_SCRIPT_LIB: cfg.scriptLib,
     RESOLVE_EXE: cfg.resolveExe,
@@ -47,8 +49,8 @@ const py = spawn(cfg.python, [path.join(__dirname, 'resolve.py'), cmd, ...args],
     RESOLVE_WORK_DIR: cfg.workDir,
   },
 });
-py.on('error', (e) => {
-  console.error('[错误] 无法启动 Python：' + e.message + '（可用 RESOLVE_PYTHON 指定）');
+py.on("error", (e) => {
+  console.error("[错误] 无法启动 Python：" + e.message + "（可用 RESOLVE_PYTHON 指定）");
   process.exit(1);
 });
-py.on('exit', (code) => process.exit(code == null ? 1 : code));
+py.on("exit", (code) => process.exit(code == null ? 1 : code));

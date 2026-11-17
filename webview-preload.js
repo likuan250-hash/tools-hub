@@ -31,7 +31,12 @@ function applyTheme(t) {
 // 同时保留 sync-theme 监听，实时响应工具箱的主题切换。
 ipcRenderer.on("sync-theme", (_e, t) => applyTheme(t));
 try {
-  ipcRenderer.invoke("get-theme").then((t) => { if (t) applyTheme(t); }).catch(() => {});
+  ipcRenderer
+    .invoke("get-theme")
+    .then((t) => {
+      if (t) applyTheme(t);
+    })
+    .catch(() => {});
 } catch (e) {}
 // 兜底：直接从本页 localStorage 同步应用主题（避免 get-theme 竞态/失败导致子页面皮肤不生效），
 // DOMContentLoaded 后再补一次，确保 webview 内容渲染前 data-skin 已就位。
@@ -44,6 +49,21 @@ function applyStoredTheme() {
 applyStoredTheme();
 document.addEventListener("DOMContentLoaded", applyStoredTheme);
 
+let pendingToolHandoff = null;
+const toolHandoffListeners = [];
+ipcRenderer.on("tool-handoff", (_event, payload) => {
+  if (!payload) return;
+  if (!toolHandoffListeners.length) {
+    pendingToolHandoff = payload;
+    return;
+  }
+  toolHandoffListeners.forEach((cb) => {
+    try {
+      cb(payload);
+    } catch (e) {}
+  });
+});
+
 contextBridge.exposeInMainWorld("electronAPI", {
   // 原生文件夹选择（kdocs 封面目录按钮调用）
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
@@ -53,6 +73,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   // 在文件管理器中显示并选中文件（素材搜集产物卡片点击）
   revealInFolder: (p) => ipcRenderer.invoke("reveal-in-folder", p),
+  // 跨工具接力：把当前素材目录交给另一个工具；接收端会自动缓存首个事件。
+  handoffToTool: (key, data) => ipcRenderer.invoke("handoff-tool", { key, data: data || {} }),
+  onToolHandoff: (cb) => {
+    if (typeof cb !== "function") return;
+    toolHandoffListeners.push(cb);
+    if (pendingToolHandoff) {
+      const payload = pendingToolHandoff;
+      pendingToolHandoff = null;
+      setTimeout(() => {
+        try {
+          cb(payload);
+        } catch (e) {}
+      }, 0);
+    }
+  },
   // 状态（预留）
   getStatus: () => ipcRenderer.invoke("get-status"),
   onStatus: (cb) => ipcRenderer.on("status", (_e, p) => cb(p)),

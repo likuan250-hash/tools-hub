@@ -18,6 +18,7 @@ const clearCollectBtn = $("clearCollectBtn");
 const formError = $("formError");
 const forceTrailerCb = $("forceTrailer");
 const forceCoverCb = $("forceCover");
+const scopeInputs = Array.from(document.querySelectorAll('input[name="collectScope"]'));
 const coverUrlInput = $("coverUrl");
 const biliCollectUrl = $("biliCollectUrl");
 const biliQualitySel = $("biliQualitySel");
@@ -260,11 +261,11 @@ function renderDone(ev) {
   const folderPath = d.folder || "";
 
   // 摘要：封面是硬指标（缺封面 = 整体失败）；封面在但宣传片缺 = 黄警，不假装全绿
-  if (ev.ok === true && d.trailerOk) {
+  if (ev.ok === true) {
     doneSummary.className = "result-summary ok";
     doneSummary.innerHTML =
       summaryIcon("ok") + " " + esc((ev.step || "素材搜集完成") + " · " + (ev.msg || ""));
-  } else if (ev.ok === true) {
+  } else if (d.partial === true) {
     doneSummary.className = "result-summary warn";
     doneSummary.innerHTML =
       summaryIcon("warn") + " " + esc((ev.step || "素材搜集完成") + " · " + (ev.msg || ""));
@@ -360,7 +361,11 @@ function renderDone(ev) {
   STEP_ORDER.forEach((g) => {
     const st = stepState[g];
     if (st && st.level !== "ok" && st.level !== "err") {
-      stepState[g] = { level: "err", detail: st.detail || '<span class="err">未完成</span>' };
+      const skipped =
+        (d.scope === "cover" && g === "trailer") || (d.scope === "video" && g === "cover");
+      stepState[g] = skipped
+        ? { level: "off", detail: "已跳过（不在本次搜集范围）" }
+        : { level: "err", detail: st.detail || '<span class="err">未完成</span>' };
       renderStep(g);
     }
   });
@@ -382,6 +387,8 @@ async function runCollect(name) {
   $("panel-done").classList.remove("show");
   addLog("info", "开始搜集：" + name);
   let succeeded = false;
+  const scopeInput = scopeInputs.find((el) => el.checked);
+  const scope = scopeInput ? scopeInput.value : "all";
 
   try {
     const r = await fetch("/api/collect", {
@@ -391,6 +398,7 @@ async function runCollect(name) {
         name: name,
         forceTrailer: forceTrailerCb.checked,
         forceCover: forceCoverCb.checked,
+        scope,
         coverUrl: coverUrlInput.value.trim(),
         biliUrl: biliCollectUrl.value.trim(),
         biliQuality: "1080",
@@ -832,6 +840,10 @@ if (clearCollectBtn) {
     biliCollectUrl.value = "";
     forceTrailerCb.checked = false;
     forceCoverCb.checked = false;
+    scopeInputs.forEach((el) => {
+      el.checked = el.value === "all";
+    });
+    updateScopeControls();
     resetBiliQuality();
     setBiliHint("", "");
     closeCoverPicker();
@@ -845,6 +857,24 @@ if (clearCollectBtn) {
     gameName.focus();
   };
 }
+
+function currentScope() {
+  const hit = scopeInputs.find((el) => el.checked);
+  return hit ? hit.value : "all";
+}
+
+function updateScopeControls() {
+  const scope = currentScope();
+  const trailerLabel = forceTrailerCb && forceTrailerCb.closest(".force-switch");
+  const coverLabel = forceCoverCb && forceCoverCb.closest(".force-switch");
+  if (trailerLabel) trailerLabel.classList.toggle("is-disabled", scope === "cover");
+  if (coverLabel) coverLabel.classList.toggle("is-disabled", scope === "video");
+  if (scope === "cover") forceTrailerCb.checked = false;
+  if (scope === "video") forceCoverCb.checked = false;
+}
+
+scopeInputs.forEach((el) => el.addEventListener("change", updateScopeControls));
+updateScopeControls();
 
 collectBtn.onclick = () => {
   if (running) return;

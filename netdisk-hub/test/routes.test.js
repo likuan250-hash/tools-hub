@@ -129,7 +129,7 @@ test('/api/accounts：xunlei 目录无 id 时生效路径为 "/"', async () => {
 });
 
 test("/api/accounts：无 expiresAt（会话级 Cookie）→ loginAt+90 天兜底估算并标记 estimated", async () => {
-  const loginAt = new Date("2026-07-29T13:08:30.912Z").toISOString();
+  const loginAt = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   store.saveAccount("baidu", { connected: true, cookie: "BDUSS=x", loginAt });
   const { body } = await get("/api/accounts");
   const expectTs = new Date(loginAt).getTime() + 90 * 24 * 3600 * 1000;

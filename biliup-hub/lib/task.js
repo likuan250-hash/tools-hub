@@ -123,8 +123,16 @@ async function run(req, ctx) {
     return { ok: false, error: msg };
   }
 
-  // 完整 desc：基础简介（AIGC 合规头已于 #3 移除，不再注入）。
-  const fullDesc = config.desc || "";
+  // 简介由每次投稿请求显式传入；失败时仍兼容旧的内部调用配置。
+  const fullDesc = String(req.desc != null ? req.desc : config.desc || "").trim();
+  if (!fullDesc) {
+    emit({ type: "error", stage: "pending", message: "投稿简介不能为空" });
+    return { ok: false, error: "投稿简介不能为空" };
+  }
+  if (fullDesc.length > 2000) {
+    emit({ type: "error", stage: "pending", message: "投稿简介最多 2000 字" });
+    return { ok: false, error: "投稿简介最多 2000 字" };
+  }
 
   const tags = Array.isArray(req.tags) ? req.tags : config.tags || [];
   const publishMode = req.publishMode === "dtime" ? "dtime" : "now";

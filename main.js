@@ -801,7 +801,7 @@ ipcMain.handle("get-status", () => statusPayload());
 ipcMain.handle("get-webview-preload", () => WEBVIEW_PRELOAD);
 ipcMain.handle("pick-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: "选择封面图片存放目录",
+    title: "选择文件夹",
     properties: ["openDirectory", "createDirectory"],
   });
   if (result.canceled || !result.filePaths.length) {
@@ -897,6 +897,19 @@ ipcMain.handle("tool-close", (_e, key) => {
   const cfg = CHILDREN[key];
   if (!cfg) return { ok: false };
   stopChild(cfg);
+  return { ok: true };
+});
+// 工具页跨工具接力：达芬奇导出完成后把素材目录交给 B站投稿。
+ipcMain.handle("handoff-tool", (_event, payload) => {
+  const key = payload && payload.key;
+  const dir = payload && payload.data && String(payload.data.dir || "").trim();
+  if (key !== "biliup") return { ok: false, error: "不支持的接力目标" };
+  if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    return { ok: false, error: "接力目录不存在" };
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, error: "主窗口不可用" };
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.webContents.send("tool-handoff", { key, data: { dir } });
   return { ok: true };
 });
 

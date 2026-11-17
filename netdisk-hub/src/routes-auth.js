@@ -191,24 +191,33 @@ module.exports = function registerAuthRoutes(app, deps) {
       store.saveAccount("baidu", {
         accessToken: data.access_token,
         refreshToken: data.refresh_token,
+        accessTokenExpiresAt: Date.now() + (data.expires_in || 2592000) * 1000,
         expiresAt: Date.now() + (data.expires_in || 2592000) * 1000,
         scope: data.scope,
       });
-      res.type("html").send("<!doctype html><html><head><meta charset=utf-8><title>授权完成</title></head><body style=\"font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#cfd3dc\"><p>百度授权成功,正在返回…</p><script>try { if (window.opener) { window.opener.postMessage({ provider: \"baidu\", authorized: true }, location.origin); setTimeout(function(){ window.close(); }, 300); } else { location.href = \"/?authorized=baidu\"; } } catch (e) { location.href = \"/?authorized=baidu\"; }</script></body></html>");
+      res
+        .type("html")
+        .send(
+          "<!doctype html><html><head><meta charset=utf-8><title>授权完成</title></head><body style=\"font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f1115;color:#cfd3dc\"><p>百度授权成功,正在返回…</p><script>try { if (window.opener) { window.opener.postMessage({ provider: \"baidu\", authorized: true }, location.origin); setTimeout(function(){ window.close(); }, 300); } else { location.href = \"/?authorized=baidu\"; } } catch (e) { location.href = \"/?authorized=baidu\"; }</script></body></html>",
+        );
     } catch (e) {
       res.redirect("/?error=auth_failed&msg=" + encodeURIComponent(e.message));
     }
   });
 
   // 夸克登录
-  app.get("/auth/quark", (req, res) => { res.type("html").send(quarkLoginPage()); });
+  app.get("/auth/quark", (req, res) => {
+    res.type("html").send(quarkLoginPage());
+  });
   app.post("/api/quark/login/start", (req, res) => {
     const s = quarkAuth.getState();
     if (s.status === "waiting") return res.json({ started: false, message: "已有登录会话进行中" });
     quarkAuth.startLogin();
     res.json({ started: true });
   });
-  app.get("/api/quark/login/status", (req, res) => { res.json(quarkAuth.getState()); });
+  app.get("/api/quark/login/status", (req, res) => {
+    res.json(quarkAuth.getState());
+  });
   app.post("/api/quark/logout", (req, res) => {
     const acc = store.getAccount("quark") || {};
     store.saveAccount("quark", { ...acc, cookie: "", connected: false });
@@ -216,14 +225,18 @@ module.exports = function registerAuthRoutes(app, deps) {
   });
 
   // 迅雷登录
-  app.get("/auth/xunlei", (req, res) => { res.type("html").send(xunleiLoginPage()); });
+  app.get("/auth/xunlei", (req, res) => {
+    res.type("html").send(xunleiLoginPage());
+  });
   app.post("/api/xunlei/login/start", (req, res) => {
     const s = xunleiAuth.getState();
     if (s.status === "waiting") return res.json({ started: false, message: "已有登录会话进行中" });
     xunleiAuth.startLogin();
     res.json({ started: true });
   });
-  app.get("/api/xunlei/login/status", (req, res) => { res.json(xunleiAuth.getState()); });
+  app.get("/api/xunlei/login/status", (req, res) => {
+    res.json(xunleiAuth.getState());
+  });
   app.post("/api/xunlei/logout", (req, res) => {
     const acc = store.getAccount("xunlei") || {};
     store.saveAccount("xunlei", { ...acc, connected: false, loginAt: null });
@@ -231,14 +244,18 @@ module.exports = function registerAuthRoutes(app, deps) {
   });
 
   // 百度 Cookie 登录（Playwright）
-  app.get("/auth/baidu/cookie", (req, res) => { res.type("html").send(baiduLoginPage()); });
+  app.get("/auth/baidu/cookie", (req, res) => {
+    res.type("html").send(baiduLoginPage());
+  });
   app.post("/api/baidu/login/start", (req, res) => {
     const s = baiduAuth.getState();
     if (s.status === "waiting") return res.json({ started: false, message: "已有登录会话进行中" });
     baiduAuth.startLogin();
     res.json({ started: true });
   });
-  app.get("/api/baidu/login/status", (req, res) => { res.json(baiduAuth.getState()); });
+  app.get("/api/baidu/login/status", (req, res) => {
+    res.json(baiduAuth.getState());
+  });
   app.post("/api/baidu/logout", (req, res) => {
     const acc = store.getAccount("baidu") || {};
     store.saveAccount("baidu", { ...acc, cookie: "", connected: false });

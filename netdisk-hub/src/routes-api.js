@@ -326,6 +326,7 @@ function registerApiRoutes(app, ctx) {
       logger.info("移入回收站:", { provider, count: fileIds.length });
       res.json({ ok: true, result });
     } catch (e) {
+      logger.warn("移入回收站失败:", { provider, count: fileIds.length, error: e.message });
       res.status(500).json({ error: e.message });
     }
   });

@@ -52,6 +52,41 @@ function startServer() {
   });
 }
 
+test("GET /api/folder-meta：读取标题、简介、标签并选择视频", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "biliup-folder-meta-"));
+  fs.writeFileSync(path.join(dir, "【游戏999】测试成片.mp4"), "");
+  fs.writeFileSync(
+    path.join(dir, "B站标题与简介.md"),
+    "标题：【游戏999】测试标题\n\n简介：\n简介正文\n\n标签：测试,游戏\n",
+  );
+  const srv = await startServer();
+  try {
+    const { status, body } = await getJSON(srv, "/api/folder-meta?dir=" + encodeURIComponent(dir));
+    assert.equal(status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.metadata.title, "【游戏999】测试标题");
+    assert.deepEqual(body.metadata.tags, ["测试", "游戏"]);
+    assert.match(body.video, /测试成片\.mp4$/);
+  } finally {
+    srv.close();
+  }
+});
+
+test("GET /api/folder-meta：只有预告片时明确返回成品缺失", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "biliup-folder-meta-"));
+  fs.writeFileSync(path.join(dir, "【1080P】《测试》- 发售预告片.mp4"), "");
+  fs.writeFileSync(path.join(dir, "B站标题与简介.md"), "标题：【游戏999】测试\n");
+  const srv = await startServer();
+  try {
+    const { status, body } = await getJSON(srv, "/api/folder-meta?dir=" + encodeURIComponent(dir));
+    assert.equal(status, 422);
+    assert.equal(body.videoErrorCode, "FINAL_VIDEO_MISSING");
+    assert.match(body.error, /成品视频缺失/);
+  } finally {
+    srv.close();
+  }
+});
+
 async function getJSON(srv, p) {
   const port = srv.address().port;
   const resp = await fetch(`http://127.0.0.1:${port}${p}`);
@@ -664,6 +699,10 @@ test("POST /api/upload：文件不存在 / 非视频扩展名 / 过去时间 / �
     r = await postJSON(srv, "/api/upload", { videoPath: VIDEO_MP4, tags: ["x".repeat(21)] });
     assert.equal(r.status, 400);
     assert.match(r.body.error, /单个标签最多/);
+
+    r = await postJSON(srv, "/api/upload", { videoPath: VIDEO_MP4, desc: "   " });
+    assert.equal(r.status, 400);
+    assert.match(r.body.error, /投稿简介不能为空/);
   } finally {
     srv.close();
   }
@@ -673,10 +712,10 @@ test("cookies 无效：返回 400 且不会把上传锁死在「进行中」", a
   writeCookies({});
   const srv = await startServer();
   try {
-    const first = await postJSON(srv, "/api/upload", { videoPath: VIDEO_MP4 });
+    const first = await postJSON(srv, "/api/upload", { videoPath: VIDEO_MP4, desc: "投稿简介" });
     assert.equal(first.status, 400);
     assert.match(first.body.error, /cookies 无效/);
-    const second = await postJSON(srv, "/api/upload", { videoPath: VIDEO_MP4 });
+    const second = await postJSON(srv, "/api/upload", { videoPath: VIDEO_MP4, desc: "投稿简介" });
     assert.equal(second.status, 400);
     assert.match(second.body.error, /cookies 无效/);
     const st = await getJSON(srv, "/api/upload/status");

@@ -1056,19 +1056,19 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       </div>
     </header>
 
-    <!-- 选择视频（独立卡片） -->
+    <!-- 选择素材文件夹（自动读取视频与 B站标题/简介/标签） -->
     <section class="panel">
       <div class="panel-head">
-        <h2><i class="app-ico" data-ico="folder"></i> 选择视频</h2>
+        <h2><i class="app-ico" data-ico="folder"></i> 选择素材文件夹</h2>
         <div class="panel-acts">
           <button class="auth-btn pv-open-btn" id="pvOpenBtn" type="button"><i class="app-ico" data-ico="inbox"></i> 待发布清单</button>
           <button class="icon-btn" id="clearBtn" title="清空" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="ib-ico"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg><span class="ib-label">清空</span></button>
         </div>
       </div>
       <div class="field">
-        <label>本地视频文件（mp4）</label>
+        <label>标准素材文件夹（自动读取视频与 B站标题、简介、标签）</label>
         <div class="row">
-          <button class="auth-btn" id="pickBtn" type="button"><i class="app-ico" data-ico="folder"></i> 选择文件</button>
+          <button class="auth-btn" id="pickBtn" type="button"><i class="app-ico" data-ico="folder"></i> 选择文件夹</button>
           <span id="videoName" class="file-name"></span>
         </div>
       </div>
@@ -1090,6 +1090,11 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
       <div class="field">
         <label>标签（选入视频后自动从 B站推荐生成，可手动覆盖；默认标签见设置）</label>
         <input type="text" id="tagsInput" placeholder="辐射4,单机游戏,RPG" />
+      </div>
+      <div class="field">
+        <label>投稿简介（必填，每次投稿可修改）</label>
+        <textarea id="descInput" maxlength="2000" placeholder="填写本次投稿简介，不能为空"></textarea>
+        <div class="field-hint"><span id="descCount">0</span>/2000 字 · 未填写时不会发布</div>
       </div>
       <div class="field">
         <label>发布模式</label>
@@ -1313,10 +1318,6 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
           <div class="field"><label>默认标签（逗号分隔，标签自动生成时叠加兜底）</label>
             <input type="text" id="defaultTagsInput" placeholder="单机游戏,RPG" />
           </div>
-        </div>
-        <div class="field" style="margin-top:16px">
-          <label>固定简介（4 行，可编辑）</label>
-          <textarea id="cfgDesc"></textarea>
         </div>
         <div class="field">
           <label>置顶评论</label>

@@ -394,7 +394,8 @@ class CollectService {
    *   name: string, outDir?: string, coverUrl?: string,
    *   biliUrl?: string, biliQuality?: string|number, biliFormatId?: string,
    *   englishName?: string, developer?: string, versionDesc?: string,
-   *   kind?: string, force?: boolean, forceTrailer?: boolean, forceCover?: boolean
+   *   kind?: string, force?: boolean, forceTrailer?: boolean, forceCover?: boolean,
+   *   collectCover?: boolean, collectTrailer?: boolean
    * }} opts 入参；forceTrailer/forceCover 针对单类强制重下，force=true 等价于两者都 true。
    *   组合收集：同时给 biliUrl + coverUrl 时，按规则建【游戏NNN】文件夹，B站视频下进该文件夹
    *   （跳过 YouTube/Steam 检索），封面直接用用户链接（不自动检索）；biliQuality 默认 best（拉满），
@@ -437,6 +438,8 @@ class CollectService {
     const force = opts.force === true;
     const forceTrailer = force || opts.forceTrailer === true;
     const forceCover = force || opts.forceCover === true;
+    const collectCover = opts.collectCover !== false;
+    const collectTrailer = opts.collectTrailer !== false;
     const result = {
       folder: "",
       index: 0,
@@ -599,8 +602,12 @@ class CollectService {
     let videoPath = "";
 
     const existingVideo =
-      !forceTrailer && result.reused ? this.findExistingVideo(reserved.folder) : null;
-    if (existingVideo) {
+      collectTrailer && !forceTrailer && result.reused
+        ? this.findExistingVideo(reserved.folder)
+        : null;
+    if (!collectTrailer) {
+      emit("log", STEP_TRAILER, "已跳过视频搜集（仅搜集封面）", null, { level: "info" });
+    } else if (existingVideo) {
       result.trailerOk = true;
       const reusedTitle = (this.reusedTrailerMeta && this.reusedTrailerMeta.title) || "";
       result.trailer = {
@@ -797,10 +804,13 @@ class CollectService {
 
     // ── 3. cover：规范六级来源依次降级 ──
     const existingCover =
-      !forceCover && result.reused ? this.findExistingCover(reserved.folder) : null;
+      collectCover && !forceCover && result.reused ? this.findExistingCover(reserved.folder) : null;
     let coverRes = { ok: false, error: "未执行" };
 
-    if (existingCover) {
+    if (!collectCover) {
+      coverRes = { ok: false, error: "已跳过", skipped: true };
+      emit("log", STEP_COVER, "已跳过封面搜集（仅搜集视频）", null, { level: "info" });
+    } else if (existingCover) {
       coverRes = { ok: true, file: existingCover.file, path: existingCover.path, source: "reused" };
       emit("cover_download", STEP_COVER, "复用已有封面 " + existingCover.file, true, {
         file: existingCover.file,
@@ -879,6 +889,7 @@ class CollectService {
       "user",
     ];
     const needFallback =
+      collectCover &&
       (!coverRes.ok ||
         (coverRes.degraded === true &&
           PRESERVE_COVER_SOURCES.indexOf(coverRes.source) < 0 &&
@@ -985,7 +996,7 @@ class CollectService {
     // 清理候选预检临时文件（交互预览模式使用）
     this.cover.clearPreviewTmp();
 
-    if (coverRes.ok) {
+    if (collectCover && coverRes.ok) {
       result.coverOk = true;
       result.cover = {
         file: coverRes.file,
@@ -996,7 +1007,7 @@ class CollectService {
         degraded: coverRes.degraded === true,
         reused: coverRes.source === "reused",
       };
-    } else {
+    } else if (collectCover) {
       this.logger.warn("[collect] 封面获取失败:", coverRes.error);
       emit("error", STEP_COVER, coverRes.error || "所有封面来源均获取失败", false, {
         reason: coverRes.reason || "cover-all-sources-failed",
@@ -1008,8 +1019,11 @@ class CollectService {
     // ── 5. done：按规范《目录结构》，一份完整素材 = 主视频 + 封面 ──
     //      不再是旧版的 `success = coverOk` 单点判定。
     //      抽帧兜底生效后，只要视频下来了封面必然有 → 整体判成功。
-    result.success = result.coverOk && result.trailerOk;
-    result.partial = !result.success && (result.coverOk || result.trailerOk);
+    const coverDone = !collectCover || result.coverOk;
+    const trailerDone = !collectTrailer || result.trailerOk;
+    result.success = coverDone && trailerDone;
+    result.partial =
+      !result.success && ((collectCover && result.coverOk) || (collectTrailer && result.trailerOk));
 
     let step = STEP_DONE_FAIL;
     if (result.success) step = STEP_DONE;
@@ -1017,7 +1031,9 @@ class CollectService {
 
     let msg = "";
     if (result.success) {
-      msg = "落盘 " + reserved.folder + "\\";
+      const label =
+        collectCover && collectTrailer ? "" : collectCover ? "仅封面落盘" : "仅视频落盘";
+      msg = (label ? label + "：" : "落盘 ") + reserved.folder + "\\";
     } else if (result.partial) {
       msg =
         (result.coverOk ? "仅封面落盘" : "仅视频落盘") +
@@ -1042,6 +1058,9 @@ class CollectService {
       reused: result.reused,
       coverOk: result.coverOk,
       trailerOk: result.trailerOk,
+      collectCover,
+      collectTrailer,
+      scope: collectCover && collectTrailer ? "all" : collectCover ? "cover" : "video",
       partial: result.partial,
       cover: result.cover,
       trailer: result.trailer,

@@ -286,13 +286,16 @@ function renderTasks() {
             actions = `<div class="row-actions"><button class="retry" data-retry="${t.id}">重试</button></div>`;
           }
           const share = t.shareLink
-            ? `<div class="meta">我的分享: <a href="${escapeHtml(t.shareLink)}" target="_blank" style="color:var(--accent-2)">${escapeHtml(t.shareLink)}</a>${t.sharePwd ? " / 提取码:" + escapeHtml(t.sharePwd) : ""}</div>`
+            ? `<div class="meta link-row share-link-row"><span class="link-tag share">我的分享</span><a href="${escapeHtml(t.shareLink)}" target="_blank">${escapeHtml(t.shareLink)}</a>${t.sharePwd ? `<span class="link-pwd">提取码: ${escapeHtml(t.sharePwd)}</span>` : ""}</div>`
             : t.status === "success"
               ? '<div class="meta">未生成分享</div>'
               : `<div class="meta" style="color:var(--err)">${escapeHtml(t.error || "")}</div>`;
+          const source = t.sourceLink
+            ? `<div class="meta link-row source-link-row"><span class="link-tag source">原链接</span><a href="${escapeHtml(t.sourceLink)}" target="_blank">${escapeHtml(t.sourceLink)}</a>${t.sourcePwd ? `<span class="link-pwd">提取码: ${escapeHtml(t.sourcePwd)}</span>` : ""}<button class="copy-inline" data-copy-text="${escapeHtml(t.sourceLink)}">复制</button></div>`
+            : '<div class="meta link-row source-link-row"><span class="link-tag source">原链接</span><span>-</span></div>';
           return `<div class="task">
         <div class="top"><b>${name}</b>${badge}</div>
-        <div class="meta">源: ${escapeHtml(t.sourceLink || "-")}${t.sourcePwd ? " / 码:" + escapeHtml(t.sourcePwd) : ""}</div>
+        ${source}
         ${share}
         <div class="meta">${time}${t.fileCount ? " · " + t.fileCount + " 个文件" : ""}</div>
         ${actions}
@@ -603,11 +606,21 @@ function renderTransferStep(s) {
     "</div>";
 }
 
-function resetTransferProgress() {
+function clearTransferProgress() {
   if (!transferProgress) return;
+  if (transferES) {
+    transferES.close();
+    transferES = null;
+  }
   transferStepsEl.innerHTML = "";
   transferLogEl.innerHTML = "";
   transferStepEls = [];
+  transferProgress.classList.remove("show");
+}
+
+function resetTransferProgress() {
+  if (!transferProgress) return;
+  clearTransferProgress();
   transferProgress.classList.add("show");
 }
 
@@ -656,8 +669,13 @@ function openTransferSSE(clientId) {
 // 清空输入:一键清空分享文本框,并同步重置网盘勾选区与结果区
 const clearText = document.getElementById("clearText");
 clearText.onclick = () => {
+  if (transferES) {
+    toast("转存进行中，完成后再清空", "err");
+    return;
+  }
   batchText.value = "";
   refreshUI();
+  clearTransferProgress();
   batchText.focus();
 };
 
@@ -1137,8 +1155,15 @@ function runFormat() {
 fmtInput.addEventListener("input", runFormat);
 
 fmtClear.addEventListener("click", () => {
+  if (transferES) {
+    toast("转存进行中，完成后再清空", "err");
+    return;
+  }
   fmtInput.value = "";
   fmtResult.value = "";
+  batchText.value = "";
+  refreshUI();
+  clearTransferProgress();
   fmtInput.focus();
 });
 

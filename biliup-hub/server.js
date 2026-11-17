@@ -15,6 +15,7 @@ const auth = require("./lib/auth");
 const pendingPin = require("./lib/pendingPin");
 const pendingVideos = require("./lib/pendingVideos");
 const pendingSync = require("./lib/pendingSync");
+const folderMeta = require("./lib/folderMeta");
 const logger = require("./lib/logger");
 const EventEmitter = require("events");
 
@@ -337,6 +338,19 @@ app.get("/api/version", (req, res) => {
 // ── 健康检查 ──
 app.get(["/api/health", "/api/live"], (req, res) => {
   res.json({ ok: true, ts: Date.now(), port: Number(PORT), bind: "127.0.0.1" });
+});
+
+// 从标准素材文件夹读取 B站标题、简介、标签，并自动选择成片/预告片。
+app.get("/api/folder-meta", (req, res) => {
+  try {
+    const info = folderMeta.readFolderMeta(String(req.query.dir || "").trim());
+    if (!info.videoPath) {
+      return res.status(422).json({ ok: false, ...info, error: info.videoError });
+    }
+    res.json({ ok: true, ...info });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.message });
+  }
 });
 
 // ── 配置读取（含 cookies 状态）──
@@ -680,6 +694,22 @@ app.post("/api/upload", (req, res) => {
   if (!ALLOWED_VIDEO_EXTS.has(ext)) {
     return res.status(400).json({ error: "不支持的视频格式：" + (ext || "(无扩展名)") });
   }
+  if (/发售预告片|预告片|trailer/i.test(path.basename(videoPath))) {
+    return res.status(400).json({ error: "请选择成品视频，不能投稿预告片" });
+  }
+  try {
+    const folder = folderMeta.readFolderMeta(path.dirname(videoPath));
+    if (folder.metadataFile) {
+      if (!folder.videoPath) {
+        return res.status(400).json({ error: folder.videoError });
+      }
+      if (path.resolve(folder.videoPath) !== path.resolve(videoPath)) {
+        return res.status(400).json({ error: "请选择成品视频：" + folder.video });
+      }
+    }
+  } catch (e) {
+    /* 非标准目录不阻断普通文件上传 */
+  }
   if (body.publishMode === "dtime") {
     const d = Number(body.dtime);
     if (!Number.isFinite(d) || d <= Math.floor(Date.now() / 1000)) {
@@ -698,6 +728,10 @@ app.post("/api/upload", (req, res) => {
   if (tooLong)
     return res.status(400).json({ error: "单个标签最多 " + MAX_TAG_LEN + " 字：" + tooLong });
   if (body.tags != null) body.tags = tags;
+  const desc = String(body.desc || "").trim();
+  if (!desc) return res.status(400).json({ error: "投稿简介不能为空" });
+  if (desc.length > 2000) return res.status(400).json({ error: "投稿简介最多 2000 字" });
+  body.desc = desc;
   if (uploadBusy) {
     return res.status(409).json({ error: "已有投稿任务进行中，请等待完成后再试" });
   }

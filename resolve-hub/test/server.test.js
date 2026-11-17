@@ -40,6 +40,23 @@ test("GET /api/preflight：返回 python/template/resolveExe/materialRoot", asyn
   });
 });
 
+test("GET /api/folder-info：读取 B站标题并作为默认输出名", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resolve-folder-info-"));
+  fs.writeFileSync(path.join(dir, "封面.jpg"), "");
+  fs.writeFileSync(path.join(dir, "【1080P】《测试》- 发售预告片.mp4"), "");
+  fs.writeFileSync(
+    path.join(dir, "B站标题与简介.md"),
+    "标题：【游戏999】测试标题\n\n简介：\n简介正文\n\n标签：测试,游戏\n",
+  );
+  await withServer(async ({ base }) => {
+    const r = await fetch(base + "/api/folder-info?dir=" + encodeURIComponent(dir));
+    const j = await r.json();
+    assert.equal(j.ok, true);
+    assert.equal(j.metadata.title, "【游戏999】测试标题");
+    assert.equal(j.defaultOut, "【游戏999】测试标题");
+  });
+});
+
 test("跨站 Origin：POST 被 403 拒绝", async () => {
   await withServer(async ({ base }) => {
     const r = await fetch(base + "/api/start", {

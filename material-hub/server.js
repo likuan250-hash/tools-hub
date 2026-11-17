@@ -100,6 +100,9 @@ app.post("/api/collect", (req, res) => {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const forceTrailer = body.forceTrailer === true;
   const forceCover = body.forceCover === true;
+  const scope = ["all", "cover", "video"].includes(body.scope) ? body.scope : "all";
+  const collectCover = scope !== "video";
+  const collectTrailer = scope !== "cover";
   const coverUrl = typeof body.coverUrl === "string" ? body.coverUrl.trim() : "";
   const biliUrl = typeof body.biliUrl === "string" ? body.biliUrl.trim() : "";
   const biliQuality = typeof body.biliQuality === "string" ? body.biliQuality : "1080";
@@ -149,7 +152,19 @@ app.post("/api/collect", (req, res) => {
   logger.info("[collect] 开始：" + name + " → " + getOutputDir());
   service
     .run(
-      { name, outDir: getOutputDir(), forceTrailer, forceCover, coverUrl, biliUrl, biliQuality, coverInteractive: true },
+      {
+        name,
+        outDir: getOutputDir(),
+        forceTrailer,
+        forceCover,
+        collectCover,
+        collectTrailer,
+        scope,
+        coverUrl,
+        biliUrl,
+        biliQuality,
+        coverInteractive: true,
+      },
       { onEvent: send },
     )
     .catch((e) => {
@@ -170,7 +185,9 @@ app.post("/api/bili/formats", async (req, res) => {
   const body = req.body || {};
   const url = typeof body.url === "string" ? body.url.trim() : "";
   if (!url || !isBiliUrl(url)) {
-    return res.status(400).json({ ok: false, reason: "invalid-url", error: "请粘贴有效的 B站视频链接" });
+    return res
+      .status(400)
+      .json({ ok: false, reason: "invalid-url", error: "请粘贴有效的 B站视频链接" });
   }
   try {
     const env = new EnvDetector().detect();

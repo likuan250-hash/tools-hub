@@ -23,6 +23,7 @@
   const outPathRow = $("outPathRow");
   const outPath = $("outPath");
   const openFolderBtn = $("openFolderBtn");
+  const nextBiliBtn = $("nextBiliBtn");
   const selfcheckMask = $("selfcheckMask");
   const selfcheckList = $("selfcheckList");
   const scBack = $("scBack");
@@ -217,11 +218,14 @@
     Object.keys(stepEls).forEach((k) => delete stepEls[k]);
     logBuf = "";
     if (outPathRow) outPathRow.hidden = true;
+    if (nextBiliBtn) nextBiliBtn.hidden = true;
     if (outPath) outPath.textContent = "";
     setButtons();
   }
 
   function applyPhase() {
+    const canHandoff = !!(window.electronAPI && window.electronAPI.handoffToTool);
+    if (nextBiliBtn) nextBiliBtn.hidden = state.phase !== "done" || !canHandoff;
     if (state.phase === "setup_done") {
       manualCard.hidden = false;
       finishBtn.textContent = "确认好了，继续导出（8-9）";
@@ -275,11 +279,11 @@
       resetRunState();
       state.dir = dir;
       state.name = name;
-      state.out = j.defaultOut || defaultOut(name);
+      state.out = sanitizeOutName((j.metadata && j.metadata.title) || j.defaultOut || "", name);
       outInput.value = state.out;
       saveState();
     } else if (!outInput.value.trim()) {
-      state.out = j.defaultOut || defaultOut(name);
+      state.out = sanitizeOutName((j.metadata && j.metadata.title) || j.defaultOut || "", name);
       outInput.value = state.out;
     }
     const cover = j.coverOk
@@ -288,7 +292,11 @@
     const trailer = j.trailerOk
       ? '<span class="ok">预告片 ✓</span> ' + esc(j.trailer)
       : '<span class="bad">预告片 ✗（缺视频）</span>';
-    infoEl.innerHTML = "项目名：<b>" + esc(name) + "</b> · " + cover + " · " + trailer;
+    const meta =
+      j.metadata && j.metadata.title
+        ? ' · <span class="ok">B站文案 ✓</span>'
+        : ' · <span class="bad">B站文案 ✗（缺 B站标题与简介.md）</span>';
+    infoEl.innerHTML = "项目名：<b>" + esc(name) + "</b> · " + cover + " · " + trailer + meta;
     startReady = !!(j.coverOk && j.trailerOk) && !preflightBlocked;
     setButtons();
     if (opts.consoleHint === false) return;
@@ -488,6 +496,27 @@
         window.electronAPI.revealInFolder(p);
       } else {
         doneEl.textContent = "当前环境不支持打开文件夹：" + p;
+      }
+    };
+  }
+  if (nextBiliBtn) {
+    nextBiliBtn.onclick = async () => {
+      if (!current || state.phase !== "done") return;
+      if (!window.electronAPI || !window.electronAPI.handoffToTool) {
+        doneEl.textContent = "当前环境不支持工具接力，请在工具箱内运行。";
+        return;
+      }
+      nextBiliBtn.disabled = true;
+      try {
+        const r = await window.electronAPI.handoffToTool("biliup", { dir: current.path });
+        if (!r || !r.ok) throw new Error((r && r.error) || "接力失败");
+        doneEl.textContent = "已交给 B站自动投稿：正在打开并选择素材文件夹…";
+      } catch (e) {
+        doneEl.textContent = "接力失败：" + e.message;
+      } finally {
+        setTimeout(() => {
+          nextBiliBtn.disabled = false;
+        }, 1200);
       }
     };
   }

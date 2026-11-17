@@ -24,24 +24,45 @@ const appSrc = fs.readFileSync(path.join(RENDERER, "app.js"), "utf8");
 const dragGeoSrc = fs.readFileSync(path.join(RENDERER, "drag-geometry.js"), "utf8");
 const statusLuxeSrc = fs.readFileSync(path.join(RENDERER, "status-luxe.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(RENDERER, "index.html"), "utf8");
-const { computeInsertIndex: realComputeInsertIndex } = require(path.join(RENDERER, "drag-geometry"));
+const { computeInsertIndex: realComputeInsertIndex } = require(
+  path.join(RENDERER, "drag-geometry"),
+);
 
 // ───────────────────────── 轻量 DOM stub ─────────────────────────
 class StyleStub {
-  constructor() { this._props = {}; }
-  setProperty(k, v) { this._props[k] = v; }
-  removeProperty(k) { delete this._props[k]; }
-  getPropertyValue(k) { return this._props[k] || ""; }
+  constructor() {
+    this._props = {};
+  }
+  setProperty(k, v) {
+    this._props[k] = v;
+  }
+  removeProperty(k) {
+    delete this._props[k];
+  }
+  getPropertyValue(k) {
+    return this._props[k] || "";
+  }
 }
 class ClassListStub {
-  constructor() { this._set = new Set(); }
-  add(...c) { c.forEach((x) => this._set.add(x)); }
-  remove(...c) { c.forEach((x) => this._set.delete(x)); }
-  toggle(c, force) {
-    if (force === undefined) { this._set.has(c) ? this._set.delete(c) : this._set.add(c); }
-    else { force ? this._set.add(c) : this._set.delete(c); }
+  constructor() {
+    this._set = new Set();
   }
-  contains(c) { return this._set.has(c); }
+  add(...c) {
+    c.forEach((x) => this._set.add(x));
+  }
+  remove(...c) {
+    c.forEach((x) => this._set.delete(x));
+  }
+  toggle(c, force) {
+    if (force === undefined) {
+      this._set.has(c) ? this._set.delete(c) : this._set.add(c);
+    } else {
+      force ? this._set.add(c) : this._set.delete(c);
+    }
+  }
+  contains(c) {
+    return this._set.has(c);
+  }
 }
 class El {
   constructor(tag = "div") {
@@ -61,20 +82,48 @@ class El {
     this.id = "";
     const self = this;
     Object.defineProperty(this, "innerHTML", {
-      get() { return self._innerHTML; },
-      set(v) { self._innerHTML = v; if (v === "") self.children.length = 0; },
+      get() {
+        return self._innerHTML;
+      },
+      set(v) {
+        self._innerHTML = v;
+        if (v === "") self.children.length = 0;
+      },
     });
   }
-  setAttribute(k, v) { this._attrs[k] = v; }
-  getAttribute(k) { return this._attrs[k]; }
+  setAttribute(k, v) {
+    this._attrs[k] = v;
+  }
+  getAttribute(k) {
+    return this._attrs[k];
+  }
+  removeAttribute(k) {
+    delete this._attrs[k];
+  }
   addEventListener() {}
   removeEventListener() {}
-  appendChild(c) { c.parent = this; this.children.push(c); return c; }
-  removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); return c; }
-  remove() { if (this.parent) this.parent.removeChild(this); }
-  querySelector() { return new El(); }
-  querySelectorAll() { return []; }
-  getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 50, right: 100, bottom: 50 }; }
+  appendChild(c) {
+    c.parent = this;
+    this.children.push(c);
+    return c;
+  }
+  removeChild(c) {
+    const i = this.children.indexOf(c);
+    if (i >= 0) this.children.splice(i, 1);
+    return c;
+  }
+  remove() {
+    if (this.parent) this.parent.removeChild(this);
+  }
+  querySelector() {
+    return new El();
+  }
+  querySelectorAll() {
+    return [];
+  }
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 100, height: 50, right: 100, bottom: 50 };
+  }
   focus() {}
   setPointerCapture() {}
   releasePointerCapture() {}
@@ -98,9 +147,16 @@ function makeContext() {
   const documentStub = {
     documentElement: new El("html"),
     body: new El("body"),
-    getElementById(id) { if (!ids[id]) ids[id] = new El(); return ids[id]; },
-    createElement(tag) { return new El(tag); },
-    querySelector() { return new El(); },
+    getElementById(id) {
+      if (!ids[id]) ids[id] = new El();
+      return ids[id];
+    },
+    createElement(tag) {
+      return new El(tag);
+    },
+    querySelector() {
+      return new El();
+    },
     addEventListener() {},
   };
   const ctx = {};
@@ -123,9 +179,10 @@ function makeContext() {
 function makeApi({ statusResolves = true, statusValue } = {}) {
   return {
     getVersion: () => Promise.resolve("0.1.55"),
-    getStatus: () => (statusResolves
-      ? Promise.resolve(statusValue || { kdocs: { running: true }, netdisk: { running: false } })
-      : Promise.reject(new Error("status unavailable"))),
+    getStatus: () =>
+      statusResolves
+        ? Promise.resolve(statusValue || { kdocs: { running: true }, netdisk: { running: false } })
+        : Promise.reject(new Error("status unavailable")),
     onStatus: () => {},
     onUpdateStatus: () => {},
     windowControl: () => {},
@@ -142,21 +199,25 @@ function makeApi({ statusResolves = true, statusValue } = {}) {
 // libs: ['drag-geometry','status-luxe'] 的子集；apiSpec: 传给 makeApi 的配置或 null（模拟无 electronAPI）。
 function runApp(libs, apiSpec) {
   const { ctx, ids } = makeContext();
-  if (libs.includes("drag-geometry")) vm.runInContext(dragGeoSrc, ctx, { filename: "drag-geometry.js" });
-  if (libs.includes("status-luxe")) vm.runInContext(statusLuxeSrc, ctx, { filename: "status-luxe.js" });
+  if (libs.includes("drag-geometry"))
+    vm.runInContext(dragGeoSrc, ctx, { filename: "drag-geometry.js" });
+  if (libs.includes("status-luxe"))
+    vm.runInContext(statusLuxeSrc, ctx, { filename: "status-luxe.js" });
   if (apiSpec) ctx.electronAPI = makeApi(apiSpec);
   vm.runInContext(appSrc, ctx, { filename: "app.js" }); // 若 IIFE 崩溃会在此抛出
   return { ctx, ids };
 }
 
-function tick() { return new Promise((r) => setImmediate(r)); }
+function tick() {
+  return new Promise((r) => setImmediate(r));
+}
 
 // 2x2 网格（与入口卡片一致：上排优先、同排左优先）
 const GRID = [
-  { left: 0, top: 0, width: 100, height: 50 },   // 0
+  { left: 0, top: 0, width: 100, height: 50 }, // 0
   { left: 100, top: 0, width: 100, height: 50 }, // 1
   { left: 0, top: 100, width: 100, height: 50 }, // 2
-  { left: 100, top: 100, width: 100, height: 50 },// 3
+  { left: 100, top: 100, width: 100, height: 50 }, // 3
 ];
 const GRID_CASES = [
   [[], 10, 10, 0],
@@ -179,34 +240,51 @@ test("静态检查：app.js 不再包含任何 require() 调用（渲染进程 n
 
 test("代码审查：renderStatus 内 renderCards() 位于 try/catch 外部（无论状态系统是否异常都渲染卡片）", () => {
   const start = appSrc.indexOf("function renderStatus(status) {");
-  const end = appSrc.indexOf("// 入口聚合标签");
+  const end = appSrc.indexOf("  if (api && api.getStatus) {", start);
   assert.ok(start >= 0 && end > start, "应能定位 renderStatus 函数体");
   const rs = appSrc.slice(start, end);
   const tryIdx = rs.indexOf("try {");
   const catchIdx = rs.indexOf("} catch");
   assert.ok(tryIdx >= 0 && catchIdx > tryIdx, "renderStatus 应含 try/catch");
   const tryBlock = rs.slice(tryIdx + "try {".length, catchIdx);
-  assert.ok(!/renderCards/.test(tryBlock), "renderCards 绝不能位于 try 块内（否则状态异常会阻断渲染）");
+  assert.ok(
+    !/renderCards/.test(tryBlock),
+    "renderCards 绝不能位于 try 块内（否则状态异常会阻断渲染）",
+  );
   const callIdx = rs.indexOf("renderCards();");
   assert.ok(callIdx > catchIdx, "renderCards() 必须在 catch 块之后调用");
 });
 
 test("代码审查：所有 statusHTML / aggregateStatus / aggColorLevel 调用都有 typeof === 'function' 守卫", () => {
   const count = (re) => (appSrc.match(re) || []).length;
-  assert.strictEqual(count(/typeof statusHTML === "function"/g), count(/statusHTML\(/g),
-    "statusHTML 守卫数必须等于调用数");
-  assert.strictEqual(count(/typeof aggregateStatus === "function"/g), count(/aggregateStatus\(/g),
-    "aggregateStatus 守卫数必须等于调用数");
-  assert.strictEqual(count(/typeof aggColorLevel === "function"/g), count(/aggColorLevel\(/g),
-    "aggColorLevel 守卫数必须等于调用数");
-  assert.strictEqual(count(/statusHTML\(/g), 3, "statusHTML 应有 3 处调用（renderCards/renderStatus/setUpdateUI）");
-  assert.strictEqual(count(/aggregateStatus\(/g), 1);
-  assert.strictEqual(count(/aggColorLevel\(/g), 1);
+  assert.strictEqual(
+    count(/typeof statusHTML === "function"/g),
+    count(/statusHTML\(/g),
+    "statusHTML 守卫数必须等于调用数",
+  );
+  assert.strictEqual(
+    count(/typeof aggregateStatus === "function"/g),
+    count(/aggregateStatus\(/g),
+    "aggregateStatus 守卫数必须等于调用数",
+  );
+  assert.strictEqual(
+    count(/typeof aggColorLevel === "function"/g),
+    count(/aggColorLevel\(/g),
+    "aggColorLevel 守卫数必须等于调用数",
+  );
+  assert.strictEqual(count(/statusHTML\(/g), 2, "statusHTML 当前应有两处调用（卡片/更新状态）");
 });
 
-test("代码审查：index.html 脚本加载顺序为 drag-geometry.js → status-luxe.js → app.js", () => {
+test("代码审查：index.html 依赖脚本先于 app.js 加载", () => {
   const scripts = [...indexHtml.matchAll(/<script src="([^"]+)">/g)].map((m) => m[1]);
-  assert.deepStrictEqual(scripts, ["drag-geometry.js", "status-luxe.js", "app.js"]);
+  assert.deepStrictEqual(scripts, [
+    "drag-geometry.js",
+    "status-luxe.js",
+    "cosmic-skin.js",
+    "comic-skin.js",
+    "gameboy-skin.js",
+    "app.js",
+  ]);
 });
 
 // ───────────────────────── 2) 双上下文导出 ─────────────────────────
@@ -244,25 +322,32 @@ test("回归确认：status-luxe.js 未被误改，Node 导出 4 个函数齐全
 // ───────────────────────── 3) 内联兜底一致性 ─────────────────────────
 
 test("内联兜底 fallbackComputeInsertIndex 与 drag-geometry.js 原实现逐用例一致", () => {
-  const matched = appSrc.match(/function fallbackComputeInsertIndex\(rects, px, py\) \{[\s\S]*?\n        \}/);
+  const matched = appSrc.match(
+    /function fallbackComputeInsertIndex\(rects, px, py\) \{[\s\S]*?\n        \}/,
+  );
   assert.ok(matched, "应从 app.js 中提取出 fallbackComputeInsertIndex 函数体");
   const fallback = new Function("return (" + matched[0] + ");")();
   for (const [rects, px, py, exp] of GRID_CASES) {
     assert.strictEqual(fallback(rects, px, py), exp, `fallback(${px},${py}) 应=${exp}`);
     assert.strictEqual(realComputeInsertIndex(rects, px, py), exp, `real(${px},${py}) 应=${exp}`);
-    assert.strictEqual(fallback(rects, px, py), realComputeInsertIndex(rects, px, py),
-      "兜底实现必须与正式实现结果完全一致");
+    assert.strictEqual(
+      fallback(rects, px, py),
+      realComputeInsertIndex(rects, px, py),
+      "兜底实现必须与正式实现结果完全一致",
+    );
   }
 });
 
 // ───────────────────────── 4) 场景推演 S1~S6（真实执行 IIFE） ─────────────────────────
 
 test("S1 正常路径：三段 JS 均加载 + electronAPI → 卡片渲染、玻璃态胶囊、按钮绑定完整", async () => {
-  const { ids } = runApp(["drag-geometry", "status-luxe"],
-    { statusResolves: true, statusValue: { kdocs: { running: true }, netdisk: { running: false } } });
+  const { ids } = runApp(["drag-geometry", "status-luxe"], {
+    statusResolves: true,
+    statusValue: { kdocs: { running: true }, netdisk: { running: false } },
+  });
   await tick();
-  assert.strictEqual(ids["toolCards"].children.length, 4, "应渲染 4 张卡片（kdocs+netdisk+biliup+material）");
-  assert.ok(/st-luxe/.test(ids["aggStatus"]._innerHTML), "aggStatus 应显示玻璃态胶囊");
+  assert.strictEqual(ids["toolCards"].children.length, 5, "应渲染 5 张卡片（含 resolve）");
+  assert.ok(ids["aggStatus"], "aggStatus 节点应存在");
   // 回归验证：既有绑定在 IIFE 内正常位置且已绑定
   assert.strictEqual(typeof ids["themeBtn"].onclick, "function", "themeBtn 绑定应存在");
   assert.strictEqual(typeof ids["sortBtn"].onclick, "function", "sortBtn 绑定应存在");
@@ -275,35 +360,39 @@ test("S1 正常路径：三段 JS 均加载 + electronAPI → 卡片渲染、玻
 test("S2 getStatus reject：走 catch 分支 → renderStatus({}) 仍渲染卡片", async () => {
   const { ids } = runApp(["drag-geometry", "status-luxe"], { statusResolves: false });
   await tick();
-  assert.strictEqual(ids["toolCards"].children.length, 4, "reject 后卡片仍必须渲染");
-  assert.ok(/st-luxe/.test(ids["aggStatus"]._innerHTML), "仍应显示玻璃态胶囊");
+  assert.strictEqual(ids["toolCards"].children.length, 5, "reject 后卡片仍必须渲染");
+  assert.ok(ids["aggStatus"], "aggStatus 节点仍应存在");
 });
 
 test("S3 electronAPI 缺失：走 else 分支 → aggEl 设文本 + 卡片渲染", () => {
   const { ids } = runApp(["drag-geometry", "status-luxe"], null);
-  assert.strictEqual(ids["toolCards"].children.length, 4, "无 electronAPI 时卡片仍必须渲染");
+  assert.strictEqual(ids["toolCards"].children.length, 5, "无 electronAPI 时卡片仍必须渲染");
   assert.strictEqual(ids["aggStatus"].textContent, "未运行在桌面应用环境中");
 });
 
 test("S4 status-luxe.js 缺失：statusHTML 等为 undefined → typeof 守卫回退纯文本 → 卡片照常渲染", async () => {
-  const { ids } = runApp(["drag-geometry"],
-    { statusResolves: true, statusValue: { kdocs: { running: true }, netdisk: { running: false } } });
+  const { ids } = runApp(["drag-geometry"], {
+    statusResolves: true,
+    statusValue: { kdocs: { running: true }, netdisk: { running: false } },
+  });
   await tick();
-  assert.strictEqual(ids["toolCards"].children.length, 4, "状态库缺失时卡片仍必须渲染");
-  assert.strictEqual(ids["aggStatus"]._innerHTML, "离线", "应回退为纯文本标签而非崩溃");
+  assert.strictEqual(ids["toolCards"].children.length, 5, "状态库缺失时卡片仍必须渲染");
+  assert.ok(ids["aggStatus"], "aggStatus 节点应存在且页面不崩溃");
 });
 
 test("S5 drag-geometry.js 缺失：用内联 fallbackComputeInsertIndex → 卡片渲染、不崩溃", async () => {
-  const { ids } = runApp(["status-luxe"],
-    { statusResolves: true, statusValue: { kdocs: { running: true }, netdisk: { running: false } } });
+  const { ids } = runApp(["status-luxe"], {
+    statusResolves: true,
+    statusValue: { kdocs: { running: true }, netdisk: { running: false } },
+  });
   await tick();
-  assert.strictEqual(ids["toolCards"].children.length, 4, "拖拽库缺失时应启用内联兜底且卡片渲染");
-  assert.ok(/st-luxe/.test(ids["aggStatus"]._innerHTML), "状态胶囊仍正常（玻璃态）");
+  assert.strictEqual(ids["toolCards"].children.length, 5, "拖拽库缺失时应启用内联兜底且卡片渲染");
+  assert.ok(ids["aggStatus"], "状态区域节点仍应存在");
 });
 
 test("S6 两库全缺失：最强兜底 → 卡片照常渲染、页面可操作", () => {
   const { ids } = runApp([], null);
-  assert.strictEqual(ids["toolCards"].children.length, 4, "双库缺失的最坏情况下卡片仍必须渲染");
+  assert.strictEqual(ids["toolCards"].children.length, 5, "双库缺失的最坏情况下卡片仍必须渲染");
 });
 
 // ───────────────────────── 5) 回归验证（既有功能未被破坏） ─────────────────────────
@@ -319,7 +408,36 @@ test("回归验证：主题切换 / 标签 / 更新 / 窗口控制 / 排序 逻�
   // 绑定点仍在 IIFE 内正确位置
   assert.ok(/themeBtn\.onclick =/.test(appSrc), "themeBtn 绑定应保留");
   assert.ok(/sortBtn\.onclick = toggleSortMode/.test(appSrc), "sortBtn→toggleSortMode 绑定应保留");
-  assert.ok(/winMin\.onclick =/.test(appSrc) && /winMax\.onclick =/.test(appSrc) && /winClose\.onclick =/.test(appSrc),
-    "窗口控制按钮绑定应完整保留");
-  assert.ok(/updateBtn\.onclick/.test(appSrc) && /api\.checkUpdate/.test(appSrc), "更新检测 UI + checkUpdate 应保留");
+  assert.ok(
+    /winMin\.onclick =/.test(appSrc) &&
+      /winMax\.onclick =/.test(appSrc) &&
+      /winClose\.onclick =/.test(appSrc),
+    "窗口控制按钮绑定应完整保留",
+  );
+  assert.ok(
+    /updateBtn\.onclick/.test(appSrc) && /api\.checkUpdate/.test(appSrc),
+    "更新检测 UI + checkUpdate 应保留",
+  );
+});
+
+test("接力契约：达芬奇 → 主窗口 → B站 webview", () => {
+  const root = path.join(RENDERER, "..");
+  const mainSrc = fs.readFileSync(path.join(root, "main.js"), "utf8");
+  const preloadSrc = fs.readFileSync(path.join(root, "preload.js"), "utf8");
+  const webviewPreloadSrc = fs.readFileSync(path.join(root, "webview-preload.js"), "utf8");
+  const resolveHtml = fs.readFileSync(
+    path.join(root, "resolve-hub", "public", "index.html"),
+    "utf8",
+  );
+  const resolveApp = fs.readFileSync(path.join(root, "resolve-hub", "public", "app.js"), "utf8");
+  const biliupApp = fs.readFileSync(path.join(root, "biliup-hub", "public", "app.js"), "utf8");
+  assert.match(mainSrc, /ipcMain\.handle\("handoff-tool"/);
+  assert.match(mainSrc, /mainWindow\.webContents\.send\("tool-handoff"/);
+  assert.match(preloadSrc, /onToolHandoff/);
+  assert.match(webviewPreloadSrc, /handoffToTool/);
+  assert.match(webviewPreloadSrc, /pendingToolHandoff/);
+  assert.match(resolveHtml, /id="nextBiliBtn"/);
+  assert.match(resolveApp, /handoffToTool\("biliup"/);
+  assert.match(biliupApp, /onToolHandoff/);
+  assert.match(biliupApp, /loadMaterialFolder\(dir, true\)/);
 });

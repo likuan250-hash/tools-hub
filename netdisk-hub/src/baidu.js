@@ -84,6 +84,43 @@ async function refresh(refreshToken) {
   return data;
 }
 
+let accessTokenRefreshPromise = null;
+
+function accessTokenExpired(acc) {
+  const expiresAt = Number(acc && acc.accessTokenExpiresAt);
+  return expiresAt > 0 && expiresAt <= Date.now() + 60 * 1000;
+}
+
+async function refreshAccessToken() {
+  const acc = store.getAccount("baidu");
+  if (!acc || !acc.refreshToken) throw new Error("百度官方授权已失效：缺少 refresh_token");
+  if (!accessTokenRefreshPromise) {
+    accessTokenRefreshPromise = refresh(acc.refreshToken)
+      .then((data) => {
+        const saved = store.saveAccount("baidu", {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token || acc.refreshToken,
+          accessTokenExpiresAt: Date.now() + (Number(data.expires_in) || 2592000) * 1000,
+          scope: data.scope || acc.scope,
+        });
+        return saved.accessToken;
+      })
+      .finally(() => {
+        accessTokenRefreshPromise = null;
+      });
+  }
+  return accessTokenRefreshPromise;
+}
+
+async function getAccessToken(forceRefresh) {
+  const acc = store.getAccount("baidu");
+  if (!acc) return "";
+  if (forceRefresh || accessTokenExpired(acc)) {
+    return acc.refreshToken ? refreshAccessToken() : "";
+  }
+  return acc.accessToken || "";
+}
+
 // 百度转存不需要 OAuth access_token;有 BDUSS cookie 即可。保留以兼容 server 的"已授权"判定。
 async function getValidToken() {
   const acc = store.getAccount("baidu");
@@ -476,40 +513,73 @@ async function searchFiles(dirPath, keyword) {
 // 无 token 或缺少 path 时回退网页 cookie 通道。
 async function trashFiles(fsIds, paths) {
   if (!fsIds || !fsIds.length) throw new Error("删除失败:缺少文件 fs_id");
-  const acc = store.getAccount("baidu");
   let openApiError = "";
-  if (acc && acc.accessToken && Array.isArray(paths) && paths.length === fsIds.length) {
+  if (Array.isArray(paths) && paths.length === fsIds.length) {
+    let accessToken = "";
     try {
-      return await trashViaOpenApi(fsIds, paths, acc.accessToken);
+      accessToken = await getAccessToken(false);
+      if (accessToken) return await trashViaOpenApi(fsIds, paths, accessToken);
     } catch (e) {
-      // token 失效等 → 回退网页 cookie 通道
-      if (!/errno=/.test(String(e.message))) throw e;
       openApiError = String(e.message);
+      // 旧 token 无过期时间时先试一次；-6 表示登录态无效，刷新后重试一次。
+      if (/errno=-6/.test(openApiError)) {
+        try {
+          const freshToken = await getAccessToken(true);
+          if (freshToken) return await trashViaOpenApi(fsIds, paths, freshToken);
+        } catch (refreshError) {
+          openApiError = String(refreshError.message || refreshError);
+        }
+      }
+      if (!/errno=|-6|refresh_token|刷新失败/.test(openApiError)) throw e;
     }
   }
-  const bdstoken = await getBdstoken();
-  const qs = new URLSearchParams({
-    opera: "delete",
-    async: "2",
-    bdstoken,
-    channel: "chunlei",
-    web: "1",
-    clienttype: "0",
-  });
-  const body = new URLSearchParams({ filelist: JSON.stringify(fsIds.map(Number)) });
-  const res = await fetch(`${PAN}/api/filemanager?${qs}`, {
-    method: "POST",
-    headers: reqHeaders({ "Content-Type": "application/x-www-form-urlencoded" }),
-    body: body.toString(),
-  });
-  const j = await res.json();
+
+  const sendWebDelete = async (bdstoken, minimalCookie) => {
+    const qs = new URLSearchParams({
+      opera: "delete",
+      async: "2",
+      bdstoken,
+      channel: "chunlei",
+      web: "1",
+      clienttype: "0",
+      app_id: "250528",
+    });
+    const body = new URLSearchParams({ filelist: JSON.stringify(fsIds.map(Number)) });
+    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+    if (minimalCookie) headers.Cookie = buildCookieHeader(true);
+    const res = await fetch(`${PAN}/api/filemanager?${qs}`, {
+      method: "POST",
+      headers: reqHeaders(headers),
+      body: body.toString(),
+    });
+    return res.json();
+  };
+
+  let j = await sendWebDelete(await getBdstoken(), false);
+  if (j.errno === 132) {
+    // 132 常见于旧 bdstoken 或完整 Cookie 被风控。刷新 token，再用核心 Cookie 重试一次。
+    cachedBdstoken = null;
+    bdstokenTs = 0;
+    j = await sendWebDelete(await getBdstoken(), true);
+  }
+  let browserError = "";
+  if (j.errno === 132) {
+    try {
+      const browserResult = await trashViaBrowser(fsIds);
+      if (browserResult.errno === 0) return browserResult;
+      browserError = "；浏览器兜底仍失败 errno=" + browserResult.errno;
+    } catch (e) {
+      browserError = "；浏览器兜底失败：" + String(e.message || e).slice(0, 160);
+    }
+  }
   if (j.errno !== 0) {
     if (j.errno === 132) {
       const apiHint = openApiError ? "；百度官方 API 同样失败：" + openApiError : "";
       throw new Error(
         "百度网页删除接口返回 errno=132（风控拒绝，不一定是等待验证页）" +
           apiHint +
-          "。请重新授权百度网盘以刷新官方删除权限，或直接在网页端手动删除",
+          browserError +
+          "。工具已自动刷新 token、核心 Cookie 重试并尝试真实浏览器删除；仍失败时请在百度网页端手动移入回收站",
       );
     }
     throw new Error("百度删除失败 errno=" + j.errno + " " + JSON.stringify(j).slice(0, 160));
@@ -517,17 +587,72 @@ async function trashFiles(fsIds, paths) {
   return j;
 }
 
+// 百度 Node 请求被 132 风控时的最后兜底：加载已保存 Cookie，在真实浏览器页面内发删除请求。
+// 不弹窗、不改用户浏览器配置，成功后立即关闭临时上下文。
+async function trashViaBrowser(fsIds) {
+  syncJar();
+  const bdstoken = await getBdstoken();
+  const { launchBrowser } = require("./browser");
+  const { browser } = await launchBrowser({ headless: true });
+  try {
+    const context = await browser.newContext({ userAgent: UA });
+    await context.addCookies(
+      Object.entries(cookieJar).map(([name, value]) => ({
+        name,
+        value,
+        domain: ".baidu.com",
+        path: "/",
+        secure: true,
+        sameSite: "Lax",
+      })),
+    );
+    const page = await context.newPage();
+    await page.goto(PAN + "/disk/main", { waitUntil: "domcontentloaded", timeout: 30000 });
+    return await page.evaluate(
+      async ({ token, ids }) => {
+        const liveToken =
+          (window.yunData &&
+            (window.yunData.MYBDSTOKEN || window.yunData.bdstoken || window.yunData.mybdstoken)) ||
+          token;
+        const qs = new URLSearchParams({
+          opera: "delete",
+          async: "2",
+          bdstoken: liveToken,
+          channel: "chunlei",
+          web: "1",
+          clienttype: "0",
+          app_id: "250528",
+        });
+        const res = await fetch("/api/filemanager?" + qs.toString(), {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ filelist: JSON.stringify(ids.map(Number)) }).toString(),
+        });
+        return res.json();
+      },
+      { token: bdstoken, ids: fsIds },
+    );
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 // 官方 OpenAPI 删除(软删进回收站;需要开放平台 OAuth access_token)
 // filelist 必须为 [{path, fsid}] 对象数组 + async=0 同步,才会立即生效
 async function trashViaOpenApi(fsIds, paths, accessToken) {
   const qs = new URLSearchParams({
     method: "filemanager",
+    opera: "delete",
+    async: "0",
     access_token: accessToken,
+    clienttype: "0",
+    app_id: "250528",
+    web: "1",
+    channel: "chunlei",
   });
   const filelist = fsIds.map((id, i) => ({ path: paths[i], fsid: Number(id) }));
   const body = new URLSearchParams({
-    opera: "delete",
-    async: "0",
     filelist: JSON.stringify(filelist),
   });
   const res = await fetch(`https://pan.baidu.com/rest/2.0/xpan/file?${qs}`, {

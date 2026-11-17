@@ -13,3 +13,10 @@
   ExecWait 'taskkill /F /T /IM tools-hub.exe'
   Sleep 2000
 !macroend
+
+; electron-builder 的更新器依赖卸载注册表中的 InstallLocation 继承旧目录。
+; 部分 per-user 安装不会写入该值，更新时会回退到 LocalAppData\Programs。
+; customInstall 在 registryAddInstallInfo 之后执行，这里补写真实安装路径。
+!macro customInstall
+  WriteRegStr SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" "InstallLocation" "$INSTDIR"
+!macroend

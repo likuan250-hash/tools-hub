@@ -185,6 +185,32 @@
     }
     .task .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .task .meta { color: var(--text-dim); font-size: 12px; margin-top: 6px; word-break: break-all; }
+    .task .link-row {
+      display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+      padding: 7px 9px; border-radius: 9px;
+    }
+    .task .source-link-row {
+      background: rgba(255,255,255,0.035); border: 1px dashed var(--glass-border);
+    }
+    .task .share-link-row {
+      color: var(--text); background: rgba(var(--ok-rgb),0.10);
+      border: 1px solid rgba(var(--ok-rgb),0.32);
+    }
+    .task .link-row a { word-break: break-all; }
+    .task .source-link-row a { color: var(--text); }
+    .task .share-link-row a { color: var(--ok); font-weight: 600; }
+    .task .link-tag {
+      flex: none; padding: 2px 7px; border-radius: 999px;
+      font-size: 10.5px; font-weight: 700; letter-spacing: .2px;
+    }
+    .task .link-tag.source { color: var(--text-dim); background: rgba(255,255,255,0.08); }
+    .task .link-tag.share { color: var(--ok); background: rgba(var(--ok-rgb),0.15); }
+    .task .link-pwd { color: var(--text-dim); }
+    .task .copy-inline {
+      margin-left: 6px; padding: 2px 7px; border-radius: 7px;
+      border: 1px solid var(--glass-border); background: var(--field-bg);
+      color: var(--text); font-size: 11px; cursor: pointer;
+    }
     .badge { font-size: 11px; padding: 2px 8px; border-radius: 8px; }
     .badge.ok { background: rgba(var(--ok-rgb),0.2); color: var(--ok); }
     .badge.fail { background: rgba(var(--err-rgb),0.2); color: var(--err); }

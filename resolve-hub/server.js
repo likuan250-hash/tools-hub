@@ -13,6 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const util = require("./lib/util");
+const folderMeta = require("./lib/folder-meta");
 
 const PUBLIC = path.join(__dirname, "public");
 const PY = path.join(__dirname, "..", "scripts", "resolve-auto", "resolve.py");
@@ -69,6 +70,12 @@ function folderInfo(dir, fsImpl = fs) {
     }) || null;
   const projectName =
     util.sanitizeProjectName(path.basename(String(dir).replace(/[\\/]+$/, ""))) || "未命名项目";
+  let metadata = null;
+  try {
+    metadata = folderMeta.readMetadata(dir);
+  } catch (e) {
+    metadata = null;
+  }
   return {
     ok: true,
     cover,
@@ -76,7 +83,8 @@ function folderInfo(dir, fsImpl = fs) {
     coverOk: !!cover,
     trailerOk: !!trailer,
     projectName,
-    defaultOut: util.defaultOutName(projectName),
+    metadata,
+    defaultOut: util.sanitizeOutName(metadata && metadata.title ? metadata.title : "", projectName),
   };
 }
 
@@ -302,11 +310,21 @@ function createServer(options = {}) {
           return;
         }
         const args = ["--project", project];
-        const out = util.sanitizeOutName(body.out, project);
-        args.push("--out", out);
         if (body.force) args.push("--force");
+        let target = String(body.target || body.dir || "").trim();
+        if (!target) target = path.join(MATERIAL_ROOT, project);
+        let metadata = null;
+        try {
+          metadata = folderMeta.readMetadata(target);
+        } catch (e) {
+          metadata = null;
+        }
+        const out = util.sanitizeOutName(
+          String(body.out || "").trim() || (metadata && metadata.title) || "",
+          project,
+        );
+        args.push("--out", out);
         if (body.target) {
-          const target = String(body.target).trim();
           if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
             sendJson(res, 400, { error: "输出目录不存在：" + target });
             return;

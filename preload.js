@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   toolReady: (key, timeoutMs) => ipcRenderer.invoke("tool-ready", key, timeoutMs),
   // 关闭工具标签 → 立即停止对应子服务
   toolClose: (key) => ipcRenderer.invoke("tool-close", key),
+  // 接收内嵌工具发起的跨工具接力（当前用于达芬奇 → B站投稿）
+  onToolHandoff: (cb) => {
+    ipcRenderer.on("tool-handoff", (_event, payload) => cb(payload));
+  },
   // 原生文件夹选择（替代 Tkinter IPC）
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
   // 原生文件选择（biliup-hub 选 mp4）

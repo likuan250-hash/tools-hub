@@ -297,7 +297,11 @@ test("trashFiles：POST /api/filemanager opera=delete 进回收站", async () =>
 });
 
 test("trashFiles：有 accessToken 时走官方 OpenAPI（path+fsid 对象、async=0）", async () => {
-  store.saveAccount("baidu", { cookie: "BDUSS=abc", accessToken: "TOKEN1" });
+  store.saveAccount("baidu", {
+    cookie: "BDUSS=abc",
+    accessToken: "TOKEN1",
+    accessTokenExpiresAt: Date.now() + 3600 * 1000,
+  });
   let sent = null;
   global.fetch = makeFetch((u, opts) => {
     if (u.includes("/rest/2.0/xpan/file")) {
@@ -310,13 +314,111 @@ test("trashFiles：有 accessToken 时走官方 OpenAPI（path+fsid 对象、asy
   assert.strictEqual(j.errno, 0);
   assert.ok(sent.url.includes("method=filemanager"));
   assert.ok(sent.url.includes("access_token=TOKEN1"));
-  assert.ok(decodeURIComponent(sent.body).includes("opera=delete"));
-  assert.ok(decodeURIComponent(sent.body).includes("async=0"));
+  assert.ok(sent.url.includes("opera=delete"));
+  assert.ok(sent.url.includes("async=0"));
   assert.ok(
     decodeURIComponent(sent.body).includes(
       'filelist=[{"path":"/a","fsid":1},{"path":"/b","fsid":2}]',
     ),
   );
+});
+
+test("trashFiles：官方 token 返回 -6 时自动刷新并重试", async () => {
+  store.saveAccount("baidu", {
+    cookie: "BDUSS=abc",
+    accessToken: "OLD",
+    refreshToken: "REFRESH",
+  });
+  const apiTokens = [];
+  let refreshCalls = 0;
+  global.fetch = makeFetch((u) => {
+    if (u.includes("/oauth/2.0/token")) {
+      refreshCalls += 1;
+      return [{ access_token: "NEW", refresh_token: "REFRESH2", expires_in: 3600 }];
+    }
+    if (u.includes("/rest/2.0/xpan/file")) {
+      apiTokens.push(new URL(u).searchParams.get("access_token"));
+      return apiTokens.length === 1 ? [{ errno: -6, info: [] }] : [{ errno: 0, info: [] }];
+    }
+    return [{ errno: 0, result: { bdstoken: "T" } }];
+  });
+  const j = await baidu.trashFiles(["1"], ["/a"]);
+  assert.strictEqual(j.errno, 0);
+  assert.deepStrictEqual(apiTokens, ["OLD", "NEW"]);
+  assert.strictEqual(refreshCalls, 1);
+  const acc = store.getAccount("baidu");
+  assert.strictEqual(acc.accessToken, "NEW");
+  assert.strictEqual(acc.refreshToken, "REFRESH2");
+});
+
+test("trashFiles：已知过期 token 先刷新，不再请求旧 token", async () => {
+  store.saveAccount("baidu", {
+    cookie: "BDUSS=abc",
+    accessToken: "EXPIRED",
+    refreshToken: "REFRESH",
+    accessTokenExpiresAt: Date.now() - 1000,
+  });
+  const apiTokens = [];
+  global.fetch = makeFetch((u) => {
+    if (u.includes("/oauth/2.0/token")) return [{ access_token: "FRESH", expires_in: 3600 }];
+    if (u.includes("/rest/2.0/xpan/file")) {
+      apiTokens.push(new URL(u).searchParams.get("access_token"));
+      return [{ errno: 0, info: [] }];
+    }
+    return [{ errno: 0, result: { bdstoken: "T" } }];
+  });
+  await baidu.trashFiles(["1"], ["/a"]);
+  assert.deepStrictEqual(apiTokens, ["FRESH"]);
+});
+
+test("trashFiles：网页接口持续 132 时用真实浏览器上下文兜底", async () => {
+  store.saveAccount("baidu", {
+    cookie: "BDUSS=abc; STOKEN=def",
+    accessToken: "",
+    refreshToken: "",
+  });
+  global.fetch = makeFetch((u) => {
+    if (u.includes("/api/gettemplatevariable")) return [bdstokenOk()];
+    if (u.includes("/api/filemanager")) return [{ errno: 132 }];
+    return [{}, 200, {}];
+  });
+  const browserPath = require.resolve("../src/browser");
+  const previous = require.cache[browserPath];
+  let evaluated = false;
+  let closed = false;
+  require.cache[browserPath] = {
+    id: browserPath,
+    filename: browserPath,
+    loaded: true,
+    exports: {
+      launchBrowser: async () => ({
+        browser: {
+          newContext: async () => ({
+            addCookies: async () => {},
+            newPage: async () => ({
+              goto: async () => {},
+              evaluate: async () => {
+                evaluated = true;
+                return { errno: 0 };
+              },
+            }),
+          }),
+          close: async () => {
+            closed = true;
+          },
+        },
+      }),
+    },
+  };
+  try {
+    const j = await baidu.trashFiles(["1"], ["/a"]);
+    assert.strictEqual(j.errno, 0);
+    assert.strictEqual(evaluated, true);
+    assert.strictEqual(closed, true);
+  } finally {
+    if (previous) require.cache[browserPath] = previous;
+    else delete require.cache[browserPath];
+  }
 });
 
 test("searchFiles：目录超过单页 1000 条时翻页取全量", async () => {

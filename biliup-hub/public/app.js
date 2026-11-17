@@ -1,5 +1,5 @@
 // biliup-hub/public/app.js —— 前端逻辑
-// pickFile 选视频 / 参数读写 / 发布模式 + 二次确认 / 消费 /api/upload SSE /
+// pickFolder 选素材目录并读取标题/简介/标签 / 参数读写 / 发布模式 + 二次确认 / 消费 /api/upload SSE /
 // 状态胶囊(#1) / 投稿日志默认隐藏(#4) / 账号头像+扫码登录(#7) / 健康探活(#5)。
 /* global ico, selectPreserve, coerceInt */
 (function () {
@@ -392,31 +392,65 @@
   let selectedVideo = "";
   let running = false;
 
-  // ── 选视频（#1：文件名只显示在按钮后；标题自动取文件名去扩展名）──
+  // ── 载入素材文件夹：自动找成品视频，并读取同目录 B站标题与简介.md ──
+  async function loadMaterialFolder(dir, handedOff) {
+    const resp = await fetch("/api/folder-meta?dir=" + encodeURIComponent(dir));
+    const meta = await resp.json().catch(() => ({}));
+    if (!resp.ok || !meta.ok) throw new Error(meta.error || "读取素材目录失败");
+    if (!meta.videoPath) throw new Error(meta.error || "成品视频缺失");
+    selectedVideo = meta.videoPath;
+    $("videoName").textContent = meta.video || selectedVideo;
+    const base = String(meta.video || selectedVideo)
+      .split(/[\\/]/)
+      .pop()
+      .replace(/\.[^.]+$/, "");
+    $("titleInput").value = (meta.metadata && meta.metadata.title) || base;
+    const tagsEl = $("tagsInput");
+    const metaTags = (meta.metadata && meta.metadata.tags) || [];
+    tagsEl.value = metaTags.join(",");
+    tagsEl.dataset.userEdited = metaTags.length ? "1" : "";
+    descInput.value = (meta.metadata && meta.metadata.description) || "";
+    syncDescCount();
+    updateTitleCount();
+    $("submitHint").textContent = handedOff
+      ? "已从达芬奇剪辑接力，文件夹和文案已选好，确认后即可投稿"
+      : meta.metadataFile
+        ? "已读取标题、简介和标签，可修改后投稿"
+        : "未找到 B站标题与简介.md，已回退为文件名和自动标签";
+    if ($("clearBtn")) $("clearBtn").style.display = "";
+    if (!meta.metadataFile) maybeAutoTag();
+    return meta;
+  }
+
   $("pickBtn").addEventListener("click", async () => {
     try {
-      if (!api || !api.pickFile) {
-        logLine("当前环境不支持选择文件（需工具箱内运行）", "err");
+      if (!api || !api.pickFolder) {
+        logLine("当前环境不支持选择文件夹（需工具箱内运行）", "err");
         return;
       }
-      const r = await api.pickFile();
-      if (r && r.filePath) {
-        selectedVideo = r.filePath;
-        $("videoName").textContent = selectedVideo;
-        const base = selectedVideo
-          .split(/[\\/]/)
-          .pop()
-          .replace(/\.[^.]+$/, "");
-        $("titleInput").value = base; // 不再重复显示一行文件名
-        updateTitleCount(); // 同步标题字节计数（B站 APP 接口按 UTF-8 字节限长）
-        $("submitHint").textContent = "已选择视频，点击投稿";
-        if ($("clearBtn")) $("clearBtn").style.display = ""; // 显示「清空选择」（B）
-        maybeAutoTag(); // #② 选入视频后自动生成标签（用户未手动填时）
-      }
+      const picked = await api.pickFolder();
+      if (!picked || !picked.dir) return;
+      await loadMaterialFolder(picked.dir, false);
     } catch (e) {
-      logLine("选择文件失败: " + e.message, "err");
+      selectedVideo = "";
+      $("videoName").textContent = "";
+      logLine("选择文件夹失败: " + e.message, "err");
+      toast("选择文件夹失败: " + e.message, "err");
     }
   });
+
+  if (api && api.onToolHandoff) {
+    api.onToolHandoff((payload) => {
+      const dir = payload && payload.data && payload.data.dir;
+      if (!dir) return;
+      loadMaterialFolder(dir, true).catch((e) => {
+        selectedVideo = "";
+        $("videoName").textContent = "";
+        logLine("接力失败: " + e.message, "err");
+        toast("接力失败: " + e.message, "err");
+      });
+    });
+  }
 
   // ── 清空选择（B：点击清空已选文件状态与展示，回到初始态）──
   const clearBtnEl = $("clearBtn");
@@ -436,6 +470,10 @@
       selectedVideo = "";
       $("videoName").textContent = "";
       $("titleInput").value = "";
+      if (descInput) {
+        descInput.value = "";
+        syncDescCount();
+      }
       updateTitleCount();
       const ti = $("tagsInput");
       if (ti) {
@@ -538,6 +576,15 @@
       }
     });
   });
+  const descInput = $("descInput");
+  const descCount = $("descCount");
+  function syncDescCount() {
+    if (descCount && descInput) descCount.textContent = String(descInput.value.length);
+  }
+  if (descInput) {
+    descInput.addEventListener("input", syncDescCount);
+    syncDescCount();
+  }
 
   // ── 加载配置 ──
   async function loadConfig() {
@@ -556,7 +603,6 @@
       selectPreserve($("cfgNoReprint"), cfg.noReprint != null ? cfg.noReprint : "");
       selectPreserve($("cfgLine"), cfg.line || "");
       $("cfgUid").value = cfg.uid != null ? cfg.uid : "";
-      $("cfgDesc").value = cfg.desc || "";
       $("cfgComment").value = cfg.comment || "";
       // #② 默认标签：读入 settings 输入框 + 缓存到 window，供 maybeAutoTag 叠加。
       if ($("defaultTagsInput")) $("defaultTagsInput").value = cfg.defaultTags || "";
@@ -672,7 +718,6 @@
       noReprint: coerceInt($("cfgNoReprint").value, 1),
       line: $("cfgLine").value || "bda2",
       uid: Number($("cfgUid").value) || 236743002,
-      desc: $("cfgDesc").value,
       comment: $("cfgComment").value,
       defaultTags: ($("defaultTagsInput") ? $("defaultTagsInput").value : "") || "", // #② 默认标签
     };
@@ -989,6 +1034,14 @@
 
   // ── 二次确认 ──
   function openConfirm() {
+    const desc = ($("descInput").value || "").trim();
+    if (!desc) {
+      const m = "请填写投稿简介，未填写时不会发布";
+      logLine(m, "err");
+      toast(m, "err");
+      $("descInput").focus();
+      return;
+    }
     const mode = document.querySelector('input[name="mode"]:checked').value;
     let text =
       "将投稿到 B站（UID 236743002）：\n• 视频：" + (selectedVideo || "(未选择)") + "\n• 模式：";
@@ -1029,6 +1082,20 @@
     const titleVal = ($("titleInput").value || "").trim();
     if (titleVal.length > 80) {
       const m = "标题超 B 站 80 字限制（" + titleVal.length + " 字），请修改标题后再投稿";
+      logLine(m, "err");
+      toast(m, "err");
+      return;
+    }
+    const descVal = ($("descInput").value || "").trim();
+    if (!descVal) {
+      const m = "请填写投稿简介，未填写时不会发布";
+      logLine(m, "err");
+      toast(m, "err");
+      $("descInput").focus();
+      return;
+    }
+    if (descVal.length > 2000) {
+      const m = "投稿简介超 2000 字限制（当前 " + descVal.length + " 字）";
       logLine(m, "err");
       toast(m, "err");
       return;
@@ -1075,6 +1142,7 @@
     const payload = {
       videoPath: selectedVideo,
       title: titleVal,
+      desc: descVal,
       tags,
       publishMode: mode,
       dtime,

@@ -186,6 +186,29 @@
 
   // 待激活兜底定时器：key -> timerId（服务未起导致 dom-ready 不触发时强制激活）
   const pendingFallbacks = new Map();
+  const pendingToolHandoffs = new Map();
+
+  function deliverToolHandoff(key) {
+    const payload = pendingToolHandoffs.get(key);
+    if (!payload) return false;
+    const wv = document.getElementById("wv-" + key);
+    if (!wv || wv.dataset.ready !== "1" || !wv.send) return false;
+    try {
+      wv.send("tool-handoff", payload);
+      pendingToolHandoffs.delete(key);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function receiveToolHandoff(payload) {
+    const key = payload && payload.key;
+    if (!TOOLS[key]) return;
+    pendingToolHandoffs.set(key, payload);
+    await openTab(key);
+    deliverToolHandoff(key);
+  }
 
   // ── 卡片顺序持久化 ──
   // 读取已保存顺序：过滤已删除工具、把新增工具追加到末尾（兜底）
@@ -460,6 +483,7 @@
     if (api && api.toolOpen) api.toolOpen(key).catch(() => {});
     if (openTabs.find((x) => x.key === key)) {
       switchTab(key);
+      deliverToolHandoff(key);
       return;
     }
     // 新开标签：服务冷启动约 1~3s，期间显示加载动画（就绪/兜底后自动隐藏）
@@ -518,6 +542,7 @@
       try {
         wv.send("sync-theme", theme);
       } catch (e) {} // 加载完成后同步工具箱主题
+      setTimeout(() => deliverToolHandoff(key), 80);
       // 仍是当前要展示的标签才淡入；否则仅标记就绪，等切回时直接激活（避免黑闪）
       if (wv.dataset.key === activeKey) {
         wv.dataset.pending = "";
@@ -906,6 +931,12 @@
       if (quitModal) quitModal.hidden = true;
       if (api && api.confirmQuit) api.confirmQuit();
     };
+  }
+
+  if (api && api.onToolHandoff) {
+    api.onToolHandoff((payload) => {
+      receiveToolHandoff(payload).catch(() => {});
+    });
   }
 
   // 初始化：默认显示入口页标签
